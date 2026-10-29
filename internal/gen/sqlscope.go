@@ -24,8 +24,9 @@ import (
 // sqlScope is a scope written by hand in a .sql file: a method of a scope type, narrowing it by a condition.
 type sqlScope struct {
 	name string
-	// file is the .sql file it is written in, and doc the comment above its -- scope: line.
+	// file is the .sql file it is written in, doc the comment above its -- scope: line, and pos where that line is.
 	file, doc string
+	pos       token.Position
 	params    []param
 	// pieces are the pieces of SQL the condition is written in, and args the names of the parameters between them.
 	pieces, args []string
@@ -118,7 +119,7 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan) (m
 func (r resolver) sqlScope(st sqlfile.Statement, d snapshot.Dialect,
 	errorf func(format string, args ...any) diag.Diag,
 ) (sqlScope, []diag.Diag) {
-	sc := sqlScope{name: st.Name, doc: st.Doc}
+	sc := sqlScope{name: st.Name, doc: st.Doc, pos: st.Header}
 	ft, err := parser.ParseExpr("func(" + st.Params + ")")
 	fn, ok := ft.(*ast.FuncType)
 	if err != nil || !ok {

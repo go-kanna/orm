@@ -1,8 +1,11 @@
 package gen_test
 
 import (
+	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -97,8 +100,35 @@ func TestEmit(t *testing.T) {
 				t.Fatalf("Emit: %v\n%s", err, got)
 			}
 			pkgtest.Golden(t, filepath.Join("testdata", dir, "orm_gen.go"), got)
+
+			// The names checked against those of the methods written by hand are those of the methods written.
+			methods, err := gen.Methods(set.Packages[0], s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if written := generatedMethods(set.Packages[0]); !reflect.DeepEqual(methods, written) {
+				t.Errorf("Methods =\n%v\nbut orm_gen.go declares\n%v", methods, written)
+			}
 		})
 	}
+}
+
+// generatedMethods names the methods orm_gen.go declares on each type of pkg, sorted.
+func generatedMethods(pkg *packages.Package) map[string][]string {
+	methods := map[string][]string{}
+	for _, name := range pkg.Types.Scope().Names() {
+		named, ok := pkg.Types.Scope().Lookup(name).Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		for m := range named.Methods() {
+			if filepath.Base(pkg.Fset.Position(m.Pos()).Filename) == "orm_gen.go" {
+				methods[name] = append(methods[name], m.Name())
+			}
+		}
+		slices.Sort(methods[name])
+	}
+	return methods
 }
 
 func TestEmit_FieldsNamedAlike(t *testing.T) {

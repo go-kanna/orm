@@ -52,7 +52,8 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePla
 	for i := range plans {
 		plans[i].written = written[plans[i].name]
 	}
-	return plans, append(ds, wds...)
+	ds = append(ds, wds...)
+	return plans, append(ds, checkNames(pkg, plans, s.Dialect)...)
 }
 
 // sameNames reports a field whose name is that of another of its kind, columns or links, so that their methods would

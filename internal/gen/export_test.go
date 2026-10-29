@@ -135,3 +135,23 @@ func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, erro
 	src, err := emit(pkg, s.Dialect, plans, declared)
 	return src, ds, err
 }
+
+// Methods names the methods emit writes on each scope type of pkg, the scopes written by hand included, sorted.
+func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, error) {
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	if err != nil {
+		return nil, err
+	}
+	plans, _ := plan(pkg, s, idx)
+	methods := map[string][]string{}
+	for _, p := range plans {
+		for _, m := range methodsOf(p, s.Dialect) {
+			methods[p.name] = append(methods[p.name], m.name)
+		}
+		for _, w := range p.written {
+			methods[p.name] = append(methods[p.name], w.name)
+		}
+		slices.Sort(methods[p.name])
+	}
+	return methods, nil
+}
