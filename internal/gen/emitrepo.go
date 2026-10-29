@@ -5,6 +5,7 @@ import (
 	"go/types"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-kanna/internal/gofile"
@@ -46,11 +47,6 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve("DB")
 	for _, repo := range repos {
 		f.Reserve(repo.name, "New"+repo.name)
-		for _, m := range repo.methods {
-			if d == snapshot.MySQL && (m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert) {
-				return nil, nil, fmt.Errorf("%s.%s: %s on MySQL is not generated yet", repo.name, m.name, m.verb)
-			}
-		}
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
 		names: readNames(models)}
@@ -369,6 +365,10 @@ func (e repoEmitter) scanRows(n scanNames, model string, columns []column) {
 // insert writes the body of m, an Insert or an Upsert: its rows written in one statement, and read back when m
 // returns them.
 func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	if e.d == snapshot.MySQL {
+		e.insertMySQL(m, sc, recv, sig)
+		return
+	}
 	model := types.TypeString(m.model, e.f.Qualifier)
 	inserted := m.inserted()
 	var (
@@ -464,23 +464,152 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	args, keyArgs := make([]string, 0, len(updated)+len(key)), make([]string, 0, len(key))
 	for _, c := range updated {
 		args = append(args, sig.row+"."+fieldPath(c))
-		sets = append(sets, fmt.Sprintf("%s = $%d", sqlName(e.d, c.col.Name), len(args)))
+		sets = append(sets, sqlName(e.d, c.col.Name)+" = "+e.placeholder(len(args)))
 	}
 	for _, name := range key {
-		c := m.columns[slices.IndexFunc(m.columns, func(c column) bool { return c.col.Name == name })]
-		args = append(args, sig.row+"."+fieldPath(c))
-		keyArgs = append(keyArgs, sig.row+"."+fieldPath(c))
-		conds = append(conds, fmt.Sprintf("%s = $%d", sqlName(e.d, name), len(args)))
+		args = append(args, sig.row+"."+fieldPath(m.field(name)))
+		keyArgs = append(keyArgs, sig.row+"."+fieldPath(m.field(name)))
+		conds = append(conds, sqlName(e.d, name)+" = "+e.placeholder(len(args)))
 	}
-	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + strings.Join(conds, " AND ")
+	where := strings.Join(conds, " AND ")
+	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + where
 
 	q, res, err := sc.Name("q"), e.execResult(sc), sc.Name("err")
 	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "update "+m.target.table+": %w") + ", " + err + ")"
 	e.printf("const %s = %s\n", q, goString(query))
 	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn %[6]s\n}\n", res, err, recv, e.exec,
 		strings.Join(append([]string{sig.ctx, q}, args...), ", "), wrap)
-	e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", e.rowsAffected(sc, res, err, "", wrap),
-		e.notFound(m.target.table, key, keyArgs))
+	affected, notFound := e.rowsAffected(sc, res, err, "", wrap), e.notFound(m.target.table, key, keyArgs)
+	if e.d != snapshot.MySQL {
+		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
+		return
+	}
+	found := sc.Name("found")
+	e.printf("if %s == 0 {\n"+
+		"// MySQL counts the rows an update changes, not those it finds: see whether the row is there.\n"+
+		"var %s bool\n", affected, found)
+	e.printf("if %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s).Scan(&%[7]s); %[1]s != nil {\nreturn %[8]s\n}\n", err, recv,
+		e.queryRow, sig.ctx, goString("SELECT EXISTS (SELECT 1 FROM "+table+" WHERE "+where+")"),
+		strings.Join(keyArgs, ", "), found, wrap)
+	e.printf("if !%s {\nreturn %s\n}\n}\nreturn nil\n", found, notFound)
+}
+
+// insertMySQL writes the body of m, an Insert or an Upsert, on MySQL: its rows written in VALUES, as many to a
+// statement as its placeholders allow, and its row, when m returns it, read back by LAST_INSERT_ID() or by its key.
+func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	model := types.TypeString(m.model, e.f.Qualifier)
+	table := sqlName(e.d, m.target.table)
+	inserted := m.inserted()
+	auto, hasAuto := m.autoIncrement()
+	values := "(" + strings.Repeat("?, ", len(inserted)-1) + "?)"
+	head := "INSERT INTO " + table + " (" + e.columnList(inserted) + ")\nVALUES " + values
+	what, tail := "insert into "+m.target.table, ""
+	if m.verb == verbUpsert {
+		what = "upsert into " + m.target.table
+		var sets []string
+		if hasAuto && m.result == resultRow { // for LAST_INSERT_ID() to tell the row met
+			name := sqlName(e.d, auto)
+			sets = append(sets, name+" = LAST_INSERT_ID("+name+")")
+		}
+		for _, c := range m.updated() {
+			name := sqlName(e.d, c.col.Name)
+			sets = append(sets, name+" = new."+name)
+		}
+		if len(sets) == 0 { // the key set to itself, as an update of nothing
+			name := sqlName(e.d, m.rowKey()[0])
+			sets = append(sets, name+" = new."+name)
+		}
+		tail = " AS new\nON DUPLICATE KEY UPDATE " + strings.Join(sets, ", ")
+	}
+
+	err := sc.Name("err")
+	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")"
+	if m.many {
+		chunk, args, i := sc.Name("chunk"), sc.Name("args"), sc.Name("i")
+		fields := make([]string, 0, len(inserted))
+		for _, c := range inserted {
+			fields = append(fields, chunk+"["+i+"]."+fieldPath(c))
+		}
+		capacity := "len(" + chunk + ")"
+		if len(inserted) > 1 {
+			capacity += "*" + strconv.Itoa(len(inserted))
+		}
+		query := goString(head) + "+" + e.f.Import("strings", "strings") + ".Repeat(" + goString(", "+values) +
+			", len(" + chunk + ")-1)"
+		if tail != "" {
+			query += "+" + goString(tail)
+		}
+		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
+		e.printf("// As many rows to a statement as its 65,535 placeholders take.\n")
+		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, %[6]s)\n"+
+			"for %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.slices, sig.row,
+			65535/len(inserted), args, capacity, i, strings.Join(fields, ", "))
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n"+
+			"return nil\n", err, recv, e.exec, sig.ctx, query, args, wrap)
+		return
+	}
+
+	q := sc.Name("q")
+	args := make([]string, 0, 2+len(inserted))
+	args = append(args, sig.ctx, q)
+	for _, c := range inserted {
+		args = append(args, sig.row+"."+fieldPath(c))
+	}
+	call := strings.Join(args, ", ")
+	e.printf("const %s = %s\n", q, goString(head+tail))
+	if m.result != resultRow {
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
+			e.exec, call, wrap)
+		return
+	}
+
+	// The row read back by the value LAST_INSERT_ID() tells, or else by its key.
+	zero := model + "{}, "
+	key := m.table.PrimaryKey
+	if m.verb == verbUpsert && !hasAuto {
+		key = m.rowKey()
+	}
+	conds := make([]string, 0, len(key))
+	keyArgs := make([]string, 0, len(key))
+	id := sc.Name("id")
+	assign := ":="
+	if hasAuto {
+		res := e.execResult(sc)
+		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn %[6]s%[7]s\n}\n", res, err, recv,
+			e.exec, call, zero, wrap)
+		e.printf("%[1]s, %[2]s := %[3]s.LastInsertId()\nif %[2]s != nil {\nreturn %[4]s%[5]s\n}\n", id, err, res, zero,
+			wrap)
+		key, assign = []string{auto}, "="
+	} else {
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s%[6]s\n}\n", err, recv, e.exec, call,
+			zero, wrap)
+	}
+	for _, name := range key {
+		conds = append(conds, sqlName(e.d, name)+" = ?")
+		if name == auto {
+			keyArgs = append(keyArgs, id)
+		} else {
+			keyArgs = append(keyArgs, sig.row+"."+fieldPath(m.field(name)))
+		}
+	}
+	row := sc.Name("row")
+	dests := make([]string, 0, len(m.columns))
+	for _, c := range m.columns {
+		dests = append(dests, "&"+row+"."+fieldPath(c))
+	}
+	query := "SELECT " + e.columnList(m.columns) + " FROM " + table + " WHERE " + strings.Join(conds, " AND ")
+	e.printf("var %s %s\n", row, model)
+	e.printf("%[1]s %[2]s %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s).\nScan(%[8]s)\nif %[1]s != nil {\nreturn %[9]s%[10]s\n}\n"+
+		"return %[11]s, nil\n", err, assign, recv, e.queryRow, sig.ctx, goString(query), strings.Join(keyArgs, ", "),
+		strings.Join(dests, ", "), zero, wrap, row)
+}
+
+// placeholder is the placeholder of the nth parameter of a statement.
+func (e repoEmitter) placeholder(n int) string {
+	if e.d == snapshot.MySQL {
+		return "?"
+	}
+	return "$" + strconv.Itoa(n)
 }
 
 // handWritten writes the body of m, which a query written by hand implements: the rows of its result read into its

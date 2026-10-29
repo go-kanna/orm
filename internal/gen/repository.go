@@ -463,10 +463,10 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	case m.verb == verbUpsert && len(m.rowKey()) == 0:
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table).WithHints(
 			"name a unique key of " + m.target.table + " with //kanna:conflict")}
-	case m.verb == verbInsert && m.many && m.result != resultNone && r.s.Dialect == snapshot.MySQL &&
-		slices.ContainsFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Assigned }):
-		return []diag.Diag{errorf("MySQL does not promise consecutive AUTO_INCREMENT values to the rows of one " +
-			"statement, so the rows cannot be read back").WithHints("return error alone")}
+	case (m.verb == verbInsert || m.verb == verbUpsert) && m.many && m.result != resultNone &&
+		r.s.Dialect == snapshot.MySQL:
+		return []diag.Diag{errorf("MySQL has no RETURNING, so the rows of one statement cannot be read back").
+			WithHints("return error alone")}
 	}
 	return nil
 }
@@ -575,6 +575,19 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 	if m.verb == verbUpdate && len(m.updated()) == 0 {
 		ds = append(ds, errorf("%s holds no column of %s to update but its key", model, m.target.table))
 	}
+	if m.verb == verbInsert && m.result == resultRow && r.s.Dialect == snapshot.MySQL {
+		if len(m.table.PrimaryKey) == 0 {
+			ds = append(ds, errorf("MySQL reads the row written back by its primary key, which %s has none",
+				m.target.table).WithHints("return error alone"))
+		}
+		auto, _ := m.autoIncrement()
+		for _, name := range m.table.PrimaryKey {
+			if name != auto && !held(name) {
+				ds = append(ds, errorf("MySQL reads the row written back by its primary key, but %s has no field for %s",
+					model, name).WithHints("return error alone"))
+			}
+		}
+	}
 	if m.many && r.s.Dialect == snapshot.PostgreSQL {
 		for _, c := range m.inserted() {
 			if strings.HasSuffix(c.col.Type, "[]") {
@@ -589,6 +602,23 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 // inserted are the columns a write of m inserts: those its model holds but the database does not assign.
 func (m repoMethod) inserted() []column {
 	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool { return c.col.Assigned })
+}
+
+// autoIncrement names the column of the primary key of m's table that the database assigns, which MySQL tells the
+// value of a row inserted by LAST_INSERT_ID().
+func (m repoMethod) autoIncrement() (string, bool) {
+	for _, name := range m.table.PrimaryKey {
+		if i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name }); i >= 0 &&
+			m.table.Columns[i].Assigned {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// field is the column of m's model held by the field for the column name.
+func (m repoMethod) field(name string) column {
+	return m.columns[slices.IndexFunc(m.columns, func(c column) bool { return c.col.Name == name })]
 }
 
 // rowKey names the columns an update or an upsert of m meets its row by: those //kanna:conflict names, or the

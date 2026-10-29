@@ -187,6 +187,169 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 	return rows[0], nil
 }
 
+func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+	const q = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
+	}
+	var row model.Order
+	err = r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) InsertLine(ctx context.Context, line model.OrderLine) (model.OrderLine, error) {
+	const q = `INSERT INTO order_lines (order_id, line_no, sku)
+VALUES (?, ?, ?)`
+	if _, err := r.db.ExecContext(ctx, q, line.OrderID, line.LineNo, line.SKU); err != nil {
+		return model.OrderLine{}, fmt.Errorf("insert into order_lines: %w", err)
+	}
+	var row model.OrderLine
+	err := r.db.QueryRowContext(ctx, `SELECT order_id, line_no, sku FROM order_lines WHERE order_id = ? AND line_no = ?`, line.OrderID, line.LineNo).
+		Scan(&row.OrderID, &row.LineNo, &row.SKU)
+	if err != nil {
+		return model.OrderLine{}, fmt.Errorf("insert into order_lines: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	// As many rows to a statement as its 65,535 placeholders take.
+	for chunk := range slices.Chunk(lines, 21845) {
+		args := make([]any, 0, len(chunk)*3)
+		for i := range chunk {
+			args = append(args, chunk[i].OrderID, chunk[i].LineNo, chunk[i].SKU)
+		}
+		if _, err := r.db.ExecContext(ctx, `INSERT INTO order_lines (order_id, line_no, sku)
+VALUES (?, ?, ?)`+strings.Repeat(`, (?, ?, ?)`, len(chunk)-1), args...); err != nil {
+			return fmt.Errorf("insert into order_lines: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r OrderRepository) InsertTags(ctx context.Context, tags []model.Tag) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	// As many rows to a statement as its 65,535 placeholders take.
+	for chunk := range slices.Chunk(tags, 65535) {
+		args := make([]any, 0, len(chunk))
+		for i := range chunk {
+			args = append(args, chunk[i].Name)
+		}
+		if _, err := r.db.ExecContext(ctx, `INSERT INTO tags (name)
+VALUES (?)`+strings.Repeat(`, (?)`, len(chunk)-1), args...); err != nil {
+			return fmt.Errorf("insert into tags: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r OrderRepository) Update(ctx context.Context, o model.Order) error {
+	const q = "UPDATE orders\nSET customer_id = ?, status = ?, placed_at = ?, note = ?, total = ?, paid = ?, contact = ?, receipt = ?, `order` = ?\nWHERE id = ?"
+	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position, o.ID)
+	if err != nil {
+		return fmt.Errorf("update orders: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update orders: %w", err)
+	}
+	if n == 0 {
+		// MySQL counts the rows an update changes, not those it finds: see whether the row is there.
+		var found bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
+			return fmt.Errorf("update orders: %w", err)
+		}
+		if !found {
+			return fmt.Errorf("orders with id %v: %w", o.ID, orm.ErrNotFound)
+		}
+	}
+	return nil
+}
+
+func (r OrderRepository) UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error) {
+	const q = `INSERT INTO customers (id, name)
+VALUES (?, ?) AS new
+ON DUPLICATE KEY UPDATE name = new.name`
+	if _, err := r.db.ExecContext(ctx, q, c.ID, c.Name); err != nil {
+		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
+	}
+	var row model.Customer
+	err := r.db.QueryRowContext(ctx, `SELECT id, name FROM customers WHERE id = ?`, c.ID).
+		Scan(&row.ID, &row.Name)
+	if err != nil {
+		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error) {
+	const q = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), customer_id = new.customer_id, status = new.status, note = new.note, total = new.total, paid = new.paid, contact = new.contact, receipt = new.receipt"
+	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
+	}
+	var row model.Order
+	err = r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) UpsertLines(ctx context.Context, lines []model.OrderLine) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	// As many rows to a statement as its 65,535 placeholders take.
+	for chunk := range slices.Chunk(lines, 21845) {
+		args := make([]any, 0, len(chunk)*3)
+		for i := range chunk {
+			args = append(args, chunk[i].OrderID, chunk[i].LineNo, chunk[i].SKU)
+		}
+		if _, err := r.db.ExecContext(ctx, `INSERT INTO order_lines (order_id, line_no, sku)
+VALUES (?, ?, ?)`+strings.Repeat(`, (?, ?, ?)`, len(chunk)-1)+` AS new
+ON DUPLICATE KEY UPDATE sku = new.sku`, args...); err != nil {
+			return fmt.Errorf("upsert into order_lines: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r OrderRepository) UpsertTag(ctx context.Context, tag model.Tag) (model.Tag, error) {
+	const q = `INSERT INTO tags (name)
+VALUES (?) AS new
+ON DUPLICATE KEY UPDATE name = new.name`
+	if _, err := r.db.ExecContext(ctx, q, tag.Name); err != nil {
+		return model.Tag{}, fmt.Errorf("upsert into tags: %w", err)
+	}
+	var row model.Tag
+	err := r.db.QueryRowContext(ctx, `SELECT name FROM tags WHERE name = ?`, tag.Name).
+		Scan(&row.Name)
+	if err != nil {
+		return model.Tag{}, fmt.Errorf("upsert into tags: %w", err)
+	}
+	return row, nil
+}
+
 // MonthCounts runs the query of its name in queries.sql.
 func (r OrderRepository) MonthCounts(ctx context.Context, since time.Time) ([]mysqlrepository.MonthCount, error) {
 	const q = `SELECT CAST(DATE_FORMAT(placed_at, '%Y-%m-01') AS DATE) AS month, count(*) AS count

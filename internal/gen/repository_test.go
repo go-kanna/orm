@@ -55,6 +55,8 @@ type Note struct {
 }
 
 type Ticket struct{ ID int64 }
+
+type Session struct{ UserID int64 }
 -- scopes/scopes.go --
 package scopes
 
@@ -80,6 +82,9 @@ type Note struct{ q orm.Of[model.Note] }
 
 //kanna:scope table=tickets
 type Ticket struct{ q orm.Of[model.Ticket] }
+
+//kanna:scope table=sessions
+type Session struct{ q orm.Of[model.Session] }
 `
 
 // repositoryTables are the tables of repositoryModule.
@@ -104,6 +109,13 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 			PrimaryKey: []string{"id"},
 		},
 		"tickets": {Columns: []snapshot.Column{assigned}, PrimaryKey: []string{"id"}},
+		"sessions": {
+			Columns: []snapshot.Column{
+				{Name: "token", Type: "varchar(64)", NotNull: true, Default: true},
+				{Name: "user_id", Type: "bigint", NotNull: true},
+			},
+			PrimaryKey: []string{"token"},
+		},
 	}}
 }
 
@@ -324,10 +336,20 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"\t//kanna:conflict tenant_id,email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:25:2: warning: UpsertUser: on MySQL, a conflict on (tenant_id, login) also updates the row\n" +
 				"  users has unique keys other than (tenant_id, email)"},
-		{"rows read back on MySQL from AUTO_INCREMENT", snapshot.MySQL,
-			"\tInsertUsers(ctx context.Context, us []model.User) ([]model.User, error)\n",
-			at + "error: InsertUsers: MySQL does not promise consecutive AUTO_INCREMENT values to the rows of one " +
-				"statement, so the rows cannot be read back\n  return error alone"},
+		{"rows read back on MySQL", snapshot.MySQL,
+			"\tUpsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error)\n",
+			at + "error: UpsertLines: MySQL has no RETURNING, so the rows of one statement cannot be read back\n" +
+				"  return error alone"},
+		{"a row read back on MySQL from a table without a primary key", snapshot.MySQL,
+			"\tInsertLog(ctx context.Context, l model.Log) (model.Log, error)\n",
+			at + "error: InsertLog: logs requires a value for level, which model.Log has no field for\n" +
+				"  give model.Log a field for it, or the column a default\n" +
+				at + "error: InsertLog: MySQL reads the row written back by its primary key, which logs has none\n" +
+				"  return error alone"},
+		{"a row read back on MySQL by a key the model has no field for", snapshot.MySQL,
+			"\tInsertSession(ctx context.Context, s model.Session) (model.Session, error)\n",
+			at + "error: InsertSession: MySQL reads the row written back by its primary key, but model.Session has " +
+				"no field for token\n  return error alone"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

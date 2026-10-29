@@ -21,6 +21,18 @@ type OrderRepository interface {
 	DeleteStale(ctx context.Context, s ...mysql.Order) (int64, error)
 	GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error)
 
+	Insert(ctx context.Context, o model.Order) (model.Order, error)
+	InsertLine(ctx context.Context, line model.OrderLine) (model.OrderLine, error)
+	InsertLines(ctx context.Context, lines []model.OrderLine) error
+	InsertTags(ctx context.Context, tags []model.Tag) error
+	Update(ctx context.Context, o model.Order) error
+	UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error)
+	//kanna:conflict order keep=placed_at
+	UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error)
+	UpsertLines(ctx context.Context, lines []model.OrderLine) error
+	//kanna:conflict name
+	UpsertTag(ctx context.Context, tag model.Tag) (model.Tag, error)
+
 	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
 	TotalOf(ctx context.Context, customerID int64) (CustomerTotal, error)
 	CloseOld(ctx context.Context, before time.Time) (int64, error)

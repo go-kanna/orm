@@ -223,6 +223,107 @@ INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 	}
 }
 
+func TestGeneratedRepository_MySQLWrites(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	repo := mysqlrepo.NewOrderRepository(mysqlDB(t))
+
+	memo, contact := "fragile", must(model.NewEmail("bob@example.com"))
+	placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	o, err := repo.Insert(ctx, model.Order{
+		ID: 99, CustomerID: 20, Status: "open", PlacedAt: placed, Memo: &memo, Total: 400, Contact: &contact,
+		Receipt: []byte{1}, Position: 4, Lines: []model.OrderLine{{LineNo: 1, SKU: "ignored"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.ID != 4 || *o.Memo != "fragile" || o.Contact.String() != "bob@example.com" || !o.PlacedAt.Equal(placed) ||
+		o.Lines != nil {
+		t.Errorf("Insert = %+v; want the row as stored, with the id the database assigns and no relation", o)
+	}
+
+	o.Status, o.Memo = "closed", nil
+	if err := repo.Update(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Update(ctx, o); err != nil {
+		t.Errorf("Update changing nothing: %v; want the row found all the same", err)
+	}
+	if got, err := repo.Get(ctx, 4); err != nil || got.Status != "closed" || got.Memo != nil {
+		t.Errorf("Get after Update = %+v, %v", got, err)
+	}
+	o.ID = 9
+	if err := repo.Update(ctx, o); !errors.Is(err, orm.ErrNotFound) || err.Error() !=
+		"orders with id 9: orm: not found" {
+		t.Errorf("Update of no row error = %v, want orm.ErrNotFound", err)
+	}
+
+	moved, err := repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 10, Status: "moved", PlacedAt: placed.AddDate(1, 0, 0), Total: 500, Position: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.ID != 4 || moved.Status != "moved" || moved.Total != 500 || !moved.PlacedAt.Equal(placed) {
+		t.Errorf("UpsertByPosition over order 4 = %+v; want it updated but for placed_at, which it keeps", moved)
+	}
+	if added, err := repo.UpsertByPosition(ctx, model.Order{CustomerID: 10, Status: "new", PlacedAt: placed,
+		Position: 5}); err != nil || added.ID <= 4 || added.Status != "new" {
+		t.Errorf("UpsertByPosition of a new position = %+v, %v; want a new order", added, err)
+	}
+	if c, err := repo.UpsertCustomer(ctx, model.Customer{ID: 10, Name: "Anne"}); err != nil || c.Name != "Anne" {
+		t.Errorf("UpsertCustomer over customer 10 = %+v, %v", c, err)
+	}
+
+	if line, err := repo.InsertLine(ctx, model.OrderLine{OrderID: 4, LineNo: 1, SKU: "C"}); err != nil ||
+		line.SKU != "C" {
+		t.Errorf("InsertLine = %+v, %v", line, err)
+	}
+	if err := repo.InsertLines(ctx, []model.OrderLine{{OrderID: 4, LineNo: 2, SKU: "D"}, {OrderID: 4, LineNo: 3,
+		SKU: "E"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertLines(ctx, []model.OrderLine{{OrderID: 4, LineNo: 3, SKU: "F"}, {OrderID: 4, LineNo: 4,
+		SKU: "G"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(ctx, 4, mysql.Orders().WithLines(mysql.OrderLines().LineNoAsc()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	skus := make([]string, 0, len(got.Lines))
+	for _, l := range got.Lines {
+		skus = append(skus, l.SKU)
+	}
+	if !slices.Equal(skus, []string{"C", "D", "F", "G"}) {
+		t.Errorf("the lines of order 4 = %v, want [C D F G]", skus)
+	}
+
+	// More lines than go in one statement.
+	many := make([]model.OrderLine, 30000)
+	for i := range many {
+		many[i] = model.OrderLine{OrderID: 3, LineNo: i + 1, SKU: "bulk"}
+	}
+	if err := repo.InsertLines(ctx, many); err != nil {
+		t.Fatal(err)
+	}
+	for _, no := range []int{1, 21845, 21846, 30000} {
+		if _, err := repo.GetLine(ctx, 3, no); err != nil {
+			t.Errorf("GetLine(3, %d): %v", no, err)
+		}
+	}
+
+	if err := repo.InsertTags(ctx, []model.Tag{{Name: "new"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"gift", "sale"} {
+		if tag, err := repo.UpsertTag(ctx, model.Tag{Name: name}); err != nil || tag.Name != name {
+			t.Errorf("UpsertTag(%s) = %+v, %v", name, tag, err)
+		}
+	}
+}
+
 func TestGeneratedRepository_MySQLQueries(t *testing.T) {
 	t.Parallel()
 
