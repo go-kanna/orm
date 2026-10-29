@@ -36,11 +36,8 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, repos []repos
 	for _, repo := range repos {
 		f.Reserve(repo.name, "New"+repo.name)
 		for _, m := range repo.methods {
-			switch {
-			case m.query != nil:
+			if m.query != nil {
 				return nil, nil, fmt.Errorf("%s.%s: a query written by hand is not generated yet", repo.name, m.name)
-			case m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert:
-				return nil, nil, fmt.Errorf("%s.%s: %s is not generated yet", repo.name, m.name, m.verb)
 			}
 		}
 	}
@@ -170,10 +167,35 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	sc := e.f.Scope()
 	recv := sc.Name("r")
 	sig := e.signature(m, sc)
+	e.printf("func (%s %s) %s%s {\n", recv, repo.name, m.name, sig.text)
+	switch m.verb {
+	case verbInsert, verbUpsert:
+		e.insert(m, sc, recv, sig)
+	case verbUpdate:
+		e.update(m, sc, recv, sig)
+	case verbGet, verbFirst, verbList, verbCount, verbExists, verbDelete:
+		e.read(m, sc, recv, sig)
+	}
+	e.printf("}\n\n")
+}
+
+// notFound is the error saying no row of table has args, the values of the columns names.
+func (e repoEmitter) notFound(table string, names, args []string) string {
+	if len(names) == 0 {
+		return fmt.Sprintf("%s.Errorf(%q, %s.ErrNotFound)", e.fmt, "no row of "+table+" matches: %w", e.orm)
+	}
+	format := make([]string, 0, len(names))
+	for _, n := range names {
+		format = append(format, n+" %v")
+	}
+	return fmt.Sprintf("%s.Errorf(%q, %s, %s.ErrNotFound)", e.fmt, table+" with "+strings.Join(format, " and ")+": %w",
+		strings.Join(args, ", "), e.orm)
+}
+
+// read writes the body of m, a method reading or deleting the rows its keys and its scopes match.
+func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signature) {
 	model := types.TypeString(m.model, e.f.Qualifier)
 	table := sqlName(e.d, m.target.table)
-	e.printf("func (%s %s) %s%s {\n", recv, repo.name, m.name, sig.text)
-
 	q := sc.Name("q")
 	if m.scoped {
 		qs, i, x := sc.Name("qs"), sc.Name("i"), sc.Name("x")
@@ -188,19 +210,11 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 			"", q, goString(sqlName(e.d, k.col.col.Name)+" = "), sig.params[k.param])
 	}
 
-	// notFound says which row was not found, by the keys.
-	notFound := func() string {
-		if len(m.keys) == 0 {
-			return fmt.Sprintf("%s.Errorf(%q, %s.ErrNotFound)", e.fmt, "no row of "+m.target.table+" matches: %w", e.orm)
-		}
-		var format, args []string
-		for _, k := range m.keys {
-			format = append(format, k.col.col.Name+" %v")
-			args = append(args, sig.params[k.param])
-		}
-		return fmt.Sprintf("%s.Errorf(%q, %s, %s.ErrNotFound)", e.fmt,
-			m.target.table+" with "+strings.Join(format, " and ")+": %w", strings.Join(args, ", "), e.orm)
+	names, args := make([]string, 0, len(m.keys)), make([]string, 0, len(m.keys))
+	for _, k := range m.keys {
+		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
+	notFound := e.notFound(m.target.table, names, args)
 	rd, err, n := sc.Name("rd"), sc.Name("err"), sc.Name("n")
 	render := func(zero string) {
 		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\nif %[2]s != nil {\nreturn %[5]s%[2]s\n}\n", rd, err, q,
@@ -219,7 +233,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		}
 		e.printf("%s, %s := select%s(%s, %s.db, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q)
 		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\n", err, model)
-		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound())
+		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound)
 	case verbList:
 		e.printf("return select%s(%s, %s.db, %s)\n", e.names[m.target.table], sig.ctx, recv, q)
 	case verbCount, verbExists:
@@ -254,11 +268,10 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		if m.result == resultCount {
 			e.printf("return %s.RowsAffected(), nil\n", tag)
 		} else {
-			e.printf("if %s.RowsAffected() == 0 {\nreturn %s\n}\nreturn nil\n", tag, notFound())
+			e.printf("if %s.RowsAffected() == 0 {\nreturn %s\n}\nreturn nil\n", tag, notFound)
 		}
-	case verbInsert, verbUpdate, verbUpsert: // emitRepositories has turned them down
+	case verbInsert, verbUpdate, verbUpsert: // method writes them
 	}
-	e.printf("}\n\n")
 }
 
 // selectRows writes the function reading the whole rows of rm that a scope matches, in its order, with the relations
@@ -270,13 +283,7 @@ func (e repoEmitter) selectRows(rm readModel) {
 	ctx, db, q := sc.Name("ctx"), sc.Name("db"), sc.Name("q")
 	rd, err, rows, out, row := sc.Name("rd"), sc.Name("err"), sc.Name("rows"), sc.Name("out"), sc.Name("row")
 
-	columns := make([]string, 0, len(rm.columns))
-	dests := make([]string, 0, len(rm.columns))
-	for _, c := range rm.columns {
-		columns = append(columns, sqlName(e.d, c.col.Name))
-		dests = append(dests, "&"+row+"."+strings.Join(c.path, "."))
-	}
-	query := "SELECT " + strings.Join(columns, ", ") + " FROM " + sqlName(e.d, rm.target.table)
+	query := "SELECT " + e.columnList(rm.columns) + " FROM " + sqlName(e.d, rm.target.table)
 	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "read "+rm.target.table+": %w") + ", " + err + ")"
 
 	e.printf("// %s reads the rows of %s that %s matches, in its order", name, rm.target.table, q)
@@ -291,17 +298,155 @@ func (e repoEmitter) selectRows(rm readModel) {
 		"", rows, err, db,
 		ctx, goString(query), rd)
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
-	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", out, model, rows, row)
-	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", err, rows,
-		strings.Join(dests, ", "), wrap)
-	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", out, row)
-	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", err, rows, wrap)
+	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.slices, out)
 	if len(rm.links) > 0 {
 		e.printf("if %[1]s := preload%[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
 			e.names[rm.target.table], ctx, db, out, q)
 	}
 	e.printf("return %s, nil\n}\n\n", out)
+}
+
+// columnList is the columns, as a list in SQL.
+func (e repoEmitter) columnList(columns []column) string {
+	names := make([]string, 0, len(columns))
+	for _, c := range columns {
+		names = append(names, sqlName(e.d, c.col.Name))
+	}
+	return strings.Join(names, ", ")
+}
+
+// scanNames are the names in a loop reading rows: rows into out, each into row, and on an error err, wrapped by wrap.
+type scanNames struct {
+	rows, out, row, err, wrap string
+}
+
+// scanRows writes the loop reading the rows of model, each column into the field holding it.
+func (e repoEmitter) scanRows(n scanNames, model string, columns []column) {
+	dests := make([]string, 0, len(columns))
+	for _, c := range columns {
+		dests = append(dests, "&"+n.row+"."+fieldPath(c))
+	}
+	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", n.out, model, n.rows, n.row)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", n.err, n.rows,
+		strings.Join(dests, ", "), n.wrap)
+	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", n.out, n.row)
+	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", n.err, n.rows, n.wrap)
+}
+
+// insert writes the body of m, an Insert or an Upsert: its rows written in one statement, and read back when m
+// returns them.
+func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	model := types.TypeString(m.model, e.f.Qualifier)
+	inserted := m.inserted()
+	var (
+		query strings.Builder
+		args  []string
+	)
+	fmt.Fprintf(&query, "INSERT INTO %s (%s)\n", sqlName(e.d, m.target.table), e.columnList(inserted))
+	if m.many {
+		none := "nil"
+		if m.result == resultRows {
+			none = "[]" + model + "{}, nil"
+		}
+		e.printf("if len(%s) == 0 {\nreturn %s\n}\n", sig.row, none)
+		casts := make([]string, 0, len(inserted))
+		for _, c := range inserted {
+			v := sc.Name(lowerFirst(c.path[len(c.path)-1]))
+			e.printf("%s := make([]%s, len(%s))\n", v, types.TypeString(c.typ, e.f.Qualifier), sig.row)
+			args = append(args, v)
+			casts = append(casts, fmt.Sprintf("$%d::%s[]", len(casts)+1, c.col.Type))
+		}
+		i := sc.Name("i")
+		e.printf("for %s := range %s {\n", i, sig.row)
+		for j, c := range inserted {
+			e.printf("%s[%s] = %s[%s].%s\n", args[j], i, sig.row, i, fieldPath(c))
+		}
+		e.printf("}\n")
+		fmt.Fprintf(&query, "SELECT * FROM unnest(%s)", //nolint:unqueryvet // unnest gives the columns listed
+			strings.Join(casts, ", "))
+	} else {
+		params := make([]string, 0, len(inserted))
+		for _, c := range inserted {
+			args = append(args, sig.row+"."+fieldPath(c))
+			params = append(params, fmt.Sprintf("$%d", len(params)+1))
+		}
+		fmt.Fprintf(&query, "VALUES (%s)", strings.Join(params, ", "))
+	}
+
+	what := "insert into " + m.target.table
+	if m.verb == verbUpsert {
+		what = "upsert into " + m.target.table
+		key := make([]string, 0, len(m.rowKey()))
+		for _, name := range m.rowKey() {
+			key = append(key, sqlName(e.d, name))
+		}
+		// With nothing to update, the key is set to itself, so that the row met is still returned.
+		sets := []string{key[0] + " = EXCLUDED." + key[0]}
+		if updated := m.updated(); len(updated) > 0 {
+			sets = sets[:0]
+			for _, c := range updated {
+				name := sqlName(e.d, c.col.Name)
+				sets = append(sets, name+" = EXCLUDED."+name)
+			}
+		}
+		fmt.Fprintf(&query, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))
+	}
+	if m.result != resultNone {
+		fmt.Fprintf(&query, "\nRETURNING %s", e.columnList(m.columns))
+	}
+
+	q, err := sc.Name("q"), sc.Name("err")
+	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")"
+	call := strings.Join(append([]string{sig.ctx, q}, args...), ", ")
+	e.printf("const %s = %s\n", q, goString(query.String()))
+	switch m.result {
+	case resultRow:
+		row := sc.Name("row")
+		dests := make([]string, 0, len(m.columns))
+		for _, c := range m.columns {
+			dests = append(dests, "&"+row+"."+fieldPath(c))
+		}
+		e.printf("var %s %s\n", row, model)
+		e.printf("%[1]s := %[2]s.db.QueryRow(%[3]s).\nScan(%[4]s)\nif %[1]s != nil {\nreturn %[5]s{}, %[6]s\n}\n"+
+			"return %[7]s, nil\n", err, recv, call, strings.Join(dests, ", "), model, wrap, row)
+	case resultRows:
+		rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
+		e.printf("%[1]s, %[2]s := %[3]s.db.Query(%[4]s)\nif %[2]s != nil {\nreturn nil, %[5]s\n}\ndefer %[1]s.Close()\n",
+			rows, err, recv, call, wrap)
+		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, m.columns)
+		e.printf("return %s, nil\n", out)
+	case resultNone:
+		e.printf("if _, %[1]s := %[2]s.db.Exec(%[3]s); %[1]s != nil {\nreturn %[4]s\n}\nreturn nil\n", err, recv, call,
+			wrap)
+	case resultCount, resultBool: // shaped turns them down for a write
+	}
+}
+
+// update writes the body of m, an Update: its row written over the one with its key, or orm.ErrNotFound when none
+// has it.
+func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	table := sqlName(e.d, m.target.table)
+	updated, key := m.updated(), m.rowKey()
+	sets, conds := make([]string, 0, len(updated)), make([]string, 0, len(key))
+	args, keyArgs := make([]string, 0, len(updated)+len(key)), make([]string, 0, len(key))
+	for _, c := range updated {
+		args = append(args, sig.row+"."+fieldPath(c))
+		sets = append(sets, fmt.Sprintf("%s = $%d", sqlName(e.d, c.col.Name), len(args)))
+	}
+	for _, name := range key {
+		c := m.columns[slices.IndexFunc(m.columns, func(c column) bool { return c.col.Name == name })]
+		args = append(args, sig.row+"."+fieldPath(c))
+		keyArgs = append(keyArgs, sig.row+"."+fieldPath(c))
+		conds = append(conds, fmt.Sprintf("%s = $%d", sqlName(e.d, name), len(args)))
+	}
+	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + strings.Join(conds, " AND ")
+
+	q, tag, err := sc.Name("q"), sc.Name("tag"), sc.Name("err")
+	e.printf("const %s = %s\n", q, goString(query))
+	e.printf("%[1]s, %[2]s := %[3]s.db.Exec(%[4]s)\nif %[2]s != nil {\nreturn %[5]s.Errorf(%[6]q, %[2]s)\n}\n", tag, err,
+		recv, strings.Join(append([]string{sig.ctx, q}, args...), ", "), e.fmt, "update "+m.target.table+": %w")
+	e.printf("if %s.RowsAffected() == 0 {\nreturn %s\n}\nreturn nil\n", tag, e.notFound(m.target.table, key, keyArgs))
 }
 
 // preloadNames are the names in a function loading relations.

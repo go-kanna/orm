@@ -48,6 +48,13 @@ type User struct {
 }
 
 type Log struct{ Message string }
+
+type Note struct {
+	Body string
+	Tags []string
+}
+
+type Ticket struct{ ID int64 }
 -- scopes/scopes.go --
 package scopes
 
@@ -67,6 +74,12 @@ type User struct{ q orm.Of[model.User] }
 
 //kanna:scope table=logs
 type Log struct{ q orm.Of[model.Log] }
+
+//kanna:scope table=notes
+type Note struct{ q orm.Of[model.Note] }
+
+//kanna:scope table=tickets
+type Ticket struct{ q orm.Of[model.Ticket] }
 `
 
 // repositoryTables are the tables of repositoryModule.
@@ -85,7 +98,12 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 			Columns:    append([]snapshot.Column{assigned}, columns("tenant_id", "email", "login", "name", "created_at")...),
 			PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"tenant_id", "email"}, {"tenant_id", "login"}},
 		},
-		"logs": {Columns: columns("message")},
+		"logs": {Columns: columns("message", "level")},
+		"notes": {
+			Columns:    []snapshot.Column{assigned, {Name: "body", Type: "text", NotNull: true}, {Name: "tags", Type: "text[]"}},
+			PrimaryKey: []string{"id"},
+		},
+		"tickets": {Columns: []snapshot.Column{assigned}, PrimaryKey: []string{"id"}},
 	}}
 }
 
@@ -177,7 +195,7 @@ func TestRepositories(t *testing.T) {
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	Update(ctx context.Context, o model.Order) error
-	Upsert(ctx context.Context, o model.Order) error
+	UpsertLine(ctx context.Context, line model.OrderLine) error
 	// UpsertUser meets the user of a tenant by their email address.
 	//kanna:conflict tenant_id,email keep=created_at
 	UpsertUser(ctx context.Context, u model.User) (model.User, error)
@@ -207,7 +225,7 @@ UPDATE orders SET status = 'closed' WHERE placed_at < :before
 		"OrderRepository.Insert Insert orders row=o row",
 		"OrderRepository.InsertLines Insert order_lines row=lines many error",
 		"OrderRepository.Update Update orders row=o error",
-		"OrderRepository.Upsert Upsert orders row=o error",
+		"OrderRepository.UpsertLine Upsert order_lines row=line error",
 		"OrderRepository.UpsertUser Upsert users row=u row conflict=tenant_id,email keep=created_at",
 		"OrderRepository.Delete Delete orders keys=id=id error",
 		"OrderRepository.DeleteStale Delete orders scoped count",
@@ -270,6 +288,31 @@ func TestRepositories_Mistakes(t *testing.T) {
 		{"an Update of a table without a primary key", snapshot.PostgreSQL,
 			"\tUpdateLog(ctx context.Context, l model.Log) error\n",
 			at + "error: UpdateLog: logs has no primary key to tell its rows by"},
+		{"an Upsert of a table without a key", snapshot.PostgreSQL,
+			"\tUpsertLog(ctx context.Context, l model.Log) error\n",
+			at + "error: UpsertLog: logs has no primary key to tell its rows by\n" +
+				"  name a unique key of logs with //kanna:conflict"},
+		{"an Upsert by a key the database assigns", snapshot.PostgreSQL,
+			"\tUpsert(ctx context.Context, o model.Order) error\n",
+			at + "error: Upsert: the database assigns id, so an insert never meets a row by it\n" +
+				"  name another unique key of orders with //kanna:conflict"},
+		{"an Update of a model without its key", snapshot.PostgreSQL,
+			"\tUpdateNote(ctx context.Context, n model.Note) error\n",
+			at + "error: UpdateNote: model.Note has no field for id, which it meets its row by"},
+		{"an Update of nothing but the key", snapshot.PostgreSQL,
+			"\tUpdateLine(ctx context.Context, line model.OrderLine) error\n",
+			at + "error: UpdateLine: model.OrderLine holds no column of order_lines to update but its key"},
+		{"a column the table requires and the model has no field for", snapshot.PostgreSQL,
+			"\tInsertLog(ctx context.Context, l model.Log) error\n",
+			at + "error: InsertLog: logs requires a value for level, which model.Log has no field for\n" +
+				"  give model.Log a field for it, or the column a default"},
+		{"an Insert of no column but those the database assigns", snapshot.PostgreSQL,
+			"\tInsertTicket(ctx context.Context, t model.Ticket) (model.Ticket, error)\n",
+			at + "error: InsertTicket: model.Ticket holds no column of tickets but those the database assigns"},
+		{"many rows of an array on PostgreSQL", snapshot.PostgreSQL,
+			"\tInsertNotes(ctx context.Context, ns []model.Note) error\n",
+			at + "error: InsertNotes: unnest, which writes the rows in one statement, cannot write tags, an array\n" +
+				"  write the rows one by one"},
 		{"a conflict on no unique key", snapshot.PostgreSQL,
 			"\t//kanna:conflict email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:24:2: error: UpsertUser: (email) is neither the primary key of users nor one of its unique " +

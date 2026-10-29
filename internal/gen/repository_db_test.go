@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -60,7 +61,7 @@ CREATE TABLE orders (
 	contact text,
 	labels text[],
 	receipt bytea,
-	"order" integer NOT NULL
+	"order" integer NOT NULL UNIQUE
 );
 CREATE TABLE order_lines (
 	order_id bigint NOT NULL REFERENCES orders,
@@ -228,4 +229,106 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 	if _, err := repo.List(ctx, postgres.Orders().WithLines(postgres.OrderLines().Limit(1))); err == nil {
 		t.Error("List loads lines by a scope with a limit")
 	}
+}
+
+func TestGeneratedRepository_PostgresWrites(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	repo := pgxrepo.NewOrderRepository(postgresDB(t, ordersSchema))
+
+	memo, contact := "fragile", must(model.NewEmail("bob@example.com"))
+	placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	o, err := repo.Insert(ctx, model.Order{
+		ID: 99, CustomerID: 20, Status: "open", PlacedAt: placed, Memo: &memo, Total: 400, Contact: &contact,
+		Labels: []string{"x"}, Receipt: []byte{1}, Position: 4,
+		Lines: []model.OrderLine{{LineNo: 1, SKU: "ignored"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.ID != 4 || *o.Memo != "fragile" || o.Contact.String() != "bob@example.com" || !o.PlacedAt.Equal(placed) ||
+		o.Lines != nil {
+		t.Errorf("Insert = %+v; want the row as stored, with the id the database assigns and no relation", o)
+	}
+
+	o.Status, o.Memo, o.Labels = "closed", nil, nil
+	if err := repo.Update(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := repo.Get(ctx, 4); err != nil || got.Status != "closed" || got.Memo != nil || got.Labels != nil ||
+		got.Position != 4 {
+		t.Errorf("Get after Update = %+v, %v", got, err)
+	}
+	o.ID = 9
+	if err := repo.Update(ctx, o); !errors.Is(err, orm.ErrNotFound) || err.Error() !=
+		"orders with id 9: orm: not found" {
+		t.Errorf("Update of no row error = %v, want orm.ErrNotFound", err)
+	}
+
+	moved, err := repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 10, Status: "moved", PlacedAt: placed.AddDate(1, 0, 0), Total: 500, Position: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.ID != 4 || moved.Status != "moved" || moved.Total != 500 || !moved.PlacedAt.Equal(placed) {
+		t.Errorf("UpsertByPosition over order 4 = %+v; want it updated but for placed_at, which it keeps", moved)
+	}
+	if added, err := repo.UpsertByPosition(ctx, model.Order{CustomerID: 10, Status: "new", Position: 5}); err != nil ||
+		added.ID != 6 {
+		t.Errorf("UpsertByPosition of a new position = %+v, %v; want order 6", added, err)
+	}
+
+	if c, err := repo.UpsertCustomer(ctx, model.Customer{ID: 10, Name: "Anne"}); err != nil || c.Name != "Anne" {
+		t.Errorf("UpsertCustomer over customer 10 = %+v, %v", c, err)
+	}
+
+	if err := repo.InsertLine(ctx, model.OrderLine{OrderID: 4, LineNo: 1, SKU: "C"}); err != nil {
+		t.Fatal(err)
+	}
+	lines, err := repo.InsertLines(ctx, []model.OrderLine{{OrderID: 4, LineNo: 2, SKU: "D"}, {OrderID: 4, LineNo: 3,
+		SKU: "E"}})
+	if err != nil || len(lines) != 2 || lines[0].SKU != "D" || lines[1].SKU != "E" {
+		t.Errorf("InsertLines = %+v, %v", lines, err)
+	}
+	if lines, err := repo.InsertLines(ctx, nil); err != nil || lines == nil || len(lines) != 0 {
+		t.Errorf("InsertLines of none = %#v, %v; want an empty slice", lines, err)
+	}
+	if err := repo.UpsertLines(ctx, []model.OrderLine{{OrderID: 4, LineNo: 3, SKU: "F"}, {OrderID: 4, LineNo: 4,
+		SKU: "G"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(ctx, 4, postgres.Orders().WithLines(postgres.OrderLines().LineNoAsc()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	skus := make([]string, 0, len(got.Lines))
+	for _, l := range got.Lines {
+		skus = append(skus, l.SKU)
+	}
+	if !slices.Equal(skus, []string{"C", "D", "F", "G"}) {
+		t.Errorf("the lines of order 4 = %v, want [C D F G]", skus)
+	}
+	if err := repo.InsertLine(ctx, model.OrderLine{OrderID: 4, LineNo: 1, SKU: "C"}); err == nil {
+		t.Error("InsertLine writes a line with the key of another")
+	}
+
+	if err := repo.InsertTags(ctx, []model.Tag{{Name: "new"}}); err != nil {
+		t.Fatal(err)
+	}
+	tags, err := repo.UpsertTags(ctx, []model.Tag{{Name: "gift"}, {Name: "sale"}})
+	if err != nil || len(tags) != 2 || tags[0].Name != "gift" || tags[1].Name != "sale" {
+		t.Errorf("UpsertTags of one there and one not = %+v, %v; want both", tags, err)
+	}
+	if _, err := repo.UpsertTags(ctx, []model.Tag{{Name: "dup"}, {Name: "dup"}}); err == nil {
+		t.Error("UpsertTags writes two rows of one key")
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

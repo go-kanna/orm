@@ -177,6 +177,172 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 	return rows[0], nil
 }
 
+func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order"`
+	var row model.Order
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Labels, o.Receipt, o.Position).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Labels, &row.Receipt, &row.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) InsertLine(ctx context.Context, line model.OrderLine) error {
+	const q = `INSERT INTO order_lines (order_id, line_no, sku)
+VALUES ($1, $2, $3)`
+	if _, err := r.db.Exec(ctx, q, line.OrderID, line.LineNo, line.SKU); err != nil {
+		return fmt.Errorf("insert into order_lines: %w", err)
+	}
+	return nil
+}
+
+func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error) {
+	if len(lines) == 0 {
+		return []model.OrderLine{}, nil
+	}
+	orderID := make([]model.OrderID, len(lines))
+	lineNo := make([]int, len(lines))
+	sku := make([]string, len(lines))
+	for i := range lines {
+		orderID[i] = lines[i].OrderID
+		lineNo[i] = lines[i].LineNo
+		sku[i] = lines[i].SKU
+	}
+	const q = `INSERT INTO order_lines (order_id, line_no, sku)
+SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[])
+RETURNING order_id, line_no, sku`
+	rows, err := r.db.Query(ctx, q, orderID, lineNo, sku)
+	if err != nil {
+		return nil, fmt.Errorf("insert into order_lines: %w", err)
+	}
+	defer rows.Close()
+	out := []model.OrderLine{}
+	for rows.Next() {
+		var row model.OrderLine
+		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.SKU); err != nil {
+			return nil, fmt.Errorf("insert into order_lines: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("insert into order_lines: %w", err)
+	}
+	return out, nil
+}
+
+func (r OrderRepository) InsertTags(ctx context.Context, tags []model.Tag) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	name := make([]string, len(tags))
+	for i := range tags {
+		name[i] = tags[i].Name
+	}
+	const q = `INSERT INTO tags (name)
+SELECT * FROM unnest($1::text[])`
+	if _, err := r.db.Exec(ctx, q, name); err != nil {
+		return fmt.Errorf("insert into tags: %w", err)
+	}
+	return nil
+}
+
+func (r OrderRepository) Update(ctx context.Context, o model.Order) error {
+	const q = `UPDATE orders
+SET customer_id = $1, status = $2, placed_at = $3, note = $4, total = $5, paid = $6, contact = $7, labels = $8, receipt = $9, "order" = $10
+WHERE id = $11`
+	tag, err := r.db.Exec(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Labels, o.Receipt, o.Position, o.ID)
+	if err != nil {
+		return fmt.Errorf("update orders: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("orders with id %v: %w", o.ID, orm.ErrNotFound)
+	}
+	return nil
+}
+
+func (r OrderRepository) UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error) {
+	const q = `INSERT INTO customers (id, name)
+VALUES ($1, $2)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+RETURNING id, name`
+	var row model.Customer
+	err := r.db.QueryRow(ctx, q, c.ID, c.Name).
+		Scan(&row.ID, &row.Name)
+	if err != nil {
+		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error) {
+	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, labels = EXCLUDED.labels, receipt = EXCLUDED.receipt
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order"`
+	var row model.Order
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Labels, o.Receipt, o.Position).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Labels, &row.Receipt, &row.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) UpsertLines(ctx context.Context, lines []model.OrderLine) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	orderID := make([]model.OrderID, len(lines))
+	lineNo := make([]int, len(lines))
+	sku := make([]string, len(lines))
+	for i := range lines {
+		orderID[i] = lines[i].OrderID
+		lineNo[i] = lines[i].LineNo
+		sku[i] = lines[i].SKU
+	}
+	const q = `INSERT INTO order_lines (order_id, line_no, sku)
+SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[])
+ON CONFLICT (order_id, line_no) DO UPDATE SET sku = EXCLUDED.sku`
+	if _, err := r.db.Exec(ctx, q, orderID, lineNo, sku); err != nil {
+		return fmt.Errorf("upsert into order_lines: %w", err)
+	}
+	return nil
+}
+
+func (r OrderRepository) UpsertTags(ctx context.Context, tags []model.Tag) ([]model.Tag, error) {
+	if len(tags) == 0 {
+		return []model.Tag{}, nil
+	}
+	name := make([]string, len(tags))
+	for i := range tags {
+		name[i] = tags[i].Name
+	}
+	const q = `INSERT INTO tags (name)
+SELECT * FROM unnest($1::text[])
+ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+RETURNING name`
+	rows, err := r.db.Query(ctx, q, name)
+	if err != nil {
+		return nil, fmt.Errorf("upsert into tags: %w", err)
+	}
+	defer rows.Close()
+	out := []model.Tag{}
+	for rows.Next() {
+		var row model.Tag
+		if err := rows.Scan(&row.Name); err != nil {
+			return nil, fmt.Errorf("upsert into tags: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("upsert into tags: %w", err)
+	}
+	return out, nil
+}
+
 // selectCustomers reads the rows of customers that q matches, in its order.
 func selectCustomers(ctx context.Context, db DB, q orm.Of[model.Customer]) ([]model.Customer, error) {
 	rd, err := q.Render(orm.Postgres, 1)

@@ -29,19 +29,31 @@ var tables = map[string]snapshot.Table{
 			{Name: "total", Type: "int8", NotNull: true},
 			{Name: "paid", Type: "bool", NotNull: true},
 			{Name: "contact", Type: "text"},
-			{Name: "labels", Type: "_text"},
+			{Name: "labels", Type: "text[]"},
 			{Name: "receipt", Type: "bytea"},
 			{Name: "order", Type: "int4", NotNull: true},
 		},
 		PrimaryKey:  []string{"id"},
+		UniqueKeys:  [][]string{{"order"}},
 		ForeignKeys: []snapshot.ForeignKey{fk([]string{"customer_id"}, "customers", "id")},
 	},
-	"customers": {Columns: columns("id", "name"), PrimaryKey: []string{"id"}},
+	"customers": {
+		Columns: []snapshot.Column{
+			{Name: "id", Type: "int8", NotNull: true},
+			{Name: "name", Type: "text", NotNull: true},
+		},
+		PrimaryKey: []string{"id"},
+	},
 	"order_lines": {
-		Columns: columns("order_id", "line_no", "sku"), PrimaryKey: []string{"order_id", "line_no"},
+		Columns: []snapshot.Column{
+			{Name: "order_id", Type: "int8", NotNull: true},
+			{Name: "line_no", Type: "int4", NotNull: true},
+			{Name: "sku", Type: "text", NotNull: true},
+		},
+		PrimaryKey:  []string{"order_id", "line_no"},
 		ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
 	},
-	"tags": {Columns: columns("name"), UniqueKeys: [][]string{{"name"}}},
+	"tags": {Columns: []snapshot.Column{{Name: "name", Type: "text", NotNull: true}}, UniqueKeys: [][]string{{"name"}}},
 	"order_tags": {
 		Columns: columns("order_id", "tag"), PrimaryKey: []string{"order_id", "tag"},
 		ForeignKeys: []snapshot.ForeignKey{

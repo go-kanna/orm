@@ -269,9 +269,13 @@ func (r repoReader) method(fn *types.Func, doc *ast.CommentGroup) (repoMethod, [
 	if !m.shaped() {
 		return m, shapeError()
 	}
-	ds := r.verbRules(&m)
+	var ds []diag.Diag
 	if conflict.Found {
-		ds = append(ds, r.conflict(&m, conflict)...)
+		ds = r.conflict(&m, conflict)
+	}
+	ds = append(ds, r.verbRules(&m)...)
+	if !diag.HasErrors(ds) {
+		ds = append(ds, r.writeRules(m)...)
 	}
 	return m, append(cds, ds...)
 }
@@ -454,8 +458,11 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
 			strings.Join(names, ", "), m.target.table).WithHints(
 			"return (int64, error) for the number of rows deleted, or take a key of the table")}
-	case (m.verb == verbUpdate || m.verb == verbUpsert) && len(m.table.PrimaryKey) == 0:
+	case m.verb == verbUpdate && len(m.table.PrimaryKey) == 0:
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table)}
+	case m.verb == verbUpsert && len(m.rowKey()) == 0:
+		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table).WithHints(
+			"name a unique key of " + m.target.table + " with //kanna:conflict")}
 	case m.verb == verbInsert && m.many && m.result != resultNone && r.s.Dialect == snapshot.MySQL &&
 		slices.ContainsFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Assigned }):
 		return []diag.Diag{errorf("MySQL does not promise consecutive AUTO_INCREMENT values to the rows of one " +
@@ -527,6 +534,77 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 
 func sameColumns(a, b []string) bool {
 	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
+}
+
+// writeRules reports what keeps a write from writing its rows as the model holds them.
+func (r repoReader) writeRules(m repoMethod) []diag.Diag {
+	if m.verb != verbInsert && m.verb != verbUpdate && m.verb != verbUpsert {
+		return nil
+	}
+	errorf := func(format string, args ...any) diag.Diag {
+		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
+	}
+	model := typeName(m.model)
+	held := func(name string) bool {
+		return slices.ContainsFunc(m.columns, func(c column) bool { return c.col.Name == name })
+	}
+	var ds []diag.Diag
+	if m.verb != verbUpdate {
+		for _, c := range m.table.Columns {
+			if c.NotNull && !c.Default && !c.Assigned && !held(c.Name) {
+				ds = append(ds, errorf("%s requires a value for %s, which %s has no field for", m.target.table, c.Name,
+					model).WithHints(fmt.Sprintf("give %s a field for it, or the column a default", model)))
+			}
+		}
+		if len(m.inserted()) == 0 {
+			ds = append(ds, errorf("%s holds no column of %s but those the database assigns", model, m.target.table))
+		}
+	}
+	if m.verb != verbInsert {
+		for _, name := range m.rowKey() {
+			i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
+			switch {
+			case !held(name):
+				ds = append(ds, errorf("%s has no field for %s, which it meets its row by", model, name))
+			case m.verb == verbUpsert && m.table.Columns[i].Assigned:
+				ds = append(ds, errorf("the database assigns %s, so an insert never meets a row by it", name).
+					WithHints(fmt.Sprintf("name another unique key of %s with //kanna:conflict", m.target.table)))
+			}
+		}
+	}
+	if m.verb == verbUpdate && len(m.updated()) == 0 {
+		ds = append(ds, errorf("%s holds no column of %s to update but its key", model, m.target.table))
+	}
+	if m.many && r.s.Dialect == snapshot.PostgreSQL {
+		for _, c := range m.inserted() {
+			if strings.HasSuffix(c.col.Type, "[]") {
+				ds = append(ds, errorf("unnest, which writes the rows in one statement, cannot write %s, an array",
+					c.col.Name).WithHints("write the rows one by one"))
+			}
+		}
+	}
+	return ds
+}
+
+// inserted are the columns a write of m inserts: those its model holds but the database does not assign.
+func (m repoMethod) inserted() []column {
+	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool { return c.col.Assigned })
+}
+
+// rowKey names the columns an update or an upsert of m meets its row by: those //kanna:conflict names, or the
+// primary key.
+func (m repoMethod) rowKey() []string {
+	if len(m.conflict) > 0 {
+		return m.conflict
+	}
+	return m.table.PrimaryKey
+}
+
+// updated are the columns an update or an upsert of m writes over its row: those it inserts but its key, the primary
+// key, and those it keeps.
+func (m repoMethod) updated() []column {
+	skip := slices.Concat(m.rowKey(), m.table.PrimaryKey, m.keep)
+	return slices.DeleteFunc(m.inserted(), func(c column) bool { return slices.Contains(skip, c.col.Name) })
 }
 
 // rowModel tells the model a parameter or a result of type t holds: a model, or a slice of models.
