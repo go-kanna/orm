@@ -3,18 +3,15 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
-	"github.com/go-kanna/internal/cli"
-
 	"github.com/go-kanna/orm/internal/describe"
+	"github.com/go-kanna/orm/internal/gen"
 )
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "describe" {
 		os.Exit(describe.Main(os.Args[2:]))
 	}
-	fmt.Fprintln(os.Stderr, "kanna-orm: generating is still to be written; kanna-orm describe works")
-	os.Exit(cli.ExitUsage)
+	os.Exit(gen.Command().Main(os.Args[1:]))
 }

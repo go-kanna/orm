@@ -132,7 +132,7 @@ func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, erro
 		return nil, ds, nil
 	}
 	declared := slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkg.Name)))
-	src, err := emit(pkg, s.Dialect, plans, declared)
+	src, _, err := emit(pkg, s.Dialect, plans, declared)
 	return src, ds, err
 }
 

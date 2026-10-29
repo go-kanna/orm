@@ -87,8 +87,9 @@ func sameNames(sc scope, columns []column, links []link) []diag.Diag {
 }
 
 // emit writes orm_gen.go for pkg: the methods of the scope types plans has, for a database of dialect d. declared names
-// what pkg declares at its top level besides.
-func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared []string) ([]byte, error) {
+// what pkg declares at its top level besides. It returns the file, and what it imports from outside the standard
+// library.
+func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared []string) ([]byte, []string, error) {
 	f := gofile.New(generator, pkg.PkgPath, pkg.Name)
 	f.Reserve(declared...)
 	for _, p := range plans {
@@ -100,9 +101,9 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	}
 	src, err := f.Bytes()
 	if err != nil {
-		return src, fmt.Errorf("the code generated does not parse: %w", err)
+		return src, nil, fmt.Errorf("the code generated does not parse: %w", err)
 	}
-	return src, nil
+	return src, f.ModuleImports(), nil
 }
 
 type emitter struct {
