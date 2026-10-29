@@ -170,22 +170,29 @@ key; its unique keys; and its foreign keys. It also prepares each [hand-written 
 the packages it is given, and records the types of their parameters and of their result columns. Nothing it runs
 writes.
 
+The database is the one `-database-url` names, or else `$DATABASE_URL`:
+
+- `postgres://user:password@host:5432/database` is PostgreSQL, through pgx. The tables are those of the current
+  schema, which `?search_path=` chooses.
+- `mysql://user:password@host:3306/database` is MySQL, through go-sql-driver/mysql, which takes the options after `?`.
+  The tables are those of the database the URL names.
+
 The types are what the database itself answers, so kanna-orm has no SQL parser of its own to disagree with it. MySQL
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
-wrapped as `SELECT * FROM (...) AS t LIMIT 0`, which returns no rows.
+wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows.
 
 The snapshot is JSON with one column to a line, in a fixed order, so that a migration shows as the lines it changes:
 
 ```diff
-   "orders": {
-     "columns": [
-       {"name": "id", "type": "uuid", "not_null": true},
-       {"name": "customer_id", "type": "uuid", "not_null": true},
-       {"name": "status", "type": "text", "not_null": true},
--      {"name": "placed_at", "type": "timestamptz", "not_null": true}
-+      {"name": "placed_at", "type": "timestamptz", "not_null": true},
-+      {"name": "note", "type": "text"}
-     ],
+     "orders": {
+       "columns": [
+         {"name": "id", "type": "uuid", "not_null": true},
+         {"name": "customer_id", "type": "uuid", "not_null": true},
+         {"name": "status", "type": "text", "not_null": true},
+-        {"name": "placed_at", "type": "timestamptz", "not_null": true}
++        {"name": "placed_at", "type": "timestamptz", "not_null": true},
++        {"name": "note", "type": "text"}
+       ],
 ```
 
 A module has one snapshot, `kanna-orm.snapshot.json` at its root, which generation finds by walking up from the
@@ -196,7 +203,7 @@ In CI, describe a freshly migrated database with `-check`, which fails when the 
 
 ```console
 $ go tool kanna-orm describe -check ./...
-error: kanna-orm.snapshot.json is out of date with the database
+./kanna-orm.snapshot.json: error: out of date with the database
   orders.note (text) is in the database but not in the snapshot
   run go tool kanna-orm describe to update it
 ```
@@ -560,6 +567,14 @@ ORDER BY 1`
 - A query's parameters take their types from the method, and its result columns go to the fields of their names, tags
   included; both are checked against what `describe` recorded. A result of `[]T` is every row, `T` one row or
   `orm.ErrNotFound`, `(int64, error)` the number of rows affected, and `error` alone nothing.
+- Each result column needs a name of its own, since the fields take them by name; MySQL cannot even describe a query
+  whose columns share a name. Give them aliases, as in `SELECT o.id, c.id AS customer_id`.
+- A result column that may be NULL needs a field that can be nil. A field that cannot be nil stops generation where
+  the database says its column may be NULL; where the database cannot tell, the field's type is taken at its word.
+  MySQL tells for every column. PostgreSQL tells only for a column read straight from a table, and as the table
+  declares it, even through an outer join that leaves it NULL: hold such a column, as `c.email` from
+  `LEFT JOIN customers c`, in a pointer. kanna-orm's own queries load relations with queries of their own, not joins,
+  so this is a matter for hand-written queries only.
 - A scope has no method declared for it, so its signature is written on its line. MySQL does not tell the types of a
   statement's parameters, and this way it need not.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
@@ -658,6 +673,8 @@ databases, describes them, regenerates the example, fails if the output would ch
 
 ```sh
 make test       # unit tests
+make db-up      # start the PostgreSQL and the MySQL of compose.yaml, on ports 15432 and 13306
+make test-db    # unit tests, and the tests against those databases
 make lint       # golangci-lint
 make example    # regenerate the example, then build and run it
 ```
