@@ -3,7 +3,6 @@ package snapshot
 import (
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 )
@@ -37,7 +36,7 @@ func Diff(was, now Snapshot) []string {
 			lines = append(lines, key+" is in the snapshot but in no .sql file")
 		case w.Digest != n.Digest:
 			lines = append(lines, key+" has been rewritten since it was described")
-		case !reflect.DeepEqual(w.Params, n.Params) || !reflect.DeepEqual(w.Columns, n.Columns):
+		case !slices.Equal(w.Params, n.Params) || !slices.Equal(w.Columns, n.Columns):
 			lines = append(lines, key+" is described otherwise by the database")
 		}
 	}

@@ -92,3 +92,17 @@ func TestDiff(t *testing.T) {
 		})
 	}
 }
+
+// What comes back from the file holds an empty slice where what was described held none, and the two are the same.
+func TestDiff_ThroughTheFile(t *testing.T) {
+	t.Parallel()
+
+	now := shop()
+	was, err := snapshot.Unmarshal(snapshot.Marshal(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := snapshot.Diff(was, now); len(got) > 0 {
+		t.Errorf("Diff = %q, want nothing", got)
+	}
+}
