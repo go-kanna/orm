@@ -25,6 +25,8 @@ type scopePlan struct {
 	// primaryKey holds the fields holding the columns of the table's primary key, in its order, or nothing when the
 	// table has none or the model leaves a column of it out: a page continues from a row by it.
 	primaryKey []column
+	// written are the scopes written by hand in the .sql files of the package.
+	written []sqlScope
 }
 
 // plan finds the scope types of pkg, checks them against s and against the others of the module in idx, and matches
@@ -46,7 +48,11 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePla
 		}
 		plans = append(plans, scopePlan{scope: sc, columns: columns, links: links, primaryKey: key})
 	}
-	return plans, ds
+	written, wds := sqlScopes(pkg, s, plans)
+	for i := range plans {
+		plans[i].written = written[plans[i].name]
+	}
+	return plans, append(ds, wds...)
 }
 
 // sameNames reports a field whose name is that of another of its kind, columns or links, so that their methods would
@@ -126,6 +132,9 @@ func (e emitter) scope() {
 	for _, lk := range p.links {
 		e.with(lk)
 	}
+	for _, w := range p.written {
+		e.written(w)
+	}
 
 	sc := e.f.Scope()
 	s, n := sc.Name("s"), sc.Name("n")
@@ -170,6 +179,39 @@ func (e emitter) with(lk link) {
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sub, qs)
 	e.printf("return %[1]s{%[2]s.Preload(%[3]s, %[4]s, %[2]s.Join(%[5]s...))}\n}\n\n", e.p.name, e.orm, e.q(s),
 		strconv.Quote(strings.Join(lk.field.path, ".")), qs)
+}
+
+// written writes the method of w, a scope written by hand, which narrows the scope by its condition.
+func (e emitter) written(w sqlScope) {
+	sc := e.f.Scope()
+	locals := map[string]string{}
+	params := make([]string, 0, len(w.params))
+	for _, p := range w.params {
+		locals[p.name] = sc.Name(p.name)
+		if s, ok := p.typ.(*types.Slice); ok && p.variadic {
+			params = append(params, locals[p.name]+" ..."+types.TypeString(s.Elem(), e.f.Qualifier))
+			continue
+		}
+		params = append(params, locals[p.name]+" "+types.TypeString(p.typ, e.f.Qualifier))
+	}
+	s := sc.Name("s")
+
+	parts := []string{goString(w.pieces[0])}
+	for i, a := range w.args {
+		parts = append(parts, locals[a])
+		if piece := w.pieces[i+1]; piece != "" || i < len(w.args)-1 {
+			parts = append(parts, goString(piece))
+		}
+	}
+	if w.doc == "" {
+		e.method("narrows the scope as "+w.file+" writes it.", s, w.name, strings.Join(params, ", "),
+			e.where(s, parts...))
+		return
+	}
+	for line := range strings.SplitSeq(w.doc, "\n") {
+		e.printf("%s\n", strings.TrimRight("// "+line, " "))
+	}
+	e.fn(s, w.name, strings.Join(params, ", "), e.where(s, parts...))
 }
 
 // paging writes After, Before, Cursor, and AfterCursor, which continue a page from a row of model by the primary key,
@@ -221,11 +263,16 @@ func (e emitter) paging(model string) {
 	e.printf("}); %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\nreturn %[3]s.After(%[4]s), nil\n}\n\n", err, p.name, s, row)
 }
 
-// method writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope
-// made of the orm.Of expr returns. Its doc follows its name.
+// method writes a method of the scope type, as fn does, with doc after its name as its doc.
 func (e emitter) method(doc, s, name, params, expr string) {
-	e.printf("// %[1]s %[2]s\nfunc (%[3]s %[4]s) %[1]s(%[5]s) %[4]s {\nreturn %[4]s{%[6]s}\n}\n\n",
-		name, doc, s, e.p.name, params, expr)
+	e.printf("// %s %s\n", name, doc)
+	e.fn(s, name, params, expr)
+}
+
+// fn writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope made
+// of the orm.Of expr returns.
+func (e emitter) fn(s, name, params, expr string) {
+	e.printf("func (%[1]s %[2]s) %[3]s(%[4]s) %[2]s {\nreturn %[2]s{%[5]s}\n}\n\n", s, e.p.name, name, params, expr)
 }
 
 // q is the orm.Of of the receiver s.

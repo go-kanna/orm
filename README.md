@@ -553,6 +553,7 @@ type MonthCount struct {
 ```
 
 ```sql
+-- PlacedInMonth narrows to the orders placed in the month of at.
 -- scope: Order.PlacedInMonth(at time.Time)
 date_trunc('month', placed_at) = date_trunc('month', :at)
 ```
@@ -584,8 +585,11 @@ ORDER BY 1`
   declares it, even through an outer join that leaves it NULL: hold such a column, as `c.email` from
   `LEFT JOIN customers c`, in a pointer. kanna-orm's own queries load relations with queries of their own, not joins,
   so this is a matter for hand-written queries only.
-- A scope has no method declared for it, so its signature is written on its line. MySQL does not tell the types of a
-  statement's parameters, and this way it need not.
+- A scope has no method declared for it, so its signature is written on its line, and the lines of comment right
+  above that line are its method's doc. MySQL does not tell the types of a statement's parameters, and this way it
+  need not.
+- A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
+  ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
 
 ## Drivers and dialects

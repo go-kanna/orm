@@ -1,6 +1,7 @@
 package gen_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-kanna/orm/internal/gen"
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 // tables are those of the scope types under testdata. tags has no primary key, and so no page continues by it.
@@ -46,6 +48,32 @@ var tables = map[string]snapshot.Table{
 	},
 }
 
+// described records the scopes of the .sql files of testdata/dir, as describe would, by their digests alone.
+func described(t *testing.T, dir string) map[string]snapshot.Statement {
+	t.Helper()
+
+	files, err := filepath.Glob(filepath.Join("testdata", dir, "*.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := map[string]snapshot.Statement{}
+	for _, file := range files {
+		data, err := os.ReadFile(file) //nolint:gosec // a file of testdata
+		if err != nil {
+			t.Fatal(err)
+		}
+		stmts, ds := sqlfile.Parse(file, data)
+		if len(ds) > 0 {
+			t.Fatalf("parse %s:\n%s", file, report(ds))
+		}
+		for _, st := range stmts {
+			key := "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Type + "." + st.Name
+			statements[key] = snapshot.Statement{Digest: snapshot.Digest(st.Text)}
+		}
+	}
+	return statements
+}
+
 func TestEmit(t *testing.T) {
 	t.Parallel()
 
@@ -60,7 +88,7 @@ func TestEmit(t *testing.T) {
 			if len(set.Diags) > 0 || len(set.Packages) != 1 {
 				t.Fatalf("load: %d packages, %v", len(set.Packages), set.Diags)
 			}
-			s := snapshot.Snapshot{Dialect: dialect, Tables: tables}
+			s := snapshot.Snapshot{Dialect: dialect, Tables: tables, Statements: described(t, dir)}
 			got, ds, err := gen.Emit(set.Packages[0], s)
 			if len(ds) > 0 {
 				t.Fatalf("Emit:\n%s", report(ds))

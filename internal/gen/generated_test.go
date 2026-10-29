@@ -63,6 +63,17 @@ func TestGenerated_Postgres(t *testing.T) {
 			rendered{" WHERE ((status = $1) OR (total > $2))", []any{model.OrderStatus("open"), int64(100)}}},
 		{"Not", postgres.Orders().Not(postgres.Orders().PaidEq(true)),
 			rendered{" WHERE (NOT (paid = $1))", []any{true}}},
+		{"a scope written by hand", postgres.Orders().PlacedInMonth(day),
+			rendered{" WHERE (date_trunc('month', placed_at) = date_trunc('month', $1))", []any{day}}},
+		{"a scope written by hand without parameters", postgres.Orders().Open(),
+			rendered{" WHERE (status <> 'closed')", nil}},
+		{"a scope written by hand with parameters used out of order", postgres.Orders().Busy(day, 3), rendered{
+			" WHERE (placed_at >= $1\n  AND id IN (SELECT order_id FROM order_lines GROUP BY order_id HAVING count(*) >= $2))",
+			[]any{day, int64(3)},
+		}},
+		{"a scope written by hand with a variadic parameter", postgres.Orders().Tagged("gift", "rush"), rendered{
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag = ANY($1)))", []any{[]string{"gift", "rush"}},
+		}},
 	}
 	for _, tt := range tests {
 		if got := render(t, tt.scope.Of(), orm.Postgres); !reflect.DeepEqual(got, tt.want) {

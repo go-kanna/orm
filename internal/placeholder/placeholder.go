@@ -29,18 +29,31 @@ func (e *Error) Error() string {
 // A : after another :, a letter, a digit, _, or ] starts no parameter, so that a cast such as ::int and a slice such as
 // arr[1:n] are left alone, as is anything in a string, a quoted name, a comment, or a dollar-quoted body.
 //
-// The ; that ends the statement goes, with the space and the comments after it, so that the statement can be prepared
-// or wrapped in another as it is.
+// What follows the last of the statement's code goes: the ; that ends it, space, and comments, so that the statement
+// can be prepared, wrapped in another, or followed by more as it is. A comment ending a condition would otherwise hide
+// the parenthesis that closes it.
 func Rewrite(sql string, dialect snapshot.Dialect) (string, []string, error) {
-	r := rewriter{sql: sql, mysql: dialect == snapshot.MySQL, numbers: map[string]int{}, end: -1}
+	r := rewriter{sql: sql, mysql: dialect == snapshot.MySQL, numbers: map[string]int{}}
 	if err := r.run(); err != nil {
 		return "", nil, err
 	}
-	out := r.out.String()
-	if r.end >= 0 && !r.after {
-		out = out[:r.end]
+	return r.text(), r.names, nil
+}
+
+// Split cuts sql at each :name parameter, as Rewrite finds them, for a condition to be written as pieces of SQL with
+// its arguments between them: there is a piece more than there are names, which come in the order they are used,
+// once for each use.
+func Split(sql string, dialect snapshot.Dialect) (pieces, names []string, err error) {
+	r := rewriter{sql: sql, mysql: dialect == snapshot.MySQL, split: true}
+	if err := r.run(); err != nil {
+		return nil, nil, err
 	}
-	return strings.TrimRightFunc(out, unicode.IsSpace), r.names, nil
+	text, last := r.text(), 0
+	for _, cut := range r.cuts {
+		pieces = append(pieces, text[last:cut])
+		last = cut
+	}
+	return append(pieces, text[last:]), r.names, nil
 }
 
 type rewriter struct {
@@ -50,10 +63,17 @@ type rewriter struct {
 	names   []string
 	numbers map[string]int
 
-	// end is where the last ; was written, or -1, and after reports whether anything but space and comments
-	// followed it.
-	end   int
-	after bool
+	// split writes no placeholder, but cuts the statement where each would be.
+	split bool
+	cuts  []int
+
+	// code is the length of what has been written up to the end of the last code: neither space, a comment, nor a ;.
+	code int
+}
+
+// text is what has been written, up to the end of the last code.
+func (r *rewriter) text() string {
+	return r.out.String()[:r.code]
 }
 
 func (r *rewriter) run() error {
@@ -81,11 +101,10 @@ func (r *rewriter) run() error {
 		case c == '?' && r.mysql:
 			err = r.errorAt(i, "? is a placeholder of MySQL's own: write the parameter as :name")
 		case c == ':' && r.startsParameter(i):
-			r.after = true
 			i = r.parameter(i)
+			r.code = r.out.Len()
 			continue
 		case c == ';':
-			r.end, r.after = r.out.Len(), false
 			end, code = i+1, false
 		case c == ' ', c == '\t', c == '\n', c == '\r':
 			end, code = i+1, false
@@ -95,8 +114,10 @@ func (r *rewriter) run() error {
 		if err != nil {
 			return err
 		}
-		r.after = r.after || code
 		r.out.WriteString(s[i:end])
+		if code {
+			r.code = r.out.Len()
+		}
 		i = end
 	}
 	return nil
@@ -215,6 +236,11 @@ func (r *rewriter) parameter(i int) int {
 	}
 	name := s[i+1 : end]
 
+	if r.split {
+		r.names = append(r.names, name)
+		r.cuts = append(r.cuts, r.out.Len())
+		return end
+	}
 	if r.mysql {
 		r.names = append(r.names, name)
 		r.out.WriteByte('?')

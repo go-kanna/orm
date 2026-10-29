@@ -692,6 +692,28 @@ func (s Order) WithTags(sub ...Tag) Order {
 	return Order{orm.Preload(s.q, "Tags", orm.Join(qs...))}
 }
 
+// PlacedInMonth narrows to the orders placed in the month of at,
+// by the time zone of the database.
+func (s Order) PlacedInMonth(at time.Time) Order {
+	return Order{s.q.Where(`date_trunc('month', placed_at) = date_trunc('month', `, at, `)`)}
+}
+
+// Open narrows the scope as order_scopes.sql writes it.
+func (s Order) Open() Order {
+	return Order{s.q.Where(`status <> 'closed'`)}
+}
+
+// Busy narrows to the orders placed since since with n lines or more.
+func (s Order) Busy(since time.Time, n int64) Order {
+	return Order{s.q.Where(`placed_at >= `, since, `
+  AND id IN (SELECT order_id FROM order_lines GROUP BY order_id HAVING count(*) >= `, n, `)`)}
+}
+
+// Tagged narrows the scope as order_scopes.sql writes it.
+func (s Order) Tagged(tags ...string) Order {
+	return Order{s.q.Where(`id IN (SELECT order_id FROM order_tags WHERE tag = ANY(`, tags, `))`)}
+}
+
 // Limit keeps the first n rows.
 func (s Order) Limit(n int) Order {
 	return Order{s.q.Limit(n)}

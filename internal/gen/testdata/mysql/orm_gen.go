@@ -677,6 +677,16 @@ func (s Order) WithTags(sub ...Tag) Order {
 	return Order{orm.Preload(s.q, "Tags", orm.Join(qs...))}
 }
 
+// PlacedInMonth narrows the scope as order_scopes.sql writes it.
+func (s Order) PlacedInMonth(at time.Time) Order {
+	return Order{s.q.Where(`DATE_FORMAT(placed_at, '%Y-%m') = DATE_FORMAT(`, at, `, '%Y-%m')`)}
+}
+
+// Open narrows the scope as order_scopes.sql writes it.
+func (s Order) Open() Order {
+	return Order{s.q.Where(`status <> 'closed'`)}
+}
+
 // Limit keeps the first n rows.
 func (s Order) Limit(n int) Order {
 	return Order{s.q.Limit(n)}
