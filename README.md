@@ -370,9 +370,10 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
   come in one. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
 - When every column of the order goes the same way, the condition compares rows, as above. When they do not, and on
   MySQL, it is spelled out: `a < $1 OR (a = $1 AND b < $2)`.
-- `Before` goes the other way, from the first row of a page.
-- An order by a column that may be NULL makes `After` and `Before` return an error, since the databases put NULL in
-  different places.
+- `Before` goes the other way, to the page before the one a row is the first of. The repository reads that page from
+  its end and hands its rows back in the scope's order.
+- An order by a column that may be NULL makes a query continuing from a row return an error, and so `Cursor`, since
+  the databases put NULL in different places.
 
 To hand the position to a client, `Cursor` encodes it as a string, and `AfterCursor` decodes it into the scope:
 
@@ -383,7 +384,7 @@ if err != nil {
 }
 page, err := h.orders.List(ctx, s.Limit(20))
 // ...
-res.NextPageToken = s.Cursor(page[len(page)-1])
+res.NextPageToken, err = s.Cursor(page[len(page)-1])
 ```
 
 A cursor holds the order it was made in and the row's values in that order, as JSON; an empty one is the start, and
