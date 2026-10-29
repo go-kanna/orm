@@ -96,7 +96,7 @@ func (s Order) StatusNe(v model.OrderStatus) Order {
 
 // PlacedAtDesc orders the rows by placed_at, latest first.
 func (s Order) PlacedAtDesc() Order {
-	return Order{s.q.OrderBy(`placed_at DESC`)}
+	return Order{s.q.OrderBy(`placed_at`, true)}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -150,7 +150,7 @@ A declaration that does not match the schema stops generation, rather than the f
 $ go generate ./...
 ./scopes.go:6:1: error: Order: the snapshot has no table order
   did you mean orders?
-../model/order.go:12:2: error: Order.Memo: orders.note may be NULL, which a string cannot hold
+../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
   declare it as *string
 ./order_repository.go:12:2: error: ListByCustomer: orders has no column for the parameter custmerID
   did you mean customerID (customer_id)?
@@ -210,13 +210,13 @@ $ go tool kanna-orm describe -check ./...
 
 ## Scope types
 
-A scope type is a struct marked `//kanna:scope table=<name>` whose only field is an `orm.Of[M]`, `M` being the model
-the table's rows are read into. Each table kanna-orm reads or writes has one, and each model belongs to one table: the
-scope type is the only place where the two are tied together. A model that a relation reaches but no scope type names
-stops generation:
+A scope type is a struct marked `//kanna:scope table=<name>` whose only field is an unexported `orm.Of[M]`, `M` being
+the model the table's rows are read into, so that nothing but its methods narrows it. Each table kanna-orm reads or
+writes has one, and each model belongs to one table: the scope type is the only place where the two are tied together. A
+model that a relation reaches but no scope type names stops generation:
 
 ```console
-../model/order_line.go:9:2: error: OrderLine.Product: no scope type is declared for model.Product
+../model/order_line.go:9:1: error: OrderLine.Product: no scope type is declared for model.Product
   declare one where products are queried: //kanna:scope table=products
 ```
 
@@ -260,8 +260,10 @@ methods its type allows:
 | that may be NULL                         | also `StatusIsNull`, `StatusIsNotNull`                                                                           |
 
 A method takes the field's type: `StatusEq` takes a `model.OrderStatus`, and a value type goes to the database through
-its `Value` method, as database/sql would send it. The comparisons of a column that may be NULL take the value, not a
-pointer, so that `= NULL`, which matches nothing, cannot be written; `StatusIsNull` says what it would have meant.
+its `Value` method, as database/sql would send it. The methods matching a pattern take a string, which no value of the
+type need be, and a column held in a slice other than `[]byte`, an array, has no `In` or `NotIn`. The comparisons of a
+column that may be NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written;
+`StatusIsNull` says what it would have meant.
 
 ### Your own scopes
 
@@ -325,7 +327,7 @@ snapshot's foreign keys, so nothing more is written for it:
 When more than one foreign key could serve, generation stops and asks for a tag:
 
 ```console
-../model/order.go:16:2: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
+../model/order.go:16:1: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
   order_lines.order_id to orders
   order_lines.replaced_order_id to orders
   tag the field with the one to follow: orm:"fk=order_id"
