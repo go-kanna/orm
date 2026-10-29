@@ -307,3 +307,34 @@ var Open = scopes.Orders().Open()
 		})
 	}
 }
+
+func TestCommand_StopsSayingWhatTheGeneratedNamesDoNotExplain(t *testing.T) {
+	t.Parallel()
+
+	// other.Order is no scope type: its StatusEq is a mistake, though scopes.Order is about to have one.
+	dir := writeModule(t, shopModule+`
+-- other/other.go --
+package other
+
+type Order struct{}
+
+var _ = Order{}.StatusEq("open")
+-- scopes/more.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm"
+)
+
+//kanna:scope table=order
+type Archived struct{ q orm.Of[model.Order] }
+`)
+	describeShop(t, dir)
+	code, _, errOut := run(t, dir, "./...")
+	want := "other/other.go:5:17: error: Order{}.StatusEq undefined (type Order has no field or method StatusEq)\n" +
+		"scopes/more.go:8:1: error: Archived: the snapshot has no table order\n  did you mean orders?\n"
+	if code != cli.ExitFailure || errOut != want {
+		t.Errorf("kanna-orm ./... = %d\n%s\nwant %d\n%s", code, errOut, cli.ExitFailure, want)
+	}
+}

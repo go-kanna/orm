@@ -9,7 +9,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -85,7 +84,7 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	if ds = append(blocking, ds...); diag.HasErrors(ds) {
 		// What is wrong with a declaration may well be one of the type errors, but for those of a call to what the
 		// run generates.
-		return nil, append(slices.DeleteFunc(deferred, pending(plans, s.Dialect)), ds...)
+		return nil, packages.Stopped(deferred, ds, set.Pending(generatedNames(plans, s.Dialect)))
 	}
 
 	var changes []output.Change
@@ -177,38 +176,20 @@ func readSnapshot(dir, flag string) (snapshot.Snapshot, *diag.Diag) {
 	return s, nil
 }
 
-var (
-	missingMethod = regexp.MustCompile(`\(type \*?(?:[\w.]+\.)?(\w+) has no field or method (\w+)`)
-	missingName   = regexp.MustCompile(`^undefined: (?:\w+\.)?(\w+)$`)
-)
-
-// pending returns whether an error loading the packages says only that a function or a method that plans has
-// generated, for a database of dialect d, is missing.
-func pending(plans map[*packages.Package][]scopePlan, d snapshot.Dialect) func(diag.Diag) bool {
-	methods, funcs := map[string]map[string]bool{}, map[string]bool{}
-	for _, ps := range plans {
+// generatedNames names what plans generate, for a database of dialect d, as Set.Pending takes them: the function
+// returning the empty scope of each scope type, and its methods.
+func generatedNames(plans map[*packages.Package][]scopePlan, d snapshot.Dialect) map[string]bool {
+	names := map[string]bool{}
+	for pkg, ps := range plans {
 		for _, p := range ps {
-			funcs[p.fn] = true
-			names := map[string]bool{}
+			names[pkg.PkgPath+"."+p.fn] = true
 			for _, m := range methodsOf(p, d) {
-				names[m.name] = true
+				names[pkg.PkgPath+"."+p.name+"."+m.name] = true
 			}
 			for _, w := range p.written {
-				names[w.name] = true
+				names[pkg.PkgPath+"."+p.name+"."+w.name] = true
 			}
-			methods[p.name] = names
 		}
 	}
-	return func(ld diag.Diag) bool {
-		if ld.Severity != diag.Error {
-			return false
-		}
-		if m := missingMethod.FindStringSubmatch(ld.Message); m != nil {
-			return methods[m[1]][m[2]]
-		}
-		if m := missingName.FindStringSubmatch(ld.Message); m != nil {
-			return funcs[m[1]]
-		}
-		return false
-	}
+	return names
 }
