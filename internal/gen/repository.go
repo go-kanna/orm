@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 // verb is what a method of a repository does, as the start of its name tells.
@@ -103,6 +104,8 @@ type repoMethod struct {
 	result result
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
+	// query is the query written by hand that implements the method, if one does.
+	query *query
 }
 
 // key is a parameter naming a column, which the rows must equal.
@@ -116,15 +119,16 @@ type repoReader struct {
 	pkg *packages.Package
 	s   snapshot.Snapshot
 	l   linker
-	// queries names the queries written by hand next to the repositories.
-	queries map[string]bool
+	// queries are the queries written by hand next to the repositories, by their names.
+	queries map[string]sqlfile.Statement
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
 func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 	var (
-		repos []repository
-		ds    []diag.Diag
+		repos   []repository
+		ds      []diag.Diag
+		methods []string
 	)
 	for _, file := range r.pkg.Syntax {
 		if ast.IsGenerated(file) {
@@ -134,12 +138,15 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 		for _, ts := range decls.Repositories {
 			repo, rds := r.repository(ts)
 			ds = append(ds, rds...)
+			for _, m := range repo.methods {
+				methods = append(methods, m.name)
+			}
 			if !diag.HasErrors(rds) {
 				repos = append(repos, repo)
 			}
 		}
 	}
-	return repos, ds
+	return repos, append(ds, unusedQueries(r.queries, methods)...)
 }
 
 func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {
@@ -180,8 +187,11 @@ func (r repoReader) method(fn *types.Func, doc *ast.CommentGroup) (repoMethod, [
 		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
 	}
 	conflict, cds := directive.Find(r.pkg.Fset, doc, "conflict")
-	if r.queries[m.name] {
-		return m, cds
+	if st, ok := r.queries[m.name]; ok {
+		if conflict.Found {
+			cds = append(cds, diag.Errorf(conflict.Pos, "%s: //kanna:conflict is for an Upsert", m.name))
+		}
+		return m, append(cds, r.query(&m, fn, st)...)
 	}
 
 	v, ok := verbOf(m.name)

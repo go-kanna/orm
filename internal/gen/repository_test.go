@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kanna/orm/internal/gen"
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 // repositoryModule declares the models, the scope types, and a repository package of the tests, whose interface the
@@ -88,9 +89,12 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 	}}
 }
 
-// repository loads the module of repositoryModule with the interface of the repository package declaring methods,
-// and reads its repositories.
-func repository(t *testing.T, d snapshot.Dialect, methods string, queries ...string) ([]string, string) {
+// repository loads the module of repositoryModule, with the interface of the repository package declaring methods,
+// and queries.sql there holding sql, whose queries describe records as described has them but for their digests, and
+// reads its repositories.
+func repository(t *testing.T, d snapshot.Dialect, methods, sql string, described map[string]snapshot.Statement) (
+	[]string, string,
+) {
 	t.Helper()
 
 	dir := writeModule(t, repositoryModule+`
@@ -99,6 +103,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"example.com/shop/model"
 	"example.com/shop/scopes"
@@ -110,10 +115,16 @@ var (
 	_ scopes.Order
 )
 
+type MonthCount struct {
+	Month time.Time
+	Count int64
+}
+
 //kanna:repository
 type OrderRepository interface {
 `+methods+`}
-`)
+-- repository/queries.sql --
+`+sql)
 	set, err := packages.Load([]string{"./repository"}, packages.Config{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
@@ -121,11 +132,34 @@ type OrderRepository interface {
 	if len(set.Diags) > 0 || len(set.Packages) != 1 {
 		t.Fatalf("load: %d packages, %v", len(set.Packages), set.Diags)
 	}
-	got, ds, err := gen.Repositories(set.Packages[0], repositoryTables(d), queries...)
+	s := repositoryTables(d)
+	s.Statements = map[string]snapshot.Statement{}
+	stmts, _ := sqlfile.Parse("queries.sql", []byte(sql))
+	for _, st := range stmts {
+		if desc, ok := described[st.Name]; ok {
+			desc.Digest = snapshot.Digest(st.Text)
+			s.Statements["example.com/shop/repository."+st.Name] = desc
+		}
+	}
+	got, ds, err := gen.Repositories(set.Packages[0], s)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return got, report(ds)
+}
+
+// monthCounts is a query written by hand, and what describe records of it.
+const monthCounts = `-- query: MonthCounts
+SELECT date_trunc('month', placed_at) AS month, count(*) AS count
+FROM orders
+WHERE placed_at >= :since
+GROUP BY 1
+ORDER BY 1;
+`
+
+var monthCountsDescribed = snapshot.Statement{
+	Params:  []snapshot.Param{{Name: "since", Type: "timestamptz"}},
+	Columns: []snapshot.Result{{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8", NotNull: true}},
 }
 
 func TestRepositories(t *testing.T) {
@@ -149,8 +183,15 @@ func TestRepositories(t *testing.T) {
 	UpsertUser(ctx context.Context, u model.User) (model.User, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)
-	MonthCounts(ctx context.Context) error
-`, "MonthCounts")
+	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
+	CloseOld(ctx context.Context, before time.Time) (int64, error)
+`, monthCounts+`
+-- query: CloseOld
+UPDATE orders SET status = 'closed' WHERE placed_at < :before
+`, map[string]snapshot.Statement{
+		"MonthCounts": monthCountsDescribed,
+		"CloseOld":    {Params: []snapshot.Param{{Name: "before", Type: "timestamptz"}}},
+	})
 	if ds != "" {
 		t.Fatalf("Repositories:\n%s", ds)
 	}
@@ -170,7 +211,9 @@ func TestRepositories(t *testing.T) {
 		"OrderRepository.UpsertUser Upsert users row=u row conflict=tenant_id,email keep=created_at",
 		"OrderRepository.Delete Delete orders keys=id=id error",
 		"OrderRepository.DeleteStale Delete orders scoped count",
-		"OrderRepository.MonthCounts query",
+		"OrderRepository.MonthCounts query \"SELECT date_trunc('month', placed_at) AS month, count(*) AS count\\nFROM " +
+			"orders\\nWHERE placed_at >= $1\\nGROUP BY 1\\nORDER BY 1\" args=since rows repository.MonthCount{Month, Count}",
+		"OrderRepository.CloseOld query \"UPDATE orders SET status = 'closed' WHERE placed_at < $1\" args=before count",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Repositories =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -180,7 +223,7 @@ func TestRepositories(t *testing.T) {
 func TestRepositories_Mistakes(t *testing.T) {
 	t.Parallel()
 
-	const at = "repository.go:18:2: "
+	const at = "repository.go:24:2: "
 	tests := []struct {
 		name    string
 		dialect snapshot.Dialect
@@ -229,14 +272,14 @@ func TestRepositories_Mistakes(t *testing.T) {
 			at + "error: UpdateLog: logs has no primary key to tell its rows by"},
 		{"a conflict on no unique key", snapshot.PostgreSQL,
 			"\t//kanna:conflict email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
-			"repository.go:18:2: error: UpsertUser: (email) is neither the primary key of users nor one of its unique " +
+			"repository.go:24:2: error: UpsertUser: (email) is neither the primary key of users nor one of its unique " +
 				"keys"},
 		{"a conflict on what is no upsert", snapshot.PostgreSQL,
 			"\t//kanna:conflict id\n\tInsertUser(ctx context.Context, u model.User) error\n",
-			"repository.go:18:2: error: InsertUser: //kanna:conflict is for an Upsert"},
+			"repository.go:24:2: error: InsertUser: //kanna:conflict is for an Upsert"},
 		{"a conflict MySQL meets on another key too", snapshot.MySQL,
 			"\t//kanna:conflict tenant_id,email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
-			"repository.go:19:2: warning: UpsertUser: on MySQL, a conflict on (tenant_id, login) also updates the row\n" +
+			"repository.go:25:2: warning: UpsertUser: on MySQL, a conflict on (tenant_id, login) also updates the row\n" +
 				"  users has unique keys other than (tenant_id, email)"},
 		{"rows read back on MySQL from AUTO_INCREMENT", snapshot.MySQL,
 			"\tInsertUsers(ctx context.Context, us []model.User) ([]model.User, error)\n",
@@ -247,7 +290,68 @@ func TestRepositories_Mistakes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, ds := repository(t, tt.dialect, tt.methods); ds != tt.want {
+			if _, ds := repository(t, tt.dialect, tt.methods, "", nil); ds != tt.want {
+				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepositories_QueryMistakes(t *testing.T) {
+	t.Parallel()
+
+	const (
+		at     = "repository.go:24:2: "
+		header = "queries.sql:1:1: "
+	)
+	described := map[string]snapshot.Statement{"MonthCounts": monthCountsDescribed}
+	tests := []struct {
+		name, methods, sql string
+		described          map[string]snapshot.Statement
+		want               string
+	}{
+		{"a query not described",
+			"\tMonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)\n", monthCounts, nil,
+			header + "error: -- query: MonthCounts: the snapshot has not described it\n" +
+				"  run go tool kanna-orm describe to describe it"},
+		{"a parameter not declared", "\tMonthCounts(ctx context.Context) ([]MonthCount, error)\n", monthCounts,
+			described, header + "error: -- query: MonthCounts: :since is none of the parameters of the method\n" +
+				"  declare it: MonthCounts(ctx context.Context, since ...)"},
+		{"a parameter not used",
+			"\tMonthCounts(ctx context.Context, since time.Time, n int) ([]MonthCount, error)\n", monthCounts,
+			described, at + "warning: MonthCounts: the query does not use n"},
+		{"columns returned to error alone", "\tMonthCounts(ctx context.Context, since time.Time) error\n",
+			monthCounts, described, at + "error: MonthCounts: the query returns columns, but the method returns " +
+				"error alone\n  return ([]T, error) or (T, error), T having a field for each column"},
+		{"a result of no struct", "\tMonthCounts(ctx context.Context, since time.Time) ([]int, error)\n",
+			monthCounts, described, at + "error: MonthCounts: a query written by hand returns error alone, (int64, " +
+				"error), (T, error), or ([]T, error)\n  T being a struct with a field for each column of its result"},
+		{"a column of no field", "\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ Month time.Time }, " +
+			"error)\n", monthCounts, described,
+			header + "error: -- query: MonthCounts: struct{Month time.Time} has no field for the column count\n" +
+				"  give struct{Month time.Time} a field for it, or name the column after one with AS"},
+		{"a field of no column", "\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ Month time.Time; " +
+			"Count int64; Total int64 }, error)\n", monthCounts, described,
+			header + "error: -- query: MonthCounts: the query returns no column total for struct{Month time.Time; " +
+				"Count int64; Total int64}.Total\n  select it, or leave the field out with orm:\"-\""},
+		{"a column that may be NULL in a field that cannot be nil",
+			"\tMonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)\n", monthCounts,
+			map[string]snapshot.Statement{"MonthCounts": {
+				Params:  monthCountsDescribed.Params,
+				Columns: []snapshot.Result{{Name: "month", Type: "timestamptz", Nullable: true}, {Name: "count", Type: "int8"}},
+			}},
+			header + "error: -- query: MonthCounts: the column month may be NULL, which repository.MonthCount.Month, " +
+				"a time.Time, cannot hold\n  declare it as *time.Time"},
+		{"a query of no method", "\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
+			"-- query: Lists\nSELECT 1\n", nil,
+			header + "error: -- query: Lists is no method of a //kanna:repository interface of this package\n" +
+				"  did you mean List?"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, ds := repository(t, snapshot.PostgreSQL, tt.methods, tt.sql, tt.described); ds != tt.want {
 				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
 			}
 		})

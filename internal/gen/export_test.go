@@ -157,28 +157,32 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 	return methods, nil
 }
 
-// Repositories reads the repositories of pkg, with queries the names of the queries written by hand next to them, and
-// each of their methods as "Repository.Method verb table", followed by what else it takes and returns.
-func Repositories(pkg *packages.Package, s snapshot.Snapshot, queries ...string) ([]string, []diag.Diag, error) {
+// Repositories reads the repositories of pkg, and each of their methods as "Repository.Method verb table", followed by
+// what else it takes and returns, or as "Repository.Method query", followed by its SQL, its arguments, and its fields.
+func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, error) {
 	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
 	if err != nil {
 		return nil, nil, err
 	}
 	scopes, _ := findScopes(pkg, s)
+	queries, ds := readQueries(pkg)
 	r := repoReader{
-		pkg: pkg, s: s, queries: map[string]bool{},
+		pkg: pkg, s: s, queries: queries,
 		l: linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
 	}
-	for _, q := range queries {
-		r.queries[q] = true
-	}
-	repos, ds := r.findRepositories()
+	repos, rds := r.findRepositories()
+	ds = append(ds, rds...)
 	var got []string
 	for _, repo := range repos {
 		for _, m := range repo.methods {
 			line := repo.name + "." + m.name
-			if m.verb == "" {
-				got = append(got, line+" query")
+			if q := m.query; q != nil {
+				line += fmt.Sprintf(" query %q args=%s %s", q.sql, strings.Join(q.args, ","),
+					[]string{"error", "row", "rows", "count", "bool"}[m.result])
+				if q.row != nil {
+					line += " " + types.TypeString(q.row, (*types.Package).Name) + "{" + fieldNames(q.fields) + "}"
+				}
+				got = append(got, line)
 				continue
 			}
 			line += " " + string(m.verb) + " " + m.target.table
