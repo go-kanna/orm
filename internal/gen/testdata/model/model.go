@@ -13,17 +13,34 @@ type (
 )
 
 type Order struct {
-	ID       OrderID
-	Status   OrderStatus
-	PlacedAt time.Time
-	Memo     *string `orm:"note"`
-	Total    int64
-	Paid     bool
-	Contact  *Email
-	Tags     []string
-	Receipt  []byte
-	Position int `orm:"order"`
+	ID         OrderID
+	CustomerID int64
+	Status     OrderStatus
+	PlacedAt   time.Time
+	Memo       *string `orm:"note"`
+	Total      int64
+	Paid       bool
+	Contact    *Email
+	Labels     []string
+	Receipt    []byte
+	Position   int `orm:"order"`
+	Customer   *Customer
+	Lines      []OrderLine
+	Tags       []Tag
 }
+
+type Customer struct {
+	ID   int64
+	Name string
+}
+
+type OrderLine struct {
+	OrderID OrderID
+	LineNo  int
+	SKU     string
+}
+
+type Tag struct{ Name string }
 
 // Email is a value type, as kanna-value generates one.
 type Email struct{ s string }

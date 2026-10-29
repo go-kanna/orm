@@ -64,10 +64,11 @@ type way struct {
 // linker finds the foreign keys the relations of the models of a package's scope types follow.
 type linker struct {
 	fset *token.FileSet
-	// pkgPath is that of the package.
-	pkgPath string
-	tables  map[string]snapshot.Table
-	idx     []indexed
+	// pkgPath and pkgName are those of the package, and scopes its scope types.
+	pkgPath, pkgName string
+	scopes           []scope
+	tables           map[string]snapshot.Table
+	idx              []indexed
 }
 
 // link finds the foreign key each of relations, fields of the model of sc, follows, and the fields holding the keys
@@ -165,8 +166,17 @@ func relatedModel(t types.Type) (*types.Named, bool) {
 	return types.Unalias(t).(*types.Named), many //nolint:forcetypeassert // fields takes nothing else for a relation
 }
 
-// scopeOf finds the scope type of model in the index.
+// scopeOf finds the scope type of model among those of the package first, as their types tell them, and then in the
+// index.
 func (l linker) scopeOf(model *types.Named) (indexed, bool) {
+	for _, sc := range l.scopes {
+		if types.Identical(sc.model, model) {
+			return indexed{
+				pkgPath: l.pkgPath, pkgName: l.pkgName, name: sc.name,
+				modelPath: model.Obj().Pkg().Path(), modelName: model.Obj().Name(), table: sc.table, pos: sc.pos,
+			}, true
+		}
+	}
 	for _, e := range l.idx {
 		if e.modelPath == model.Obj().Pkg().Path() && e.modelName == model.Obj().Name() {
 			return e, true

@@ -55,8 +55,8 @@ func TestGenerated_Postgres(t *testing.T) {
 			rendered{" WHERE (note LIKE $1 ESCAPE '!')", []any{"50!%!_off!!%"}}},
 		{"Contains", postgres.Orders().ContactContains("@example"),
 			rendered{" WHERE (contact LIKE $1 ESCAPE '!')", []any{"%@example%"}}},
-		{"IsNull", postgres.Orders().MemoIsNull().TagsIsNotNull(),
-			rendered{" WHERE (note IS NULL) AND (tags IS NOT NULL)", nil}},
+		{"IsNull", postgres.Orders().MemoIsNull().LabelsIsNotNull(),
+			rendered{" WHERE (note IS NULL) AND (labels IS NOT NULL)", nil}},
 		{"order", postgres.Orders().PlacedAtDesc().IDAsc(), rendered{" ORDER BY placed_at DESC, id", nil}},
 		{"Limit and Offset", postgres.Orders().Limit(20).Offset(40), rendered{" LIMIT 20 OFFSET 40", nil}},
 		{"Or", postgres.Orders().Or(postgres.Orders().StatusEq("open"), postgres.Orders().TotalGt(100)),
@@ -90,5 +90,98 @@ func TestGenerated_MySQL(t *testing.T) {
 		if got := render(t, tt.scope.Of(), orm.MySQL); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestGenerated_With(t *testing.T) {
+	t.Parallel()
+
+	s := postgres.Orders().WithCustomer().WithLines(postgres.OrderLines().SKUAsc()).WithTags()
+	lines, ok := orm.Preloaded[model.OrderLine](s.Of(), "Lines")
+	if !ok {
+		t.Fatal("WithLines does not preload Lines")
+	}
+	r, err := lines.Render(orm.Postgres, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.OrderBy(); got != " ORDER BY sku" {
+		t.Errorf("the lines are ordered by %q, want by sku", got)
+	}
+	if _, ok := orm.Preloaded[model.Customer](s.Of(), "Customer"); !ok {
+		t.Error("WithCustomer does not preload Customer")
+	}
+	if _, ok := orm.Preloaded[model.Tag](s.Of(), "Tags"); !ok {
+		t.Error("WithTags does not preload Tags")
+	}
+}
+
+func TestGenerated_Paging(t *testing.T) {
+	t.Parallel()
+
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	row := model.Order{ID: 7, PlacedAt: day}
+	line := model.OrderLine{OrderID: 7, LineNo: 2}
+	page := postgres.Orders().PlacedAtDesc()
+	tests := []struct {
+		name  string
+		scope orm.Of[model.Order]
+		d     orm.Dialect
+		want  rendered
+	}{
+		{"After", page.After(row).Of(), orm.Postgres, rendered{
+			" WHERE ((placed_at, id) < ($1, $2)) ORDER BY placed_at DESC, id DESC", []any{day, model.OrderID(7)},
+		}},
+		{"Before", page.Before(row).Of(), orm.Postgres, rendered{
+			" WHERE ((placed_at, id) > ($1, $2)) ORDER BY placed_at, id", []any{day, model.OrderID(7)},
+		}},
+		{"After on MySQL", mysql.Orders().PlacedAtDesc().After(row).Of(), orm.MySQL, rendered{
+			" WHERE ((placed_at < ?) OR (placed_at = ? AND id < ?)) ORDER BY placed_at DESC, id DESC",
+			[]any{day, day, model.OrderID(7)},
+		}},
+	}
+	for _, tt := range tests {
+		if got := render(t, tt.scope, tt.d); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
+		}
+	}
+
+	r, err := postgres.OrderLines().After(line).Of().Render(orm.Postgres, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Where() + r.OrderBy(); got != " WHERE ((order_id, line_no) > ($1, $2)) ORDER BY order_id, line_no" {
+		t.Errorf("After by a primary key of two columns: %s", got)
+	}
+
+	if _, err := postgres.Orders().MemoAsc().After(row).Of().Render(orm.Postgres, 1); err == nil {
+		t.Error("After in the order of a column that may be NULL renders")
+	}
+}
+
+func TestGenerated_Cursor(t *testing.T) {
+	t.Parallel()
+
+	row := model.Order{ID: 7, PlacedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Position: 3}
+	page := postgres.Orders().PositionAsc().PlacedAtDesc()
+	cursor, err := page.Cursor(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := page.AfterCursor(cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := render(t, next.Of(), orm.Postgres), render(t, page.After(row).Of(), orm.Postgres); !reflect.DeepEqual(
+		got, want) {
+		t.Errorf("AfterCursor(Cursor(row)) = %+v, want After(row), %+v", got, want)
+	}
+
+	if start, err := page.AfterCursor(""); err != nil || !reflect.DeepEqual(render(t, start.Of(), orm.Postgres),
+		render(t, page.Of(), orm.Postgres)) {
+		t.Errorf("AfterCursor of no cursor = %+v, %v; want the scope itself", start, err)
+	}
+	if _, err := postgres.Orders().PlacedAtAsc().AfterCursor(cursor); err == nil {
+		t.Error("AfterCursor takes a cursor made in another order")
 	}
 }

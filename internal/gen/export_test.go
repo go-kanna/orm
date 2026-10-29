@@ -89,7 +89,7 @@ func Links(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, e
 	if err != nil {
 		return nil, nil, err
 	}
-	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, tables: s.Tables, idx: idx}
+	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	var got []string
 	for _, sc := range scopes {
 		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])

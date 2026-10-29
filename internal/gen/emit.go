@@ -22,6 +22,9 @@ type scopePlan struct {
 
 	columns []column
 	links   []link
+	// primaryKey holds the fields holding the columns of the table's primary key, in its order, or nothing when the
+	// table has none or the model leaves a column of it out: a page continues from a row by it.
+	primaryKey []column
 }
 
 // plan finds the scope types of pkg, checks them against s and against the others of the module in idx, and matches
@@ -29,33 +32,49 @@ type scopePlan struct {
 func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePlan, []diag.Diag) {
 	scopes, ds := findScopes(pkg, s)
 	ds = append(ds, checkUnique(pkg, scopes, idx)...)
-	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, tables: s.Tables, idx: idx}
+	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
 	for _, sc := range scopes {
 		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
-		ds = append(ds, sameNames(sc, columns)...)
 		links, lds := l.link(sc, columns, relations)
 		ds = append(ds, lds...)
-		plans = append(plans, scopePlan{scope: sc, columns: columns, links: links})
+		ds = append(ds, sameNames(sc, columns, links)...)
+		key, missing := held(columns, s.Tables[sc.table].PrimaryKey)
+		if missing != "" {
+			key = nil
+		}
+		plans = append(plans, scopePlan{scope: sc, columns: columns, links: links, primaryKey: key})
 	}
 	return plans, ds
 }
 
-// sameNames reports a field holding a column whose name is that of another such field, so that their methods would
+// sameNames reports a field whose name is that of another of its kind, columns or links, so that their methods would
 // be named alike: a field of a struct embedded, named as one of the model's own.
-func sameNames(sc scope, columns []column) []diag.Diag {
+func sameNames(sc scope, columns []column, links []link) []diag.Diag {
 	var ds []diag.Diag
-	seen := map[string]column{}
+	model := sc.model.Obj().Name()
+	seen := map[string][]string{}
 	for _, c := range columns {
 		name := c.path[len(c.path)-1]
 		if other, ok := seen[name]; ok {
 			ds = append(ds, diag.Errorf(c.pos, "%s.%s: its methods would be named as those of %s.%s, such as %sEq",
-				sc.model.Obj().Name(), strings.Join(c.path, "."), sc.model.Obj().Name(), strings.Join(other.path, "."),
-				name).WithHints(`leave one of them out with orm:"-"`))
+				model, strings.Join(c.path, "."), model, strings.Join(other, "."), name).
+				WithHints(`leave one of them out with orm:"-"`))
 			continue
 		}
-		seen[name] = c
+		seen[name] = c.path
+	}
+	seen = map[string][]string{}
+	for _, lk := range links {
+		name := lk.field.path[len(lk.field.path)-1]
+		if other, ok := seen[name]; ok {
+			ds = append(ds, diag.Errorf(lk.field.pos, "%s.%s: its method would be named as that of %s.%s, With%s",
+				model, strings.Join(lk.field.path, "."), model, strings.Join(other, "."), name).
+				WithHints(`leave one of them out with orm:"-"`))
+			continue
+		}
+		seen[name] = lk.field.path
 	}
 	return ds
 }
@@ -104,6 +123,9 @@ func (e emitter) scope() {
 	for _, c := range p.columns {
 		e.column(c)
 	}
+	for _, lk := range p.links {
+		e.with(lk)
+	}
 
 	sc := e.f.Scope()
 	s, n := sc.Name("s"), sc.Name("n")
@@ -122,6 +144,81 @@ func (e emitter) scope() {
 	s, other := sc.Name("s"), sc.Name("other")
 	e.method("narrows to the rows "+other+", holding conditions alone, does not match.", s, "Not",
 		other+" "+p.name, e.q(s)+".Not("+e.q(other)+")")
+
+	if len(p.primaryKey) > 0 {
+		e.paging(model)
+	}
+}
+
+// with writes the method loading the relation lk, which takes scopes of the related rows.
+func (e emitter) with(lk link) {
+	name := lk.field.path[len(lk.field.path)-1]
+	target := lk.target.name
+	if pkg := e.f.Import(lk.target.pkgPath, lk.target.pkgName); pkg != "" {
+		target = pkg + "." + target
+	}
+	by := "by " + strings.Join(lk.way.fk.Columns, " and ")
+	if lk.way.kind == manyToMany {
+		by = "through " + lk.way.table
+	}
+
+	sc := e.f.Scope()
+	s, sub, qs, i, x := sc.Name("s"), sc.Name("sub"), sc.Name("qs"), sc.Name("i"), sc.Name("x")
+	e.printf("// With%s loads %s, from %s %s.\n", name, name, lk.target.table, by)
+	e.printf("func (%[1]s %[2]s) With%[3]s(%[4]s ...%[5]s) %[2]s {\n", s, e.p.name, name, sub, target)
+	e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.orm, types.TypeString(lk.model, e.f.Qualifier), sub)
+	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sub, qs)
+	e.printf("return %[1]s{%[2]s.Preload(%[3]s, %[4]s, %[2]s.Join(%[5]s...))}\n}\n\n", e.p.name, e.orm, e.q(s),
+		strconv.Quote(strings.Join(lk.field.path, ".")), qs)
+}
+
+// paging writes After, Before, Cursor, and AfterCursor, which continue a page from a row of model by the primary key,
+// and values, which they read a row by.
+func (e emitter) paging(model string) {
+	p := e.p
+	names := make([]string, 0, len(p.primaryKey))
+	for _, c := range p.primaryKey {
+		names = append(names, goString(sqlName(e.d, c.col.Name)))
+	}
+	key := "[]string{" + strings.Join(names, ", ") + "}"
+
+	row := e.f.Scope().Name("row")
+	e.printf("// values holds the value of each column of %s, for After, Before, and Cursor. One that may be NULL\n"+
+		"// holds %s.MayBeNull, since no page continues by it.\n", row, e.orm)
+	e.printf("func (%s) values(%s %s) map[string]any {\nreturn map[string]any{\n", p.name, row, model)
+	for _, c := range p.columns {
+		v := row + "." + strings.Join(c.path, ".")
+		if !c.col.NotNull {
+			v = e.orm + ".MayBeNull"
+		}
+		e.printf("%s: %s,\n", goString(sqlName(e.d, c.col.Name)), v)
+	}
+	e.printf("}\n}\n\n")
+
+	sc := e.f.Scope()
+	s, row := sc.Name("s"), sc.Name("row")
+	e.method(fmt.Sprintf("narrows to the rows after %s in the scope's order, for the page after the one %[1]s is "+
+		"the last of.", row), s, "After", row+" "+model, e.q(s)+".After("+key+", "+s+".values("+row+"))")
+	e.method(fmt.Sprintf("narrows to the rows before %s in the scope's order, for the page before the one %[1]s is "+
+		"the first of.", row), s, "Before", row+" "+model, e.q(s)+".Before("+key+", "+s+".values("+row+"))")
+	e.printf("// Cursor encodes the position of %s in the scope's order, for a client to hand back to AfterCursor.\n",
+		row)
+	e.printf("func (%[1]s %[2]s) Cursor(%[3]s %[4]s) (string, error) {\nreturn %[5]s.Cursor(%[6]s, %[1]s.values(%[3]s))\n"+
+		"}\n\n", s, p.name, row, model, e.q(s), key)
+
+	sc = e.f.Scope()
+	s, cursor, row, err := sc.Name("s"), sc.Name("cursor"), sc.Name("row"), sc.Name("err")
+	e.printf("// AfterCursor is After the row %s holds, as Cursor made it in the same order. An empty cursor is the "+
+		"start.\n", cursor)
+	e.printf("func (%[1]s %[2]s) AfterCursor(%[3]s string) (%[2]s, error) {\nif %[3]s == \"\" {\nreturn %[1]s, nil\n}\n",
+		s, p.name, cursor)
+	e.printf("var %s %s\nif %s := %s.DecodeCursor(%s, %s, map[string]any{\n", row, model, err, e.q(s), cursor, key)
+	for _, c := range p.columns {
+		if c.col.NotNull {
+			e.printf("%s: &%s.%s,\n", goString(sqlName(e.d, c.col.Name)), row, strings.Join(c.path, "."))
+		}
+	}
+	e.printf("}); %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\nreturn %[3]s.After(%[4]s), nil\n}\n\n", err, p.name, s, row)
 }
 
 // method writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope
