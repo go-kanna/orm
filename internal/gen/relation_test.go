@@ -206,7 +206,7 @@ func TestLinks_Mistakes(t *testing.T) {
 	}{
 		{"a model of no scope type, whose table a foreign key names", "Product *Product",
 			"model.go:8:1: error: Order.Product: no scope type is declared for model.Product\n" +
-				"  declare one where its rows are queried: //kanna:scope table=products"},
+				"  declare one where products are queried: //kanna:scope table=products"},
 		{"a model of no scope type", "Notes []Note",
 			"model.go:8:1: error: Order.Notes: no scope type is declared for model.Note\n" +
 				"  declare one where its rows are queried: //kanna:scope table=<table>"},

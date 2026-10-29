@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"cmp"
 	"fmt"
 	"go/token"
 	"go/types"
@@ -99,9 +98,11 @@ func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Di
 
 	target, ok := l.scopeOf(model)
 	if !ok {
-		return link{}, []diag.Diag{errorf("no scope type is declared for %s", modelName).WithHints(
-			"declare one where its rows are queried: //kanna:scope table=" +
-				cmp.Or(l.referenced(sc.table, field), "<table>"))}, false
+		hint := "declare one where its rows are queried: //kanna:scope table=<table>"
+		if t := l.referenced(sc.table, field); t != "" {
+			hint = fmt.Sprintf("declare one where %s are queried: //kanna:scope table=%[1]s", t)
+		}
+		return link{}, []diag.Diag{errorf("no scope type is declared for %s", modelName).WithHints(hint)}, false
 	}
 	related, ok := l.tables[target.table]
 	switch {
