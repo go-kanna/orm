@@ -674,8 +674,11 @@ Describing:
 The packages default to the one in the current directory, so `//go:generate go tool kanna-orm` needs no argument. As
 with every kanna generator, `KANNA_CHECK=1 go generate ./...` checks instead of writing. A run that succeeds prints
 nothing but its warnings; one that finds neither a `//kanna:scope` type nor a `//kanna:repository` interface says so. A
-package whose declarations are all gone has its `orm_gen.go` removed, and so has the destination of interfaces that
-are all gone; a file of that name without the generated-code header is never touched.
+package whose declarations are all gone has its `orm_gen.go` removed, and so has the destination of interfaces that are
+all gone, unless code in the packages the run loads still calls what it declares; a file of that name without the
+generated-code header is never touched. The `go generate` that removes one ends with
+`open ...: no such file or directory`, from go generate itself, which lists a package's files before it runs the
+generators; the file is gone as it should be ([golang/go#36068](https://github.com/golang/go/issues/36068)).
 
 ## Example
 
