@@ -1,0 +1,272 @@
+package gen
+
+import (
+	"fmt"
+	"go/types"
+	"strconv"
+	"strings"
+
+	"github.com/go-kanna/internal/diag"
+	"github.com/go-kanna/internal/gofile"
+	"github.com/go-kanna/internal/packages"
+	"github.com/go-kanna/internal/valuetype"
+
+	"github.com/go-kanna/orm/internal/snapshot"
+)
+
+const generator = "kanna-orm"
+
+// scopePlan is what is generated for a scope type.
+type scopePlan struct {
+	scope
+
+	columns []column
+	links   []link
+}
+
+// plan finds the scope types of pkg, checks them against s and against the others of the module in idx, and matches
+// the fields of their models to the columns and the relations of their tables.
+func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePlan, []diag.Diag) {
+	scopes, ds := findScopes(pkg, s)
+	ds = append(ds, checkUnique(pkg, scopes, idx)...)
+	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, tables: s.Tables, idx: idx}
+	plans := make([]scopePlan, 0, len(scopes))
+	for _, sc := range scopes {
+		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		ds = append(ds, fds...)
+		ds = append(ds, sameNames(sc, columns)...)
+		links, lds := l.link(sc, columns, relations)
+		ds = append(ds, lds...)
+		plans = append(plans, scopePlan{scope: sc, columns: columns, links: links})
+	}
+	return plans, ds
+}
+
+// sameNames reports a field holding a column whose name is that of another such field, so that their methods would
+// be named alike: a field of a struct embedded, named as one of the model's own.
+func sameNames(sc scope, columns []column) []diag.Diag {
+	var ds []diag.Diag
+	seen := map[string]column{}
+	for _, c := range columns {
+		name := c.path[len(c.path)-1]
+		if other, ok := seen[name]; ok {
+			ds = append(ds, diag.Errorf(c.pos, "%s.%s: its methods would be named as those of %s.%s, such as %sEq",
+				sc.model.Obj().Name(), strings.Join(c.path, "."), sc.model.Obj().Name(), strings.Join(other.path, "."),
+				name).WithHints(`leave one of them out with orm:"-"`))
+			continue
+		}
+		seen[name] = c
+	}
+	return ds
+}
+
+// emit writes orm_gen.go for pkg: the methods of the scope types plans has, for a database of dialect d. declared names
+// what pkg declares at its top level besides.
+func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared []string) ([]byte, error) {
+	f := gofile.New(generator, pkg.PkgPath, pkg.Name)
+	f.Reserve(declared...)
+	for _, p := range plans {
+		f.Reserve(p.name, p.fn)
+	}
+	for _, p := range plans {
+		e := emitter{f: f, d: d, p: p, orm: f.Import(ormPath, "orm")}
+		e.scope()
+	}
+	src, err := f.Bytes()
+	if err != nil {
+		return src, fmt.Errorf("the code generated does not parse: %w", err)
+	}
+	return src, nil
+}
+
+type emitter struct {
+	f *gofile.File
+	d snapshot.Dialect
+	p scopePlan
+	// orm is the name the file imports the runtime by.
+	orm string
+}
+
+// printf writes to the file, a method or a function at a time.
+func (e emitter) printf(format string, args ...any) {
+	fmt.Fprintf(e.f, format, args...)
+}
+
+func (e emitter) scope() {
+	p := e.p
+	model := types.TypeString(p.model, e.f.Qualifier)
+	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\nfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
+		p.fn, p.table, p.name)
+	s := e.f.Scope().Name("s")
+	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s.Of[%s] { return %s }\n\n",
+		s, p.name, e.orm, model, e.q(s))
+
+	for _, c := range p.columns {
+		e.column(c)
+	}
+
+	sc := e.f.Scope()
+	s, n := sc.Name("s"), sc.Name("n")
+	e.method("keeps the first "+n+" rows.", s, "Limit", n+" int", e.q(s)+".Limit("+n+")")
+	e.method("skips the first "+n+" rows.", s, "Offset", n+" int", e.q(s)+".Offset("+n+")")
+
+	sc = e.f.Scope()
+	s, alternatives, qs, i, a := sc.Name("s"), sc.Name("alternatives"), sc.Name("qs"), sc.Name("i"), sc.Name("a")
+	e.printf("// Or narrows to the rows any of %s matches, each holding conditions alone.\n", alternatives)
+	e.printf("func (%[1]s %[2]s) Or(%[3]s ...%[2]s) %[2]s {\n", s, p.name, alternatives)
+	e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.orm, model, alternatives)
+	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s\n}\n", i, a, alternatives, qs, e.q(a))
+	e.printf("return %s{%s.Or(%s...)}\n}\n\n", p.name, e.q(s), qs)
+
+	sc = e.f.Scope()
+	s, other := sc.Name("s"), sc.Name("other")
+	e.method("narrows to the rows "+other+", holding conditions alone, does not match.", s, "Not",
+		other+" "+p.name, e.q(s)+".Not("+e.q(other)+")")
+}
+
+// method writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope
+// made of the orm.Of expr returns. Its doc follows its name.
+func (e emitter) method(doc, s, name, params, expr string) {
+	e.printf("// %[1]s %[2]s\nfunc (%[3]s %[4]s) %[1]s(%[5]s) %[4]s {\nreturn %[4]s{%[6]s}\n}\n\n",
+		name, doc, s, e.p.name, params, expr)
+}
+
+// q is the orm.Of of the receiver s.
+func (e emitter) q(s string) string {
+	return s + "." + e.p.field
+}
+
+// where is the orm.Of of the receiver s narrowed by the condition parts make.
+func (e emitter) where(s string, parts ...string) string {
+	return e.q(s) + ".Where(" + strings.Join(parts, ", ") + ")"
+}
+
+// column writes the methods of the column c, named after its field.
+func (e emitter) column(c column) {
+	name := c.path[len(c.path)-1]
+	col := c.col.Name
+	sql := sqlName(e.d, col)
+	t := c.typ
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	typ := types.TypeString(t, e.f.Qualifier)
+	k := kindOf(t)
+
+	sc := e.f.Scope()
+	s, v := sc.Name("s"), sc.Name("v")
+	e.method(fmt.Sprintf("narrows to the rows whose %s is %s.", col, v), s, name+"Eq", v+" "+typ,
+		e.where(s, goString(sql+" = "), v))
+	e.method(fmt.Sprintf("narrows to the rows whose %s is not %s.", col, v), s, name+"Ne", v+" "+typ,
+		e.where(s, goString(sql+" <> "), v))
+
+	if !k.array {
+		sc = e.f.Scope()
+		s, vs := sc.Name("s"), sc.Name("vs")
+		in, notIn := e.where(s, goString(sql+" = ANY("), vs, goString(")")),
+			e.where(s, goString(sql+" <> ALL("), vs, goString(")"))
+		if e.d == snapshot.MySQL {
+			list := e.orm + ".List(" + vs + ")"
+			in, notIn = e.where(s, goString(sql+" IN ("), list, goString(")")),
+				e.where(s, goString(sql+" NOT IN ("), list, goString(")"))
+		}
+		e.method(fmt.Sprintf("narrows to the rows whose %s is one of %s.", col, vs), s, name+"In", vs+" ..."+typ, in)
+		e.printf("// %sNotIn narrows to the rows whose %s is none of %s.\n", name, col, vs)
+		e.printf("func (%[1]s %[2]s) %[3]sNotIn(%[4]s ...%[5]s) %[2]s {\nif len(%[4]s) == 0 {\nreturn %[1]s\n}\n"+
+			"return %[2]s{%[6]s}\n}\n\n", s, e.p.name, name, vs, typ, notIn)
+	}
+
+	if k.ordered {
+		sc = e.f.Scope()
+		s, v := sc.Name("s"), sc.Name("v")
+		for _, m := range []struct{ suffix, op, doc string }{
+			{"Lt", "<", "less than"}, {"Lte", "<=", "at most"}, {"Gt", ">", "greater than"}, {"Gte", ">=", "at least"},
+		} {
+			e.method(fmt.Sprintf("narrows to the rows whose %s is %s %s.", col, m.doc, v), s, name+m.suffix,
+				v+" "+typ, e.where(s, goString(sql+" "+m.op+" "), v))
+		}
+		sc = e.f.Scope()
+		s, lo, hi := sc.Name("s"), sc.Name("lo"), sc.Name("hi")
+		e.method(fmt.Sprintf("narrows to the rows whose %s is between %s and %s, both included.", col, lo, hi), s,
+			name+"Between", lo+", "+hi+" "+typ, e.where(s, goString(sql+" BETWEEN "), lo, goString(" AND "), hi))
+	}
+
+	if k.text {
+		sc = e.f.Scope()
+		s, pattern := sc.Name("s"), sc.Name("pattern")
+		e.method(fmt.Sprintf("narrows to the rows whose %s matches %s, as LIKE does.", col, pattern), s,
+			name+"Like", pattern+" string", e.where(s, goString(sql+" LIKE "), pattern))
+		if e.d == snapshot.PostgreSQL {
+			e.method(fmt.Sprintf("narrows to the rows whose %s matches %s, as ILIKE does, ignoring case.", col,
+				pattern), s, name+"ILike", pattern+" string", e.where(s, goString(sql+" ILIKE "), pattern))
+		}
+		escape := goString(" ESCAPE '!'")
+		sc = e.f.Scope()
+		s, prefix := sc.Name("s"), sc.Name("prefix")
+		e.method(fmt.Sprintf("narrows to the rows whose %s starts with %s.", col, prefix), s, name+"HasPrefix",
+			prefix+" string", e.where(s, goString(sql+" LIKE "), e.orm+".EscapeLike("+prefix+`)+"%"`, escape))
+		sc = e.f.Scope()
+		s, substr := sc.Name("s"), sc.Name("substr")
+		e.method(fmt.Sprintf("narrows to the rows whose %s contains %s.", col, substr), s, name+"Contains",
+			substr+" string", e.where(s, goString(sql+" LIKE "), `"%"+`+e.orm+".EscapeLike("+substr+`)+"%"`, escape))
+	}
+
+	sc = e.f.Scope()
+	s = sc.Name("s")
+	if !c.col.NotNull {
+		e.method(fmt.Sprintf("narrows to the rows whose %s is NULL.", col), s, name+"IsNull", "",
+			e.where(s, goString(sql+" IS NULL")))
+		e.method(fmt.Sprintf("narrows to the rows whose %s is not NULL.", col), s, name+"IsNotNull", "",
+			e.where(s, goString(sql+" IS NOT NULL")))
+	}
+	asc, desc := "in ascending order", "in descending order"
+	switch {
+	case k.time:
+		asc, desc = "earliest first", "latest first"
+	case k.number:
+		asc, desc = "smallest first", "largest first"
+	}
+	e.method(fmt.Sprintf("orders the rows by %s, %s.", col, asc), s, name+"Asc", "",
+		e.q(s)+".OrderBy("+goString(sql)+", false)")
+	e.method(fmt.Sprintf("orders the rows by %s, %s.", col, desc), s, name+"Desc", "",
+		e.q(s)+".OrderBy("+goString(sql)+", true)")
+}
+
+// kind is what a column's methods can do with it, by the type of the field holding it.
+type kind struct {
+	// ordered is a number, a string, or a time; text a string; number and time the others.
+	ordered, text, number, time bool
+	// array is a slice other than []byte, which holds an array.
+	array bool
+}
+
+// kindOf tells the kind of a column held by a t, which is not a pointer. A value type is of the kind of the value it
+// holds.
+func kindOf(t types.Type) kind {
+	if s, ok := t.Underlying().(*types.Slice); ok {
+		b, ok := s.Elem().Underlying().(*types.Basic)
+		return kind{array: !ok || b.Kind() != types.Byte}
+	}
+	if v, ok := valuetype.Of(t); ok {
+		t = v.Held
+	}
+	if isTime(t) {
+		return kind{ordered: true, time: true}
+	}
+	b, ok := t.Underlying().(*types.Basic)
+	switch {
+	case ok && b.Info()&types.IsString != 0:
+		return kind{ordered: true, text: true}
+	case ok && b.Info()&types.IsNumeric != 0:
+		return kind{ordered: true, number: true}
+	}
+	return kind{}
+}
+
+// goString writes s as a Go string literal: a raw one, as SQL reads best, unless s holds a backquote.
+func goString(s string) string {
+	if strings.Contains(s, "`") {
+		return strconv.Quote(s)
+	}
+	return "`" + s + "`"
+}

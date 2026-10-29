@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
+	"github.com/go-kanna/internal/output"
 	"github.com/go-kanna/internal/packages"
 
 	"github.com/go-kanna/orm/internal/snapshot"
@@ -117,4 +118,20 @@ var SQLName = sqlName
 // Reserved returns the reserved words of d, sorted.
 func Reserved(d snapshot.Dialect) []string {
 	return slices.Sorted(maps.Keys(reserved[d]))
+}
+
+// Emit generates orm_gen.go for pkg from s, or reports why it cannot.
+func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, error) {
+	dir := filepath.Dir(pkg.GoFiles[0])
+	idx, err := readIndex(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	plans, ds := plan(pkg, s, idx)
+	if diag.HasErrors(ds) {
+		return nil, ds, nil
+	}
+	declared := slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkg.Name)))
+	src, err := emit(pkg, s.Dialect, plans, declared)
+	return src, ds, err
 }

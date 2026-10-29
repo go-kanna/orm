@@ -172,11 +172,12 @@ func scalar(t types.Type) bool {
 		info := b.Info()
 		return info&(types.IsBoolean|types.IsNumeric|types.IsString) != 0 && info&types.IsComplex == 0
 	}
-	if n, ok := types.Unalias(t).(*types.Named); ok && n.Obj().Pkg() != nil &&
-		n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time" {
-		return true
-	}
-	return scanner(t)
+	return isTime(t) || scanner(t)
+}
+
+func isTime(t types.Type) bool {
+	n, ok := types.Unalias(t).(*types.Named)
+	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time"
 }
 
 // scanner reports whether a *t has the method Scan(any) error, which makes it a sql.Scanner.
