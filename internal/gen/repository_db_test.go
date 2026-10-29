@@ -94,7 +94,6 @@ CREATE TABLE orders (
 	total bigint NOT NULL,
 	paid boolean NOT NULL,
 	contact text,
-	labels text[],
 	receipt bytea,
 	"order" integer NOT NULL UNIQUE
 );
@@ -111,14 +110,16 @@ CREATE TABLE order_tags (
 	tag text NOT NULL REFERENCES tags,
 	PRIMARY KEY (order_id, tag)
 );
-INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order") VALUES
-	(10, 'open', '2026-10-01T00:00:00Z', 'gift', 100, false, 'ann@example.com', '{a,b}', '\x00ff', 1),
-	(10, 'closed', '2026-10-02T00:00:00Z', NULL, 200, true, NULL, NULL, NULL, 2),
-	(20, 'open', '2026-10-03T00:00:00Z', NULL, 300, false, NULL, NULL, NULL, 3);
+CREATE TABLE labels (order_id bigint PRIMARY KEY REFERENCES orders ON DELETE CASCADE, names text[]);
+INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order") VALUES
+	(10, 'open', '2026-10-01T00:00:00Z', 'gift', 100, false, 'ann@example.com', '\x00ff', 1),
+	(10, 'closed', '2026-10-02T00:00:00Z', NULL, 200, true, NULL, NULL, 2),
+	(20, 'open', '2026-10-03T00:00:00Z', NULL, 300, false, NULL, NULL, 3);
 INSERT INTO order_lines VALUES (1, 1, 'A'), (1, 2, 'B');
 INSERT INTO customers VALUES (10, 'Ann'), (20, 'Bob');
 INSERT INTO tags VALUES ('gift'), ('rush');
 INSERT INTO order_tags VALUES (1, 'rush'), (1, 'gift'), (3, 'rush');
+INSERT INTO labels VALUES (1, '{a,b}');
 `
 
 func ids(orders []model.Order) []model.OrderID {
@@ -140,8 +141,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		if o.Status != "open" || o.Memo == nil || *o.Memo != "gift" || o.Contact == nil || o.Contact.String() !=
-			"ann@example.com" || !slices.Equal(o.Labels, []string{"a", "b"}) || !slices.Equal(o.Receipt, []byte{0, 0xff}) ||
-			o.Position != 1 || o.PlacedAt.Day() != 1 {
+			"ann@example.com" || !slices.Equal(o.Receipt, []byte{0, 0xff}) || o.Position != 1 || o.PlacedAt.Day() != 1 {
 			t.Errorf("Get(1) = %+v", o)
 		}
 		if _, err := repo.Get(ctx, 9); !errors.Is(err, orm.ErrNotFound) || err.Error() != "orders with id 9: orm: not found" {
@@ -201,6 +201,9 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 
 		if line, err := repo.GetLine(ctx, 1, 2); err != nil || line.SKU != "B" {
 			t.Errorf("GetLine(1, 2) = %+v, %v", line, err)
+		}
+		if l, err := repo.GetLabel(ctx, 1); err != nil || !slices.Equal(l.Names, []string{"a", "b"}) {
+			t.Errorf("GetLabel(1) = %+v, %v; want [a b]", l, err)
 		}
 
 		if err := repo.Delete(ctx, 3); err != nil {
@@ -278,7 +281,7 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 		placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
 		o, err := repo.Insert(ctx, model.Order{
 			ID: 99, CustomerID: 20, Status: "open", PlacedAt: placed, Memo: &memo, Total: 400, Contact: &contact,
-			Labels: []string{"x"}, Receipt: []byte{1}, Position: 4,
+			Receipt: []byte{1}, Position: 4,
 			Lines: []model.OrderLine{{LineNo: 1, SKU: "ignored"}},
 		})
 		if err != nil {
@@ -289,11 +292,11 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 			t.Errorf("Insert = %+v; want the row as stored, with the id the database assigns and no relation", o)
 		}
 
-		o.Status, o.Memo, o.Labels = "closed", nil, nil
+		o.Status, o.Memo = "closed", nil
 		if err := repo.Update(ctx, o); err != nil {
 			t.Fatal(err)
 		}
-		if got, err := repo.Get(ctx, 4); err != nil || got.Status != "closed" || got.Memo != nil || got.Labels != nil ||
+		if got, err := repo.Get(ctx, 4); err != nil || got.Status != "closed" || got.Memo != nil ||
 			got.Position != 4 {
 			t.Errorf("Get after Update = %+v, %v", got, err)
 		}
@@ -301,6 +304,14 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 		if err := repo.Update(ctx, o); !errors.Is(err, orm.ErrNotFound) || err.Error() !=
 			"orders with id 9: orm: not found" {
 			t.Errorf("Update of no row error = %v, want orm.ErrNotFound", err)
+		}
+
+		if l, err := repo.UpsertLabel(ctx, model.Label{OrderID: 1, Names: []string{"c"}}); err != nil ||
+			!slices.Equal(l.Names, []string{"c"}) {
+			t.Errorf("UpsertLabel over the labels of order 1 = %+v, %v; want [c]", l, err)
+		}
+		if l, err := repo.UpsertLabel(ctx, model.Label{OrderID: 4}); err != nil || l.OrderID != 4 || l.Names != nil {
+			t.Errorf("UpsertLabel of no labels = %+v, %v; want NULL", l, err)
 		}
 
 		moved, err := repo.UpsertByPosition(ctx, model.Order{

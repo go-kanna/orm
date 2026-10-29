@@ -180,12 +180,12 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 }
 
 func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order"`
+	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	var row model.Order
-	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Labels, o.Receipt, o.Position).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Labels, &row.Receipt, &row.Position)
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
 	}
@@ -253,9 +253,9 @@ SELECT * FROM unnest($1::text[])`
 
 func (r OrderRepository) Update(ctx context.Context, o model.Order) error {
 	const q = `UPDATE orders
-SET customer_id = $1, status = $2, placed_at = $3, note = $4, total = $5, paid = $6, contact = $7, labels = $8, receipt = $9, "order" = $10
-WHERE id = $11`
-	tag, err := r.db.Exec(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Labels, o.Receipt, o.Position, o.ID)
+SET customer_id = $1, status = $2, placed_at = $3, note = $4, total = $5, paid = $6, contact = $7, receipt = $8, "order" = $9
+WHERE id = $10`
+	tag, err := r.db.Exec(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position, o.ID)
 	if err != nil {
 		return fmt.Errorf("update orders: %w", err)
 	}
@@ -280,13 +280,13 @@ RETURNING id, name`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order")
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, labels = EXCLUDED.labels, receipt = EXCLUDED.receipt
-RETURNING id, customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order"`
+	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	var row model.Order
-	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Labels, o.Receipt, o.Position).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Labels, &row.Receipt, &row.Position)
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
 	}
@@ -343,6 +343,33 @@ RETURNING name`
 		return nil, fmt.Errorf("upsert into tags: %w", err)
 	}
 	return out, nil
+}
+
+func (r OrderRepository) GetLabel(ctx context.Context, orderID model.OrderID) (model.Label, error) {
+	var q orm.Of[model.Label]
+	q = q.Where(`order_id = `, orderID)
+	rows, err := selectLabels(ctx, r.db, q)
+	if err != nil {
+		return model.Label{}, err
+	}
+	if len(rows) == 0 {
+		return model.Label{}, fmt.Errorf("labels with order_id %v: %w", orderID, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) UpsertLabel(ctx context.Context, l model.Label) (model.Label, error) {
+	const q = `INSERT INTO labels (order_id, names)
+VALUES ($1, $2)
+ON CONFLICT (order_id) DO UPDATE SET names = EXCLUDED.names
+RETURNING order_id, names`
+	var row model.Label
+	err := r.db.QueryRow(ctx, q, l.OrderID, l.Names).
+		Scan(&row.OrderID, &row.Names)
+	if err != nil {
+		return model.Label{}, fmt.Errorf("upsert into labels: %w", err)
+	}
+	return row, nil
 }
 
 // MonthCounts runs the query of its name in queries.sql.
@@ -437,6 +464,34 @@ func selectCustomers(ctx context.Context, db DB, q orm.Of[model.Customer]) ([]mo
 	return out, nil
 }
 
+// selectLabels reads the rows of labels that q matches, in its order.
+func selectLabels(ctx context.Context, db DB, q orm.Of[model.Label]) ([]model.Label, error) {
+	rd, err := q.Render(orm.Postgres, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT order_id, names FROM labels`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read labels: %w", err)
+	}
+	defer rows.Close()
+	out := []model.Label{}
+	for rows.Next() {
+		var row model.Label
+		if err := rows.Scan(&row.OrderID, &row.Names); err != nil {
+			return nil, fmt.Errorf("read labels: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read labels: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads.
 func selectOrderLines(ctx context.Context, db DB, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.Postgres, 1)
@@ -501,7 +556,7 @@ func selectOrders(ctx context.Context, db DB, q orm.Of[model.Order]) ([]model.Or
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT id, customer_id, status, placed_at, note, total, paid, contact, labels, receipt, "order" FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -509,7 +564,7 @@ func selectOrders(ctx context.Context, db DB, q orm.Of[model.Order]) ([]model.Or
 	out := []model.Order{}
 	for rows.Next() {
 		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Labels, &row.Receipt, &row.Position); err != nil {
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
 		out = append(out, row)

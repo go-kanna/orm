@@ -21,7 +21,6 @@ type Order struct {
 	Total      int64
 	Paid       bool
 	Contact    *Email
-	Labels     []string
 	Receipt    []byte
 	Position   int `orm:"order"`
 	Customer   *Customer
@@ -42,6 +41,12 @@ type OrderLine struct {
 }
 
 type Tag struct{ Name string }
+
+// Label holds the labels of an order in an array, which PostgreSQL alone of the databases has.
+type Label struct {
+	OrderID OrderID
+	Names   []string
+}
 
 // Email is a value type, as kanna-value generates one.
 type Email struct{ s string }

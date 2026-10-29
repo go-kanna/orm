@@ -32,6 +32,8 @@ type OrderRepository interface {
 	UpsertLines(ctx context.Context, lines []model.OrderLine) error
 	//kanna:conflict name
 	UpsertTags(ctx context.Context, tags []model.Tag) ([]model.Tag, error)
+	GetLabel(ctx context.Context, orderID model.OrderID) (model.Label, error)
+	UpsertLabel(ctx context.Context, l model.Label) (model.Label, error)
 
 	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
 	TotalOf(ctx context.Context, customerID int64) (CustomerTotal, error)

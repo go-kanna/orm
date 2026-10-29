@@ -17,3 +17,6 @@ type OrderLine struct{ q orm.Of[model.OrderLine] }
 
 //kanna:scope table=tags
 type Tag struct{ q orm.Of[model.Tag] }
+
+//kanna:scope table=labels
+type Label struct{ q orm.Of[model.Label] }
