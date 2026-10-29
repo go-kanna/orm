@@ -235,12 +235,13 @@ Every method returns a new scope and leaves its receiver as it was, so a scope b
 A field holds the column named as the field is, in snake case: `CustomerID` holds `customer_id`, and `PlacedAt` holds
 `placed_at`. The conversion is mechanical, so a field named otherwise says so with a tag:
 
-| Tag                 | Meaning                                                                         |
-|---------------------|---------------------------------------------------------------------------------|
-| *(none)*            | the column named as the field is, in snake case                                 |
-| `orm:"note"`        | the column `note`                                                               |
-| `orm:"-"`           | not a column: kanna-orm neither reads nor writes the field                      |
-| `orm:"fk=order_id"` | on a [relation](#relations), the foreign key to follow when more than one could |
+| Tag                             | Meaning                                                                         |
+|---------------------------------|---------------------------------------------------------------------------------|
+| *(none)*                        | the column named as the field is, in snake case                                 |
+| `orm:"note"`                    | the column `note`                                                               |
+| `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
+| `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
+| `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
 
 A field with no column, a column that may be NULL held by a field that cannot be nil, and, on a table something inserts
 into, a column the database requires a value for and the model has no field for, all stop generation. A column the
@@ -325,8 +326,15 @@ When more than one foreign key could serve, generation stops and asks for a tag:
 
 ```console
 ../model/order.go:16:2: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
+  order_lines.order_id to orders
+  order_lines.replaced_order_id to orders
   tag the field with the one to follow: orm:"fk=order_id"
 ```
+
+A table with foreign keys to both counts as much as a foreign key of the related table: when `refunds` refers to
+`orders` and to `order_lines`, `Lines` could be the lines of an order or those refunded, and asks for a tag too. Where
+the column alone does not tell, as `order_id` does not here, the tag names its table as well:
+`orm:"fk=order_lines.order_id"`.
 
 A relation is loaded only when the scope asks for it with its `With` method, which takes scopes of the related rows:
 their conditions, their order, and relations of their own to load.

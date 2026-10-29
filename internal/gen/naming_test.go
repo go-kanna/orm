@@ -42,6 +42,7 @@ func TestParseTag(t *testing.T) {
 		{tag: `json:"memo" orm:"note"`, column: "note"},
 		{tag: `orm:"-"`, skip: true},
 		{tag: `orm:"fk=order_id"`, fk: "order_id"},
+		{tag: `orm:"fk=order_lines.order_id"`, fk: "order_lines.order_id"},
 		{tag: `orm:""`, err: `orm:"" is neither a column, -, nor fk=<column>`},
 		{tag: `orm:"note,omitempty"`, err: `orm:"note,omitempty" is neither a column, -, nor fk=<column>`},
 		{tag: `orm:"fk="`, err: `orm:"fk=" is neither a column, -, nor fk=<column>`},

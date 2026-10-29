@@ -77,3 +77,35 @@ func CheckUnique(pkg *packages.Package, s snapshot.Snapshot) ([]diag.Diag, error
 	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
 	return append(ds, checkUnique(pkg, scopes, idx)...), err
 }
+
+// Links finds the foreign keys the relations of the models of the scope types of pkg follow, each as
+// "Model.Path kind pkg.Target: way; keys = targetKeys".
+func Links(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, error) {
+	scopes, ds := findScopes(pkg, s)
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	if err != nil {
+		return nil, nil, err
+	}
+	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, tables: s.Tables, idx: idx}
+	var got []string
+	for _, sc := range scopes {
+		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		ds = append(ds, fds...)
+		links, lds := l.link(sc, columns, relations)
+		ds = append(ds, lds...)
+		for _, lk := range links {
+			got = append(got, fmt.Sprintf("%s.%s %s %s.%s: %s; %s = %s", sc.model.Obj().Name(),
+				strings.Join(lk.field.path, "."), lk.way.kind, lk.target.pkgName, lk.target.name, lk.way.String(),
+				fieldNames(lk.keys), fieldNames(lk.targetKeys)))
+		}
+	}
+	return got, ds, nil
+}
+
+func fieldNames(columns []column) string {
+	names := make([]string, 0, len(columns))
+	for _, c := range columns {
+		names = append(names, strings.Join(c.path, "."))
+	}
+	return strings.Join(names, ", ")
+}
