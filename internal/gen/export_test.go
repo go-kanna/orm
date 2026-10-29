@@ -3,7 +3,9 @@ package gen
 import (
 	"fmt"
 	"go/types"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
@@ -108,4 +110,11 @@ func fieldNames(columns []column) string {
 		names = append(names, strings.Join(c.path, "."))
 	}
 	return strings.Join(names, ", ")
+}
+
+var SQLName = sqlName
+
+// Reserved returns the reserved words of d, sorted.
+func Reserved(d snapshot.Dialect) []string {
+	return slices.Sorted(maps.Keys(reserved[d]))
 }
