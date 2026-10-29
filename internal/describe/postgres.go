@@ -3,7 +3,6 @@ package describe
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -133,11 +132,6 @@ func postgresTables(ctx context.Context, conn *pgx.Conn) (map[string]snapshot.Ta
 		return nil, fmt.Errorf("read the unique keys: %w", err)
 	}
 
-	// A unique constraint and a unique index on the same columns are one key.
-	for name, t := range tables {
-		slices.SortFunc(t.UniqueKeys, slices.Compare)
-		t.UniqueKeys = slices.CompactFunc(t.UniqueKeys, slices.Equal)
-		tables[name] = t
-	}
+	mergeUniqueKeys(tables)
 	return tables, nil
 }

@@ -37,11 +37,11 @@ func postgres(t *testing.T) (*pgx.Conn, string) {
 			t.Error(err)
 		}
 	})
-	exec(t, conn, "CREATE SCHEMA "+schema+"; SET search_path TO "+schema)
+	postgresExec(t, conn, "CREATE SCHEMA "+schema+"; SET search_path TO "+schema)
 	return conn, schema
 }
 
-func exec(t *testing.T, conn *pgx.Conn, sql string) {
+func postgresExec(t *testing.T, conn *pgx.Conn, sql string) {
 	t.Helper()
 
 	if _, err := conn.Exec(t.Context(), sql); err != nil {
@@ -53,7 +53,7 @@ func TestPostgresTables(t *testing.T) {
 	t.Parallel()
 
 	conn, _ := postgres(t)
-	exec(t, conn, `
+	postgresExec(t, conn, `
 CREATE TYPE mood AS ENUM ('ok', 'meh');
 CREATE DOMAIN email AS text;
 
@@ -178,7 +178,7 @@ func TestPostgresTables_NamesATableOfAnotherSchemaWithItsSchema(t *testing.T) {
 
 	conn, schema := postgres(t)
 	other := schema + "_other"
-	exec(t, conn, `
+	postgresExec(t, conn, `
 CREATE SCHEMA `+other+`;
 CREATE TABLE `+other+`.countries (code text PRIMARY KEY);
 CREATE TABLE addresses (country text NOT NULL REFERENCES `+other+`.countries (code));

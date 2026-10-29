@@ -7,7 +7,9 @@ test:
 
 .PHONY: test-db
 test-db:
-	KANNA_ORM_TEST_POSTGRES='postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable' $(MAKE) test
+	KANNA_ORM_TEST_POSTGRES='postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable' \
+	KANNA_ORM_TEST_MYSQL='root:kanna@tcp(127.0.0.1:13306)/?multiStatements=true' \
+		$(MAKE) test
 
 .PHONY: db-up
 db-up:

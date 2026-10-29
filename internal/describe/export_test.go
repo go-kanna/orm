@@ -1,3 +1,6 @@
 package describe
 
-var PostgresTables = postgresTables
+var (
+	PostgresTables = postgresTables
+	MySQLTables    = mysqlTables
+)
