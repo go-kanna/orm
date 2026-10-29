@@ -289,35 +289,44 @@ type Customer struct{ q orm.Of[model.Customer] }
 func TestEmitRepositories(t *testing.T) {
 	t.Parallel()
 
-	set, err := packages.Load([]string{"./testdata/postgres", "./testdata/repository"}, packages.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(set.Diags) > 0 {
-		t.Fatalf("load: %v", set.Diags)
-	}
 	const testdata = "github.com/go-kanna/orm/internal/gen/testdata/"
-	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables, Statements: described(t, "repository")}
-	for name, columns := range map[string][]snapshot.Result{
+	results := map[string][]snapshot.Result{
 		"MonthCounts": {{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8"}},
 		"TotalOf":     {{Name: "customer", Type: "text", NotNull: true}, {Name: "total", Type: "int8"}},
-	} {
-		st := s.Statements[testdata+"repository."+name]
-		st.Columns = columns
-		s.Statements[testdata+"repository."+name] = st
 	}
-	for drv, dest := range map[string]string{"pgx": "pgxrepo", "database/sql": "pgsqlrepo"} {
-		t.Run(drv, func(t *testing.T) {
+	for _, tt := range []struct {
+		scopes, repo string
+		d            snapshot.Dialect
+		drv, dest    string
+	}{
+		{"postgres", "repository", snapshot.PostgreSQL, "pgx", "pgxrepo"},
+		{"postgres", "repository", snapshot.PostgreSQL, "database/sql", "pgsqlrepo"},
+		{"mysql", "mysqlrepository", snapshot.MySQL, "database/sql", "mysqlrepo"},
+	} {
+		t.Run(tt.dest, func(t *testing.T) {
 			t.Parallel()
 
-			got, ds, err := gen.EmitRepositories(set.Packages, testdata+"repository", s, drv, testdata+dest, dest)
+			set, err := packages.Load([]string{"./testdata/" + tt.scopes, "./testdata/" + tt.repo}, packages.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(set.Diags) > 0 {
+				t.Fatalf("load: %v", set.Diags)
+			}
+			s := snapshot.Snapshot{Dialect: tt.d, Tables: tables, Statements: described(t, tt.repo)}
+			for name, columns := range results {
+				st := s.Statements[testdata+tt.repo+"."+name]
+				st.Columns = columns
+				s.Statements[testdata+tt.repo+"."+name] = st
+			}
+			got, ds, err := gen.EmitRepositories(set.Packages, testdata+tt.repo, s, tt.drv, testdata+tt.dest, tt.dest)
 			if len(ds) > 0 {
 				t.Fatalf("EmitRepositories:\n%s", report(ds))
 			}
 			if err != nil {
 				t.Fatalf("EmitRepositories: %v\n%s", err, got)
 			}
-			pkgtest.Golden(t, filepath.Join("testdata", dest, "orm_gen.go"), got)
+			pkgtest.Golden(t, filepath.Join("testdata", tt.dest, "orm_gen.go"), got)
 		})
 	}
 }

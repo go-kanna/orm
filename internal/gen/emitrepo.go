@@ -46,6 +46,11 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve("DB")
 	for _, repo := range repos {
 		f.Reserve(repo.name, "New"+repo.name)
+		for _, m := range repo.methods {
+			if d == snapshot.MySQL && (m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert) {
+				return nil, nil, fmt.Errorf("%s.%s: %s on MySQL is not generated yet", repo.name, m.name, m.verb)
+			}
+		}
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
 		names: readNames(models)}
@@ -551,10 +556,14 @@ func (e repoEmitter) driverPkg() string {
 	return e.f.Import("github.com/jackc/pgx/v5", "pgx")
 }
 
+// inChunk is how many keys MySQL is given in one IN (...), for a statement to take far fewer than the 65,535
+// placeholders it can.
+const inChunk = 1000
+
 // preloadNames are the names in a function loading relations.
 type preloadNames struct {
-	ctx, db, rows, q, sub, ok, keys, related, err, byKey, i, j, found string
-	pairs, pk, tk, targetKeys, parentsOf                              string
+	ctx, db, rows, q, sub, ok, keys, seen, chunk, related, err, byKey, i, j, found string
+	pairs, args, key, pk, tk, targetKeys, parentsOf                                string
 }
 
 // preloadRows writes the function loading into rows of rm the relations a scope loads, each by the keys of the rows.
@@ -564,11 +573,12 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	sc := e.f.Scope()
 	n := preloadNames{
 		ctx: sc.Name("ctx"), db: sc.Name("db"), rows: sc.Name("rows"), q: sc.Name("q"), sub: sc.Name("sub"),
-		ok: sc.Name("ok"), keys: sc.Name("keys"), related: sc.Name("related"), err: sc.Name("err"),
-		byKey: sc.Name("byKey"), i: sc.Name("i"), j: sc.Name("j"), found: sc.Name("found"),
+		ok: sc.Name("ok"), keys: sc.Name("keys"), seen: sc.Name("seen"), chunk: sc.Name("chunk"),
+		related: sc.Name("related"), err: sc.Name("err"), byKey: sc.Name("byKey"), i: sc.Name("i"), j: sc.Name("j"),
+		found: sc.Name("found"),
 	}
 	if slices.ContainsFunc(rm.links, func(lk link) bool { return lk.way.kind == manyToMany }) {
-		n.pairs, n.pk, n.tk = sc.Name("pairs"), sc.Name("pk"), sc.Name("tk")
+		n.pairs, n.args, n.key, n.pk, n.tk = sc.Name("pairs"), sc.Name("args"), sc.Name("key"), sc.Name("pk"), sc.Name("tk")
 		n.targetKeys, n.parentsOf = sc.Name("targetKeys"), sc.Name("parentsOf")
 	}
 
@@ -582,9 +592,10 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	e.printf("return nil\n}\n\n")
 }
 
-// preload writes the block loading the relation lk into the rows, when the scope loads it: the keys of the rows; the
-// rows related to them, in the order of the scope given for the relation; and these handed to the rows they are
-// related to.
+// preload writes the block loading the relation lk into the rows, when the scope loads it: the keys of the rows, each
+// once; the rows related to them, in the order of the scope given for the relation; and these handed to the rows they
+// are related to. On MySQL, the keys go in chunks, so that the rows related to one row come in one chunk, in their
+// order.
 func (e repoEmitter) preload(lk link, n preloadNames) {
 	own, other := lk.keys[0], lk.targetKeys[0]
 	keyType := types.TypeString(elemOf(own.typ), e.f.Qualifier)
@@ -593,35 +604,49 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 		elemType = types.TypeString(s.Elem(), e.f.Qualifier)
 	}
 	many := lk.way.kind == hasMany || lk.way.kind == manyToMany
+	valueType := elemType
+	if many {
+		valueType = "[]" + elemType
+	}
 
 	e.printf("if %[1]s, %[2]s := %[3]s.Preloaded[%[4]s](%[5]s, %[6]q); %[2]s {\n", n.sub, n.ok, e.orm,
 		types.TypeString(lk.model, e.f.Qualifier), n.q, strings.Join(lk.field.path, "."))
-	e.printf("%[1]s := make([]%[2]s, 0, len(%[3]s))\n"+
-		"for %[4]s := range %[3]s {\n%[5]s\n}\n", n.keys, keyType, n.rows, n.i,
-		ifSet(n.rows+"["+n.i+"]."+fieldPath(own), isPointer(own.typ), func(v string) string {
-			return n.keys + " = append(" + n.keys + ", " + v + ")"
-		}))
+	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, keyType, n.rows)
+	add := func(v string) string { return n.keys + " = append(" + n.keys + ", " + v + ")" }
+	if lk.way.kind == belongsTo { // the foreign keys of the rows, which may repeat
+		e.printf("%s := map[%s]bool{}\n", n.seen, keyType)
+		add = func(v string) string {
+			return "if !" + n.seen + "[" + v + "] {\n" + n.seen + "[" + v + "] = true\n" + n.keys + " = append(" + n.keys +
+				", " + v + ")\n}"
+		}
+	}
+	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows,
+		ifSet(n.rows+"["+n.i+"]."+fieldPath(own), isPointer(own.typ), add))
+	e.printf("%s := map[%s]%s{}\n", n.byKey, keyType, valueType)
 
 	keys := n.keys
+	if e.d == snapshot.MySQL {
+		e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.slices, n.keys, inChunk)
+		keys = n.chunk
+	}
 	if lk.way.kind == manyToMany {
-		e.throughPairs(lk, n, keyType)
+		e.throughPairs(lk, n, keyType, keys)
 		keys = n.targetKeys
 	}
-	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s, %[8]s, %[9]s))\n"+
-		"if %[2]s != nil {\nreturn %[2]s\n}\n", n.related, n.err,
-		e.names[lk.target.table], n.ctx, n.db, n.sub, goString(sqlName(e.d, other.col.Name)+" = ANY("), keys,
+	cond := goString(sqlName(e.d, other.col.Name)+" = ANY(") + ", " + keys
+	if e.d == snapshot.MySQL {
+		cond = goString(sqlName(e.d, other.col.Name)+" IN (") + ", " + e.orm + ".List(" + keys + ")"
+	}
+	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s, %[8]s))\n"+
+		"if %[2]s != nil {\nreturn %[2]s\n}\n", n.related, n.err, e.names[lk.target.table], n.ctx, n.db, n.sub, cond,
 		goString(")"))
 
 	elem := n.related + "[" + n.j + "]"
 	if strings.HasPrefix(elemType, "*") {
 		elem = "&" + elem
 	}
-	valueType := elemType
-	if many {
-		valueType = "[]" + elemType
-	}
 	key := n.related + "[" + n.j + "]." + fieldPath(other)
-	e.printf("%s := map[%s]%s{}\nfor %s := range %s {\n", n.byKey, keyType, valueType, n.j, n.related)
+	e.printf("for %s := range %s {\n", n.j, n.related)
 	switch {
 	case lk.way.kind == manyToMany:
 		e.printf("for _, %[1]s := range %[2]s[%[3]s] {\n%[4]s[%[1]s] = append(%[4]s[%[1]s], %[5]s)\n}\n", n.pk,
@@ -636,6 +661,9 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 		}))
 	}
 	e.printf("}\n")
+	if e.d == snapshot.MySQL {
+		e.printf("}\n")
+	}
 
 	dest := n.rows + "[" + n.i + "]." + strings.Join(lk.field.path, ".")
 	value := n.found
@@ -653,23 +681,32 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 }
 
 // throughPairs writes the query reading, from the table a many-to-many relation lk goes through, the keys of the
-// rows n.keys holds and those of the rows related to them: n.targetKeys, and n.parentsOf, the keys of the rows each is
-// related to.
-func (e repoEmitter) throughPairs(lk link, n preloadNames, keyType string) {
+// rows keys holds and those of the rows related to them: n.targetKeys, each once, and n.parentsOf, the keys of the
+// rows each is related to.
+func (e repoEmitter) throughPairs(lk link, n preloadNames, keyType, keys string) {
 	targetType := types.TypeString(elemOf(lk.targetKeys[0].typ), e.f.Qualifier)
 	fkColumn := sqlName(e.d, lk.way.fk.Columns[0])
 	query := "SELECT " + fkColumn + ", " + sqlName(e.d, lk.way.throughFK.Columns[0]) + " FROM " +
-		sqlName(e.d, lk.way.table) + " WHERE " + fkColumn + " = ANY($1)"
+		sqlName(e.d, lk.way.table) + " WHERE " + fkColumn
 	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "read "+lk.way.table+": %w") + ", " + n.err + ")"
-	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s, %[7]s)\n"+
-		"if %[2]s != nil {\nreturn %[8]s\n}\n", n.pairs, n.err, n.db, e.query, n.ctx, goString(query), n.keys, wrap)
+	if e.d == snapshot.MySQL {
+		e.printf("%[1]s := make([]any, 0, len(%[2]s))\nfor _, %[3]s := range %[2]s {\n%[1]s = append(%[1]s, %[3]s)\n}\n",
+			n.args, keys, n.key)
+		e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Repeat(%[8]s, len(%[9]s)-1)+%[10]s, %[11]s...)\n",
+			n.pairs, n.err, n.db, e.query, n.ctx, goString(query+" IN (?"), e.f.Import("strings", "strings"),
+			goString(", ?"), keys, goString(")"), n.args)
+	} else {
+		e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s, %[7]s)\n", n.pairs, n.err, n.db, e.query, n.ctx,
+			goString(query+" = ANY($1)"), keys)
+	}
+	e.printf("if %[1]s != nil {\nreturn %[2]s\n}\n", n.err, wrap)
 	e.printf("%[1]s := map[%[2]s][]%[3]s{}\nvar %[4]s []%[2]s\n"+
 		"for %[5]s.Next() {\nvar %[6]s %[3]s\nvar %[7]s %[2]s\n", n.parentsOf,
 		targetType, keyType, n.targetKeys, n.pairs, n.pk, n.tk)
 	e.printf("if %[1]s := %[2]s.Scan(&%[3]s, &%[4]s); %[1]s != nil {\n%[2]s.Close()\nreturn %[5]s\n}\n", n.err, n.pairs,
 		n.pk, n.tk, wrap)
-	e.printf("%[1]s[%[2]s] = append(%[1]s[%[2]s], %[3]s)\n%[4]s = append(%[4]s, %[2]s)\n}\n", n.parentsOf, n.tk, n.pk,
-		n.targetKeys)
+	e.printf("if _, %[1]s := %[2]s[%[3]s]; !%[1]s {\n%[4]s = append(%[4]s, %[3]s)\n}\n"+
+		"%[2]s[%[3]s] = append(%[2]s[%[3]s], %[5]s)\n}\n", n.ok, n.parentsOf, n.tk, n.targetKeys, n.pk)
 	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn %[3]s\n}\n", n.err, n.pairs, wrap)
 }
 

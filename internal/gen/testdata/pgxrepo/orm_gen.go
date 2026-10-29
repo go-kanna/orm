@@ -530,14 +530,18 @@ func preloadOrderLines(ctx context.Context, db DB, rows []model.OrderLine, q orm
 	}
 	if sub, ok := orm.Preloaded[model.Order](q, "Order"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].OrderID)
+			if !seen[rows[i].OrderID] {
+				seen[rows[i].OrderID] = true
+				keys = append(keys, rows[i].OrderID)
+			}
 		}
+		byKey := map[model.OrderID]model.Order{}
 		related, err := selectOrders(ctx, db, sub.Where(`id = ANY(`, keys, `)`))
 		if err != nil {
 			return err
 		}
-		byKey := map[model.OrderID]model.Order{}
 		for j := range related {
 			byKey[related[j].ID] = related[j]
 		}
@@ -588,14 +592,18 @@ func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[mode
 	}
 	if sub, ok := orm.Preloaded[model.Customer](q, "Customer"); ok {
 		keys := make([]int64, 0, len(rows))
+		seen := map[int64]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].CustomerID)
+			if !seen[rows[i].CustomerID] {
+				seen[rows[i].CustomerID] = true
+				keys = append(keys, rows[i].CustomerID)
+			}
 		}
+		byKey := map[int64]model.Customer{}
 		related, err := selectCustomers(ctx, db, sub.Where(`id = ANY(`, keys, `)`))
 		if err != nil {
 			return err
 		}
-		byKey := map[int64]model.Customer{}
 		for j := range related {
 			byKey[related[j].ID] = related[j]
 		}
@@ -610,11 +618,11 @@ func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[mode
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
 		}
+		byKey := map[model.OrderID][]model.OrderLine{}
 		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`))
 		if err != nil {
 			return err
 		}
-		byKey := map[model.OrderID][]model.OrderLine{}
 		for j := range related {
 			byKey[related[j].OrderID] = append(byKey[related[j].OrderID], related[j])
 		}
@@ -630,6 +638,7 @@ func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[mode
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
 		}
+		byKey := map[model.OrderID][]model.Tag{}
 		pairs, err := db.Query(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id = ANY($1)`, keys)
 		if err != nil {
 			return fmt.Errorf("read order_tags: %w", err)
@@ -643,8 +652,10 @@ func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[mode
 				pairs.Close()
 				return fmt.Errorf("read order_tags: %w", err)
 			}
+			if _, ok := parentsOf[tk]; !ok {
+				targetKeys = append(targetKeys, tk)
+			}
 			parentsOf[tk] = append(parentsOf[tk], pk)
-			targetKeys = append(targetKeys, tk)
 		}
 		if err := pairs.Err(); err != nil {
 			return fmt.Errorf("read order_tags: %w", err)
@@ -653,7 +664,6 @@ func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[mode
 		if err != nil {
 			return err
 		}
-		byKey := map[model.OrderID][]model.Tag{}
 		for j := range related {
 			for _, pk := range parentsOf[related[j].Name] {
 				byKey[pk] = append(byKey[pk], related[j])
