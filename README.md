@@ -527,8 +527,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - On PostgreSQL, a result of `([]model.OrderLine, error)` reads the rows back with `RETURNING`.
 - On MySQL, the rows go in `VALUES (?, ?, ?), (?, ?, ?), ...`, split into several statements when they need more
   placeholders than one can take. Give the constructor a transaction to have them stand or fall together.
-- MySQL does not promise consecutive AUTO_INCREMENT values to the rows of one statement, so on a table with such a
-  column, a result other than `error` alone stops generation.
+- MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
 - PostgreSQL rejects an upsert in which two rows have the same key.
 
 ## Hand-written SQL
@@ -618,7 +617,8 @@ the difference is settled when the code is generated.
 | Paging by key        | a row comparison, unless the order mixes directions | spelled out                                  |
 
 A value type goes to and from the database through its `Value` and `Scan` methods; any other type, as the driver
-converts it. A column that may be NULL is held by a pointer.
+converts it. A column that may be NULL is held by a pointer. Through database/sql, an array of PostgreSQL is read into
+a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 
 ## With the rest of kanna
 

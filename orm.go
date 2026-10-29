@@ -97,7 +97,7 @@ func (q Of[M]) Offset(n int) Of[M] {
 // matches no row.
 func (q Of[M]) Or(alternatives ...Of[M]) Of[M] {
 	for _, a := range alternatives {
-		if err := a.conditionsOnly("Or"); err != nil {
+		if err := a.ConditionsOnly("Or"); err != nil {
 			q.err = cmp.Or(q.err, err)
 			return q
 		}
@@ -118,7 +118,7 @@ func (q Of[M]) Or(alternatives ...Of[M]) Of[M] {
 
 // Not narrows to the rows s, which holds conditions alone, does not match.
 func (q Of[M]) Not(s Of[M]) Of[M] {
-	if err := s.conditionsOnly("Not"); err != nil {
+	if err := s.ConditionsOnly("Not"); err != nil {
 		q.err = cmp.Or(q.err, err)
 		return q
 	}
@@ -156,8 +156,10 @@ func Join[M any](qs ...Of[M]) Of[M] {
 	return q
 }
 
-// conditionsOnly reports why q, given to what, holds more than conditions.
-func (q Of[M]) conditionsOnly(what string) error {
+// ConditionsOnly reports why q, given to what, holds more than conditions: an order, a limit, an offset, a row to
+// continue from, or a relation to load, which what would otherwise pass over. A repository's Count, Exists, and Delete
+// read the conditions alone.
+func (q Of[M]) ConditionsOnly(what string) error {
 	switch {
 	case q.err != nil:
 		return q.err

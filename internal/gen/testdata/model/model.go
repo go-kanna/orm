@@ -2,8 +2,9 @@
 package model
 
 import (
+	"database/sql"
 	"database/sql/driver"
-	"fmt"
+	"errors"
 	"time"
 )
 
@@ -21,7 +22,6 @@ type Order struct {
 	Total      int64
 	Paid       bool
 	Contact    *Email
-	Labels     []string
 	Receipt    []byte
 	Position   int `orm:"order"`
 	Customer   *Customer
@@ -38,9 +38,16 @@ type OrderLine struct {
 	OrderID OrderID
 	LineNo  int
 	SKU     string
+	Order   *Order
 }
 
 type Tag struct{ Name string }
+
+// Label holds the labels of an order in an array, which PostgreSQL alone of the databases has.
+type Label struct {
+	OrderID OrderID
+	Names   []string
+}
 
 // Email is a value type, as kanna-value generates one.
 type Email struct{ s string }
@@ -52,10 +59,13 @@ func (x Email) String() string { return x.s }
 func (x Email) Value() (driver.Value, error) { return x.s, nil }
 
 func (x *Email) Scan(src any) error {
-	s, ok := src.(string)
-	if !ok {
-		return fmt.Errorf("scan %T into an Email", src)
+	var v sql.Null[string]
+	if err := v.Scan(src); err != nil {
+		return err
 	}
-	x.s = s
+	if !v.Valid {
+		return errors.New("model: cannot scan NULL into Email")
+	}
+	x.s = v.V
 	return nil
 }

@@ -146,3 +146,26 @@ func TestWhere_Panics(t *testing.T) {
 		}()
 	}
 }
+
+func TestConditionsOnly(t *testing.T) {
+	t.Parallel()
+
+	var q orm.Of[order]
+	for _, tt := range []struct {
+		q    orm.Of[order]
+		want string
+	}{
+		{q.Where("status <> ", "closed"), ""},
+		{q.OrderBy("id", false), "orm: Count takes conditions alone, but its scope orders the rows"},
+		{q.Limit(1), "orm: Count takes conditions alone, but its scope keeps only some of the rows"},
+		{orm.Preload(q, "Lines", orm.Of[order]{}), "orm: Count takes conditions alone, but its scope loads Lines"},
+	} {
+		got := ""
+		if err := tt.q.ConditionsOnly("Count"); err != nil {
+			got = err.Error()
+		}
+		if got != tt.want {
+			t.Errorf("ConditionsOnly = %q, want %q", got, tt.want)
+		}
+	}
+}

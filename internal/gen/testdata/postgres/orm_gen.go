@@ -534,36 +534,6 @@ func (s Order) ContactDesc() Order {
 	return Order{s.q.OrderBy(`contact`, true)}
 }
 
-// LabelsEq narrows to the rows whose labels is v.
-func (s Order) LabelsEq(v []string) Order {
-	return Order{s.q.Where(`labels = `, v)}
-}
-
-// LabelsNe narrows to the rows whose labels is not v.
-func (s Order) LabelsNe(v []string) Order {
-	return Order{s.q.Where(`labels <> `, v)}
-}
-
-// LabelsIsNull narrows to the rows whose labels is NULL.
-func (s Order) LabelsIsNull() Order {
-	return Order{s.q.Where(`labels IS NULL`)}
-}
-
-// LabelsIsNotNull narrows to the rows whose labels is not NULL.
-func (s Order) LabelsIsNotNull() Order {
-	return Order{s.q.Where(`labels IS NOT NULL`)}
-}
-
-// LabelsAsc orders the rows by labels, in ascending order.
-func (s Order) LabelsAsc() Order {
-	return Order{s.q.OrderBy(`labels`, false)}
-}
-
-// LabelsDesc orders the rows by labels, in descending order.
-func (s Order) LabelsDesc() Order {
-	return Order{s.q.OrderBy(`labels`, true)}
-}
-
 // ReceiptEq narrows to the rows whose receipt is v.
 func (s Order) ReceiptEq(v []byte) Order {
 	return Order{s.q.Where(`receipt = `, v)}
@@ -750,7 +720,6 @@ func (Order) values(row model.Order) map[string]any {
 		`total`:       row.Total,
 		`paid`:        row.Paid,
 		`contact`:     orm.MayBeNull,
-		`labels`:      orm.MayBeNull,
 		`receipt`:     orm.MayBeNull,
 		`"order"`:     row.Position,
 	}
@@ -1196,6 +1165,15 @@ func (s OrderLine) SKUDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`sku`, true)}
 }
 
+// WithOrder loads Order, from orders by order_id.
+func (s OrderLine) WithOrder(sub ...Order) OrderLine {
+	qs := make([]orm.Of[model.Order], len(sub))
+	for i, x := range sub {
+		qs[i] = x.Of()
+	}
+	return OrderLine{orm.Preload(s.q, "Order", orm.Join(qs...))}
+}
+
 // Limit keeps the first n rows.
 func (s OrderLine) Limit(n int) OrderLine {
 	return OrderLine{s.q.Limit(n)}
@@ -1367,4 +1345,160 @@ func (s Tag) Or(alternatives ...Tag) Tag {
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s Tag) Not(other Tag) Tag {
 	return Tag{s.q.Not(other.q)}
+}
+
+// Labels returns a scope over all the rows of labels.
+func Labels() Label { return Label{} }
+
+// Of returns the scope as a repository reads it.
+func (s Label) Of() orm.Of[model.Label] { return s.q }
+
+// OrderIDEq narrows to the rows whose order_id is v.
+func (s Label) OrderIDEq(v model.OrderID) Label {
+	return Label{s.q.Where(`order_id = `, v)}
+}
+
+// OrderIDNe narrows to the rows whose order_id is not v.
+func (s Label) OrderIDNe(v model.OrderID) Label {
+	return Label{s.q.Where(`order_id <> `, v)}
+}
+
+// OrderIDIn narrows to the rows whose order_id is one of vs.
+func (s Label) OrderIDIn(vs ...model.OrderID) Label {
+	return Label{s.q.Where(`order_id = ANY(`, vs, `)`)}
+}
+
+// OrderIDNotIn narrows to the rows whose order_id is none of vs.
+func (s Label) OrderIDNotIn(vs ...model.OrderID) Label {
+	if len(vs) == 0 {
+		return s
+	}
+	return Label{s.q.Where(`order_id <> ALL(`, vs, `)`)}
+}
+
+// OrderIDLt narrows to the rows whose order_id is less than v.
+func (s Label) OrderIDLt(v model.OrderID) Label {
+	return Label{s.q.Where(`order_id < `, v)}
+}
+
+// OrderIDLte narrows to the rows whose order_id is at most v.
+func (s Label) OrderIDLte(v model.OrderID) Label {
+	return Label{s.q.Where(`order_id <= `, v)}
+}
+
+// OrderIDGt narrows to the rows whose order_id is greater than v.
+func (s Label) OrderIDGt(v model.OrderID) Label {
+	return Label{s.q.Where(`order_id > `, v)}
+}
+
+// OrderIDGte narrows to the rows whose order_id is at least v.
+func (s Label) OrderIDGte(v model.OrderID) Label {
+	return Label{s.q.Where(`order_id >= `, v)}
+}
+
+// OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
+func (s Label) OrderIDBetween(lo, hi model.OrderID) Label {
+	return Label{s.q.Where(`order_id BETWEEN `, lo, ` AND `, hi)}
+}
+
+// OrderIDAsc orders the rows by order_id, smallest first.
+func (s Label) OrderIDAsc() Label {
+	return Label{s.q.OrderBy(`order_id`, false)}
+}
+
+// OrderIDDesc orders the rows by order_id, largest first.
+func (s Label) OrderIDDesc() Label {
+	return Label{s.q.OrderBy(`order_id`, true)}
+}
+
+// NamesEq narrows to the rows whose names is v.
+func (s Label) NamesEq(v []string) Label {
+	return Label{s.q.Where(`names = `, v)}
+}
+
+// NamesNe narrows to the rows whose names is not v.
+func (s Label) NamesNe(v []string) Label {
+	return Label{s.q.Where(`names <> `, v)}
+}
+
+// NamesIsNull narrows to the rows whose names is NULL.
+func (s Label) NamesIsNull() Label {
+	return Label{s.q.Where(`names IS NULL`)}
+}
+
+// NamesIsNotNull narrows to the rows whose names is not NULL.
+func (s Label) NamesIsNotNull() Label {
+	return Label{s.q.Where(`names IS NOT NULL`)}
+}
+
+// NamesAsc orders the rows by names, in ascending order.
+func (s Label) NamesAsc() Label {
+	return Label{s.q.OrderBy(`names`, false)}
+}
+
+// NamesDesc orders the rows by names, in descending order.
+func (s Label) NamesDesc() Label {
+	return Label{s.q.OrderBy(`names`, true)}
+}
+
+// Limit keeps the first n rows.
+func (s Label) Limit(n int) Label {
+	return Label{s.q.Limit(n)}
+}
+
+// Offset skips the first n rows.
+func (s Label) Offset(n int) Label {
+	return Label{s.q.Offset(n)}
+}
+
+// Or narrows to the rows any of alternatives matches, each holding conditions alone.
+func (s Label) Or(alternatives ...Label) Label {
+	qs := make([]orm.Of[model.Label], len(alternatives))
+	for i, a := range alternatives {
+		qs[i] = a.q
+	}
+	return Label{s.q.Or(qs...)}
+}
+
+// Not narrows to the rows other, holding conditions alone, does not match.
+func (s Label) Not(other Label) Label {
+	return Label{s.q.Not(other.q)}
+}
+
+// values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
+// holds orm.MayBeNull, since no page continues by it.
+func (Label) values(row model.Label) map[string]any {
+	return map[string]any{
+		`order_id`: row.OrderID,
+		`names`:    orm.MayBeNull,
+	}
+}
+
+// After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
+func (s Label) After(row model.Label) Label {
+	return Label{s.q.After([]string{`order_id`}, s.values(row))}
+}
+
+// Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
+func (s Label) Before(row model.Label) Label {
+	return Label{s.q.Before([]string{`order_id`}, s.values(row))}
+}
+
+// Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
+func (s Label) Cursor(row model.Label) (string, error) {
+	return s.q.Cursor([]string{`order_id`}, s.values(row))
+}
+
+// AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
+func (s Label) AfterCursor(cursor string) (Label, error) {
+	if cursor == "" {
+		return s, nil
+	}
+	var row model.Label
+	if err := s.q.DecodeCursor(cursor, []string{`order_id`}, map[string]any{
+		`order_id`: &row.OrderID,
+	}); err != nil {
+		return Label{}, err
+	}
+	return s.After(row), nil
 }

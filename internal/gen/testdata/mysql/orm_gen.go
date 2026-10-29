@@ -519,36 +519,6 @@ func (s Order) ContactDesc() Order {
 	return Order{s.q.OrderBy(`contact`, true)}
 }
 
-// LabelsEq narrows to the rows whose labels is v.
-func (s Order) LabelsEq(v []string) Order {
-	return Order{s.q.Where(`labels = `, v)}
-}
-
-// LabelsNe narrows to the rows whose labels is not v.
-func (s Order) LabelsNe(v []string) Order {
-	return Order{s.q.Where(`labels <> `, v)}
-}
-
-// LabelsIsNull narrows to the rows whose labels is NULL.
-func (s Order) LabelsIsNull() Order {
-	return Order{s.q.Where(`labels IS NULL`)}
-}
-
-// LabelsIsNotNull narrows to the rows whose labels is not NULL.
-func (s Order) LabelsIsNotNull() Order {
-	return Order{s.q.Where(`labels IS NOT NULL`)}
-}
-
-// LabelsAsc orders the rows by labels, in ascending order.
-func (s Order) LabelsAsc() Order {
-	return Order{s.q.OrderBy(`labels`, false)}
-}
-
-// LabelsDesc orders the rows by labels, in descending order.
-func (s Order) LabelsDesc() Order {
-	return Order{s.q.OrderBy(`labels`, true)}
-}
-
 // ReceiptEq narrows to the rows whose receipt is v.
 func (s Order) ReceiptEq(v []byte) Order {
 	return Order{s.q.Where(`receipt = `, v)}
@@ -723,7 +693,6 @@ func (Order) values(row model.Order) map[string]any {
 		`total`:       row.Total,
 		`paid`:        row.Paid,
 		`contact`:     orm.MayBeNull,
-		`labels`:      orm.MayBeNull,
 		`receipt`:     orm.MayBeNull,
 		"`order`":     row.Position,
 	}
@@ -1157,6 +1126,15 @@ func (s OrderLine) SKUAsc() OrderLine {
 // SKUDesc orders the rows by sku, in descending order.
 func (s OrderLine) SKUDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`sku`, true)}
+}
+
+// WithOrder loads Order, from orders by order_id.
+func (s OrderLine) WithOrder(sub ...Order) OrderLine {
+	qs := make([]orm.Of[model.Order], len(sub))
+	for i, x := range sub {
+		qs[i] = x.Of()
+	}
+	return OrderLine{orm.Preload(s.q, "Order", orm.Join(qs...))}
 }
 
 // Limit keeps the first n rows.

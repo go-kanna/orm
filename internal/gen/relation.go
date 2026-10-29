@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
+	"github.com/go-kanna/internal/packages"
 
 	"github.com/go-kanna/orm/internal/snapshot"
 )
@@ -66,8 +67,11 @@ type linker struct {
 	// pkgPath and pkgName are those of the package, and scopes its scope types.
 	pkgPath, pkgName string
 	scopes           []scope
-	tables           map[string]snapshot.Table
-	idx              []indexed
+	// loaded are the scope types of the other packages the run loads, which the index leaves out when they are
+	// under testdata.
+	loaded []indexed
+	tables map[string]snapshot.Table
+	idx    []indexed
 }
 
 // link finds the foreign key each of relations, fields of the model of sc, follows, and the fields holding the keys
@@ -167,8 +171,8 @@ func relatedModel(t types.Type) (*types.Named, bool) {
 	return types.Unalias(t).(*types.Named), many //nolint:forcetypeassert // fields takes nothing else for a relation
 }
 
-// scopeOf finds the scope type of model among those of the package first, as their types tell them, and then in the
-// index.
+// scopeOf finds the scope type of model among those of the package first, as their types tell them, then among those
+// of the other packages loaded, and then in the index.
 func (l linker) scopeOf(model *types.Named) (indexed, bool) {
 	for _, sc := range l.scopes {
 		if types.Identical(sc.model, model) {
@@ -178,12 +182,27 @@ func (l linker) scopeOf(model *types.Named) (indexed, bool) {
 			}, true
 		}
 	}
-	for _, e := range l.idx {
+	for _, e := range slices.Concat(l.loaded, l.idx) {
 		if e.modelPath == model.Obj().Pkg().Path() && e.modelName == model.Obj().Name() {
 			return e, true
 		}
 	}
 	return indexed{}, false
+}
+
+// loadedScopes returns the scope types of pkgs as the index has them, for a linker to look them up in.
+func loadedScopes(pkgs []*packages.Package, s snapshot.Snapshot) []indexed {
+	var all []indexed
+	for _, pkg := range pkgs {
+		scopes, _ := findScopes(pkg, s) // plan reports what is wrong with them
+		for _, sc := range scopes {
+			all = append(all, indexed{
+				pkgPath: pkg.PkgPath, pkgName: pkg.Name, name: sc.name,
+				modelPath: sc.model.Obj().Pkg().Path(), modelName: sc.model.Obj().Name(), table: sc.table, pos: sc.pos,
+			})
+		}
+	}
+	return all
 }
 
 // referenced guesses the table a field of table, named field, reaches: the one its foreign key of the field's name

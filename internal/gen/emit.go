@@ -244,9 +244,9 @@ func (e emitter) paging(model string) {
 
 	sc := e.f.Scope()
 	s, row := sc.Name("s"), sc.Name("row")
-	e.method(fmt.Sprintf("narrows to the rows after %s in the scope's order, for the page after the one %[1]s is "+
+	e.method(fmt.Sprintf("narrows to the rows after %[1]s in the scope's order, for the page after the one %[1]s is "+
 		"the last of.", row), s, "After", row+" "+model, e.q(s)+".After("+key+", "+s+".values("+row+"))")
-	e.method(fmt.Sprintf("narrows to the rows before %s in the scope's order, for the page before the one %[1]s is "+
+	e.method(fmt.Sprintf("narrows to the rows before %[1]s in the scope's order, for the page before the one %[1]s is "+
 		"the first of.", row), s, "Before", row+" "+model, e.q(s)+".Before("+key+", "+s+".values("+row+"))")
 	e.printf("// Cursor encodes the position of %s in the scope's order, for a client to hand back to AfterCursor.\n",
 		row)

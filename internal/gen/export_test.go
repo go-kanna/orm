@@ -156,3 +156,90 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 	}
 	return methods, nil
 }
+
+// Repositories reads the repositories of pkg, and each of their methods as "Repository.Method verb table", followed by
+// what else it takes and returns, or as "Repository.Method query", followed by its SQL, its arguments, and its fields.
+func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, error) {
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	if err != nil {
+		return nil, nil, err
+	}
+	scopes, _ := findScopes(pkg, s)
+	queries, ds := readQueries(pkg)
+	r := repoReader{
+		pkg: pkg, s: s, queries: queries,
+		l: linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
+	}
+	repos, rds := r.findRepositories()
+	ds = append(ds, rds...)
+	var got []string
+	for _, repo := range repos {
+		for _, m := range repo.methods {
+			line := repo.name + "." + m.name
+			if q := m.query; q != nil {
+				line += fmt.Sprintf(" query %q args=%s %s", q.sql, strings.Join(q.args, ","),
+					[]string{"error", "row", "rows", "count", "bool"}[m.result])
+				if q.row != nil {
+					line += " " + types.TypeString(q.row, (*types.Package).Name) + "{" + fieldNames(q.fields) + "}"
+				}
+				got = append(got, line)
+				continue
+			}
+			line += " " + string(m.verb) + " " + m.target.table
+			var keys []string
+			for _, k := range m.keys {
+				keys = append(keys, k.param+"="+k.col.col.Name)
+			}
+			if len(keys) > 0 {
+				line += " keys=" + strings.Join(keys, ",")
+			}
+			if m.scoped {
+				line += " scoped"
+			}
+			if m.row != "" {
+				line += " row=" + m.row
+			}
+			if m.many {
+				line += " many"
+			}
+			line += " " + []string{"error", "row", "rows", "count", "bool"}[m.result]
+			if len(m.conflict) > 0 {
+				line += " conflict=" + strings.Join(m.conflict, ",")
+			}
+			if len(m.keep) > 0 {
+				line += " keep=" + strings.Join(m.keep, ",")
+			}
+			got = append(got, line)
+		}
+	}
+	return got, ds, nil
+}
+
+// EmitRepositories generates orm_gen.go for the destination, the package destName at destPath, from the repositories
+// of the package at repoPath among pkgs, running on drv, or reports why it cannot.
+func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, drv, destPath, destName string) (
+	[]byte, []diag.Diag, error,
+) {
+	i := slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == repoPath })
+	pkg := pkgs[i]
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	if err != nil {
+		return nil, nil, err
+	}
+	scopes, _ := findScopes(pkg, s)
+	queries, ds := readQueries(pkg)
+	r := repoReader{pkg: pkg, s: s, queries: queries, l: linker{
+		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
+		loaded: loadedScopes(slices.Delete(slices.Clone(pkgs), i, i+1), s),
+	}}
+	repos, rds := r.findRepositories()
+	if ds = append(ds, rds...); diag.HasErrors(ds) {
+		return nil, ds, nil
+	}
+	models, mds := r.readModels(repos)
+	if ds = append(ds, mds...); diag.HasErrors(ds) {
+		return nil, ds, nil
+	}
+	src, _, err := emitRepositories(destPath, destName, s.Dialect, driver(drv), repos, models, nil)
+	return src, ds, err
+}

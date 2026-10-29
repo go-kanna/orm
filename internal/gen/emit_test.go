@@ -29,19 +29,34 @@ var tables = map[string]snapshot.Table{
 			{Name: "total", Type: "int8", NotNull: true},
 			{Name: "paid", Type: "bool", NotNull: true},
 			{Name: "contact", Type: "text"},
-			{Name: "labels", Type: "_text"},
 			{Name: "receipt", Type: "bytea"},
 			{Name: "order", Type: "int4", NotNull: true},
 		},
 		PrimaryKey:  []string{"id"},
+		UniqueKeys:  [][]string{{"order"}},
 		ForeignKeys: []snapshot.ForeignKey{fk([]string{"customer_id"}, "customers", "id")},
 	},
-	"customers": {Columns: columns("id", "name"), PrimaryKey: []string{"id"}},
+	"customers": {
+		Columns: []snapshot.Column{
+			{Name: "id", Type: "int8", NotNull: true},
+			{Name: "name", Type: "text", NotNull: true},
+		},
+		PrimaryKey: []string{"id"},
+	},
 	"order_lines": {
-		Columns: columns("order_id", "line_no", "sku"), PrimaryKey: []string{"order_id", "line_no"},
+		Columns: []snapshot.Column{
+			{Name: "order_id", Type: "int8", NotNull: true},
+			{Name: "line_no", Type: "int4", NotNull: true},
+			{Name: "sku", Type: "text", NotNull: true},
+		},
+		PrimaryKey:  []string{"order_id", "line_no"},
 		ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
 	},
-	"tags": {Columns: columns("name"), UniqueKeys: [][]string{{"name"}}},
+	"tags": {Columns: []snapshot.Column{{Name: "name", Type: "text", NotNull: true}}, UniqueKeys: [][]string{{"name"}}},
+	"labels": {
+		Columns:    []snapshot.Column{{Name: "order_id", Type: "int8", NotNull: true}, {Name: "names", Type: "text[]"}},
+		PrimaryKey: []string{"order_id"},
+	},
 	"order_tags": {
 		Columns: columns("order_id", "tag"), PrimaryKey: []string{"order_id", "tag"},
 		ForeignKeys: []snapshot.ForeignKey{
@@ -51,7 +66,7 @@ var tables = map[string]snapshot.Table{
 	},
 }
 
-// described records the scopes of the .sql files of testdata/dir, as describe would, by their digests alone.
+// described records the statements of the .sql files of testdata/dir, as describe would, by their digests alone.
 func described(t *testing.T, dir string) map[string]snapshot.Statement {
 	t.Helper()
 
@@ -70,7 +85,10 @@ func described(t *testing.T, dir string) map[string]snapshot.Statement {
 			t.Fatalf("parse %s:\n%s", file, report(ds))
 		}
 		for _, st := range stmts {
-			key := "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Type + "." + st.Name
+			key := "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Name
+			if st.Type != "" {
+				key = "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Type + "." + st.Name
+			}
 			statements[key] = snapshot.Statement{Digest: snapshot.Digest(st.Text)}
 		}
 	}
@@ -265,5 +283,130 @@ type Customer struct{ q orm.Of[model.Customer] }
 		"WithCustomer\n" + `  leave one of them out with orm:"-"`
 	if got := report(ds); got != want {
 		t.Errorf("Emit reports\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestEmitRepositories(t *testing.T) {
+	t.Parallel()
+
+	const testdata = "github.com/go-kanna/orm/internal/gen/testdata/"
+	results := map[string][]snapshot.Result{
+		"MonthCounts": {{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8"}},
+		"TotalOf":     {{Name: "customer", Type: "text", NotNull: true}, {Name: "total", Type: "int8"}},
+	}
+	for _, tt := range []struct {
+		scopes, repo string
+		d            snapshot.Dialect
+		drv, dest    string
+	}{
+		{"postgres", "repository", snapshot.PostgreSQL, "pgx", "pgxrepo"},
+		{"postgres", "repository", snapshot.PostgreSQL, "database/sql", "pgsqlrepo"},
+		{"mysql", "mysqlrepository", snapshot.MySQL, "database/sql", "mysqlrepo"},
+	} {
+		t.Run(tt.dest, func(t *testing.T) {
+			t.Parallel()
+
+			set, err := packages.Load([]string{"./testdata/" + tt.scopes, "./testdata/" + tt.repo}, packages.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(set.Diags) > 0 {
+				t.Fatalf("load: %v", set.Diags)
+			}
+			s := snapshot.Snapshot{Dialect: tt.d, Tables: tables, Statements: described(t, tt.repo)}
+			for name, columns := range results {
+				st := s.Statements[testdata+tt.repo+"."+name]
+				st.Columns = columns
+				s.Statements[testdata+tt.repo+"."+name] = st
+			}
+			got, ds, err := gen.EmitRepositories(set.Packages, testdata+tt.repo, s, tt.drv, testdata+tt.dest, tt.dest)
+			if len(ds) > 0 {
+				t.Fatalf("EmitRepositories:\n%s", report(ds))
+			}
+			if err != nil {
+				t.Fatalf("EmitRepositories: %v\n%s", err, got)
+			}
+			pkgtest.Golden(t, filepath.Join("testdata", tt.dest, "orm_gen.go"), got)
+		})
+	}
+}
+
+func TestEmitRepositories_RelationsItCannotLoad(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, `
+-- model/model.go --
+package model
+
+type Order struct {
+	ID       int64
+	TenantID int64
+	Lines    []OrderLine
+	Invoice  *Invoice
+}
+
+type OrderLine struct{ OrderID int32 }
+
+type Invoice struct {
+	OrderID  int64
+	TenantID int64
+}
+-- scopes/scopes.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm"
+)
+
+//kanna:scope table=orders
+type Order struct{ q orm.Of[model.Order] }
+
+//kanna:scope table=order_lines
+type OrderLine struct{ q orm.Of[model.OrderLine] }
+
+//kanna:scope table=invoices
+type Invoice struct{ q orm.Of[model.Invoice] }
+-- repository/repository.go --
+package repository
+
+import (
+	"context"
+
+	"example.com/shop/model"
+	"example.com/shop/scopes"
+)
+
+//kanna:repository
+type OrderRepository interface {
+	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+}
+`)
+	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
+		"orders": {
+			Columns: columns("id", "tenant_id"), PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"id", "tenant_id"}},
+		},
+		"order_lines": {
+			Columns: columns("order_id"), ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
+		},
+		"invoices": {
+			Columns: columns("order_id", "tenant_id"), PrimaryKey: []string{"order_id", "tenant_id"},
+			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id", "tenant_id"}, "orders", "id", "tenant_id")},
+		},
+	}}
+	_, ds, err := gen.EmitRepositories(set.Packages, "example.com/shop/repository", s, "pgx",
+		"example.com/shop/postgres", "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "model.go:6:2: error: Order.Lines: Order.ID is an int64, but OrderLine.OrderID, which it is loaded by, is " +
+		"an int32\n  declare them alike\n" +
+		"model.go:7:2: error: Order.Invoice: kanna-orm does not load a relation by a key of more than one column yet"
+	if got := report(ds); got != want {
+		t.Errorf("EmitRepositories reports\n%s\nwant\n%s", got, want)
 	}
 }
