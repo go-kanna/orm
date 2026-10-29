@@ -24,6 +24,20 @@ import (
 func module(t *testing.T, archive string) []*packages.Package {
 	t.Helper()
 
+	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: writeModule(t, archive)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Diags) > 0 {
+		t.Fatalf("load: %v", set.Diags)
+	}
+	return set.Packages
+}
+
+// writeModule writes the files of archive into a module of its own, example.com/shop, and returns its directory.
+func writeModule(t *testing.T, archive string) string {
+	t.Helper()
+
 	dir := t.TempDir()
 	files := txtar.Parse([]byte(archive)).Files
 	files = append(files, txtar.File{Name: "go.mod", Data: []byte("module example.com/shop\n\ngo 1.26\n")})
@@ -36,14 +50,7 @@ func module(t *testing.T, archive string) []*packages.Package {
 			t.Fatal(err)
 		}
 	}
-	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(set.Diags) > 0 {
-		t.Fatalf("load: %v", set.Diags)
-	}
-	return set.Packages
+	return dir
 }
 
 // shop declares a scope type for orders and a repository; a test adds the .sql files.

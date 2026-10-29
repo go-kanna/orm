@@ -5,4 +5,5 @@ var (
 	PostgresStatement = postgresStatement
 	MySQLTables       = mysqlTables
 	MySQLStatement    = mysqlStatement
+	MySQLDSN          = mysqlDSN
 )
