@@ -271,13 +271,13 @@ import "example.com/shop/scopes"
 var Open = scopes.Orders().Open()
 `
 	tests := []struct {
-		name, extra, edit, want string
+		name, extra, file, edit, want string
 	}{
-		{"a package calling what the run removes", caller, "//kanna:scope table=orders\n",
-			"scopes/scopes.go:12:11: error: s.StatusNe undefined (type Order has no field or method StatusNe)\n" +
-				"scopes/scopes.go:16:9: error: undefined: Orders\n" +
-				"orders/orders.go:5:19: error: undefined: scopes.Orders\n"},
-		{"a package with a mistake of its own", caller + "\nvar _ int = \"one\"\n", "",
+		// Paid goes from scopes, which itself does not call it.
+		{"a package calling what the run removes", caller + "\nvar Paid = scopes.Orders().Paid()\n",
+			"order_scopes.sql", "-- scope: Order.Paid()\nstatus = 'paid'\n",
+			"orders/orders.go:7:28: error: scopes.Orders().Paid undefined (type scopes.Order has no field or method Paid)\n"},
+		{"a package with a mistake of its own", caller + "\nvar _ int = \"one\"\n", "", "",
 			"orders/orders.go:7:13: error: cannot use \"one\" (untyped string constant) as int value in variable " +
 				"declaration\n"},
 	}
@@ -291,7 +291,7 @@ var Open = scopes.Orders().Open()
 				if code, _, errOut := run(t, dir, "./..."); code != cli.ExitOK {
 					t.Fatalf("kanna-orm ./... = %d\n%s", code, errOut)
 				}
-				path := filepath.Join(dir, "scopes", "scopes.go")
+				path := filepath.Join(dir, "scopes", tt.file)
 				src, err := os.ReadFile(path) //nolint:gosec // the file written above
 				if err != nil {
 					t.Fatal(err)

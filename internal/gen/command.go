@@ -17,7 +17,6 @@ import (
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/output"
 	"github.com/go-kanna/internal/packages"
-	gopackages "golang.org/x/tools/go/packages"
 
 	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
@@ -77,15 +76,11 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	}
 
 	// Code calling what this run generates does not compile before it has run, nor does code calling it as the run
-	// is about to change it. So a type error of a package generated for does not stop the run here: recheck tells,
-	// once the output is in place, whether it remains.
-	blocking, deferred := split(set)
+	// is about to change it. So a type error of a package generated for does not stop the run here: packages.Recheck
+	// tells, once the output is in place, whether it remains.
+	blocking, deferred := set.Split()
 	if diag.HasErrors(blocking) {
-		for _, path := range set.SetAside {
-			blocking = append(blocking, diag.Warningf(token.Position{Filename: path},
-				"set aside because it no longer compiles; it is regenerated once the errors above are fixed"))
-		}
-		return nil, blocking
+		return nil, append(blocking, set.SetAsideWarnings()...)
 	}
 	if ds = append(blocking, ds...); diag.HasErrors(ds) {
 		// What is wrong with a declaration may well be one of the type errors, but for those of a call to what the
@@ -93,15 +88,10 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		return nil, append(slices.DeleteFunc(deferred, pending(plans, s.Dialect)), ds...)
 	}
 
-	var (
-		changes []output.Change
-		outputs = map[string][]byte{}
-	)
+	var changes []output.Change
 	for _, pkg := range set.Packages {
 		if len(plans[pkg]) == 0 {
-			for _, removed := range removals([]*packages.Package{pkg}) {
-				changes, outputs[removed.Path] = append(changes, removed), nil
-			}
+			changes = append(changes, removals([]*packages.Package{pkg})...)
 			continue
 		}
 		pkgDir := filepath.Dir(pkg.GoFiles[0])
@@ -112,11 +102,10 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 			return nil, append(ds, diag.Errorf(token.Position{Filename: path}, "%v", err))
 		}
 		changes = append(changes, output.Change{Path: path, Data: src})
-		outputs[path] = src
 		ds = append(ds, output.MissingRequires(path, imports)...)
 	}
-	if rds := recheck(set.Packages, outputs); len(rds) > 0 {
-		return nil, append(ds, rds...)
+	if rds := packages.Recheck(set, changes); len(rds) > 0 {
+		return nil, slices.Concat(ds, rds, set.SetAsideWarnings())
 	}
 
 	if !declared {
@@ -131,32 +120,6 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 			strings.Join(in, ", ")))
 	}
 	return changes, ds
-}
-
-// split tells the errors loading set that generating cannot mend, those of a package not generated for and any but a
-// type error, from the type errors of the packages generated for.
-func split(set packages.Set) (blocking, deferred []diag.Diag) {
-	typeErrorsOnly := map[string]bool{}
-	for _, pkg := range set.Packages {
-		// The compiler's account of the type errors comes along as a list error, which packages.Load passes over for
-		// that of the type checker.
-		if slices.ContainsFunc(pkg.Errors, func(e gopackages.Error) bool {
-			return e.Kind != gopackages.TypeError && (e.Kind != gopackages.ListError || !strings.HasPrefix(e.Msg, "# "))
-		}) {
-			continue
-		}
-		for _, f := range pkg.CompiledGoFiles {
-			typeErrorsOnly[f] = true
-		}
-	}
-	for _, d := range set.Diags {
-		if typeErrorsOnly[d.Pos.Filename] {
-			deferred = append(deferred, d)
-		} else {
-			blocking = append(blocking, d)
-		}
-	}
-	return blocking, deferred
 }
 
 // declarations reports whether pkgs declare a //kanna:scope type, and whether they declare that or a
