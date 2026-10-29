@@ -23,19 +23,24 @@ import (
 
 // config holds what kanna-orm's own flags set.
 type config struct {
-	snapshot, tags string
+	snapshot, tags, destination, driver string
 }
 
 // Command returns kanna-orm, which generates from the snapshot kanna-orm describe, a command of its own, takes.
 func Command() cli.Command[config] {
 	return cli.Command[config]{
-		Name:    generator,
-		Summary: "write the methods of the //kanna:scope types, from the snapshot kanna-orm describe takes of a database",
-		Args:    "[packages]",
+		Name: generator,
+		Summary: "write the methods of the //kanna:scope types, and the implementations of the //kanna:repository " +
+			"interfaces, from the snapshot kanna-orm describe takes of a database",
+		Args: "[packages]",
 		Help: "The packages default to the one in the current directory, so that\n" +
 			"//go:generate go tool " + generator + " needs no argument.\n\n" +
 			"kanna-orm describe [flags] [packages] writes the snapshot; kanna-orm describe -h tells more.",
 		Flags: func(fs *flag.FlagSet, cfg *config) {
+			fs.StringVar(&cfg.destination, "destination", "", "write the implementations of the package's "+
+				"//kanna:repository interfaces into `dir`; required if it has any")
+			fs.StringVar(&cfg.driver, "driver", "",
+				"`pgx` or database/sql (default: pgx on PostgreSQL, database/sql on MySQL)")
 			fs.StringVar(&cfg.snapshot, "snapshot", "",
 				"the snapshot to read (default: "+snapshot.Name+" at the root of the module)")
 			fs.StringVar(&cfg.tags, "tags", "", "comma-separated build tags")
@@ -45,18 +50,38 @@ func Command() cli.Command[config] {
 }
 
 func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Diag) {
-	set, err := packages.Load(patterns, packages.Config{Dir: dir, Tags: cfg.tags, Regenerated: []string{outputName}})
+	dest, d := readDestination(dir, cfg)
+	if d != nil {
+		return nil, []diag.Diag{*d}
+	}
+
+	// Code in the destination, such as methods of a repository written by hand, calls what the run generates, so it
+	// is loaded too.
+	load := patterns
+	if dest != nil && hasCode(dest.dir) {
+		load = append(slices.Clone(load), dest.dir)
+		if len(patterns) == 0 {
+			load = []string{".", dest.dir}
+		}
+	}
+	set, err := packages.Load(load, packages.Config{Dir: dir, Tags: cfg.tags, Regenerated: []string{outputName}})
 	if err != nil {
 		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 	}
+	scopePkgs, repoPkgs := declarations(set.Packages)
+	if d := dest.check(cfg.destination, scopePkgs, repoPkgs); d != nil {
+		return nil, []diag.Diag{*d}
+	}
+	roots := slices.DeleteFunc(slices.Clone(set.Packages), dest.holds)
 
 	var (
-		s     snapshot.Snapshot
-		plans = map[*packages.Package][]scopePlan{}
-		ds    []diag.Diag
+		s       snapshot.Snapshot
+		plans   = map[*packages.Package][]scopePlan{}
+		repo    repoPlan
+		ds      []diag.Diag
+		pending map[string]bool
 	)
-	scoped, declared := declarations(set.Packages)
-	if scoped {
+	if len(scopePkgs) > 0 || len(repoPkgs) > 0 {
 		// Without the snapshot or the index, what the run generates is unknown, and so which errors loading the
 		// packages say only that it is missing: they wait for the run that can tell.
 		var d *diag.Diag
@@ -67,10 +92,21 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		if err != nil {
 			return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 		}
-		for _, pkg := range set.Packages {
+		for _, pkg := range roots {
 			ps, pds := plan(pkg, s, idx)
 			plans[pkg] = ps
 			ds = append(ds, pds...)
+		}
+		pending = generatedNames(plans, s.Dialect)
+		if len(repoPkgs) > 0 {
+			var rds []diag.Diag
+			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver)
+			ds = append(ds, rds...)
+			for _, pkg := range repoPkgs {
+				if dest != nil {
+					maps.Copy(pending, repositoryNames(pkg, dest.pkgPath))
+				}
+			}
 		}
 	}
 
@@ -84,57 +120,163 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	if ds = append(blocking, ds...); diag.HasErrors(ds) {
 		// What is wrong with a declaration may well be one of the type errors, but for those of a call to what the
 		// run generates.
-		return nil, packages.Stopped(deferred, ds, set.Pending(generatedNames(plans, s.Dialect)))
+		return nil, packages.Stopped(deferred, ds, set.Pending(pending))
 	}
 
-	var changes []output.Change
-	for _, pkg := range set.Packages {
-		if len(plans[pkg]) == 0 {
-			changes = append(changes, removals([]*packages.Package{pkg})...)
-			continue
-		}
-		pkgDir := filepath.Dir(pkg.GoFiles[0])
-		path := filepath.Join(pkgDir, outputName)
-		declared := slices.Sorted(maps.Keys(output.DeclaredNames(pkgDir, outputName, pkg.Name)))
-		src, imports, err := emit(pkg, s.Dialect, plans[pkg], declared)
-		if err != nil {
-			return nil, append(ds, diag.Errorf(token.Position{Filename: path}, "%v", err))
-		}
-		changes = append(changes, output.Change{Path: path, Data: src})
-		ds = append(ds, output.MissingRequires(path, imports)...)
+	changes, ods := outputs(roots, plans, s.Dialect, repo, dest, len(repoPkgs) > 0)
+	if ds = append(ds, ods...); diag.HasErrors(ods) {
+		return nil, ds
 	}
 	if rds := packages.Recheck(set, changes); len(rds) > 0 {
 		return nil, slices.Concat(ds, rds, set.SetAsideWarnings())
 	}
-
-	if !declared {
-		in := make([]string, 0, len(set.Packages))
-		for _, pkg := range set.Packages {
-			in = append(in, pkg.PkgPath)
-		}
-		if len(in) == 0 {
-			in = patterns // which matched no package
-		}
-		ds = append(ds, diag.Warningf(token.Position{}, "no type is marked //kanna:scope or //kanna:repository in %s",
-			strings.Join(in, ", ")))
+	if len(scopePkgs) == 0 && len(repoPkgs) == 0 {
+		ds = append(ds, nothingDeclared(roots, patterns))
 	}
 	return changes, ds
 }
 
-// declarations reports whether pkgs declare a //kanna:scope type, and whether they declare that or a
+// readDestination tells the package the -destination flag of a run in dir names, if it names one, and checks the
+// -driver flag.
+func readDestination(dir string, cfg config) (*destination, *diag.Diag) {
+	if cfg.driver != "" && cfg.driver != string(driverPgx) && cfg.driver != string(driverSQL) {
+		d := diag.Errorf(token.Position{}, "-driver takes pgx or database/sql, not %q", cfg.driver)
+		return nil, &d
+	}
+	if cfg.destination == "" {
+		return nil, nil
+	}
+	path := cfg.destination
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	dest, err := destinationAt(filepath.Clean(path))
+	if err != nil {
+		d := diag.Errorf(token.Position{Filename: path}, "%v", err)
+		return nil, &d
+	}
+	return &dest, nil
+}
+
+// outputs writes orm_gen.go for each of roots that plans has scope types of, and removes it from the others; and
+// writes the implementations of repo into dest, or, when no package of the run declares repositories, removes
+// those an earlier run left there.
+func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan, d snapshot.Dialect, repo repoPlan,
+	dest *destination, repositories bool,
+) ([]output.Change, []diag.Diag) {
+	var (
+		changes []output.Change
+		ds      []diag.Diag
+	)
+	write := func(dir, pkgName string, emit func(declared []string) ([]byte, []string, error)) bool {
+		path := filepath.Join(dir, outputName)
+		src, imports, err := emit(slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkgName))))
+		if err != nil {
+			ds = append(ds, diag.Errorf(token.Position{Filename: path}, "%v", err))
+			return false
+		}
+		changes = append(changes, output.Change{Path: path, Data: src})
+		ds = append(ds, output.MissingRequires(path, imports)...)
+		return true
+	}
+	for _, pkg := range roots {
+		if len(plans[pkg]) == 0 {
+			changes = append(changes, removals([]*packages.Package{pkg})...)
+			continue
+		}
+		if !write(filepath.Dir(pkg.GoFiles[0]), pkg.Name, func(declared []string) ([]byte, []string, error) {
+			return emit(pkg, d, plans[pkg], declared)
+		}) {
+			return nil, ds
+		}
+	}
+	switch {
+	case len(repo.repos) > 0:
+		if !write(dest.dir, dest.name, func(declared []string) ([]byte, []string, error) {
+			return emitRepositories(dest.pkgPath, dest.name, d, repo.driver, repo.repos, repo.models, declared)
+		}) {
+			return nil, ds
+		}
+	case dest != nil && !repositories:
+		changes = append(changes, dest.removal()...)
+	}
+	return changes, ds
+}
+
+// nothingDeclared warns that roots, the packages patterns match, declare neither a //kanna:scope type nor a
 // //kanna:repository interface.
-func declarations(pkgs []*packages.Package) (scoped, declared bool) {
+func nothingDeclared(roots []*packages.Package, patterns []string) diag.Diag {
+	in := make([]string, 0, len(roots))
+	for _, pkg := range roots {
+		in = append(in, pkg.PkgPath)
+	}
+	if len(in) == 0 {
+		in = patterns // which matched no package
+	}
+	return diag.Warningf(token.Position{}, "no type is marked //kanna:scope or //kanna:repository in %s",
+		strings.Join(in, ", "))
+}
+
+// repoPlan is what a run writes into the destination: the implementations of repos, reading the whole rows of
+// models, on driver.
+type repoPlan struct {
+	repos  []repository
+	models map[string]readModel
+	driver driver
+}
+
+// planRepository reads the repositories of the one package of repoPkgs, among pkgs, the packages the run loads, for
+// their implementations in dest on the driver the -driver flag names, or else the one of the database.
+func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed, dest *destination,
+	drvFlag string,
+) (repoPlan, []diag.Diag) {
+	pkg := repoPkgs[0]
+	errorf := func(format string, args ...any) []diag.Diag {
+		return []diag.Diag{diag.Errorf(token.Position{}, format, args...)}
+	}
+	switch {
+	case len(repoPkgs) > 1:
+		return repoPlan{}, errorf("%s and %s both declare //kanna:repository interfaces, but -destination takes "+
+			"those of one package", pkg.PkgPath, repoPkgs[1].PkgPath)
+	case dest == nil:
+		return repoPlan{}, []diag.Diag{diag.Errorf(token.Position{}, "%s declares //kanna:repository interfaces, "+
+			"whose implementations go into the package -destination names", pkg.PkgPath).
+			WithHints("as in //go:generate go tool kanna-orm -destination ../postgres")}
+	}
+	drv := driverPgx
+	if s.Dialect == snapshot.MySQL {
+		drv = driverSQL
+	}
+	if drvFlag != "" {
+		drv = driver(drvFlag)
+	}
+	if drv == driverPgx && s.Dialect == snapshot.MySQL {
+		return repoPlan{}, errorf("-driver pgx runs on PostgreSQL, but the snapshot is of MySQL")
+	}
+	repos, models, ds := planRepositories(pkg, pkgs, s, idx, dest.handWritten())
+	return repoPlan{repos: repos, models: models, driver: drv}, ds
+}
+
+// declarations tells which of pkgs declare a //kanna:scope type, and which a //kanna:repository interface.
+func declarations(pkgs []*packages.Package) (scoped, repos []*packages.Package) {
 	for _, pkg := range pkgs {
+		hasScopes, hasRepos := false, false
 		for _, f := range pkg.Syntax {
 			if ast.IsGenerated(f) {
 				continue
 			}
 			decls, _ := decl.Read(pkg.Fset, f)
-			scoped = scoped || len(decls.Scopes) > 0
-			declared = declared || scoped || len(decls.Repositories) > 0
+			hasScopes = hasScopes || len(decls.Scopes) > 0
+			hasRepos = hasRepos || len(decls.Repositories) > 0
+		}
+		if hasScopes {
+			scoped = append(scoped, pkg)
+		}
+		if hasRepos {
+			repos = append(repos, pkg)
 		}
 	}
-	return scoped, declared
+	return scoped, repos
 }
 
 // removals removes the output an earlier run left in pkgs, whose declarations are all gone.

@@ -221,23 +221,12 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	[]byte, []diag.Diag, error,
 ) {
 	i := slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == repoPath })
-	pkg := pkgs[i]
-	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	idx, err := readIndex(filepath.Dir(pkgs[i].GoFiles[0]))
 	if err != nil {
 		return nil, nil, err
 	}
-	scopes, _ := findScopes(pkg, s)
-	queries, ds := readQueries(pkg)
-	r := repoReader{pkg: pkg, s: s, queries: queries, l: linker{
-		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
-		loaded: loadedScopes(slices.Delete(slices.Clone(pkgs), i, i+1), s),
-	}}
-	repos, rds := r.findRepositories()
-	if ds = append(ds, rds...); diag.HasErrors(ds) {
-		return nil, ds, nil
-	}
-	models, mds := r.readModels(repos)
-	if ds = append(ds, mds...); diag.HasErrors(ds) {
+	repos, models, ds := planRepositories(pkgs[i], pkgs, s, idx, nil)
+	if diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
 	src, _, err := emitRepositories(destPath, destName, s.Dialect, driver(drv), repos, models, nil)
