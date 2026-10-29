@@ -1,7 +1,9 @@
 package gen
 
 import (
+	"fmt"
 	"go/types"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
@@ -54,4 +56,24 @@ func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) 
 		}
 	}
 	return got, ds
+}
+
+// Index reads the index of the module dir is in, each scope type as "pkgPath.Name modelPath.Name table file:line",
+// the file named from dir.
+func Index(dir string) ([]string, error) {
+	idx, err := readIndex(dir)
+	got := make([]string, 0, len(idx))
+	for _, e := range idx {
+		rel, _ := filepath.Rel(dir, e.pos.Filename)
+		got = append(got, fmt.Sprintf("%s.%s %s.%s %s %s:%d",
+			e.pkgPath, e.name, e.modelPath, e.modelName, e.table, filepath.ToSlash(rel), e.pos.Line))
+	}
+	return got, err
+}
+
+// CheckUnique finds the scope types of pkg, and reports those whose model or table is another's too.
+func CheckUnique(pkg *packages.Package, s snapshot.Snapshot) ([]diag.Diag, error) {
+	scopes, ds := findScopes(pkg, s)
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	return append(ds, checkUnique(pkg, scopes, idx)...), err
 }

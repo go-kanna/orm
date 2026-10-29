@@ -30,6 +30,8 @@ const (
 // scope is a //kanna:scope type.
 type scope struct {
 	name string
+	// pos is where its directive is.
+	pos token.Position
 	// field names the type's one field, the orm.Of the generated methods narrow.
 	field string
 	// model is the struct the rows of table are read into.
@@ -72,7 +74,7 @@ func findScopes(pkg *packages.Package, s snapshot.Snapshot) ([]scope, []diag.Dia
 // scopeOf reads the scope type d declares.
 func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, []diag.Diag) {
 	field, model, ds := modelOf(pkg, d.Spec)
-	sc := scope{name: d.Spec.Name.Name, field: field, model: model, table: d.Table}
+	sc := scope{name: d.Spec.Name.Name, pos: d.Pos, field: field, model: model, table: d.Table}
 
 	if _, ok := s.Tables[d.Table]; !ok {
 		missing := diag.Errorf(d.Pos, "%s: the snapshot has no table %s", sc.name, d.Table)

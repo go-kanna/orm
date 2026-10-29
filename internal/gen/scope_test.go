@@ -15,9 +15,23 @@ import (
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
-// module writes the files of archive, a txtar archive, into a module of its own, example.com/shop, which requires
-// this module as it is checked out, and loads its package scopes.
+// module writes archive into a module of its own, as writeModule does, and loads its package scopes.
 func module(t *testing.T, archive string) *packages.Package {
+	t.Helper()
+
+	set, err := packages.Load([]string{"./scopes"}, packages.Config{Dir: writeModule(t, archive)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Diags) > 0 || len(set.Packages) != 1 {
+		t.Fatalf("load: %d packages, %v", len(set.Packages), set.Diags)
+	}
+	return set.Packages[0]
+}
+
+// writeModule writes the files of archive, a txtar archive, into a module of its own, example.com/shop, which
+// requires this module as it is checked out, and returns its directory.
+func writeModule(t *testing.T, archive string) string {
 	t.Helper()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -37,15 +51,7 @@ func module(t *testing.T, archive string) *packages.Package {
 			t.Fatal(err)
 		}
 	}
-
-	set, err := packages.Load([]string{"./scopes"}, packages.Config{Dir: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(set.Diags) > 0 || len(set.Packages) != 1 {
-		t.Fatalf("load: %d packages, %v", len(set.Packages), set.Diags)
-	}
-	return set.Packages[0]
+	return dir
 }
 
 // report renders ds as diag does, naming each file by its base name.
