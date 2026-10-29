@@ -5,6 +5,8 @@ package snapshot
 import (
 	"bytes"
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,8 +26,9 @@ const (
 
 // Snapshot is what describe learned of a database.
 type Snapshot struct {
-	Dialect Dialect          `json:"dialect"`
-	Tables  map[string]Table `json:"tables"`
+	Dialect    Dialect              `json:"dialect"`
+	Tables     map[string]Table     `json:"tables"`
+	Statements map[string]Statement `json:"statements"`
 }
 
 // Table is a table: its columns, in the order it declares them, and its keys.
@@ -56,28 +59,95 @@ type ForeignKey struct {
 	ReferencedColumns []string `json:"referenced_columns"`
 }
 
-// Marshal returns s as the snapshot file holds it: tables by name, each column on a line of its own in the order the
-// table declares it, and keys sorted, so that a change to the schema shows as the lines it changes.
+// Statement is what the database told of a statement written by hand.
+type Statement struct {
+	// Digest identifies the text the statement was described from, so that generation can tell when it has changed
+	// since.
+	Digest  string   `json:"digest"`
+	Params  []Param  `json:"params"`
+	Columns []Result `json:"columns"`
+}
+
+// Param is a parameter of a statement, in the order of its placeholders. MySQL does not tell its type.
+type Param struct {
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
+}
+
+// Result is a column of what a statement returns. NotNull and Nullable are both false where the database cannot tell.
+type Result struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	NotNull  bool   `json:"not_null,omitzero"`
+	Nullable bool   `json:"nullable,omitzero"`
+}
+
+// Digest identifies the text of a statement.
+func Digest(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:8])
+}
+
+// Marshal returns s as the snapshot file holds it: tables and statements by name, each column on a line of its own
+// in the order the table or the statement has it, and keys sorted, so that a change shows as the lines it changes.
 func Marshal(s Snapshot) []byte {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "{\n  \"dialect\": %s,\n  \"tables\": {", quote(string(s.Dialect)))
-	for i, name := range slices.Sorted(maps.Keys(s.Tables)) {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		fmt.Fprintf(&b, "\n    %s: ", quote(name))
-		writeTable(&b, s.Tables[name])
-	}
-	if len(s.Tables) > 0 {
-		b.WriteString("\n  ")
-	}
-	b.WriteString("}\n}\n")
+	fmt.Fprintf(&b, "{\n  \"dialect\": %s,\n", quote(string(s.Dialect)))
+	writeObject(&b, "tables", s.Tables, writeTable)
+	b.WriteString(",\n")
+	writeObject(&b, "statements", s.Statements, writeStatement)
+	b.WriteString("\n}\n")
 	return b.Bytes()
 }
 
-func writeTable(b *bytes.Buffer, t Table) {
-	const indent = "      "
+// writeObject writes key and the values of m by their names, in order.
+func writeObject[V any](b *bytes.Buffer, key string, m map[string]V, write func(*bytes.Buffer, V)) {
+	fmt.Fprintf(b, "  %s: {", quote(key))
+	for i, name := range slices.Sorted(maps.Keys(m)) {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(b, "\n    %s: ", quote(name))
+		write(b, m[name])
+	}
+	if len(m) > 0 {
+		b.WriteString("\n  ")
+	}
+	b.WriteByte('}')
+}
 
+// indent is that of a member of a table or a statement.
+const indent = "      "
+
+func writeStatement(b *bytes.Buffer, st Statement) {
+	params := make([]string, 0, len(st.Params))
+	for _, p := range st.Params {
+		s := `{"name": ` + quote(p.Name)
+		if p.Type != "" {
+			s += `, "type": ` + quote(p.Type)
+		}
+		params = append(params, s+"}")
+	}
+	columns := make([]string, 0, len(st.Columns))
+	for _, c := range st.Columns {
+		s := fmt.Sprintf(`{"name": %s, "type": %s`, quote(c.Name), quote(c.Type))
+		if c.NotNull {
+			s += `, "not_null": true`
+		}
+		if c.Nullable {
+			s += `, "nullable": true`
+		}
+		columns = append(columns, s+"}")
+	}
+
+	fmt.Fprintf(b, "{\n%s\"digest\": %s,\n", indent, quote(st.Digest))
+	writeArray(b, "params", params)
+	b.WriteString(",\n")
+	writeArray(b, "columns", columns)
+	b.WriteString("\n    }")
+}
+
+func writeTable(b *bytes.Buffer, t Table) {
 	columns := make([]string, 0, len(t.Columns))
 	for _, c := range t.Columns {
 		columns = append(columns, column(c))
@@ -93,16 +163,16 @@ func writeTable(b *bytes.Buffer, t Table) {
 	}
 
 	b.WriteString("{\n")
-	writeArray(b, indent, "columns", columns)
+	writeArray(b, "columns", columns)
 	fmt.Fprintf(b, ",\n%s\"primary_key\": %s,\n", indent, names(t.PrimaryKey))
-	writeArray(b, indent, "unique_keys", uniques)
+	writeArray(b, "unique_keys", uniques)
 	b.WriteString(",\n")
-	writeArray(b, indent, "foreign_keys", fks)
+	writeArray(b, "foreign_keys", fks)
 	b.WriteString("\n    }")
 }
 
 // writeArray writes key and its items, one to a line, or [] when there are none.
-func writeArray(b *bytes.Buffer, indent, key string, items []string) {
+func writeArray(b *bytes.Buffer, key string, items []string) {
 	fmt.Fprintf(b, "%s%s: [", indent, quote(key))
 	for i, item := range items {
 		if i > 0 {

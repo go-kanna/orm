@@ -31,6 +31,21 @@ func shop() snapshot.Snapshot {
 				PrimaryKey: []string{"id"},
 			},
 		},
+		Statements: map[string]snapshot.Statement{
+			"example.com/shop/repository.MonthCounts": {
+				Digest: "0123456789abcdef",
+				Params: []snapshot.Param{{Name: "since", Type: "timestamptz"}},
+				Columns: []snapshot.Result{
+					{Name: "month", Type: "timestamptz"},
+					{Name: "count", Type: "int8", NotNull: true},
+					{Name: "note", Type: "text", Nullable: true},
+				},
+			},
+			"example.com/shop/repository.Close": {
+				Digest: "fedcba9876543210",
+				Params: []snapshot.Param{{Name: "id"}},
+			},
+		},
 	}
 }
 
@@ -65,6 +80,26 @@ func TestMarshal(t *testing.T) {
         {"columns": ["customer_id"], "references": "customers", "referenced_columns": ["id"]}
       ]
     }
+  },
+  "statements": {
+    "example.com/shop/repository.Close": {
+      "digest": "fedcba9876543210",
+      "params": [
+        {"name": "id"}
+      ],
+      "columns": []
+    },
+    "example.com/shop/repository.MonthCounts": {
+      "digest": "0123456789abcdef",
+      "params": [
+        {"name": "since", "type": "timestamptz"}
+      ],
+      "columns": [
+        {"name": "month", "type": "timestamptz"},
+        {"name": "count", "type": "int8", "not_null": true},
+        {"name": "note", "type": "text", "nullable": true}
+      ]
+    }
   }
 }
 `
@@ -73,10 +108,10 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
-func TestMarshal_NoTables(t *testing.T) {
+func TestMarshal_Empty(t *testing.T) {
 	t.Parallel()
 
-	const want = "{\n  \"dialect\": \"mysql\",\n  \"tables\": {}\n}\n"
+	const want = "{\n  \"dialect\": \"mysql\",\n  \"tables\": {},\n  \"statements\": {}\n}\n"
 	if got := string(snapshot.Marshal(snapshot.Snapshot{Dialect: snapshot.MySQL})); got != want {
 		t.Errorf("Marshal = %q, want %q", got, want)
 	}
@@ -129,5 +164,14 @@ func TestUnmarshal_Rejects(t *testing.T) {
 				t.Errorf("Unmarshal error = %v, want one containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestDigest(t *testing.T) {
+	t.Parallel()
+
+	a, b := snapshot.Digest("SELECT 1"), snapshot.Digest("SELECT 2")
+	if len(a) != 16 || a == b || a != snapshot.Digest("SELECT 1") {
+		t.Errorf("Digest gives %q and %q, want 16 hexadecimal digits that differ by the text alone", a, b)
 	}
 }
