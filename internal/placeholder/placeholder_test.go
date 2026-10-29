@@ -55,6 +55,13 @@ func TestRewrite(t *testing.T) {
 			"-- :a\n# :b\n/* /* */ ?", []string{"c"}},
 		{"-- with no space after it", my, `SELECT 1--:a`, `SELECT 1--?`, []string{"a"}},
 		{"$ as any other character", my, `SELECT '$$', :a`, `SELECT '$$', ?`, []string{"a"}},
+
+		{"the ; that ends it", pg, "SELECT :a;\n", "SELECT $1", []string{"a"}},
+		{"the ; that ends it, before comments", my, "SELECT :a ; -- done\n# for now\n", "SELECT ?", []string{"a"}},
+		{"a ; between statements", pg, "SELECT 1; SELECT 2;", "SELECT 1; SELECT 2", nil},
+		{"a ; in a string", pg, "SELECT ';'", "SELECT ';'", nil},
+		{"a ; in a comment", pg, "SELECT 1 -- see;\n", "SELECT 1 -- see;", nil},
+		{"the space at the end", my, "SELECT 1\n\n", "SELECT 1", nil},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.dialect)+"/"+tt.name, func(t *testing.T) {

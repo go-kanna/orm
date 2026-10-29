@@ -28,12 +28,19 @@ func (e *Error) Error() string {
 //
 // A : after another :, a letter, a digit, _, or ] starts no parameter, so that a cast such as ::int and a slice such as
 // arr[1:n] are left alone, as is anything in a string, a quoted name, a comment, or a dollar-quoted body.
+//
+// The ; that ends the statement goes, with the space and the comments after it, so that the statement can be prepared
+// or wrapped in another as it is.
 func Rewrite(sql string, dialect snapshot.Dialect) (string, []string, error) {
-	r := rewriter{sql: sql, mysql: dialect == snapshot.MySQL, numbers: map[string]int{}}
+	r := rewriter{sql: sql, mysql: dialect == snapshot.MySQL, numbers: map[string]int{}, end: -1}
 	if err := r.run(); err != nil {
 		return "", nil, err
 	}
-	return r.out.String(), r.names, nil
+	out := r.out.String()
+	if r.end >= 0 && !r.after {
+		out = out[:r.end]
+	}
+	return strings.TrimRightFunc(out, unicode.IsSpace), r.names, nil
 }
 
 type rewriter struct {
@@ -42,14 +49,20 @@ type rewriter struct {
 	out     strings.Builder
 	names   []string
 	numbers map[string]int
+
+	// end is where the last ; was written, or -1, and after reports whether anything but space and comments
+	// followed it.
+	end   int
+	after bool
 }
 
 func (r *rewriter) run() error {
 	s := r.sql
 	for i := 0; i < len(s); {
 		var (
-			end int
-			err error
+			end  int
+			err  error
+			code = true
 		)
 		switch c := s[i]; {
 		case c == '\'':
@@ -59,23 +72,30 @@ func (r *rewriter) run() error {
 		case c == '"', c == '`' && r.mysql:
 			end, err = r.quoted(i, "a quoted name", false)
 		case c == '-' && r.lineComment(i), c == '#' && r.mysql:
-			end = r.lineEnd(i)
+			end, code = r.lineEnd(i), false
 		case strings.HasPrefix(s[i:], "/*"):
 			end, err = r.blockComment(i)
+			code = false
 		case c == '$' && !r.mysql:
 			end, err = r.dollar(i)
 		case c == '?' && r.mysql:
 			err = r.errorAt(i, "? is a placeholder of MySQL's own: write the parameter as :name")
 		case c == ':' && r.startsParameter(i):
-			end = r.parameter(i)
-			i = end
+			r.after = true
+			i = r.parameter(i)
 			continue
+		case c == ';':
+			r.end, r.after = r.out.Len(), false
+			end, code = i+1, false
+		case c == ' ', c == '\t', c == '\n', c == '\r':
+			end, code = i+1, false
 		default:
 			end = i + 1
 		}
 		if err != nil {
 			return err
 		}
+		r.after = r.after || code
 		r.out.WriteString(s[i:end])
 		i = end
 	}
