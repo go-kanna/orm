@@ -214,3 +214,28 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.
 	}
 	return got, ds, nil
 }
+
+// EmitRepositories generates orm_gen.go for the destination, the package destName at destPath, from the repositories
+// of the package at repoPath among pkgs, or reports why it cannot.
+func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, destPath, destName string) (
+	[]byte, []diag.Diag, error,
+) {
+	i := slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == repoPath })
+	pkg := pkgs[i]
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	if err != nil {
+		return nil, nil, err
+	}
+	scopes, _ := findScopes(pkg, s)
+	queries, ds := readQueries(pkg)
+	r := repoReader{pkg: pkg, s: s, queries: queries, l: linker{
+		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
+		loaded: loadedScopes(slices.Delete(slices.Clone(pkgs), i, i+1), s),
+	}}
+	repos, rds := r.findRepositories()
+	if ds = append(ds, rds...); diag.HasErrors(ds) {
+		return nil, ds, nil
+	}
+	src, _, err := emitRepositories(destPath, destName, s.Dialect, repos, nil)
+	return src, ds, err
+}

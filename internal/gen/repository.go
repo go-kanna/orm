@@ -77,8 +77,10 @@ const (
 
 // repository is a //kanna:repository interface.
 type repository struct {
-	name    string
-	pos     token.Position
+	name string
+	pos  token.Position
+	// iface is the package declaring it.
+	iface   *types.Package
 	methods []repoMethod
 }
 
@@ -86,6 +88,7 @@ type repository struct {
 type repoMethod struct {
 	name string
 	pos  token.Position
+	fn   *types.Func
 	// verb is what it does, or nothing for a method a query written by hand implements.
 	verb verb
 	// target is the scope type holding model, the model of the rows the method reads or writes; table is its table,
@@ -151,7 +154,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 
 func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
-	repo := repository{name: ts.Name.Name, pos: pos}
+	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types}
 	obj, _ := r.pkg.Types.Scope().Lookup(ts.Name.Name).(*types.TypeName)
 	syntax, isInterface := ts.Type.(*ast.InterfaceType)
 	if obj == nil || !isInterface || ts.TypeParams != nil {
@@ -182,7 +185,7 @@ func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {
 
 // method reads fn, a method of a repository whose doc is doc.
 func (r repoReader) method(fn *types.Func, doc *ast.CommentGroup) (repoMethod, []diag.Diag) {
-	m := repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos())}
+	m := repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos()), fn: fn}
 	errorf := func(format string, args ...any) []diag.Diag {
 		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
 	}
@@ -233,6 +236,9 @@ func (r repoReader) method(fn *types.Func, doc *ast.CommentGroup) (repoMethod, [
 			}
 			m.row, m.many, models = p.Name(), many, append(models, model)
 			continue
+		}
+		if p.Name() == "" || p.Name() == "_" {
+			return m, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
 		}
 		keyParams = append(keyParams, p)
 	}
@@ -320,7 +326,7 @@ func (r repoReader) modelOfKeys(m *repoMethod, keyParams []*types.Var) (*types.N
 			continue
 		}
 		pkg := n.Obj().Pkg()
-		for _, e := range r.l.idx {
+		for _, e := range slices.Concat(r.l.loaded, r.l.idx) {
 			obj, ok := pkg.Scope().Lookup(e.modelName).(*types.TypeName)
 			if !ok || e.modelPath != pkg.Path() {
 				continue

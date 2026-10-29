@@ -267,3 +267,25 @@ type Customer struct{ q orm.Of[model.Customer] }
 		t.Errorf("Emit reports\n%s\nwant\n%s", got, want)
 	}
 }
+
+func TestEmitRepositories(t *testing.T) {
+	t.Parallel()
+
+	set, err := packages.Load([]string{"./testdata/postgres", "./testdata/repository"}, packages.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Diags) > 0 {
+		t.Fatalf("load: %v", set.Diags)
+	}
+	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables}
+	const testdata = "github.com/go-kanna/orm/internal/gen/testdata/"
+	got, ds, err := gen.EmitRepositories(set.Packages, testdata+"repository", s, testdata+"pgxrepo", "pgxrepo")
+	if len(ds) > 0 {
+		t.Fatalf("EmitRepositories:\n%s", report(ds))
+	}
+	if err != nil {
+		t.Fatalf("EmitRepositories: %v\n%s", err, got)
+	}
+	pkgtest.Golden(t, filepath.Join("testdata", "pgxrepo", "orm_gen.go"), got)
+}
