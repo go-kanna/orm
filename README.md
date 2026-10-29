@@ -177,15 +177,15 @@ wrapped as `SELECT * FROM (...) AS t LIMIT 0`, which returns no rows.
 The snapshot is JSON with one column to a line, in a fixed order, so that a migration shows as the lines it changes:
 
 ```diff
-   "orders": {
-     "columns": [
-       {"name": "id", "type": "uuid", "not_null": true},
-       {"name": "customer_id", "type": "uuid", "not_null": true},
-       {"name": "status", "type": "text", "not_null": true},
--      {"name": "placed_at", "type": "timestamptz", "not_null": true}
-+      {"name": "placed_at", "type": "timestamptz", "not_null": true},
-+      {"name": "note", "type": "text"}
-     ],
+     "orders": {
+       "columns": [
+         {"name": "id", "type": "uuid", "not_null": true},
+         {"name": "customer_id", "type": "uuid", "not_null": true},
+         {"name": "status", "type": "text", "not_null": true},
+-        {"name": "placed_at", "type": "timestamptz", "not_null": true}
++        {"name": "placed_at", "type": "timestamptz", "not_null": true},
++        {"name": "note", "type": "text"}
+       ],
 ```
 
 A module has one snapshot, `kanna-orm.snapshot.json` at its root, which generation finds by walking up from the
