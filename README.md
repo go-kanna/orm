@@ -560,6 +560,14 @@ ORDER BY 1`
 - A query's parameters take their types from the method, and its result columns go to the fields of their names, tags
   included; both are checked against what `describe` recorded. A result of `[]T` is every row, `T` one row or
   `orm.ErrNotFound`, `(int64, error)` the number of rows affected, and `error` alone nothing.
+- Each result column needs a name of its own, since the fields take them by name; MySQL cannot even describe a query
+  whose columns share a name. Give them aliases, as in `SELECT o.id, c.id AS customer_id`.
+- A result column that may be NULL needs a field that can be nil. A field that cannot be nil stops generation where
+  the database says its column may be NULL; where the database cannot tell, the field's type is taken at its word.
+  MySQL tells for every column. PostgreSQL tells only for a column read straight from a table, and as the table
+  declares it, even through an outer join that leaves it NULL: hold such a column, as `c.email` from
+  `LEFT JOIN customers c`, in a pointer. kanna-orm's own queries load relations with queries of their own, not joins,
+  so this is a matter for hand-written queries only.
 - A scope has no method declared for it, so its signature is written on its line. MySQL does not tell the types of a
   statement's parameters, and this way it need not.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
