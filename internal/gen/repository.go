@@ -124,6 +124,8 @@ type repoReader struct {
 	l   linker
 	// queries are the queries written by hand next to the repositories, by their names.
 	queries map[string]sqlfile.Statement
+	// skip names, by repository, the methods the destination declares by hand, which are left to it.
+	skip map[string]map[string]bool
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -176,6 +178,9 @@ func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {
 
 	var ds []diag.Diag
 	for _, fn := range methods {
+		if r.skip[repo.name][fn.Name()] {
+			continue
+		}
 		m, mds := r.method(fn, docs[fn.Name()])
 		ds = append(ds, mds...)
 		repo.methods = append(repo.methods, m)
