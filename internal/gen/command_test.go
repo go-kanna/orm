@@ -338,3 +338,33 @@ type Archived struct{ q orm.Of[model.Order] }
 		t.Errorf("kanna-orm ./... = %d\n%s\nwant %d\n%s", code, errOut, cli.ExitFailure, want)
 	}
 }
+
+func TestCommand_ATypeThatDoesNotTypeCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, old, new, want string
+	}{
+		{"a column's", "Status string", "Status Statuss",
+			"../model/model.go:5:9: error: undefined: Statuss\n"},
+		{"a relation's", "Status string\n}", "Status string\n\tLines  []Line\n}",
+			"../model/model.go:6:11: error: undefined: Line\n"},
+		// The model's fields are unknown, so are the methods: the calls to them stay errors.
+		{"the model's", "q orm.Of[model.Order]", "q orm.Of[model.Ordr]",
+			"./scopes.go:9:35: error: undefined: model.Ordr\n" +
+				"./scopes.go:13:11: error: s.StatusNe undefined (type Order has no field or method StatusNe)\n" +
+				"./scopes.go:17:9: error: undefined: Orders\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, strings.Replace(shopModule, tt.old, tt.new, 1))
+			describeShop(t, dir)
+			code, _, errOut := run(t, filepath.Join(dir, "scopes"))
+			if code != cli.ExitFailure || errOut != tt.want {
+				t.Errorf("kanna-orm = %d\n%s\nwant %d\n%s", code, errOut, cli.ExitFailure, tt.want)
+			}
+		})
+	}
+}

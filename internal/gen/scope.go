@@ -124,6 +124,9 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 		return "", nil, []diag.Diag{shape}
 	}
 	f := st.Field(0)
+	if packages.Invalid(f.Type()) {
+		return "", nil, []diag.Diag{packages.NotTypeChecked(pos)}
+	}
 	of, ok := types.Unalias(f.Type()).(*types.Named)
 	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != ormPath || of.Obj().Name() != "Of" {
 		return "", nil, []diag.Diag{shape}
@@ -131,6 +134,9 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 
 	qualifier := relativeTo(pkg.Types)
 	m := types.Unalias(of.TypeArgs().At(0))
+	if packages.Invalid(m) {
+		return "", nil, []diag.Diag{packages.NotTypeChecked(pos)}
+	}
 	example := "q orm.Of[" + types.TypeString(m, qualifier) + "]"
 	switch {
 	case f.Embedded():

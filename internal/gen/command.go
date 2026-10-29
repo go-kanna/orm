@@ -189,6 +189,13 @@ func generatedNames(plans map[*packages.Package][]scopePlan, d snapshot.Dialect)
 			for _, w := range p.written {
 				names[pkg.PkgPath+"."+p.name+"."+w.name] = true
 			}
+			// Whatever a field whose type does not type-check may be once it does.
+			for _, f := range p.unchecked {
+				for _, suffix := range columnMethods(kind{ordered: true, text: true}, true, snapshot.PostgreSQL) {
+					names[pkg.PkgPath+"."+p.name+"."+f+suffix] = true
+				}
+				names[pkg.PkgPath+"."+p.name+".With"+f] = true
+			}
 		}
 	}
 	return names

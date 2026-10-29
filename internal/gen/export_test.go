@@ -43,19 +43,20 @@ func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) 
 	scopes, ds := findScopes(pkg, s)
 	var got []string
 	for _, sc := range scopes {
-		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
 		prefix := sc.model.Obj().Name() + "."
-		for _, c := range columns {
+		for _, c := range f.columns {
 			got = append(got, prefix+strings.Join(c.path, ".")+" "+types.TypeString(c.typ, (*types.Package).Name)+" "+
 				c.col.Name)
 		}
-		for _, r := range relations {
-			f := prefix + strings.Join(r.path, ".") + " " + types.TypeString(r.typ, (*types.Package).Name) + " relation"
+		for _, r := range f.relations {
+			line := prefix + strings.Join(r.path, ".") + " " + types.TypeString(r.typ, (*types.Package).Name) +
+				" relation"
 			if r.fk != "" {
-				f += " fk=" + r.fk
+				line += " fk=" + r.fk
 			}
-			got = append(got, f)
+			got = append(got, line)
 		}
 	}
 	return got, ds
@@ -92,9 +93,9 @@ func Links(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, e
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	var got []string
 	for _, sc := range scopes {
-		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
-		links, lds := l.link(sc, columns, relations)
+		links, lds := l.link(sc, f.columns, f.relations)
 		ds = append(ds, lds...)
 		for _, lk := range links {
 			got = append(got, fmt.Sprintf("%s.%s %s %s.%s: %s; %s = %s", sc.model.Obj().Name(),

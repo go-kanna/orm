@@ -27,6 +27,8 @@ type scopePlan struct {
 	primaryKey []column
 	// written are the scopes written by hand in the .sql files of the package.
 	written []sqlScope
+	// unchecked names the fields of the model whose types do not type-check, which the run generates nothing for yet.
+	unchecked []string
 }
 
 // plan finds the scope types of pkg, checks them against s and against the others of the module in idx, and matches
@@ -37,16 +39,17 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePla
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
 	for _, sc := range scopes {
-		columns, relations, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
-		links, lds := l.link(sc, columns, relations)
+		links, lds := l.link(sc, f.columns, f.relations)
 		ds = append(ds, lds...)
-		ds = append(ds, sameNames(sc, columns, links)...)
-		key, missing := held(columns, s.Tables[sc.table].PrimaryKey)
+		ds = append(ds, sameNames(sc, f.columns, links)...)
+		key, missing := held(f.columns, s.Tables[sc.table].PrimaryKey)
 		if missing != "" {
 			key = nil
 		}
-		plans = append(plans, scopePlan{scope: sc, columns: columns, links: links, primaryKey: key})
+		plans = append(plans, scopePlan{scope: sc, columns: f.columns, links: links, primaryKey: key,
+			unchecked: f.unchecked})
 	}
 	written, wds := sqlScopes(pkg, s, plans)
 	for i := range plans {

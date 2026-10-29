@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
+	"github.com/go-kanna/internal/packages"
 	"github.com/go-kanna/internal/suggest"
 
 	"github.com/go-kanna/orm/internal/snapshot"
@@ -32,24 +33,33 @@ type relation struct {
 	pos token.Position
 }
 
+// matched is what the fields of a model are.
+type matched struct {
+	columns   []column
+	relations []relation
+	// unchecked names the fields whose types do not type-check.
+	unchecked []string
+}
+
 // fields matches the fields of the model of sc to the columns of t, its table. It reports a field that is neither a
 // column nor a relation, one naming a column t does not have, a column held by two fields, and a column that may be
-// NULL held by a field that cannot be nil.
-func fields(fset *token.FileSet, sc scope, t snapshot.Table) ([]column, []relation, []diag.Diag) {
+// NULL held by a field that cannot be nil. A field whose type does not type-check is neither, but unchecked: it
+// reports packages.NotTypeChecked of it, as the type error behind it says more.
+func fields(fset *token.FileSet, sc scope, t snapshot.Table) (matched, []diag.Diag) {
 	m := matcher{fset: fset, sc: sc, table: t, held: map[string]string{}}
 	m.match(sc.model.Underlying().(*types.Struct), nil) //nolint:forcetypeassert // findScopes takes structs alone
-	return m.columns, m.relations, m.ds
+	return m.matched, m.ds
 }
 
 type matcher struct {
+	matched
+
 	fset  *token.FileSet
 	sc    scope
 	table snapshot.Table
 	// held names the field holding each column matched so far.
-	held      map[string]string
-	columns   []column
-	relations []relation
-	ds        []diag.Diag
+	held map[string]string
+	ds   []diag.Diag
 }
 
 // match matches the fields of st, which is embedded in the model through path.
@@ -74,6 +84,10 @@ func (m *matcher) match(st *types.Struct, path []string) {
 		case !f.Exported():
 			m.ds = append(m.ds, diag.Errorf(pos, "%s: the code kanna-orm writes cannot reach an unexported field", label).
 				WithHints(`export it, or leave it out with orm:"-"`))
+			continue
+		case packages.Invalid(f.Type()):
+			m.ds = append(m.ds, packages.NotTypeChecked(pos))
+			m.unchecked = append(m.unchecked, f.Name())
 			continue
 		}
 

@@ -146,8 +146,8 @@ func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Di
 		return link{}, []diag.Diag{errorf("no field of %s holds %s.%s, which %s is loaded by",
 			sc.model.Obj().Name(), sc.table, missing, field)}, false
 	}
-	targetColumns, _, _ := fields(l.fset, scope{name: target.name, model: model, table: target.table}, related)
-	targetKeys, missing := held(targetColumns, other)
+	targetFields, _ := fields(l.fset, scope{name: target.name, model: model, table: target.table}, related)
+	targetKeys, missing := held(targetFields.columns, other)
 	if missing != "" {
 		return link{}, []diag.Diag{errorf("no field of %s holds %s.%s, which %s is loaded by",
 			modelName, target.table, missing, field)}, false
