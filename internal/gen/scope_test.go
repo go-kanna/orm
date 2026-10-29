@@ -139,29 +139,10 @@ func TestFindScopes_Mistakes(t *testing.T) {
 	tests := []struct {
 		name, decls, want string
 	}{
-		{"a directive misspelled", `
-//kanna:scop table=orders
-type Order struct{ q orm.Of[model.Order] }
-`, `scopes.go:10:1: warning: "//kanna:scop table=orders" is not recognized as a directive` + "\n" +
-			`  did you mean "//kanna:scope table=orders"?`},
-		{"no table", `
+		{"a directive it cannot read", `
 //kanna:scope
 type Order struct{ q orm.Of[model.Order] }
 `, "scopes.go:10:1: error: //kanna:scope wants the table its type is a scope of\n  as in //kanna:scope table=orders"},
-		{"an option it does not know", `
-//kanna:scope table=orders colour=red
-type Order struct{ q orm.Of[model.Order] }
-`, "scopes.go:10:1: error: //kanna:scope takes table= and func=, not \"colour=red\"\n" +
-			"  as in //kanna:scope table=orders"},
-		{"a table given twice", `
-//kanna:scope table=orders table=order_lines
-type Order struct{ q orm.Of[model.Order] }
-`, "scopes.go:10:1: error: //kanna:scope gives table= twice\n  as in //kanna:scope table=orders"},
-		{"a function no Go function can be named", `
-//kanna:scope table=orders func=all-orders
-type Order struct{ q orm.Of[model.Order] }
-`, "scopes.go:10:1: error: //kanna:scope func=all-orders: \"all-orders\" is not a name a Go function can have\n" +
-			"  as in //kanna:scope table=orders"},
 		{"a table misspelled", `
 //kanna:scope table=order
 type Order struct{ q orm.Of[model.Order] }

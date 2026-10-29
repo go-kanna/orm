@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -14,10 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-kanna/internal/diag"
-	"github.com/go-kanna/internal/directive"
 	"github.com/go-kanna/internal/packages"
 	"github.com/go-kanna/internal/suggest"
 
+	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -52,55 +51,32 @@ func findScopes(pkg *packages.Package, s snapshot.Snapshot) ([]scope, []diag.Dia
 		if ast.IsGenerated(file) {
 			continue
 		}
-		for _, decl := range file.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok || gd.Tok != token.TYPE {
-				continue
+		decls, fds := decl.Read(pkg.Fset, file)
+		ds = append(ds, fds...)
+		for _, d := range decls.Scopes {
+			sc, sds := scopeOf(pkg, s, d)
+			if fn, ok := fns[sc.fn]; ok {
+				sds = append(sds, diag.Errorf(d.Pos, "%s: %s is the function returning the empty scope of %s too",
+					sc.name, sc.fn, fn).WithHints("name another with func="))
 			}
-			for _, spec := range gd.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				doc := ts.Doc
-				if doc == nil && len(gd.Specs) == 1 {
-					doc = gd.Doc
-				}
-				d, fds := directive.Find(pkg.Fset, doc, "scope")
-				ds = append(ds, fds...)
-				if !d.Found {
-					continue
-				}
-				sc, sds := scopeOf(pkg, s, ts, d)
-				if fn, ok := fns[sc.fn]; ok {
-					sds = append(sds, diag.Errorf(d.Pos, "%s: %s is the function returning the empty scope of %s too",
-						sc.name, sc.fn, fn).WithHints("name another with func="))
-				}
-				ds = append(ds, sds...)
-				if len(sds) == 0 {
-					scopes = append(scopes, sc)
-					fns[sc.fn] = sc.name
-				}
+			ds = append(ds, sds...)
+			if len(sds) == 0 {
+				scopes = append(scopes, sc)
+				fns[sc.fn] = sc.name
 			}
 		}
 	}
 	return scopes, ds
 }
 
-// scopeOf reads ts, which d marks as a scope type.
-func scopeOf(pkg *packages.Package, s snapshot.Snapshot, ts *ast.TypeSpec, d directive.Directive) (scope, []diag.Diag) {
-	field, model, ds := modelOf(pkg, ts)
-	sc := scope{name: ts.Name.Name, field: field, model: model}
+// scopeOf reads the scope type d declares.
+func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, []diag.Diag) {
+	field, model, ds := modelOf(pkg, d.Spec)
+	sc := scope{name: d.Spec.Name.Name, field: field, model: model, table: d.Table}
 
-	table, fn, err := scopeArgs(d.Args)
-	if err != nil {
-		return sc, append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:scope table=orders"))
-	}
-	sc.table = table
-
-	if _, ok := s.Tables[table]; !ok {
-		missing := diag.Errorf(d.Pos, "%s: the snapshot has no table %s", sc.name, table)
-		if near, ok := suggest.Closest(table, slices.Sorted(maps.Keys(s.Tables))); ok {
+	if _, ok := s.Tables[d.Table]; !ok {
+		missing := diag.Errorf(d.Pos, "%s: the snapshot has no table %s", sc.name, d.Table)
+		if near, ok := suggest.Closest(d.Table, slices.Sorted(maps.Keys(s.Tables))); ok {
 			missing = missing.WithHints(fmt.Sprintf("did you mean %s?", near))
 		} else {
 			missing = missing.WithHints("if it is new, describe the database again: go tool kanna-orm describe")
@@ -108,10 +84,11 @@ func scopeOf(pkg *packages.Package, s snapshot.Snapshot, ts *ast.TypeSpec, d dir
 		return sc, append(ds, missing)
 	}
 
+	fn := d.Func
 	if fn == "" {
 		var ok bool
-		if fn, ok = funcName(table); !ok {
-			return sc, append(ds, diag.Errorf(d.Pos, "%s: no Go name can be made of %s", sc.name, table).
+		if fn, ok = funcName(d.Table); !ok {
+			return sc, append(ds, diag.Errorf(d.Pos, "%s: no Go name can be made of %s", sc.name, d.Table).
 				WithHints("name the function returning the empty scope with func="))
 		}
 	}
@@ -175,30 +152,6 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 func isStruct(t types.Type) bool {
 	_, ok := t.Underlying().(*types.Struct)
 	return ok
-}
-
-// scopeArgs reads what follows //kanna:scope: the table, and the name func= gives the function returning the empty
-// scope, if any.
-func scopeArgs(args string) (table, fn string, err error) {
-	for field := range strings.FieldsSeq(args) {
-		key, value, _ := strings.Cut(field, "=")
-		switch {
-		case key == "table" && table != "", key == "func" && fn != "":
-			return "", "", fmt.Errorf("//kanna:scope gives %s= twice", key)
-		case key == "table" && value != "":
-			table = value
-		case key == "func" && token.IsIdentifier(value):
-			fn = value
-		case key == "func":
-			return "", "", fmt.Errorf("//kanna:scope func=%s: %q is not a name a Go function can have", value, value)
-		default:
-			return "", "", fmt.Errorf("//kanna:scope takes table= and func=, not %q", field)
-		}
-	}
-	if table == "" {
-		return "", "", errors.New("//kanna:scope wants the table its type is a scope of")
-	}
-	return table, fn, nil
 }
 
 // funcName names the function returning the empty scope of table after it, in camel case: Orders for orders, and

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"go/ast"
 	"go/token"
 	"maps"
 	"os"
@@ -14,11 +13,11 @@ import (
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
-	"github.com/go-kanna/internal/directive"
 	"github.com/go-kanna/internal/packages"
 	"github.com/go-kanna/internal/suggest"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/placeholder"
 	"github.com/go-kanna/orm/internal/snapshot"
 	"github.com/go-kanna/orm/internal/sqlfile"
@@ -204,56 +203,14 @@ func declarations(pkg *packages.Package) (map[string]string, bool, []diag.Diag) 
 		ds         []diag.Diag
 	)
 	for _, file := range pkg.Syntax {
-		for _, decl := range file.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok || gd.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				doc := ts.Doc
-				if doc == nil && len(gd.Specs) == 1 {
-					doc = gd.Doc
-				}
-				d, fds := directive.Find(pkg.Fset, doc, "scope")
-				ds = append(ds, fds...)
-				if d.Found {
-					table, err := scopeTable(d.Args)
-					if err != nil {
-						ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:scope table=orders"))
-					} else {
-						scopes[ts.Name.Name] = table
-					}
-				}
-				d, fds = directive.Find(pkg.Fset, doc, "repository")
-				ds = append(ds, fds...)
-				repository = repository || d.Found
-			}
+		decls, fds := decl.Read(pkg.Fset, file)
+		ds = append(ds, fds...)
+		for _, sc := range decls.Scopes {
+			scopes[sc.Spec.Name.Name] = sc.Table
 		}
+		repository = repository || len(decls.Repositories) > 0
 	}
 	return scopes, repository, ds
-}
-
-// scopeTable reads the table out of what follows //kanna:scope, leaving func= to generation.
-func scopeTable(args string) (string, error) {
-	var table string
-	for field := range strings.FieldsSeq(args) {
-		key, value, _ := strings.Cut(field, "=")
-		switch {
-		case key == "table" && value != "":
-			table = value
-		case key == "func" && value != "":
-		default:
-			return "", fmt.Errorf("//kanna:scope takes table= and func=, not %q", field)
-		}
-	}
-	if table == "" {
-		return "", errors.New("//kanna:scope wants the table its type is a scope of")
-	}
-	return table, nil
 }
 
 // quoteTable quotes each part of a table's name, which may name its schema too.
