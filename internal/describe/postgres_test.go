@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -164,7 +165,8 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
         {"columns": ["customer_id"], "references": "customers", "referenced_columns": ["id"]}
       ]
     }
-  }
+  },
+  "statements": {}
 }
 `
 	got := snapshot.Marshal(snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables})
@@ -199,5 +201,124 @@ CREATE TABLE addresses (country text NOT NULL REFERENCES `+other+`.countries (co
 	fks := tables["addresses"].ForeignKeys
 	if len(fks) != 1 || fks[0].References != other+".countries" {
 		t.Errorf("foreign keys of addresses = %+v, want one to %s.countries", fks, other)
+	}
+}
+
+const postgresShop = `
+CREATE TYPE mood AS ENUM ('ok', 'meh');
+CREATE DOMAIN email AS text;
+CREATE TABLE customers (id bigint PRIMARY KEY, email email NOT NULL);
+CREATE TABLE orders (
+	id bigint PRIMARY KEY,
+	customer_id bigint NOT NULL REFERENCES customers (id),
+	status text NOT NULL,
+	mood mood,
+	tags text[] NOT NULL,
+	total bigint NOT NULL,
+	placed_at timestamptz NOT NULL,
+	note text
+);
+`
+
+func TestPostgresStatement(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, sql string
+		want      snapshot.Statement
+	}{
+		{"columns read straight from a table",
+			`SELECT id, note FROM orders WHERE placed_at >= :since AND status = :status;`,
+			snapshot.Statement{
+				Params: []snapshot.Param{{Name: "since", Type: "timestamptz"}, {Name: "status", Type: "text"}},
+				Columns: []snapshot.Result{
+					{Name: "id", Type: "int8", NotNull: true},
+					{Name: "note", Type: "text", Nullable: true},
+				},
+			}},
+		{"expressions, which may or may not be NULL",
+			`SELECT date_trunc('month', placed_at) AS month, count(*) AS count, sum(total) AS total FROM orders GROUP BY 1`,
+			snapshot.Statement{Columns: []snapshot.Result{
+				{Name: "month", Type: "timestamptz"},
+				{Name: "count", Type: "int8"},
+				{Name: "total", Type: "numeric"},
+			}}},
+		{"a parameter used twice",
+			`SELECT id FROM orders WHERE customer_id = :c OR id = :c`,
+			snapshot.Statement{
+				Params:  []snapshot.Param{{Name: "c", Type: "int8"}},
+				Columns: []snapshot.Result{{Name: "id", Type: "int8", NotNull: true}},
+			}},
+		{"a domain, an enum, and an array",
+			`SELECT c.email, o.mood, o.tags FROM orders o JOIN customers c ON c.id = o.customer_id
+			 WHERE o.mood = :mood AND c.email = :email AND o.tags @> :tags`,
+			snapshot.Statement{
+				Params: []snapshot.Param{
+					{Name: "mood", Type: "mood"}, {Name: "email", Type: "text"}, {Name: "tags", Type: "text[]"},
+				},
+				Columns: []snapshot.Result{
+					{Name: "email", Type: "text", NotNull: true},
+					{Name: "mood", Type: "mood", Nullable: true},
+					{Name: "tags", Type: "text[]", NotNull: true},
+				},
+			}},
+		{"an outer join, read as the table declares the column",
+			`SELECT o.id, c.email FROM orders o LEFT JOIN customers c ON c.id = o.customer_id`,
+			snapshot.Statement{Columns: []snapshot.Result{
+				{Name: "id", Type: "int8", NotNull: true},
+				{Name: "email", Type: "text", NotNull: true},
+			}}},
+		{"no rows", `UPDATE orders SET status = :status WHERE id = :id`,
+			snapshot.Statement{Params: []snapshot.Param{{Name: "status", Type: "text"}, {Name: "id", Type: "int8"}}}},
+		{"rows returned", `UPDATE orders SET status = :status WHERE id = :id RETURNING id, status`,
+			snapshot.Statement{
+				Params: []snapshot.Param{{Name: "status", Type: "text"}, {Name: "id", Type: "int8"}},
+				Columns: []snapshot.Result{
+					{Name: "id", Type: "int8", NotNull: true},
+					{Name: "status", Type: "text", NotNull: true},
+				},
+			}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			conn, _ := postgres(t)
+			postgresExec(t, conn, postgresShop)
+			got, err := describe.PostgresStatement(t.Context(), conn, tt.sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("PostgresStatement =\n%+v\nwant\n%+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPostgresStatement_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, sql, want string
+	}{
+		{"a column that is not there", `SELECT totl FROM orders`, `column "totl" does not exist`},
+		{"two columns of one name", `SELECT o.id, c.id FROM orders o JOIN customers c ON c.id = o.customer_id`,
+			"two columns are named id: give them names of their own with AS"},
+		{"two statements", `SELECT 1; SELECT 2`, "cannot insert multiple commands into a prepared statement"},
+		{"a placeholder of PostgreSQL's own", `SELECT id FROM orders WHERE id = $1`,
+			"$1 is a placeholder of PostgreSQL's own"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			conn, _ := postgres(t)
+			postgresExec(t, conn, postgresShop)
+			_, err := describe.PostgresStatement(t.Context(), conn, tt.sql)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("PostgresStatement error = %v, want one containing %q", err, tt.want)
+			}
+		})
 	}
 }

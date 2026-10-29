@@ -3,9 +3,14 @@ package describe
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/go-sql-driver/mysql"
+
+	"github.com/go-kanna/orm/internal/placeholder"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -140,4 +145,88 @@ func eachRow(ctx context.Context, conn *sql.Conn, query string, dest []any, f fu
 		return fmt.Errorf("query: %w", err)
 	}
 	return nil
+}
+
+// mysqlStatement describes the statement sql, written with :name parameters. MySQL tells the types of the columns a
+// statement returns only when it runs, so the statement runs wrapped in a query that asks for no rows; one that cannot
+// be wrapped so is one that returns none, such as an UPDATE.
+func mysqlStatement(ctx context.Context, conn *sql.Conn, sql string) (snapshot.Statement, error) {
+	text, names, err := placeholder.Rewrite(sql, snapshot.MySQL)
+	if err != nil {
+		return snapshot.Statement{}, fmt.Errorf("%w", err)
+	}
+	var inputs int
+	err = conn.Raw(func(dc any) error {
+		p, ok := dc.(driver.ConnPrepareContext)
+		if !ok {
+			return errors.New("the driver cannot prepare a statement")
+		}
+		stmt, err := p.PrepareContext(ctx, text)
+		if err != nil {
+			return err //nolint:wrapcheck // wrapped below, as every error of Raw is
+		}
+		inputs = stmt.NumInput()
+		return stmt.Close()
+	})
+	if err != nil {
+		return snapshot.Statement{}, fmt.Errorf("prepare: %w", err)
+	}
+	if inputs != len(names) {
+		return snapshot.Statement{}, fmt.Errorf("the statement has %d placeholders for its %d parameters", inputs, len(names))
+	}
+
+	var st snapshot.Statement
+	for _, name := range names {
+		st.Params = append(st.Params, snapshot.Param{Name: name})
+	}
+	st.Columns, err = mysqlResult(ctx, conn, text, inputs)
+	if err != nil {
+		return snapshot.Statement{}, err
+	}
+	return st, distinctNames(st.Columns)
+}
+
+func mysqlResult(ctx context.Context, conn *sql.Conn, text string, inputs int) (_ []snapshot.Result, err error) {
+	wrapped := "SELECT t.* FROM (\n" + text + "\n) AS t LIMIT 0" //nolint:gosec,unqueryvet // the statement described
+	rows, err := conn.QueryContext(ctx, wrapped, make([]any, inputs)...)
+
+	if e, ok := errors.AsType[*mysql.MySQLError](err); ok {
+		switch e.Number {
+		case 1060: // ER_DUP_FIELDNAME
+			name := strings.TrimSuffix(strings.TrimPrefix(e.Message, "Duplicate column name '"), "'")
+			return nil, fmt.Errorf("two columns are named %s: give them names of their own with AS", name)
+		case 1064: // ER_PARSE_ERROR
+			return nil, nil
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the result: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("read the result: %w", err)
+	}
+	columns := make([]snapshot.Result, 0, len(types))
+	for _, t := range types {
+		c := snapshot.Result{Name: t.Name(), Type: mysqlTypeName(t.DatabaseTypeName())}
+		if nullable, ok := t.Nullable(); ok {
+			c.NotNull, c.Nullable = !nullable, nullable
+		}
+		columns = append(columns, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the result: %w", err)
+	}
+	return columns, nil
+}
+
+// mysqlTypeName spells a type of a result as information_schema spells that of a column, without its width.
+func mysqlTypeName(name string) string {
+	name = strings.ToLower(name)
+	if base, ok := strings.CutPrefix(name, "unsigned "); ok {
+		return base + " unsigned"
+	}
+	return name
 }

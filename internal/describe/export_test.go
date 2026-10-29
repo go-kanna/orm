@@ -1,6 +1,8 @@
 package describe
 
 var (
-	PostgresTables = postgresTables
-	MySQLTables    = mysqlTables
+	PostgresTables    = postgresTables
+	PostgresStatement = postgresStatement
+	MySQLTables       = mysqlTables
+	MySQLStatement    = mysqlStatement
 )

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -150,7 +151,8 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
         {"columns": ["customer_id"], "references": "customers", "referenced_columns": ["id"]}
       ]
     }
-  }
+  },
+  "statements": {}
 }
 `
 	got := snapshot.Marshal(snapshot.Snapshot{Dialect: snapshot.MySQL, Tables: tables})
@@ -186,5 +188,101 @@ CREATE TABLE addresses (country VARCHAR(2) NOT NULL, FOREIGN KEY (country) REFER
 	fks := tables["addresses"].ForeignKeys
 	if len(fks) != 1 || fks[0].References != other+".countries" {
 		t.Errorf("foreign keys of addresses = %+v, want one to %s.countries", fks, other)
+	}
+}
+
+const mysqlShop = `
+CREATE TABLE customers (id BIGINT PRIMARY KEY, email VARCHAR(255) NOT NULL);
+CREATE TABLE orders (
+	id BIGINT UNSIGNED PRIMARY KEY,
+	customer_id BIGINT NOT NULL,
+	status VARCHAR(20) NOT NULL,
+	total BIGINT NOT NULL,
+	placed_at DATETIME(6) NOT NULL,
+	note TEXT,
+	FOREIGN KEY (customer_id) REFERENCES customers (id)
+);
+`
+
+func TestMySQLStatement(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, sql string
+		want      snapshot.Statement
+	}{
+		{"columns read straight from a table",
+			`SELECT id, customer_id, note FROM orders WHERE placed_at >= :since AND status = :status;`,
+			snapshot.Statement{
+				Params: []snapshot.Param{{Name: "since"}, {Name: "status"}},
+				Columns: []snapshot.Result{
+					{Name: "id", Type: "bigint unsigned", NotNull: true},
+					{Name: "customer_id", Type: "bigint", NotNull: true},
+					{Name: "note", Type: "text", Nullable: true},
+				},
+			}},
+		{"expressions",
+			`SELECT date_format(placed_at, '%Y-%m') AS month, count(*) AS count, sum(total) AS total FROM orders GROUP BY 1`,
+			snapshot.Statement{Columns: []snapshot.Result{
+				{Name: "month", Type: "varchar", Nullable: true},
+				{Name: "count", Type: "bigint", NotNull: true},
+				{Name: "total", Type: "decimal", Nullable: true},
+			}}},
+		{"a parameter used twice",
+			`SELECT id FROM orders WHERE customer_id = :c OR id = :c`,
+			snapshot.Statement{
+				Params:  []snapshot.Param{{Name: "c"}, {Name: "c"}},
+				Columns: []snapshot.Result{{Name: "id", Type: "bigint unsigned", NotNull: true}},
+			}},
+		{"an outer join",
+			`SELECT o.id, c.email FROM orders o LEFT JOIN customers c ON c.id = o.customer_id`,
+			snapshot.Statement{Columns: []snapshot.Result{
+				{Name: "id", Type: "bigint unsigned", NotNull: true},
+				{Name: "email", Type: "varchar", Nullable: true},
+			}}},
+		{"no rows", `UPDATE orders SET status = :status WHERE id = :id`,
+			snapshot.Statement{Params: []snapshot.Param{{Name: "status"}, {Name: "id"}}}},
+		{"a comment after the end", "SELECT id FROM orders; -- done",
+			snapshot.Statement{Columns: []snapshot.Result{{Name: "id", Type: "bigint unsigned", NotNull: true}}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			conn, _ := mysql(t)
+			mysqlExec(t, conn, mysqlShop)
+			got, err := describe.MySQLStatement(t.Context(), conn, tt.sql)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("MySQLStatement =\n%+v\nwant\n%+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMySQLStatement_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, sql, want string
+	}{
+		{"a column that is not there", `SELECT totl FROM orders`, "Unknown column 'totl'"},
+		{"two columns of one name", `SELECT o.id, c.id FROM orders o JOIN customers c ON c.id = o.customer_id`,
+			"two columns are named id: give them names of their own with AS"},
+		{"a placeholder of MySQL's own", `SELECT id FROM orders WHERE id = ?`, "? is a placeholder of MySQL's own"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			conn, _ := mysql(t)
+			mysqlExec(t, conn, mysqlShop)
+			_, err := describe.MySQLStatement(t.Context(), conn, tt.sql)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("MySQLStatement error = %v, want one containing %q", err, tt.want)
+			}
+		})
 	}
 }
