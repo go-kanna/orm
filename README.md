@@ -170,9 +170,16 @@ key; its unique keys; and its foreign keys. It also prepares each [hand-written 
 the packages it is given, and records the types of their parameters and of their result columns. Nothing it runs
 writes.
 
+The database is the one `-database-url` names, or else `$DATABASE_URL`:
+
+- `postgres://user:password@host:5432/database` is PostgreSQL, through pgx. The tables are those of the current
+  schema, which `?search_path=` chooses.
+- `mysql://user:password@host:3306/database` is MySQL, through go-sql-driver/mysql, which takes the options after `?`.
+  The tables are those of the database the URL names.
+
 The types are what the database itself answers, so kanna-orm has no SQL parser of its own to disagree with it. MySQL
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
-wrapped as `SELECT * FROM (...) AS t LIMIT 0`, which returns no rows.
+wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows.
 
 The snapshot is JSON with one column to a line, in a fixed order, so that a migration shows as the lines it changes:
 
@@ -196,7 +203,7 @@ In CI, describe a freshly migrated database with `-check`, which fails when the 
 
 ```console
 $ go tool kanna-orm describe -check ./...
-error: kanna-orm.snapshot.json is out of date with the database
+./kanna-orm.snapshot.json: error: out of date with the database
   orders.note (text) is in the database but not in the snapshot
   run go tool kanna-orm describe to update it
 ```
@@ -666,6 +673,8 @@ databases, describes them, regenerates the example, fails if the output would ch
 
 ```sh
 make test       # unit tests
+make db-up      # start the PostgreSQL and the MySQL of compose.yaml, on ports 15432 and 13306
+make test-db    # unit tests, and the tests against those databases
 make lint       # golangci-lint
 make example    # regenerate the example, then build and run it
 ```
