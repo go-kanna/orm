@@ -1,6 +1,8 @@
 # Use this module alone even when GOWORK points at the go-kanna-wide workspace.
 export GOWORK := off
 
+BUILD_DIR = bin
+
 .PHONY: test
 test:
 	go test ./... -race -coverprofile=coverage.out -covermode=atomic
@@ -32,3 +34,11 @@ lint-fix:
 		echo ">>> lint-fix $$dir"; \
 		(cd $$dir && golangci-lint run --fix) || exit 1; \
 	done
+
+.PHONY: build
+build:
+	go build -o $(BUILD_DIR)/kanna-orm ./cmd/kanna-orm
+
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_DIR)
