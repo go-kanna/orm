@@ -236,6 +236,10 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	if ds = append(ds, rds...); diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
-	src, _, err := emitRepositories(destPath, destName, s.Dialect, repos, nil)
+	models, mds := r.readModels(repos)
+	if ds = append(ds, mds...); diag.HasErrors(ds) {
+		return nil, ds, nil
+	}
+	src, _, err := emitRepositories(destPath, destName, s.Dialect, repos, models, nil)
 	return src, ds, err
 }

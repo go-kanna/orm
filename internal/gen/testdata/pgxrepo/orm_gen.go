@@ -177,7 +177,35 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 	return rows[0], nil
 }
 
-// selectOrderLines reads the rows of order_lines that q matches, in its order.
+// selectCustomers reads the rows of customers that q matches, in its order.
+func selectCustomers(ctx context.Context, db DB, q orm.Of[model.Customer]) ([]model.Customer, error) {
+	rd, err := q.Render(orm.Postgres, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT id, name FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read customers: %w", err)
+	}
+	defer rows.Close()
+	out := []model.Customer{}
+	for rows.Next() {
+		var row model.Customer
+		if err := rows.Scan(&row.ID, &row.Name); err != nil {
+			return nil, fmt.Errorf("read customers: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read customers: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
+// selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads.
 func selectOrderLines(ctx context.Context, db DB, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
@@ -202,10 +230,40 @@ func selectOrderLines(ctx context.Context, db DB, q orm.Of[model.OrderLine]) ([]
 	if rd.Reversed() {
 		slices.Reverse(out)
 	}
+	if err := preloadOrderLines(ctx, db, out, q); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
-// selectOrders reads the rows of orders that q matches, in its order.
+// preloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
+func preloadOrderLines(ctx context.Context, db DB, rows []model.OrderLine, q orm.Of[model.OrderLine]) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	if sub, ok := orm.Preloaded[model.Order](q, "Order"); ok {
+		keys := make([]model.OrderID, 0, len(rows))
+		for i := range rows {
+			keys = append(keys, rows[i].OrderID)
+		}
+		related, err := selectOrders(ctx, db, sub.Where(`id = ANY(`, keys, `)`))
+		if err != nil {
+			return err
+		}
+		byKey := map[model.OrderID]model.Order{}
+		for j := range related {
+			byKey[related[j].ID] = related[j]
+		}
+		for i := range rows {
+			if found, ok := byKey[rows[i].OrderID]; ok {
+				rows[i].Order = &found
+			}
+		}
+	}
+	return nil
+}
+
+// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads.
 func selectOrders(ctx context.Context, db DB, q orm.Of[model.Order]) ([]model.Order, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
@@ -226,6 +284,125 @@ func selectOrders(ctx context.Context, db DB, q orm.Of[model.Order]) ([]model.Or
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := preloadOrders(ctx, db, out, q); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// preloadOrders loads into rows the relations q loads, each by the keys of the rows.
+func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[model.Order]) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	if sub, ok := orm.Preloaded[model.Customer](q, "Customer"); ok {
+		keys := make([]int64, 0, len(rows))
+		for i := range rows {
+			keys = append(keys, rows[i].CustomerID)
+		}
+		related, err := selectCustomers(ctx, db, sub.Where(`id = ANY(`, keys, `)`))
+		if err != nil {
+			return err
+		}
+		byKey := map[int64]model.Customer{}
+		for j := range related {
+			byKey[related[j].ID] = related[j]
+		}
+		for i := range rows {
+			if found, ok := byKey[rows[i].CustomerID]; ok {
+				rows[i].Customer = &found
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.OrderLine](q, "Lines"); ok {
+		keys := make([]model.OrderID, 0, len(rows))
+		for i := range rows {
+			keys = append(keys, rows[i].ID)
+		}
+		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`))
+		if err != nil {
+			return err
+		}
+		byKey := map[model.OrderID][]model.OrderLine{}
+		for j := range related {
+			byKey[related[j].OrderID] = append(byKey[related[j].OrderID], related[j])
+		}
+		for i := range rows {
+			rows[i].Lines = []model.OrderLine{}
+			if found, ok := byKey[rows[i].ID]; ok {
+				rows[i].Lines = found
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.Tag](q, "Tags"); ok {
+		keys := make([]model.OrderID, 0, len(rows))
+		for i := range rows {
+			keys = append(keys, rows[i].ID)
+		}
+		pairs, err := db.Query(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id = ANY($1)`, keys)
+		if err != nil {
+			return fmt.Errorf("read order_tags: %w", err)
+		}
+		parentsOf := map[string][]model.OrderID{}
+		var targetKeys []string
+		for pairs.Next() {
+			var pk model.OrderID
+			var tk string
+			if err := pairs.Scan(&pk, &tk); err != nil {
+				pairs.Close()
+				return fmt.Errorf("read order_tags: %w", err)
+			}
+			parentsOf[tk] = append(parentsOf[tk], pk)
+			targetKeys = append(targetKeys, tk)
+		}
+		if err := pairs.Err(); err != nil {
+			return fmt.Errorf("read order_tags: %w", err)
+		}
+		related, err := selectTags(ctx, db, sub.Where(`name = ANY(`, targetKeys, `)`))
+		if err != nil {
+			return err
+		}
+		byKey := map[model.OrderID][]model.Tag{}
+		for j := range related {
+			for _, pk := range parentsOf[related[j].Name] {
+				byKey[pk] = append(byKey[pk], related[j])
+			}
+		}
+		for i := range rows {
+			rows[i].Tags = []model.Tag{}
+			if found, ok := byKey[rows[i].ID]; ok {
+				rows[i].Tags = found
+			}
+		}
+	}
+	return nil
+}
+
+// selectTags reads the rows of tags that q matches, in its order.
+func selectTags(ctx context.Context, db DB, q orm.Of[model.Tag]) ([]model.Tag, error) {
+	rd, err := q.Render(orm.Postgres, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read tags: %w", err)
+	}
+	defer rows.Close()
+	out := []model.Tag{}
+	for rows.Next() {
+		var row model.Tag
+		if err := rows.Scan(&row.Name); err != nil {
+			return nil, fmt.Errorf("read tags: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read tags: %w", err)
 	}
 	if rd.Reversed() {
 		slices.Reverse(out)

@@ -289,3 +289,83 @@ func TestEmitRepositories(t *testing.T) {
 	}
 	pkgtest.Golden(t, filepath.Join("testdata", "pgxrepo", "orm_gen.go"), got)
 }
+
+func TestEmitRepositories_RelationsItCannotLoad(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, `
+-- model/model.go --
+package model
+
+type Order struct {
+	ID       int64
+	TenantID int64
+	Lines    []OrderLine
+	Invoice  *Invoice
+}
+
+type OrderLine struct{ OrderID int32 }
+
+type Invoice struct {
+	OrderID  int64
+	TenantID int64
+}
+-- scopes/scopes.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm"
+)
+
+//kanna:scope table=orders
+type Order struct{ q orm.Of[model.Order] }
+
+//kanna:scope table=order_lines
+type OrderLine struct{ q orm.Of[model.OrderLine] }
+
+//kanna:scope table=invoices
+type Invoice struct{ q orm.Of[model.Invoice] }
+-- repository/repository.go --
+package repository
+
+import (
+	"context"
+
+	"example.com/shop/model"
+	"example.com/shop/scopes"
+)
+
+//kanna:repository
+type OrderRepository interface {
+	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+}
+`)
+	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
+		"orders": {
+			Columns: columns("id", "tenant_id"), PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"id", "tenant_id"}},
+		},
+		"order_lines": {
+			Columns: columns("order_id"), ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
+		},
+		"invoices": {
+			Columns: columns("order_id", "tenant_id"), PrimaryKey: []string{"order_id", "tenant_id"},
+			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id", "tenant_id"}, "orders", "id", "tenant_id")},
+		},
+	}}
+	_, ds, err := gen.EmitRepositories(set.Packages, "example.com/shop/repository", s, "example.com/shop/postgres",
+		"postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "model.go:6:2: error: Order.Lines: Order.ID is an int64, but OrderLine.OrderID, which it is loaded by, is " +
+		"an int32\n  declare them alike\n" +
+		"model.go:7:2: error: Order.Invoice: kanna-orm does not load a relation by a key of more than one column yet"
+	if got := report(ds); got != want {
+		t.Errorf("EmitRepositories reports\n%s\nwant\n%s", got, want)
+	}
+}

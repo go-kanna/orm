@@ -1159,6 +1159,15 @@ func (s OrderLine) SKUDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`sku`, true)}
 }
 
+// WithOrder loads Order, from orders by order_id.
+func (s OrderLine) WithOrder(sub ...Order) OrderLine {
+	qs := make([]orm.Of[model.Order], len(sub))
+	for i, x := range sub {
+		qs[i] = x.Of()
+	}
+	return OrderLine{orm.Preload(s.q, "Order", orm.Join(qs...))}
+}
+
 // Limit keeps the first n rows.
 func (s OrderLine) Limit(n int) OrderLine {
 	return OrderLine{s.q.Limit(n)}

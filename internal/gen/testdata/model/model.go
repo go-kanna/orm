@@ -38,6 +38,7 @@ type OrderLine struct {
 	OrderID OrderID
 	LineNo  int
 	SKU     string
+	Order   *Order
 }
 
 type Tag struct{ Name string }
