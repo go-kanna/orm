@@ -19,8 +19,8 @@ import (
 )
 
 // postgresDB connects to the database KANNA_ORM_TEST_POSTGRES names, with a schema of the test's own as its current
-// one, dropped when the test ends, and runs schema there. Without the variable, the test is skipped.
-func postgresDB(t *testing.T, schema string) *pgx.Conn {
+// one, dropped when the test ends, and runs ordersSchema there. Without the variable, the test is skipped.
+func postgresDB(t *testing.T) *pgx.Conn {
 	t.Helper()
 
 	url := os.Getenv("KANNA_ORM_TEST_POSTGRES")
@@ -42,7 +42,7 @@ func postgresDB(t *testing.T, schema string) *pgx.Conn {
 			t.Error(err)
 		}
 	})
-	if _, err := conn.Exec(ctx, "CREATE SCHEMA "+name+"; SET search_path TO "+name+";\n"+schema); err != nil {
+	if _, err := conn.Exec(ctx, "CREATE SCHEMA "+name+"; SET search_path TO "+name+";\n"+ordersSchema); err != nil {
 		t.Fatal(err)
 	}
 	return conn
@@ -98,7 +98,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	repo := pgxrepo.NewOrderRepository(postgresDB(t, ordersSchema))
+	repo := pgxrepo.NewOrderRepository(postgresDB(t))
 
 	o, err := repo.Get(ctx, 1)
 	if err != nil {
@@ -186,7 +186,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	repo := pgxrepo.NewOrderRepository(postgresDB(t, ordersSchema))
+	repo := pgxrepo.NewOrderRepository(postgresDB(t))
 
 	o, err := repo.Get(ctx, 1, postgres.Orders().
 		WithCustomer().
@@ -235,7 +235,7 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	repo := pgxrepo.NewOrderRepository(postgresDB(t, ordersSchema))
+	repo := pgxrepo.NewOrderRepository(postgresDB(t))
 
 	memo, contact := "fragile", must(model.NewEmail("bob@example.com"))
 	placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
@@ -323,6 +323,40 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 	}
 	if _, err := repo.UpsertTags(ctx, []model.Tag{{Name: "dup"}, {Name: "dup"}}); err == nil {
 		t.Error("UpsertTags writes two rows of one key")
+	}
+}
+
+func TestGeneratedRepository_PostgresQueries(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	repo := pgxrepo.NewOrderRepository(postgresDB(t))
+
+	counts, err := repo.MonthCounts(ctx, time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(counts) != 1 || counts[0].Count != 2 || counts[0].Month.Month() != time.October {
+		t.Errorf("MonthCounts since October 2 = %+v, %v; want 2 in October", counts, err)
+	}
+	if counts, err := repo.MonthCounts(ctx, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)); err != nil ||
+		counts == nil || len(counts) != 0 {
+		t.Errorf("MonthCounts of none = %#v, %v; want an empty slice", counts, err)
+	}
+
+	if total, err := repo.TotalOf(ctx, 10); err != nil || total.Name != "Ann" || total.Total != 300 {
+		t.Errorf("TotalOf(10) = %+v, %v; want Ann, 300", total, err)
+	}
+	if _, err := repo.TotalOf(ctx, 99); !errors.Is(err, orm.ErrNotFound) ||
+		err.Error() != "query TotalOf: orm: not found" {
+		t.Errorf("TotalOf(99) error = %v, want orm.ErrNotFound", err)
+	}
+
+	if n, err := repo.CloseOld(ctx, time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)); err != nil || n != 1 {
+		t.Errorf("CloseOld before October 3 = %d, %v; want 1, order 2 being closed already", n, err)
+	}
+	if err := repo.Reopen(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := repo.Count(ctx, postgres.Orders().StatusEq("closed")); err != nil || n != 1 {
+		t.Errorf("the closed orders = %d, %v; want order 1 alone", n, err)
 	}
 }
 

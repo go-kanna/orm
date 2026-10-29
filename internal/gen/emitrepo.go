@@ -35,11 +35,6 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, repos []repos
 	f.Reserve("DB")
 	for _, repo := range repos {
 		f.Reserve(repo.name, "New"+repo.name)
-		for _, m := range repo.methods {
-			if m.query != nil {
-				return nil, nil, fmt.Errorf("%s.%s: a query written by hand is not generated yet", repo.name, m.name)
-			}
-		}
 	}
 	e := repoEmitter{f: f, d: d, models: models, names: readNames(models)}
 	for _, name := range e.names {
@@ -167,8 +162,13 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	sc := e.f.Scope()
 	recv := sc.Name("r")
 	sig := e.signature(m, sc)
+	if m.query != nil {
+		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
+	}
 	e.printf("func (%s %s) %s%s {\n", recv, repo.name, m.name, sig.text)
 	switch m.verb {
+	case "":
+		e.query(m, sc, recv, sig)
 	case verbInsert, verbUpsert:
 		e.insert(m, sc, recv, sig)
 	case verbUpdate:
@@ -447,6 +447,50 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	e.printf("%[1]s, %[2]s := %[3]s.db.Exec(%[4]s)\nif %[2]s != nil {\nreturn %[5]s.Errorf(%[6]q, %[2]s)\n}\n", tag, err,
 		recv, strings.Join(append([]string{sig.ctx, q}, args...), ", "), e.fmt, "update "+m.target.table+": %w")
 	e.printf("if %s.RowsAffected() == 0 {\nreturn %s\n}\nreturn nil\n", tag, e.notFound(m.target.table, key, keyArgs))
+}
+
+// query writes the body of m, which a query written by hand implements: the rows of its result read into its fields,
+// in their order, or the number of rows it affects.
+func (e repoEmitter) query(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	q, err := sc.Name("q"), sc.Name("err")
+	args := make([]string, 0, 2+len(m.query.args))
+	args = append(args, sig.ctx, q)
+	for _, a := range m.query.args {
+		args = append(args, sig.params[a])
+	}
+	call := strings.Join(args, ", ")
+	what := fmt.Sprintf("%q", "query "+m.name+": %w")
+	wrap := e.fmt + ".Errorf(" + what + ", " + err + ")"
+	e.printf("const %s = %s\n", q, goString(m.query.sql))
+	switch m.result {
+	case resultNone:
+		e.printf("if _, %[1]s := %[2]s.db.Exec(%[3]s); %[1]s != nil {\nreturn %[4]s\n}\nreturn nil\n", err, recv, call,
+			wrap)
+	case resultCount:
+		tag := sc.Name("tag")
+		e.printf("%[1]s, %[2]s := %[3]s.db.Exec(%[4]s)\nif %[2]s != nil {\nreturn 0, %[5]s\n}\n"+
+			"return %[1]s.RowsAffected(), nil\n", tag, err, recv, call, wrap)
+	case resultRow:
+		row := sc.Name("row")
+		typ := types.TypeString(m.query.row, e.f.Qualifier)
+		dests := make([]string, 0, len(m.query.fields))
+		for _, c := range m.query.fields {
+			dests = append(dests, "&"+row+"."+fieldPath(c))
+		}
+		e.printf("var %s %s\n", row, typ)
+		e.printf("%[1]s := %[2]s.db.QueryRow(%[3]s).\nScan(%[4]s)\n", err, recv, call, strings.Join(dests, ", "))
+		e.printf("if %[1]s.Is(%[2]s, %[3]s.ErrNoRows) {\nreturn %[4]s{}, %[5]s.Errorf(%[6]s, %[7]s.ErrNotFound)\n}\n",
+			e.f.Import("errors", "errors"), err, e.f.Import("github.com/jackc/pgx/v5", "pgx"), typ, e.fmt, what, e.orm)
+		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[3]s\n}\nreturn %[4]s, nil\n", err, typ, wrap, row)
+	case resultRows:
+		rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
+		typ := types.TypeString(m.query.row, e.f.Qualifier)
+		e.printf("%[1]s, %[2]s := %[3]s.db.Query(%[4]s)\nif %[2]s != nil {\nreturn nil, %[5]s\n}\ndefer %[1]s.Close()\n",
+			rows, err, recv, call, wrap)
+		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, m.query.fields)
+		e.printf("return %s, nil\n", out)
+	case resultBool: // a query written by hand returns no bool
+	}
 }
 
 // preloadNames are the names in a function loading relations.

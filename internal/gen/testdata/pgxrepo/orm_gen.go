@@ -4,8 +4,10 @@ package pgxrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
@@ -341,6 +343,70 @@ RETURNING name`
 		return nil, fmt.Errorf("upsert into tags: %w", err)
 	}
 	return out, nil
+}
+
+// MonthCounts runs the query of its name in queries.sql.
+func (r OrderRepository) MonthCounts(ctx context.Context, since time.Time) ([]repository.MonthCount, error) {
+	const q = `SELECT date_trunc('month', placed_at) AS month, count(*) AS count
+FROM orders
+WHERE placed_at >= $1
+GROUP BY 1
+ORDER BY 1`
+	rows, err := r.db.Query(ctx, q, since)
+	if err != nil {
+		return nil, fmt.Errorf("query MonthCounts: %w", err)
+	}
+	defer rows.Close()
+	out := []repository.MonthCount{}
+	for rows.Next() {
+		var row repository.MonthCount
+		if err := rows.Scan(&row.Month, &row.Count); err != nil {
+			return nil, fmt.Errorf("query MonthCounts: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("query MonthCounts: %w", err)
+	}
+	return out, nil
+}
+
+// TotalOf runs the query of its name in queries.sql.
+func (r OrderRepository) TotalOf(ctx context.Context, customerID int64) (repository.CustomerTotal, error) {
+	const q = `SELECT c.name AS customer, sum(o.total)::bigint AS total
+FROM orders o
+JOIN customers c ON c.id = o.customer_id
+WHERE c.id = $1
+GROUP BY c.name`
+	var row repository.CustomerTotal
+	err := r.db.QueryRow(ctx, q, customerID).
+		Scan(&row.Name, &row.Total)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.CustomerTotal{}, fmt.Errorf("query TotalOf: %w", orm.ErrNotFound)
+	}
+	if err != nil {
+		return repository.CustomerTotal{}, fmt.Errorf("query TotalOf: %w", err)
+	}
+	return row, nil
+}
+
+// CloseOld runs the query of its name in queries.sql.
+func (r OrderRepository) CloseOld(ctx context.Context, before time.Time) (int64, error) {
+	const q = `UPDATE orders SET status = 'closed' WHERE placed_at < $1 AND status <> 'closed'`
+	tag, err := r.db.Exec(ctx, q, before)
+	if err != nil {
+		return 0, fmt.Errorf("query CloseOld: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// Reopen runs the query of its name in queries.sql.
+func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
+	const q = `UPDATE orders SET status = 'open' WHERE id = $1`
+	if _, err := r.db.Exec(ctx, q, id); err != nil {
+		return fmt.Errorf("query Reopen: %w", err)
+	}
+	return nil
 }
 
 // selectCustomers reads the rows of customers that q matches, in its order.

@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
@@ -31,4 +32,19 @@ type OrderRepository interface {
 	UpsertLines(ctx context.Context, lines []model.OrderLine) error
 	//kanna:conflict name
 	UpsertTags(ctx context.Context, tags []model.Tag) ([]model.Tag, error)
+
+	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
+	TotalOf(ctx context.Context, customerID int64) (CustomerTotal, error)
+	CloseOld(ctx context.Context, before time.Time) (int64, error)
+	Reopen(ctx context.Context, id model.OrderID) error
+}
+
+type MonthCount struct {
+	Month time.Time
+	Count int64
+}
+
+type CustomerTotal struct {
+	Name  string `orm:"customer"`
+	Total int64
 }

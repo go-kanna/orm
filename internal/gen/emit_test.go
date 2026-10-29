@@ -63,7 +63,7 @@ var tables = map[string]snapshot.Table{
 	},
 }
 
-// described records the scopes of the .sql files of testdata/dir, as describe would, by their digests alone.
+// described records the statements of the .sql files of testdata/dir, as describe would, by their digests alone.
 func described(t *testing.T, dir string) map[string]snapshot.Statement {
 	t.Helper()
 
@@ -82,7 +82,10 @@ func described(t *testing.T, dir string) map[string]snapshot.Statement {
 			t.Fatalf("parse %s:\n%s", file, report(ds))
 		}
 		for _, st := range stmts {
-			key := "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Type + "." + st.Name
+			key := "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Name
+			if st.Type != "" {
+				key = "github.com/go-kanna/orm/internal/gen/testdata/" + dir + "." + st.Type + "." + st.Name
+			}
 			statements[key] = snapshot.Statement{Digest: snapshot.Digest(st.Text)}
 		}
 	}
@@ -290,8 +293,16 @@ func TestEmitRepositories(t *testing.T) {
 	if len(set.Diags) > 0 {
 		t.Fatalf("load: %v", set.Diags)
 	}
-	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables}
 	const testdata = "github.com/go-kanna/orm/internal/gen/testdata/"
+	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables, Statements: described(t, "repository")}
+	for name, columns := range map[string][]snapshot.Result{
+		"MonthCounts": {{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8"}},
+		"TotalOf":     {{Name: "customer", Type: "text", NotNull: true}, {Name: "total", Type: "int8"}},
+	} {
+		st := s.Statements[testdata+"repository."+name]
+		st.Columns = columns
+		s.Statements[testdata+"repository."+name] = st
+	}
 	got, ds, err := gen.EmitRepositories(set.Packages, testdata+"repository", s, testdata+"pgxrepo", "pgxrepo")
 	if len(ds) > 0 {
 		t.Fatalf("EmitRepositories:\n%s", report(ds))
