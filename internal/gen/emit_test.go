@@ -303,14 +303,20 @@ func TestEmitRepositories(t *testing.T) {
 		st.Columns = columns
 		s.Statements[testdata+"repository."+name] = st
 	}
-	got, ds, err := gen.EmitRepositories(set.Packages, testdata+"repository", s, testdata+"pgxrepo", "pgxrepo")
-	if len(ds) > 0 {
-		t.Fatalf("EmitRepositories:\n%s", report(ds))
+	for drv, dest := range map[string]string{"pgx": "pgxrepo", "database/sql": "pgsqlrepo"} {
+		t.Run(drv, func(t *testing.T) {
+			t.Parallel()
+
+			got, ds, err := gen.EmitRepositories(set.Packages, testdata+"repository", s, drv, testdata+dest, dest)
+			if len(ds) > 0 {
+				t.Fatalf("EmitRepositories:\n%s", report(ds))
+			}
+			if err != nil {
+				t.Fatalf("EmitRepositories: %v\n%s", err, got)
+			}
+			pkgtest.Golden(t, filepath.Join("testdata", dest, "orm_gen.go"), got)
+		})
 	}
-	if err != nil {
-		t.Fatalf("EmitRepositories: %v\n%s", err, got)
-	}
-	pkgtest.Golden(t, filepath.Join("testdata", "pgxrepo", "orm_gen.go"), got)
 }
 
 func TestEmitRepositories_RelationsItCannotLoad(t *testing.T) {
@@ -380,8 +386,8 @@ type OrderRepository interface {
 			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id", "tenant_id"}, "orders", "id", "tenant_id")},
 		},
 	}}
-	_, ds, err := gen.EmitRepositories(set.Packages, "example.com/shop/repository", s, "example.com/shop/postgres",
-		"postgres")
+	_, ds, err := gen.EmitRepositories(set.Packages, "example.com/shop/repository", s, "pgx",
+		"example.com/shop/postgres", "postgres")
 	if err != nil {
 		t.Fatal(err)
 	}

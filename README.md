@@ -618,7 +618,8 @@ the difference is settled when the code is generated.
 | Paging by key        | a row comparison, unless the order mixes directions | spelled out                                  |
 
 A value type goes to and from the database through its `Value` and `Scan` methods; any other type, as the driver
-converts it. A column that may be NULL is held by a pointer.
+converts it. A column that may be NULL is held by a pointer. Through database/sql, an array of PostgreSQL is read into
+a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 
 ## With the rest of kanna
 

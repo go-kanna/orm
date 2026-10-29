@@ -1,4 +1,4 @@
-// Package repository declares the repositories of the tests, which kanna-orm implements in pgxrepo.
+// Package repository declares the repositories of the tests, which kanna-orm implements in pgxrepo and pgsqlrepo.
 package repository
 
 import (

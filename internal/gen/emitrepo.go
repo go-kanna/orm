@@ -12,10 +12,21 @@ import (
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
+// driver is the package the implementations of repositories run on.
+type driver string
+
+const (
+	driverPgx driver = "pgx"
+	driverSQL driver = "database/sql"
+)
+
 // repoEmitter writes the implementations of repositories into a file of their destination.
 type repoEmitter struct {
-	f *gofile.File
-	d snapshot.Dialect
+	f   *gofile.File
+	d   snapshot.Dialect
+	drv driver
+	// exec, query, and queryRow are the names of the methods of DB running a statement.
+	exec, query, queryRow string
 	// orm, fmt, and slices are the names the file imports those packages by.
 	orm, fmt, slices string
 	// models are the models whose whole rows the repositories read, by table, and names the names of the functions
@@ -25,10 +36,10 @@ type repoEmitter struct {
 }
 
 // emitRepositories writes orm_gen.go into the destination, the package pkgName at pkgPath: the implementation of each
-// of repos on a PostgreSQL database through pgx, reading the whole rows of models. declared names what the
-// destination declares besides.
-func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, repos []repository, models map[string]readModel,
-	declared []string,
+// of repos on a database of d through drv, reading the whole rows of models. declared names what the destination
+// declares besides.
+func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, repos []repository,
+	models map[string]readModel, declared []string,
 ) ([]byte, []string, error) {
 	f := gofile.New(generator, pkgPath, pkgName)
 	f.Reserve(declared...)
@@ -36,7 +47,11 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, repos []repos
 	for _, repo := range repos {
 		f.Reserve(repo.name, "New"+repo.name)
 	}
-	e := repoEmitter{f: f, d: d, models: models, names: readNames(models)}
+	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
+		names: readNames(models)}
+	if drv == driverSQL {
+		e.exec, e.query, e.queryRow = "ExecContext", "QueryContext", "QueryRowContext"
+	}
 	for _, name := range e.names {
 		f.Reserve("select"+name, "preload"+name)
 	}
@@ -67,6 +82,14 @@ func (e repoEmitter) printf(format string, args ...any) {
 // db writes DB, what the repositories run on.
 func (e repoEmitter) db() {
 	ctx := e.f.Import("context", "context")
+	if e.drv == driverSQL {
+		sql := e.f.Import("database/sql", "sql")
+		e.printf("// DB is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.\ntype DB interface {\n")
+		e.printf("ExecContext(ctx %[1]s.Context, query string, args ...any) (%[2]s.Result, error)\n", ctx, sql)
+		e.printf("QueryContext(ctx %[1]s.Context, query string, args ...any) (*%[2]s.Rows, error)\n", ctx, sql)
+		e.printf("QueryRowContext(ctx %[1]s.Context, query string, args ...any) *%[2]s.Row\n}\n\n", ctx, sql)
+		return
+	}
 	pgconn := e.f.Import("github.com/jackc/pgx/v5/pgconn", "pgconn")
 	pgx := e.f.Import("github.com/jackc/pgx/v5", "pgx")
 	e.printf("// DB is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DB interface {\n")
@@ -83,7 +106,12 @@ func (e repoEmitter) repository(repo repository) {
 			iface = pkg + "." + repo.name
 		}
 	}
-	e.printf("// %[1]s implements %[2]s on PostgreSQL through pgx.\ntype %[1]s struct{ db DB }\n\n", repo.name, iface)
+	database := "PostgreSQL"
+	if e.d == snapshot.MySQL {
+		database = "MySQL"
+	}
+	e.printf("// %[1]s implements %[2]s on %[3]s through %[4]s.\ntype %[1]s struct{ db DB }\n\n", repo.name, iface,
+		database, e.drv)
 	e.printf("// New%[1]s returns %[2]s %[1]s running on db.\nfunc New%[1]s(db DB) %[1]s { return %[1]s{db: db} }\n\n",
 		repo.name, article(repo.name))
 	e.printf("var _ %s = %s{}\n\n", iface, repo.name)
@@ -168,7 +196,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	e.printf("func (%s %s) %s%s {\n", recv, repo.name, m.name, sig.text)
 	switch m.verb {
 	case "":
-		e.query(m, sc, recv, sig)
+		e.handWritten(m, sc, recv, sig)
 	case verbInsert, verbUpsert:
 		e.insert(m, sc, recv, sig)
 	case verbUpdate:
@@ -215,7 +243,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
 	notFound := e.notFound(m.target.table, names, args)
-	rd, err, n := sc.Name("rd"), sc.Name("err"), sc.Name("n")
+	rd, err := sc.Name("rd"), sc.Name("err")
 	render := func(zero string) {
 		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\nif %[2]s != nil {\nreturn %[5]s%[2]s\n}\n", rd, err, q,
 			e.dialect(), zero)
@@ -243,9 +271,10 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		}
 		conditionsOnly(zero + ", ")
 		render(zero + ", ")
+		n := sc.Name("n")
 		e.printf("var %s %s\n", n, typ)
-		e.printf("if %[1]s := %[2]s.db.QueryRow(%[3]s, %[4]s, %[5]s.Args()...).Scan(&%[6]s); %[1]s != nil {\n",
-			err, recv, sig.ctx, query, rd, n)
+		e.printf("if %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s.Args()...).Scan(&%[7]s); %[1]s != nil {\n",
+			err, recv, e.queryRow, sig.ctx, query, rd, n)
 		e.printf("return %s, %s.Errorf(%q, %s)\n}\nreturn %s, nil\n", zero, e.fmt,
 			strings.ToLower(string(m.verb))+" "+m.target.table+": %w", err, n)
 	case verbDelete:
@@ -259,16 +288,15 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 			e.printf("if %s.Where() == \"\" {\nreturn 0, %s.Errorf(%q)\n}\n", rd, e.fmt,
 				"orm: "+m.name+" would delete every row of "+m.target.table+": give it a condition")
 		}
-		tag := sc.Name("tag")
-		e.printf("%[1]s, %[2]s := %[3]s.db.Exec(%[4]s, `DELETE FROM %[5]s`+%[6]s.Where(), %[6]s.Args()...)\n"+
-			"", tag, err, recv, sig.ctx,
-			table, rd)
-		e.printf("if %[1]s != nil {\nreturn %[2]s%[3]s.Errorf(%[4]q, %[1]s)\n}\n", err, zero, e.fmt,
-			"delete from "+m.target.table+": %w")
+		res := e.execResult(sc)
+		wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " + err + ")"
+		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, `DELETE FROM %[6]s`+%[7]s.Where(), %[7]s.Args()...)\n"+
+			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, zero, wrap)
+		affected := e.rowsAffected(sc, res, err, zero, wrap)
 		if m.result == resultCount {
-			e.printf("return %s.RowsAffected(), nil\n", tag)
+			e.printf("return %s, nil\n", affected)
 		} else {
-			e.printf("if %s.RowsAffected() == 0 {\nreturn %s\n}\nreturn nil\n", tag, notFound)
+			e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
 		}
 	case verbInsert, verbUpdate, verbUpsert: // method writes them
 	}
@@ -294,9 +322,8 @@ func (e repoEmitter) selectRows(rm readModel) {
 		e.f.Import("context", "context"), db, q, e.orm, model)
 	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\n"+
 		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
-	e.printf("%[1]s, %[2]s := %[3]s.Query(%[4]s, %[5]s+%[6]s.Where()+%[6]s.OrderBy()+%[6]s.Limit(), %[6]s.Args()...)\n"+
-		"", rows, err, db,
-		ctx, goString(query), rd)
+	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit(), %[7]s.Args()...)\n",
+		rows, err, db, e.query, ctx, goString(query), rd)
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
 	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.slices, out)
@@ -408,17 +435,17 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 			dests = append(dests, "&"+row+"."+fieldPath(c))
 		}
 		e.printf("var %s %s\n", row, model)
-		e.printf("%[1]s := %[2]s.db.QueryRow(%[3]s).\nScan(%[4]s)\nif %[1]s != nil {\nreturn %[5]s{}, %[6]s\n}\n"+
-			"return %[7]s, nil\n", err, recv, call, strings.Join(dests, ", "), model, wrap, row)
+		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n"+
+			"return %[8]s, nil\n", err, recv, e.queryRow, call, strings.Join(dests, ", "), model, wrap, row)
 	case resultRows:
 		rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
-		e.printf("%[1]s, %[2]s := %[3]s.db.Query(%[4]s)\nif %[2]s != nil {\nreturn nil, %[5]s\n}\ndefer %[1]s.Close()\n",
-			rows, err, recv, call, wrap)
+		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn nil, %[6]s\n}\n"+
+			"defer %[1]s.Close()\n", rows, err, recv, e.query, call, wrap)
 		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, m.columns)
 		e.printf("return %s, nil\n", out)
 	case resultNone:
-		e.printf("if _, %[1]s := %[2]s.db.Exec(%[3]s); %[1]s != nil {\nreturn %[4]s\n}\nreturn nil\n", err, recv, call,
-			wrap)
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
+			e.exec, call, wrap)
 	case resultCount, resultBool: // shaped turns them down for a write
 	}
 }
@@ -442,16 +469,18 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	}
 	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + strings.Join(conds, " AND ")
 
-	q, tag, err := sc.Name("q"), sc.Name("tag"), sc.Name("err")
+	q, res, err := sc.Name("q"), e.execResult(sc), sc.Name("err")
+	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "update "+m.target.table+": %w") + ", " + err + ")"
 	e.printf("const %s = %s\n", q, goString(query))
-	e.printf("%[1]s, %[2]s := %[3]s.db.Exec(%[4]s)\nif %[2]s != nil {\nreturn %[5]s.Errorf(%[6]q, %[2]s)\n}\n", tag, err,
-		recv, strings.Join(append([]string{sig.ctx, q}, args...), ", "), e.fmt, "update "+m.target.table+": %w")
-	e.printf("if %s.RowsAffected() == 0 {\nreturn %s\n}\nreturn nil\n", tag, e.notFound(m.target.table, key, keyArgs))
+	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn %[6]s\n}\n", res, err, recv, e.exec,
+		strings.Join(append([]string{sig.ctx, q}, args...), ", "), wrap)
+	e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", e.rowsAffected(sc, res, err, "", wrap),
+		e.notFound(m.target.table, key, keyArgs))
 }
 
-// query writes the body of m, which a query written by hand implements: the rows of its result read into its fields,
-// in their order, or the number of rows it affects.
-func (e repoEmitter) query(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+// handWritten writes the body of m, which a query written by hand implements: the rows of its result read into its
+// fields, in their order, or the number of rows it affects.
+func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig signature) {
 	q, err := sc.Name("q"), sc.Name("err")
 	args := make([]string, 0, 2+len(m.query.args))
 	args = append(args, sig.ctx, q)
@@ -464,12 +493,13 @@ func (e repoEmitter) query(m repoMethod, sc gofile.Scope, recv string, sig signa
 	e.printf("const %s = %s\n", q, goString(m.query.sql))
 	switch m.result {
 	case resultNone:
-		e.printf("if _, %[1]s := %[2]s.db.Exec(%[3]s); %[1]s != nil {\nreturn %[4]s\n}\nreturn nil\n", err, recv, call,
-			wrap)
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
+			e.exec, call, wrap)
 	case resultCount:
-		tag := sc.Name("tag")
-		e.printf("%[1]s, %[2]s := %[3]s.db.Exec(%[4]s)\nif %[2]s != nil {\nreturn 0, %[5]s\n}\n"+
-			"return %[1]s.RowsAffected(), nil\n", tag, err, recv, call, wrap)
+		res := e.execResult(sc)
+		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn 0, %[6]s\n}\n", res, err, recv,
+			e.exec, call, wrap)
+		e.printf("return %s, nil\n", e.rowsAffected(sc, res, err, "0, ", wrap))
 	case resultRow:
 		row := sc.Name("row")
 		typ := types.TypeString(m.query.row, e.f.Qualifier)
@@ -478,19 +508,47 @@ func (e repoEmitter) query(m repoMethod, sc gofile.Scope, recv string, sig signa
 			dests = append(dests, "&"+row+"."+fieldPath(c))
 		}
 		e.printf("var %s %s\n", row, typ)
-		e.printf("%[1]s := %[2]s.db.QueryRow(%[3]s).\nScan(%[4]s)\n", err, recv, call, strings.Join(dests, ", "))
+		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\n", err, recv, e.queryRow, call,
+			strings.Join(dests, ", "))
 		e.printf("if %[1]s.Is(%[2]s, %[3]s.ErrNoRows) {\nreturn %[4]s{}, %[5]s.Errorf(%[6]s, %[7]s.ErrNotFound)\n}\n",
-			e.f.Import("errors", "errors"), err, e.f.Import("github.com/jackc/pgx/v5", "pgx"), typ, e.fmt, what, e.orm)
+			e.f.Import("errors", "errors"), err, e.driverPkg(), typ, e.fmt, what, e.orm)
 		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[3]s\n}\nreturn %[4]s, nil\n", err, typ, wrap, row)
 	case resultRows:
 		rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 		typ := types.TypeString(m.query.row, e.f.Qualifier)
-		e.printf("%[1]s, %[2]s := %[3]s.db.Query(%[4]s)\nif %[2]s != nil {\nreturn nil, %[5]s\n}\ndefer %[1]s.Close()\n",
-			rows, err, recv, call, wrap)
+		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn nil, %[6]s\n}\n"+
+			"defer %[1]s.Close()\n", rows, err, recv, e.query, call, wrap)
 		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, m.query.fields)
 		e.printf("return %s, nil\n", out)
 	case resultBool: // a query written by hand returns no bool
 	}
+}
+
+// execResult names, in a function, the result of a statement Exec runs.
+func (e repoEmitter) execResult(sc gofile.Scope) string {
+	if e.drv == driverSQL {
+		return sc.Name("res")
+	}
+	return sc.Name("tag")
+}
+
+// rowsAffected is the number of rows the statement whose result is res affected. On database/sql, it first writes
+// what reads the number, returning zero and wrap, of err, when that fails.
+func (e repoEmitter) rowsAffected(sc gofile.Scope, res, err, zero, wrap string) string {
+	if e.drv == driverPgx {
+		return res + ".RowsAffected()"
+	}
+	n := sc.Name("n")
+	e.printf("%[1]s, %[2]s := %[3]s.RowsAffected()\nif %[2]s != nil {\nreturn %[4]s%[5]s\n}\n", n, err, res, zero, wrap)
+	return n
+}
+
+// driverPkg is the name the file imports the package of the driver by.
+func (e repoEmitter) driverPkg() string {
+	if e.drv == driverSQL {
+		return e.f.Import("database/sql", "sql")
+	}
+	return e.f.Import("github.com/jackc/pgx/v5", "pgx")
 }
 
 // preloadNames are the names in a function loading relations.
@@ -603,9 +661,8 @@ func (e repoEmitter) throughPairs(lk link, n preloadNames, keyType string) {
 	query := "SELECT " + fkColumn + ", " + sqlName(e.d, lk.way.throughFK.Columns[0]) + " FROM " +
 		sqlName(e.d, lk.way.table) + " WHERE " + fkColumn + " = ANY($1)"
 	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "read "+lk.way.table+": %w") + ", " + n.err + ")"
-	e.printf("%[1]s, %[2]s := %[3]s.Query(%[4]s, %[5]s, %[6]s)\n"+
-		"if %[2]s != nil {\nreturn %[7]s\n}\n", n.pairs, n.err, n.db, n.ctx,
-		goString(query), n.keys, wrap)
+	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s, %[7]s)\n"+
+		"if %[2]s != nil {\nreturn %[8]s\n}\n", n.pairs, n.err, n.db, e.query, n.ctx, goString(query), n.keys, wrap)
 	e.printf("%[1]s := map[%[2]s][]%[3]s{}\nvar %[4]s []%[2]s\n"+
 		"for %[5]s.Next() {\nvar %[6]s %[3]s\nvar %[7]s %[2]s\n", n.parentsOf,
 		targetType, keyType, n.targetKeys, n.pairs, n.pk, n.tk)

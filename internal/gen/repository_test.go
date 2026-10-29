@@ -107,10 +107,10 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 	}}
 }
 
-// repository loads the module of repositoryModule, with the interface of the repository package declaring methods,
+// repositories loads the module of repositoryModule, with the interface of the repository package declaring methods,
 // and queries.sql there holding sql, whose queries describe records as described has them but for their digests, and
 // reads its repositories.
-func repository(t *testing.T, d snapshot.Dialect, methods, sql string, described map[string]snapshot.Statement) (
+func repositories(t *testing.T, d snapshot.Dialect, methods, sql string, described map[string]snapshot.Statement) (
 	[]string, string,
 ) {
 	t.Helper()
@@ -183,7 +183,7 @@ var monthCountsDescribed = snapshot.Statement{
 func TestRepositories(t *testing.T) {
 	t.Parallel()
 
-	got, ds := repository(t, snapshot.PostgreSQL, `
+	got, ds := repositories(t, snapshot.PostgreSQL, `
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	GetByNumber(ctx context.Context, number string) (model.Order, error)
 	GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error)
@@ -333,7 +333,7 @@ func TestRepositories_Mistakes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, ds := repository(t, tt.dialect, tt.methods, "", nil); ds != tt.want {
+			if _, ds := repositories(t, tt.dialect, tt.methods, "", nil); ds != tt.want {
 				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
 			}
 		})
@@ -394,7 +394,7 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, ds := repository(t, snapshot.PostgreSQL, tt.methods, tt.sql, tt.described); ds != tt.want {
+			if _, ds := repositories(t, snapshot.PostgreSQL, tt.methods, tt.sql, tt.described); ds != tt.want {
 				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
 			}
 		})

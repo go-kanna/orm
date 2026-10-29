@@ -216,8 +216,8 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.
 }
 
 // EmitRepositories generates orm_gen.go for the destination, the package destName at destPath, from the repositories
-// of the package at repoPath among pkgs, or reports why it cannot.
-func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, destPath, destName string) (
+// of the package at repoPath among pkgs, running on drv, or reports why it cannot.
+func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, drv, destPath, destName string) (
 	[]byte, []diag.Diag, error,
 ) {
 	i := slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == repoPath })
@@ -240,6 +240,6 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	if ds = append(ds, mds...); diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
-	src, _, err := emitRepositories(destPath, destName, s.Dialect, repos, models, nil)
+	src, _, err := emitRepositories(destPath, destName, s.Dialect, driver(drv), repos, models, nil)
 	return src, ds, err
 }
