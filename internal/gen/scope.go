@@ -150,12 +150,7 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 		return "", nil, []diag.Diag{shape}
 	}
 
-	qualifier := func(p *types.Package) string {
-		if p == pkg.Types {
-			return ""
-		}
-		return p.Name()
-	}
+	qualifier := relativeTo(pkg.Types)
 	m := types.Unalias(of.TypeArgs().At(0))
 	example := "q orm.Of[" + types.TypeString(m, qualifier) + "]"
 	switch {
