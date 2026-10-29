@@ -21,10 +21,7 @@ import (
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
-const (
-	name         = "kanna-orm describe"
-	snapshotName = "kanna-orm.snapshot.json"
-)
+const name = "kanna-orm describe"
 
 // Main runs kanna-orm describe with args, and returns its exit code.
 func Main(args []string) int {
@@ -42,7 +39,7 @@ func Exec(env cli.Env, args []string) int {
 	)
 	fset.StringVar(&dbURL, "database-url", "", "the database to describe (default: $DATABASE_URL)")
 	fset.StringVar(&snapshotPath, "snapshot", "",
-		"the snapshot to write (default: "+snapshotName+" at the root of the module)")
+		"the snapshot to write (default: "+snapshot.Name+" at the root of the module)")
 	fset.StringVar(&tags, "tags", "", "comma-separated build tags")
 	fset.BoolVar(&check, "check", false, "check that the snapshot is up to date with the database instead of writing it")
 	fset.BoolVar(&verbose, "v", false, "say whether the snapshot was written or left unchanged")
@@ -74,7 +71,7 @@ func Exec(env cli.Env, args []string) int {
 		fmt.Fprintf(env.Err, "%s: %v\n", name, err)
 		return cli.ExitFailure
 	}
-	path, err := snapshotFile(dir, snapshotPath)
+	path, err := snapshot.Path(dir, snapshotPath)
 	if err != nil {
 		fmt.Fprintf(env.Err, "%s: %v\n", name, err)
 		return cli.ExitUsage
@@ -157,24 +154,6 @@ func checkSnapshot(path string, s snapshot.Snapshot, data []byte) []diag.Diag {
 	}
 	hints = append(hints, "run go tool kanna-orm describe to update it")
 	return []diag.Diag{diag.Errorf(at, "out of date with the database").WithHints(hints...)}
-}
-
-// snapshotFile resolves the snapshot -snapshot names in dir, or finds the one at the root of the module dir is in.
-func snapshotFile(dir, path string) (string, error) {
-	if path != "" {
-		if filepath.IsAbs(path) {
-			return path, nil
-		}
-		return filepath.Join(dir, path), nil
-	}
-	for d := dir; ; d = filepath.Dir(d) {
-		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
-			return filepath.Join(d, snapshotName), nil
-		}
-		if filepath.Dir(d) == d {
-			return "", errors.New("no go.mod in " + dir + " or above it; name the snapshot with -snapshot")
-		}
-	}
 }
 
 func usage(w io.Writer, fset *flag.FlagSet) {

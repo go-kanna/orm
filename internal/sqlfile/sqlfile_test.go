@@ -28,12 +28,19 @@ FROM orders
 WHERE placed_at >= :since -- the start of the first month
 GROUP BY 1;
 
+-- TODO: count by week too.
+
+-- Close closes the order of id,
+--
+--   whatever its status.
 -- query: Close
 
 UPDATE orders SET status = 'closed' WHERE id = :id
-
+-- PlacedInMonth narrows to the orders placed in the month of at.
 -- scope: Order.PlacedInMonth(at time.Time)
+-- by the month of the database's time zone
 date_trunc('month', placed_at) = date_trunc('month', :at)
+-- the end
 `
 	stmts, ds := sqlfile.Parse(path, []byte(data))
 	if len(ds) > 0 {
@@ -48,13 +55,16 @@ date_trunc('month', placed_at) = date_trunc('month', :at)
 		},
 		{
 			Kind: sqlfile.Query, Name: "Close",
+			Doc:    "Close closes the order of id,\n\n  whatever its status.",
 			Text:   "UPDATE orders SET status = 'closed' WHERE id = :id",
-			Header: at(9), Line: 11,
+			Header: at(14), Line: 16,
 		},
 		{
 			Kind: sqlfile.Scope, Type: "Order", Name: "PlacedInMonth", Params: "at time.Time",
-			Text:   "date_trunc('month', placed_at) = date_trunc('month', :at)",
-			Header: at(13), Line: 14,
+			Doc: "PlacedInMonth narrows to the orders placed in the month of at.",
+			Text: "-- by the month of the database's time zone\n" +
+				"date_trunc('month', placed_at) = date_trunc('month', :at)",
+			Header: at(18), Line: 19,
 		},
 	}
 	if !reflect.DeepEqual(stmts, want) {
@@ -90,6 +100,8 @@ func TestParse_Mistakes(t *testing.T) {
 		{"a statement before any header", "-- notes\nSELECT 1;\n-- query: A\nSELECT 2",
 			[]string{"order_repository.sql:2:1: error: a statement comes before any -- query: or -- scope: line"}},
 		{"a header with no statement", "-- query: A\n\n-- query: B\nSELECT 1",
+			[]string{"order_repository.sql:1:1: error: -- query: A holds no statement"}},
+		{"a header with comments alone", "-- query: A\n-- SELECT 1\n\n-- query: B\nSELECT 1",
 			[]string{"order_repository.sql:1:1: error: -- query: A holds no statement"}},
 		{"a name written twice", "-- query: A\nSELECT 1\n-- query: A\nSELECT 2",
 			[]string{"order_repository.sql:3:1: error: -- query: A is written a second time"}},

@@ -12,9 +12,33 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 )
+
+// Name is the file a module keeps its snapshot in, at its root.
+const Name = "kanna-orm.snapshot.json"
+
+// Path resolves the snapshot that the -snapshot flag of a command run in dir names, or, when it names none, finds the
+// one at the root of the module dir is in.
+func Path(dir, flag string) (string, error) {
+	if flag != "" {
+		if filepath.IsAbs(flag) {
+			return flag, nil
+		}
+		return filepath.Join(dir, flag), nil
+	}
+	for d := dir; ; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+			return filepath.Join(d, Name), nil
+		}
+		if filepath.Dir(d) == d {
+			return "", errors.New("no go.mod in " + dir + " or above it; name the snapshot with -snapshot")
+		}
+	}
+}
 
 // Dialect names the database a snapshot was taken of.
 type Dialect string

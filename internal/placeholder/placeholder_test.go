@@ -60,7 +60,8 @@ func TestRewrite(t *testing.T) {
 		{"the ; that ends it, before comments", my, "SELECT :a ; -- done\n# for now\n", "SELECT ?", []string{"a"}},
 		{"a ; between statements", pg, "SELECT 1; SELECT 2;", "SELECT 1; SELECT 2", nil},
 		{"a ; in a string", pg, "SELECT ';'", "SELECT ';'", nil},
-		{"a ; in a comment", pg, "SELECT 1 -- see;\n", "SELECT 1 -- see;", nil},
+		{"a comment at the end", pg, "SELECT 1 -- see;\n", "SELECT 1", nil},
+		{"a comment at the end of a line before more", my, "SELECT 1 -- one\n, 2 # two", "SELECT 1 -- one\n, 2", nil},
 		{"the space at the end", my, "SELECT 1\n\n", "SELECT 1", nil},
 	}
 	for _, tt := range tests {
@@ -118,5 +119,41 @@ func TestRewrite_Errors(t *testing.T) {
 				t.Errorf("Rewrite error = %+v, want %+v", *got, want)
 			}
 		})
+	}
+}
+
+func TestSplit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		dialect snapshot.Dialect
+		sql     string
+		pieces  []string
+		names   []string
+	}{
+		{"no parameter", snapshot.PostgreSQL, `status <> 'closed'`, []string{`status <> 'closed'`}, nil},
+		{"a name used twice", snapshot.PostgreSQL,
+			`date_trunc('month', placed_at) = date_trunc('month', :at) OR :at IS NULL`,
+			[]string{`date_trunc('month', placed_at) = date_trunc('month', `, `) OR `, ` IS NULL`}, []string{"at", "at"}},
+		{"what holds no parameter", snapshot.PostgreSQL,
+			"data ? ':a' /* :b */ AND x::text = :c -- :d\n",
+			[]string{"data ? ':a' /* :b */ AND x::text = ", ""}, []string{"c"}},
+		{"a parameter at either end", snapshot.MySQL, `:a = :b`, []string{"", " = ", ""}, []string{"a", "b"}},
+		{"the ; at the end", snapshot.MySQL, "`order` = :n;\n-- done\n", []string{"`order` = ", ""}, []string{"n"}},
+	}
+	for _, tt := range tests {
+		pieces, names, err := placeholder.Split(tt.sql, tt.dialect)
+		if err != nil {
+			t.Errorf("%s: %v", tt.name, err)
+			continue
+		}
+		if !slices.Equal(pieces, tt.pieces) || !slices.Equal(names, tt.names) {
+			t.Errorf("%s: Split = %q, %q; want %q, %q", tt.name, pieces, names, tt.pieces, tt.names)
+		}
+	}
+
+	if _, _, err := placeholder.Split(`a = $1`, snapshot.PostgreSQL); err == nil {
+		t.Error("Split takes a placeholder of PostgreSQL's own")
 	}
 }

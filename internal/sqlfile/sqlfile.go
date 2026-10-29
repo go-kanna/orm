@@ -34,6 +34,9 @@ type Statement struct {
 	Name string
 	// Params is the parameter list of a scope as its line writes it, between the parentheses.
 	Params string
+	// Doc is the comment right above the header, its lines without their --, which the statement's method takes as its
+	// doc.
+	Doc string
 	// Text is the statement, without the blank lines around it.
 	Text string
 	// Header is where the -- query: or -- scope: line is, and Line the line Text starts on.
@@ -48,31 +51,18 @@ var (
 
 // Parse reads the statements of the .sql file at path, data being what it holds. A file without a -- query: or a
 // -- scope: line holds none of kanna-orm's, and is no mistake.
+//
+// The lines of comment right above a header, with no blank line between, are the doc of its statement, as in Go. The
+// statement is what follows the header up to the next doc or header, without the blank lines around it, and without
+// the lines of comment it ends in, which are no more its own than the next statement's.
 func Parse(path string, data []byte) ([]Statement, []diag.Diag) {
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	var (
 		stmts []Statement
+		at    []int // the index of each header in lines
 		ds    []diag.Diag
-		body  []string
-		start int
 		seen  = map[string]bool{}
 	)
-	flush := func() {
-		if len(stmts) == 0 {
-			return
-		}
-		st := &stmts[len(stmts)-1]
-		lead := 0
-		for lead < len(body) && strings.TrimSpace(body[lead]) == "" {
-			lead++
-		}
-		st.Text = strings.TrimSpace(strings.Join(body, "\n"))
-		st.Line = start + lead
-		if st.Text == "" && st.Name != "" {
-			ds = append(ds, diag.Errorf(st.Header, "-- %s: %s holds no statement", st.Kind, st.qualified()))
-		}
-	}
-
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	for i, line := range lines {
 		pos := token.Position{Filename: path, Line: i + 1, Column: 1}
 		st, ok, d := parseHeader(pos, line)
@@ -80,34 +70,74 @@ func Parse(path string, data []byte) ([]Statement, []diag.Diag) {
 			ds = append(ds, *d)
 		}
 		if !ok {
-			body = append(body, line)
 			continue
 		}
-		flush()
 		if key := st.Kind.String() + " " + st.qualified(); seen[key] && st.Name != "" {
 			ds = append(ds, diag.Errorf(pos, "-- %s: %s is written a second time", st.Kind, st.qualified()))
 		} else {
 			seen[key] = true
 		}
 		stmts = append(stmts, st)
-		body, start = nil, i+2
+		at = append(at, i)
 	}
 	if len(stmts) == 0 {
 		return nil, ds
 	}
-	flush()
 
-	for i, line := range lines {
-		if _, ok, _ := parseHeader(token.Position{}, line); ok {
-			break
-		}
-		if t := strings.TrimSpace(line); t != "" && !strings.HasPrefix(t, "--") {
+	for i, line := range lines[:at[0]] {
+		if t := strings.TrimSpace(line); t != "" && !comment(t) {
 			ds = append(ds, diag.Errorf(token.Position{Filename: path, Line: i + 1, Column: 1},
 				"a statement comes before any -- query: or -- scope: line"))
 			break
 		}
 	}
+
+	// docs holds the index of the first line of each statement's doc.
+	docs := make([]int, len(stmts))
+	for k, h := range at {
+		top := 0
+		if k > 0 {
+			top = at[k-1] + 1
+		}
+		docs[k] = h
+		for docs[k] > top && comment(lines[docs[k]-1]) {
+			docs[k]--
+		}
+	}
+	for k := range stmts {
+		st := &stmts[k]
+		st.Doc = doc(lines[docs[k]:at[k]])
+		first, last := at[k]+1, len(lines)
+		if k+1 < len(stmts) {
+			last = docs[k+1]
+		}
+		for first < last && strings.TrimSpace(lines[first]) == "" {
+			first++
+		}
+		for last > first && (strings.TrimSpace(lines[last-1]) == "" || comment(lines[last-1])) {
+			last--
+		}
+		st.Text = strings.TrimSpace(strings.Join(lines[first:last], "\n"))
+		st.Line = first + 1
+		if st.Text == "" && st.Name != "" {
+			ds = append(ds, diag.Errorf(st.Header, "-- %s: %s holds no statement", st.Kind, st.qualified()))
+		}
+	}
 	return stmts, ds
+}
+
+// comment reports whether line holds a comment alone.
+func comment(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "--")
+}
+
+// doc is the text of lines of comment, each without its -- and a space after it.
+func doc(lines []string) string {
+	texts := make([]string, len(lines))
+	for i, l := range lines {
+		texts[i] = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(l), "--"), " ")
+	}
+	return strings.Join(texts, "\n")
 }
 
 // parseHeader reads line as a -- query: or a -- scope: line, if it is one. A comment that looks like a misspelled one

@@ -96,7 +96,7 @@ func (s Order) StatusNe(v model.OrderStatus) Order {
 
 // PlacedAtDesc orders the rows by placed_at, latest first.
 func (s Order) PlacedAtDesc() Order {
-	return Order{s.q.OrderBy(`placed_at DESC`)}
+	return Order{s.q.OrderBy(`placed_at`, true)}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -150,7 +150,7 @@ A declaration that does not match the schema stops generation, rather than the f
 $ go generate ./...
 ./scopes.go:6:1: error: Order: the snapshot has no table order
   did you mean orders?
-../model/order.go:12:2: error: Order.Memo: orders.note may be NULL, which a string cannot hold
+../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
   declare it as *string
 ./order_repository.go:12:2: error: ListByCustomer: orders has no column for the parameter custmerID
   did you mean customerID (customer_id)?
@@ -210,13 +210,13 @@ $ go tool kanna-orm describe -check ./...
 
 ## Scope types
 
-A scope type is a struct marked `//kanna:scope table=<name>` whose only field is an `orm.Of[M]`, `M` being the model
-the table's rows are read into. Each table kanna-orm reads or writes has one, and each model belongs to one table: the
-scope type is the only place where the two are tied together. A model that a relation reaches but no scope type names
-stops generation:
+A scope type is a struct marked `//kanna:scope table=<name>` whose only field is an unexported `orm.Of[M]`, `M` being
+the model the table's rows are read into, so that nothing but its methods narrows it. Each table kanna-orm reads or
+writes has one, and each model belongs to one table: the scope type is the only place where the two are tied together. A
+model that a relation reaches but no scope type names stops generation:
 
 ```console
-../model/order_line.go:9:2: error: OrderLine.Product: no scope type is declared for model.Product
+../model/order_line.go:9:1: error: OrderLine.Product: no scope type is declared for model.Product
   declare one where products are queried: //kanna:scope table=products
 ```
 
@@ -235,12 +235,13 @@ Every method returns a new scope and leaves its receiver as it was, so a scope b
 A field holds the column named as the field is, in snake case: `CustomerID` holds `customer_id`, and `PlacedAt` holds
 `placed_at`. The conversion is mechanical, so a field named otherwise says so with a tag:
 
-| Tag                 | Meaning                                                                         |
-|---------------------|---------------------------------------------------------------------------------|
-| *(none)*            | the column named as the field is, in snake case                                 |
-| `orm:"note"`        | the column `note`                                                               |
-| `orm:"-"`           | not a column: kanna-orm neither reads nor writes the field                      |
-| `orm:"fk=order_id"` | on a [relation](#relations), the foreign key to follow when more than one could |
+| Tag                             | Meaning                                                                         |
+|---------------------------------|---------------------------------------------------------------------------------|
+| *(none)*                        | the column named as the field is, in snake case                                 |
+| `orm:"note"`                    | the column `note`                                                               |
+| `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
+| `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
+| `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
 
 A field with no column, a column that may be NULL held by a field that cannot be nil, and, on a table something inserts
 into, a column the database requires a value for and the model has no field for, all stop generation. A column the
@@ -259,8 +260,10 @@ methods its type allows:
 | that may be NULL                         | also `StatusIsNull`, `StatusIsNotNull`                                                                           |
 
 A method takes the field's type: `StatusEq` takes a `model.OrderStatus`, and a value type goes to the database through
-its `Value` method, as database/sql would send it. The comparisons of a column that may be NULL take the value, not a
-pointer, so that `= NULL`, which matches nothing, cannot be written; `StatusIsNull` says what it would have meant.
+its `Value` method, as database/sql would send it. The methods matching a pattern take a string, which no value of the
+type need be, and a column held in a slice other than `[]byte`, an array, has no `In` or `NotIn`. The comparisons of a
+column that may be NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written;
+`StatusIsNull` says what it would have meant.
 
 ### Your own scopes
 
@@ -324,9 +327,16 @@ snapshot's foreign keys, so nothing more is written for it:
 When more than one foreign key could serve, generation stops and asks for a tag:
 
 ```console
-../model/order.go:16:2: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
+../model/order.go:16:1: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
+  order_lines.order_id to orders
+  order_lines.replaced_order_id to orders
   tag the field with the one to follow: orm:"fk=order_id"
 ```
+
+A table with foreign keys to both counts as much as a foreign key of the related table: when `refunds` refers to
+`orders` and to `order_lines`, `Lines` could be the lines of an order or those refunded, and asks for a tag too. Where
+the column alone does not tell, as `order_id` does not here, the tag names its table as well:
+`orm:"fk=order_lines.order_id"`.
 
 A relation is loaded only when the scope asks for it with its `With` method, which takes scopes of the related rows:
 their conditions, their order, and relations of their own to load.
@@ -370,9 +380,10 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
   come in one. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
 - When every column of the order goes the same way, the condition compares rows, as above. When they do not, and on
   MySQL, it is spelled out: `a < $1 OR (a = $1 AND b < $2)`.
-- `Before` goes the other way, from the first row of a page.
-- An order by a column that may be NULL makes `After` and `Before` return an error, since the databases put NULL in
-  different places.
+- `Before` goes the other way, to the page before the one a row is the first of. The repository reads that page from
+  its end and hands its rows back in the scope's order.
+- An order by a column that may be NULL makes a query continuing from a row return an error, and so `Cursor`, since
+  the databases put NULL in different places.
 
 To hand the position to a client, `Cursor` encodes it as a string, and `AfterCursor` decodes it into the scope:
 
@@ -383,7 +394,7 @@ if err != nil {
 }
 page, err := h.orders.List(ctx, s.Limit(20))
 // ...
-res.NextPageToken = s.Cursor(page[len(page)-1])
+res.NextPageToken, err = s.Cursor(page[len(page)-1])
 ```
 
 A cursor holds the order it was made in and the row's values in that order, as JSON; an empty one is the start, and
@@ -544,6 +555,7 @@ type MonthCount struct {
 ```
 
 ```sql
+-- PlacedInMonth narrows to the orders placed in the month of at.
 -- scope: Order.PlacedInMonth(at time.Time)
 date_trunc('month', placed_at) = date_trunc('month', :at)
 ```
@@ -575,8 +587,11 @@ ORDER BY 1`
   declares it, even through an outer join that leaves it NULL: hold such a column, as `c.email` from
   `LEFT JOIN customers c`, in a pointer. kanna-orm's own queries load relations with queries of their own, not joins,
   so this is a matter for hand-written queries only.
-- A scope has no method declared for it, so its signature is written on its line. MySQL does not tell the types of a
-  statement's parameters, and this way it need not.
+- A scope has no method declared for it, so its signature is written on its line, and the lines of comment right
+  above that line are its method's doc. MySQL does not tell the types of a statement's parameters, and this way it
+  need not.
+- A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
+  ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
 
 ## Drivers and dialects
@@ -659,8 +674,11 @@ Describing:
 The packages default to the one in the current directory, so `//go:generate go tool kanna-orm` needs no argument. As
 with every kanna generator, `KANNA_CHECK=1 go generate ./...` checks instead of writing. A run that succeeds prints
 nothing but its warnings; one that finds neither a `//kanna:scope` type nor a `//kanna:repository` interface says so. A
-package whose declarations are all gone has its `orm_gen.go` removed, and so has the destination of interfaces that
-are all gone; a file of that name without the generated-code header is never touched.
+package whose declarations are all gone has its `orm_gen.go` removed, and so has the destination of interfaces that are
+all gone, unless code in the packages the run loads still calls what it declares; a file of that name without the
+generated-code header is never touched. The `go generate` that removes one ends with
+`open ...: no such file or directory`, from go generate itself, which lists a package's files before it runs the
+generators; the file is gone as it should be ([golang/go#36068](https://github.com/golang/go/issues/36068)).
 
 ## Example
 

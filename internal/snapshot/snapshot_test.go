@@ -1,6 +1,8 @@
 package snapshot_test
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -173,5 +175,33 @@ func TestDigest(t *testing.T) {
 	a, b := snapshot.Digest("SELECT 1"), snapshot.Digest("SELECT 2")
 	if len(a) != 16 || a == b || a != snapshot.Digest("SELECT 1") {
 		t.Errorf("Digest gives %q and %q, want 16 hexadecimal digits that differ by the text alone", a, b)
+	}
+}
+
+func TestPath(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/shop\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "internal", "scopes")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct{ flag, want string }{
+		{"", filepath.Join(root, snapshot.Name)},
+		{"db.json", filepath.Join(dir, "db.json")},
+		{filepath.Join(root, "other.json"), filepath.Join(root, "other.json")},
+	} {
+		if got, err := snapshot.Path(dir, tt.flag); err != nil || got != tt.want {
+			t.Errorf("Path(%s, %q) = %s, %v; want %s", dir, tt.flag, got, err, tt.want)
+		}
+	}
+
+	outside := t.TempDir()
+	if _, err := snapshot.Path(outside, ""); err == nil {
+		t.Errorf("Path(%s, \"\") finds a snapshot outside any module", outside)
 	}
 }
