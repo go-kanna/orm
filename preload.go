@@ -29,7 +29,7 @@ func (q Of[M]) join(other subscope) subscope {
 // two scopes as Join does. A limit or an offset in sub would count the related rows of every row together, not those
 // of each, so it is an error.
 func Preload[M, C any](q Of[M], relation string, sub Of[C]) Of[M] {
-	if sub.hasLimit || sub.hasOffset {
+	if sub.hasLimit || sub.hasOffset || sub.seeking {
 		q.err = cmp.Or(q.err, fmt.Errorf(
 			"orm: %s keeps only some of the rows it loads, which would count those of every row together", relation))
 	}

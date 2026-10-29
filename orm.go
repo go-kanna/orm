@@ -28,6 +28,8 @@ type Of[M any] struct {
 	limit, offset       int
 	hasLimit, hasOffset bool
 	preloads            []preload
+	seek                seek
+	seeking             bool
 	err                 error
 }
 
@@ -146,6 +148,9 @@ func Join[M any](qs ...Of[M]) Of[M] {
 		for _, p := range s.preloads {
 			q.preloads = addPreload(q.preloads, p)
 		}
+		if s.seeking {
+			q.seek, q.seeking = s.seek, true
+		}
 		q.err = cmp.Or(q.err, s.err)
 	}
 	return q
@@ -158,7 +163,7 @@ func (q Of[M]) conditionsOnly(what string) error {
 		return q.err
 	case len(q.orders) > 0:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope orders the rows", what)
-	case q.hasLimit || q.hasOffset:
+	case q.hasLimit || q.hasOffset || q.seeking:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope keeps only some of the rows", what)
 	case len(q.preloads) > 0:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope loads %s", what, q.preloads[0].relation)

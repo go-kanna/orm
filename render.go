@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -9,6 +10,7 @@ import (
 type Rendered struct {
 	conds, orders, limit string
 	args                 []any
+	reversed             bool
 }
 
 // Render writes q as SQL for d, numbering the placeholders of PostgreSQL from first, so that they can follow those of
@@ -18,8 +20,24 @@ func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
 		return Rendered{}, q.err
 	}
 
+	var r Rendered
+	conds, orders := q.conds, q.orders
+	if q.seeking {
+		orders = q.ordersWith(q.seek.key)
+		c, err := q.seek.cond(orders, d)
+		if err != nil {
+			return Rendered{}, err
+		}
+		conds = append(slices.Clip(conds), c)
+		if q.seek.backward {
+			for i := range orders {
+				orders[i].desc = !orders[i].desc
+			}
+			r.reversed = true
+		}
+	}
+
 	var (
-		r Rendered
 		b strings.Builder
 		n = first
 	)
@@ -32,7 +50,7 @@ func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
 		b.WriteString("$" + strconv.Itoa(n))
 		n++
 	}
-	for i, c := range q.conds {
+	for i, c := range conds {
 		if i > 0 {
 			b.WriteString(" AND ")
 		}
@@ -57,15 +75,15 @@ func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
 	}
 	r.conds = b.String()
 
-	orders := make([]string, 0, len(q.orders))
-	for _, o := range q.orders {
+	columns := make([]string, 0, len(orders))
+	for _, o := range orders {
 		if o.desc {
-			orders = append(orders, o.column+" DESC")
+			columns = append(columns, o.column+" DESC")
 		} else {
-			orders = append(orders, o.column)
+			columns = append(columns, o.column)
 		}
 	}
-	r.orders = strings.Join(orders, ", ")
+	r.orders = strings.Join(columns, ", ")
 
 	switch {
 	case q.hasLimit:
@@ -98,6 +116,10 @@ func (r Rendered) Limit() string { return r.limit }
 
 // Args returns the arguments of the placeholders, in order.
 func (r Rendered) Args() []any { return r.args }
+
+// Reversed reports whether the rows come in the reverse of the scope's order, as they do for Before, for the caller to
+// turn them around.
+func (r Rendered) Reversed() bool { return r.reversed }
 
 func (r Rendered) clause(keyword string) string {
 	if r.conds == "" {
