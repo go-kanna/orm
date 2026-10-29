@@ -179,11 +179,11 @@ The snapshot is JSON with one column to a line, in a fixed order, so that a migr
 ```diff
    "orders": {
      "columns": [
-       {"name": "id", "type": "uuid", "notNull": true},
-       {"name": "customer_id", "type": "uuid", "notNull": true},
-       {"name": "status", "type": "text", "notNull": true},
--      {"name": "placed_at", "type": "timestamptz", "notNull": true}
-+      {"name": "placed_at", "type": "timestamptz", "notNull": true},
+       {"name": "id", "type": "uuid", "not_null": true},
+       {"name": "customer_id", "type": "uuid", "not_null": true},
+       {"name": "status", "type": "text", "not_null": true},
+-      {"name": "placed_at", "type": "timestamptz", "not_null": true}
++      {"name": "placed_at", "type": "timestamptz", "not_null": true},
 +      {"name": "note", "type": "text"}
      ],
 ```
