@@ -57,6 +57,26 @@ var tables = map[string]snapshot.Table{
 		Columns:    []snapshot.Column{{Name: "order_id", Type: "int8", NotNull: true}, {Name: "names", Type: "text[]"}},
 		PrimaryKey: []string{"order_id"},
 	},
+	"line_notes": {
+		Columns: []snapshot.Column{
+			{Name: "order_id", Type: "int8", NotNull: true},
+			{Name: "line_no", Type: "int4", NotNull: true},
+			{Name: "body", Type: "text", NotNull: true},
+		},
+		ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id", "line_no"}, "order_lines", "order_id", "line_no")},
+	},
+	"line_tags": {
+		Columns: []snapshot.Column{
+			{Name: "order_id", Type: "int8", NotNull: true},
+			{Name: "line_no", Type: "int4", NotNull: true},
+			{Name: "tag", Type: "text", NotNull: true},
+		},
+		PrimaryKey: []string{"order_id", "line_no", "tag"},
+		ForeignKeys: []snapshot.ForeignKey{
+			fk([]string{"order_id", "line_no"}, "order_lines", "order_id", "line_no"),
+			fk([]string{"tag"}, "tags", "name"),
+		},
+	},
 	"order_tags": {
 		Columns: columns("order_id", "tag"), PrimaryKey: []string{"order_id", "tag"},
 		ForeignKeys: []snapshot.ForeignKey{
@@ -404,8 +424,7 @@ type OrderRepository interface {
 		t.Fatal(err)
 	}
 	want := "model.go:6:2: error: Order.Lines: Order.ID is an int64, but OrderLine.OrderID, which it is loaded by, is " +
-		"an int32\n  declare them alike\n" +
-		"model.go:7:2: error: Order.Invoice: kanna-orm does not load a relation by a key of more than one column yet"
+		"an int32\n  declare them alike"
 	if got := report(ds); got != want {
 		t.Errorf("EmitRepositories reports\n%s\nwant\n%s", got, want)
 	}

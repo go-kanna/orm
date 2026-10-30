@@ -515,8 +515,8 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 		byKey := map[model.OrderID][]model.Tag{}
 		for chunk := range slices.Chunk(keys, 1000) {
 			args := make([]any, 0, len(chunk))
-			for _, key := range chunk {
-				args = append(args, key)
+			for _, v := range chunk {
+				args = append(args, v)
 			}
 			pairs, err := db.QueryContext(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id IN (?`+strings.Repeat(`, ?`, len(chunk)-1)+`)`, args...)
 			if err != nil {

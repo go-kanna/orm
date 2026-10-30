@@ -446,6 +446,84 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer]) ([]
 	return out, nil
 }
 
+// selectLineNotes reads the rows of line_notes that q matches, in its order, with the relations it loads.
+func selectLineNotes(ctx context.Context, db DBTX, q orm.Of[model.LineNote]) ([]model.LineNote, error) {
+	rd, err := q.Render(orm.MySQL, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, `SELECT order_id, line_no, body FROM line_notes`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read line_notes: %w", err)
+	}
+	defer rows.Close()
+	out := []model.LineNote{}
+	for rows.Next() {
+		var row model.LineNote
+		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.Body); err != nil {
+			return nil, fmt.Errorf("read line_notes: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read line_notes: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := preloadLineNotes(ctx, db, out, q); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// preloadLineNotes loads into rows the relations q loads, each by the keys of the rows.
+func preloadLineNotes(ctx context.Context, db DBTX, rows []model.LineNote, q orm.Of[model.LineNote]) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	if sub, ok := orm.Preloaded[model.OrderLine](q, "Line"); ok {
+		type key struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := make([]key, 0, len(rows))
+		seen := map[key]bool{}
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
+		}
+		byKey := map[key]model.OrderLine{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			parts := make([]any, 0, 2*2*len(chunk)+1)
+			sep := `(order_id, line_no) IN ((`
+			for _, k := range chunk {
+				parts = append(parts, sep, k.k0, `, `, k.k1)
+				sep = `), (`
+			}
+			parts = append(parts, `))`)
+			related, err := selectOrderLines(ctx, db, sub.Where(parts...))
+			if err != nil {
+				return err
+			}
+			for j := range related {
+				k := key{related[j].OrderID, related[j].LineNo}
+				byKey[k] = related[j]
+			}
+		}
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if found, ok := byKey[k]; ok {
+				rows[i].Line = &found
+			}
+		}
+	}
+	return nil
+}
+
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads.
 func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.MySQL, 1)
@@ -504,6 +582,108 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 		for i := range rows {
 			if found, ok := byKey[rows[i].OrderID]; ok {
 				rows[i].Order = &found
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.LineNote](q, "Notes"); ok {
+		type key struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := make([]key, 0, len(rows))
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			keys = append(keys, k)
+		}
+		byKey := map[key][]model.LineNote{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			parts := make([]any, 0, 2*2*len(chunk)+1)
+			sep := `(order_id, line_no) IN ((`
+			for _, k := range chunk {
+				parts = append(parts, sep, k.k0, `, `, k.k1)
+				sep = `), (`
+			}
+			parts = append(parts, `))`)
+			related, err := selectLineNotes(ctx, db, sub.Where(parts...))
+			if err != nil {
+				return err
+			}
+			for j := range related {
+				k := key{related[j].OrderID, related[j].LineNo}
+				byKey[k] = append(byKey[k], related[j])
+			}
+		}
+		for i := range rows {
+			rows[i].Notes = []model.LineNote{}
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if found, ok := byKey[k]; ok {
+				rows[i].Notes = found
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.Tag](q, "Tags"); ok {
+		type key struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := make([]key, 0, len(rows))
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			keys = append(keys, k)
+		}
+		byKey := map[key][]model.Tag{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			type targetKey struct{ k0 string }
+			args := make([]any, 0, 2*len(chunk))
+			for _, k := range chunk {
+				args = append(args, k.k0, k.k1)
+			}
+			pairs, err := db.QueryContext(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN ((?, ?)`+strings.Repeat(`, (?, ?)`, len(chunk)-1)+`)`, args...)
+			if err != nil {
+				return fmt.Errorf("read line_tags: %w", err)
+			}
+			parentsOf := map[targetKey][]key{}
+			var targetKeys []targetKey
+			for pairs.Next() {
+				var pk key
+				var tk targetKey
+				if err := pairs.Scan(&pk.k0, &pk.k1, &tk.k0); err != nil {
+					pairs.Close()
+					return fmt.Errorf("read line_tags: %w", err)
+				}
+				if _, ok := parentsOf[tk]; !ok {
+					targetKeys = append(targetKeys, tk)
+				}
+				parentsOf[tk] = append(parentsOf[tk], pk)
+			}
+			if err := pairs.Err(); err != nil {
+				return fmt.Errorf("read line_tags: %w", err)
+			}
+			if len(targetKeys) > 0 {
+				parts := make([]any, 0, 2*1*len(targetKeys)+1)
+				sep := `(name) IN ((`
+				for _, k := range targetKeys {
+					parts = append(parts, sep, k.k0)
+					sep = `), (`
+				}
+				parts = append(parts, `))`)
+				related, err := selectTags(ctx, db, sub.Where(parts...))
+				if err != nil {
+					return err
+				}
+				for j := range related {
+					k := targetKey{related[j].Name}
+					for _, pk := range parentsOf[k] {
+						byKey[pk] = append(byKey[pk], related[j])
+					}
+				}
+			}
+		}
+		for i := range rows {
+			rows[i].Tags = []model.Tag{}
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if found, ok := byKey[k]; ok {
+				rows[i].Tags = found
 			}
 		}
 	}
@@ -601,8 +781,8 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 		byKey := map[model.OrderID][]model.Tag{}
 		for chunk := range slices.Chunk(keys, 1000) {
 			args := make([]any, 0, len(chunk))
-			for _, key := range chunk {
-				args = append(args, key)
+			for _, v := range chunk {
+				args = append(args, v)
 			}
 			pairs, err := db.QueryContext(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id IN (?`+strings.Repeat(`, ?`, len(chunk)-1)+`)`, args...)
 			if err != nil {

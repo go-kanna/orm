@@ -714,7 +714,7 @@ func (e repoEmitter) preloadRows(rm readModel) {
 		found: sc.Name("found"),
 	}
 	if slices.ContainsFunc(rm.links, func(lk link) bool { return lk.way.kind == manyToMany }) {
-		n.pairs, n.args, n.key, n.pk, n.tk = sc.Name("pairs"), sc.Name("args"), sc.Name("key"), sc.Name("pk"), sc.Name("tk")
+		n.pairs, n.args, n.key, n.pk, n.tk = sc.Name("pairs"), sc.Name("args"), sc.Name("v"), sc.Name("pk"), sc.Name("tk")
 		n.targetKeys, n.parentsOf = sc.Name("targetKeys"), sc.Name("parentsOf")
 	}
 
@@ -722,7 +722,16 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s DBTX, %[5]s []%[6]s, %[7]s %[8]s.Of[%[6]s]) error {\n", name, n.ctx,
 		e.f.Import("context", "context"), n.db, n.rows, model, n.q, e.orm)
 	e.printf("if len(%s) == 0 {\nreturn nil\n}\n", n.rows)
+	composite := func(lk link) bool { return len(lk.keys) > 1 || len(lk.targetKeys) > 1 }
+	var c compositeNames
+	if slices.ContainsFunc(rm.links, composite) {
+		c = newCompositeNames(sc, rm.links)
+	}
 	for _, lk := range rm.links {
+		if composite(lk) {
+			e.preloadComposite(lk, n, c)
+			continue
+		}
 		e.preload(lk, n)
 	}
 	e.printf("return nil\n}\n\n")

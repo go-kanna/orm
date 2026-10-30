@@ -492,6 +492,81 @@ func selectLabels(ctx context.Context, db DBTX, q orm.Of[model.Label]) ([]model.
 	return out, nil
 }
 
+// selectLineNotes reads the rows of line_notes that q matches, in its order, with the relations it loads.
+func selectLineNotes(ctx context.Context, db DBTX, q orm.Of[model.LineNote]) ([]model.LineNote, error) {
+	rd, err := q.Render(orm.Postgres, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT order_id, line_no, body FROM line_notes`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read line_notes: %w", err)
+	}
+	defer rows.Close()
+	out := []model.LineNote{}
+	for rows.Next() {
+		var row model.LineNote
+		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.Body); err != nil {
+			return nil, fmt.Errorf("read line_notes: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read line_notes: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := preloadLineNotes(ctx, db, out, q); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// preloadLineNotes loads into rows the relations q loads, each by the keys of the rows.
+func preloadLineNotes(ctx context.Context, db DBTX, rows []model.LineNote, q orm.Of[model.LineNote]) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	if sub, ok := orm.Preloaded[model.OrderLine](q, "Line"); ok {
+		type key struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := make([]key, 0, len(rows))
+		seen := map[key]bool{}
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
+		}
+		byKey := map[key]model.OrderLine{}
+		k0s := make([]model.OrderID, 0, len(keys))
+		k1s := make([]int, 0, len(keys))
+		for _, k := range keys {
+			k0s = append(k0s, k.k0)
+			k1s = append(k1s, k.k1)
+		}
+		related, err := selectOrderLines(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`))
+		if err != nil {
+			return err
+		}
+		for j := range related {
+			k := key{related[j].OrderID, related[j].LineNo}
+			byKey[k] = related[j]
+		}
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if found, ok := byKey[k]; ok {
+				rows[i].Line = &found
+			}
+		}
+	}
+	return nil
+}
+
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads.
 func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.Postgres, 1)
@@ -548,6 +623,100 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 		for i := range rows {
 			if found, ok := byKey[rows[i].OrderID]; ok {
 				rows[i].Order = &found
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.LineNote](q, "Notes"); ok {
+		type key struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := make([]key, 0, len(rows))
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			keys = append(keys, k)
+		}
+		byKey := map[key][]model.LineNote{}
+		k0s := make([]model.OrderID, 0, len(keys))
+		k1s := make([]int, 0, len(keys))
+		for _, k := range keys {
+			k0s = append(k0s, k.k0)
+			k1s = append(k1s, k.k1)
+		}
+		related, err := selectLineNotes(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`))
+		if err != nil {
+			return err
+		}
+		for j := range related {
+			k := key{related[j].OrderID, related[j].LineNo}
+			byKey[k] = append(byKey[k], related[j])
+		}
+		for i := range rows {
+			rows[i].Notes = []model.LineNote{}
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if found, ok := byKey[k]; ok {
+				rows[i].Notes = found
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.Tag](q, "Tags"); ok {
+		type key struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := make([]key, 0, len(rows))
+		for i := range rows {
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			keys = append(keys, k)
+		}
+		byKey := map[key][]model.Tag{}
+		type targetKey struct{ k0 string }
+		k0s := make([]model.OrderID, 0, len(keys))
+		k1s := make([]int, 0, len(keys))
+		for _, k := range keys {
+			k0s = append(k0s, k.k0)
+			k1s = append(k1s, k.k1)
+		}
+		pairs, err := db.Query(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN (SELECT * FROM unnest($1::int8[], $2::int4[]))`, k0s, k1s)
+		if err != nil {
+			return fmt.Errorf("read line_tags: %w", err)
+		}
+		parentsOf := map[targetKey][]key{}
+		var targetKeys []targetKey
+		for pairs.Next() {
+			var pk key
+			var tk targetKey
+			if err := pairs.Scan(&pk.k0, &pk.k1, &tk.k0); err != nil {
+				pairs.Close()
+				return fmt.Errorf("read line_tags: %w", err)
+			}
+			if _, ok := parentsOf[tk]; !ok {
+				targetKeys = append(targetKeys, tk)
+			}
+			parentsOf[tk] = append(parentsOf[tk], pk)
+		}
+		if err := pairs.Err(); err != nil {
+			return fmt.Errorf("read line_tags: %w", err)
+		}
+		tk0s := make([]string, 0, len(targetKeys))
+		for _, k := range targetKeys {
+			tk0s = append(tk0s, k.k0)
+		}
+		related, err := selectTags(ctx, db, sub.Where(`(name) IN (SELECT * FROM unnest(`, tk0s, `::text[]))`))
+		if err != nil {
+			return err
+		}
+		for j := range related {
+			k := targetKey{related[j].Name}
+			for _, pk := range parentsOf[k] {
+				byKey[pk] = append(byKey[pk], related[j])
+			}
+		}
+		for i := range rows {
+			rows[i].Tags = []model.Tag{}
+			k := key{rows[i].OrderID, rows[i].LineNo}
+			if found, ok := byKey[k]; ok {
+				rows[i].Tags = found
 			}
 		}
 	}

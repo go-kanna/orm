@@ -87,6 +87,20 @@ CREATE TABLE order_lines (
 );
 CREATE TABLE customers (id bigint PRIMARY KEY, name varchar(255) NOT NULL);
 CREATE TABLE tags (name varchar(64) PRIMARY KEY);
+CREATE TABLE line_notes (
+	order_id bigint NOT NULL,
+	line_no int NOT NULL,
+	body varchar(64) NOT NULL,
+	FOREIGN KEY (order_id, line_no) REFERENCES order_lines (order_id, line_no)
+);
+CREATE TABLE line_tags (
+	order_id bigint NOT NULL,
+	line_no int NOT NULL,
+	tag varchar(64) NOT NULL,
+	PRIMARY KEY (order_id, line_no, tag),
+	FOREIGN KEY (order_id, line_no) REFERENCES order_lines (order_id, line_no),
+	FOREIGN KEY (tag) REFERENCES tags (name)
+);
 CREATE TABLE order_tags (
 	order_id bigint NOT NULL,
 	tag varchar(64) NOT NULL,
@@ -102,6 +116,8 @@ INSERT INTO order_lines VALUES (1, 1, 'A'), (1, 2, 'B');
 INSERT INTO customers VALUES (10, 'Ann'), (20, 'Bob');
 INSERT INTO tags VALUES ('gift'), ('rush');
 INSERT INTO order_tags VALUES (1, 'rush'), (1, 'gift'), (3, 'rush');
+INSERT INTO line_notes VALUES (1, 1, 'wrap it'), (1, 1, 'fragile'), (1, 2, 'spare');
+INSERT INTO line_tags VALUES (1, 2, 'rush'), (1, 2, 'gift'), (1, 1, 'gift');
 `
 
 func TestGeneratedRepository_MySQL(t *testing.T) {
@@ -183,6 +199,16 @@ INSERT INTO order_tags SELECT id, 'rush' FROM orders WHERE status = 'bulk';
 INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 `); err != nil {
 		t.Fatal(err)
+	}
+
+	lines, err := repo.Get(ctx, 1, mysql.Orders().WithLines(mysql.OrderLines().LineNoAsc().
+		WithNotes(mysql.LineNotes().BodyAsc().WithLine()).
+		WithTags(mysql.Tags().NameAsc())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compositeRelations(lines.Lines); got != "1: [fragile wrap it] [gift]; 2: [spare] [gift rush]" {
+		t.Errorf("the notes and tags of the lines of order 1, by both columns of their key = %s", got)
 	}
 
 	all, err := repo.List(ctx, mysql.Orders().IDAsc().
