@@ -7,7 +7,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -38,15 +37,13 @@ type param struct {
 	variadic bool
 }
 
-// sqlScopes reads the scopes written in the .sql files next to the scope types of pkg, plans, for a database of
-// dialect s.Dialect, and checks each against what describe recorded of it in s.
-func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan) (map[string][]sqlScope, []diag.Diag) {
+// sqlScopes reads the scopes of stmts, those of the .sql files next to the scope types of pkg, plans, for a database
+// of dialect s.Dialect, and checks each against what describe recorded of it in s.
+func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, stmts []sqlfile.Statement) (
+	map[string][]sqlScope, []diag.Diag,
+) {
 	if len(plans) == 0 {
 		return nil, nil
-	}
-	files, err := filepath.Glob(filepath.Join(filepath.Dir(pkg.GoFiles[0]), "*.sql"))
-	if err != nil {
-		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%s: %v", pkg.PkgPath, err)}
 	}
 	names := make([]string, 0, len(plans))
 	for _, p := range plans {
@@ -59,57 +56,48 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan) (m
 		ds     []diag.Diag
 		seen   = map[string]token.Position{}
 	)
-	for _, file := range files {
-		data, err := os.ReadFile(file) //nolint:gosec // a .sql file beside the sources of a package loaded
-		if err != nil {
-			ds = append(ds, diag.Errorf(token.Position{Filename: file}, "%v", err))
+	for _, st := range stmts {
+		if st.Kind != sqlfile.Scope || st.Name == "" || st.Text == "" {
 			continue
 		}
-		stmts, fds := sqlfile.Parse(file, data)
-		ds = append(ds, fds...)
-		for _, st := range stmts {
-			if st.Kind != sqlfile.Scope || st.Name == "" || st.Text == "" {
-				continue
+		label := "-- scope: " + st.Type + "." + st.Name
+		errorf := func(format string, args ...any) diag.Diag {
+			return diag.Errorf(st.Header, "%s: %s", label, fmt.Sprintf(format, args...))
+		}
+		if at, ok := seen[st.Type+"."+st.Name]; ok {
+			if at.Filename != st.Header.Filename { // sqlfile.Parse reports one written twice in a file
+				ds = append(ds, errorf("it is written a second time").
+					WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Filename), at.Line)))
 			}
-			label := "-- scope: " + st.Type + "." + st.Name
-			errorf := func(format string, args ...any) diag.Diag {
-				return diag.Errorf(st.Header, "%s: %s", label, fmt.Sprintf(format, args...))
+			continue
+		}
+		seen[st.Type+"."+st.Name] = st.Header
+		if !slices.Contains(names, st.Type) {
+			d := errorf("%s is no //kanna:scope type of this package", st.Type)
+			if near, ok := suggest.Closest(st.Type, names); ok {
+				d = d.WithHints("did you mean " + near + "?")
 			}
-			if at, ok := seen[st.Type+"."+st.Name]; ok {
-				if at.Filename != st.Header.Filename { // sqlfile.Parse reports one written twice in a file
-					ds = append(ds, errorf("it is written a second time").
-						WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Filename), at.Line)))
-				}
-				continue
-			}
-			seen[st.Type+"."+st.Name] = st.Header
-			if !slices.Contains(names, st.Type) {
-				d := errorf("%s is no //kanna:scope type of this package", st.Type)
-				if near, ok := suggest.Closest(st.Type, names); ok {
-					d = d.WithHints("did you mean " + near + "?")
-				}
-				ds = append(ds, d)
-				continue
-			}
+			ds = append(ds, d)
+			continue
+		}
 
-			described, ok := s.Statements[pkg.PkgPath+"."+st.Type+"."+st.Name]
-			switch {
-			case !ok:
-				ds = append(ds, errorf("the snapshot has not described it").
-					WithHints("run go tool kanna-orm describe to describe it"))
-				continue
-			case described.Digest != snapshot.Digest(st.Text):
-				ds = append(ds, errorf("it has changed since the snapshot described it").
-					WithHints("run go tool kanna-orm describe to describe it again"))
-				continue
-			}
+		described, ok := s.Statements[pkg.PkgPath+"."+st.Type+"."+st.Name]
+		switch {
+		case !ok:
+			ds = append(ds, errorf("the snapshot has not described it").
+				WithHints("run go tool kanna-orm describe to describe it"))
+			continue
+		case described.Digest != snapshot.Digest(st.Text):
+			ds = append(ds, errorf("it has changed since the snapshot described it").
+				WithHints("run go tool kanna-orm describe to describe it again"))
+			continue
+		}
 
-			sc, sds := r.sqlScope(st, s.Dialect, errorf)
-			ds = append(ds, sds...)
-			if !diag.HasErrors(sds) {
-				sc.file = filepath.Base(file)
-				scopes[st.Type] = append(scopes[st.Type], sc)
-			}
+		sc, sds := r.sqlScope(st, s.Dialect, errorf)
+		ds = append(ds, sds...)
+		if !diag.HasErrors(sds) {
+			sc.file = filepath.Base(st.Header.Filename)
+			scopes[st.Type] = append(scopes[st.Type], sc)
 		}
 	}
 	return scopes, ds

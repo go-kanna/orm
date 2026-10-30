@@ -183,6 +183,36 @@ func TestCommand_RepositoriesRemoved(t *testing.T) {
 	}
 }
 
+func TestCommand_ReadsEachSQLFileOnce(t *testing.T) {
+	t.Parallel()
+
+	// scopes declares a repository too, and a .sql file both read holds a mistake.
+	dir := writeModule(t, repositoryShop+`
+-- scopes/repository.go --
+package scopes
+
+import (
+	"context"
+
+	"example.com/shop/model"
+)
+
+//kanna:repository
+type OrderRepository interface {
+	List(ctx context.Context, s ...Order) ([]model.Order, error)
+}
+-- scopes/broken.sql --
+-- query:
+SELECT 1;
+`)
+	describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+	code, _, errOut := run(t, filepath.Join(dir, "scopes"), "-destination", "../impl", "-driver", "database/sql")
+	if want := "./broken.sql:1:1: error: -- query: wants the name of its method\n"; code != cli.ExitFailure ||
+		!strings.HasPrefix(errOut, want) || strings.Count(errOut, "broken.sql") != 1 {
+		t.Errorf("kanna-orm = %d\n%s\nwant the mistake once, as\n%s", code, errOut, want)
+	}
+}
+
 func TestCommand_RepositoryMistakes(t *testing.T) {
 	t.Parallel()
 
