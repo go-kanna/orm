@@ -115,17 +115,17 @@ func impliesNothing(pkg *packages.Package, s snapshot.Snapshot, models []decl.Mo
 	if pkg.Module == nil {
 		return nil
 	}
-	dirOf := func(path string) (string, bool) { return moduleDir(pkg.Module.Dir, pkg.Module.Path, path) }
+	root, modPath := pkg.Module.Dir, pkg.Module.Path
 	hasTable := func(table string) bool { _, ok := s.Tables[table]; return ok }
 	var ds []diag.Diag
 	for _, m := range models {
 		for _, path := range m.Paths {
-			if _, ok := dirOf(path); !ok {
-				ds = append(ds, diag.Errorf(m.Pos, "//kanna:scopes takes the packages of %s, not %s", pkg.Module.Path,
-					path).WithHints("declare a scope type of each table of its models with //kanna:scope"))
+			if _, _, ok := m.Resolve(path, root, modPath); !ok {
+				ds = append(ds, diag.Errorf(m.Pos, "//kanna:scopes takes the packages of %s, not %s", modPath, path).
+					WithHints("declare a scope type of each table of its models with //kanna:scope"))
 				continue
 			}
-			if len(decl.Imply(decl.Models{Pos: m.Pos, Paths: []string{path}}, dirOf, hasTable)) == 0 {
+			if len(decl.Imply(decl.Models{Pos: m.Pos, Paths: []string{path}}, root, modPath, hasTable)) == 0 {
 				ds = append(ds, diag.Warningf(m.Pos, "//kanna:scopes %s implies no scope type: no struct of it is named "+
 					"after a table of the snapshot", path).WithHints("as order_lines is after OrderLine"))
 			}

@@ -87,10 +87,9 @@ func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) 
 				modelPath: modelPath, modelName: modelName, table: sc.Table, pos: sc.Pos,
 			})
 		}
-		dirOf := func(path string) (string, bool) { return moduleDir(root, modPath, path) }
 		hasTable := func(table string) bool { _, ok := tables[table]; return ok }
 		for _, m := range decls.Models {
-			for _, im := range decl.Imply(m, dirOf, hasTable) {
+			for _, im := range decl.Imply(m, root, modPath, hasTable) {
 				idx = append(idx, indexed{
 					pkgPath: pkgPath, pkgName: f.Name.Name, name: im.Model,
 					modelPath: im.ModelPath, modelName: im.Model, table: im.Table, pos: im.Pos, implied: true,
@@ -167,15 +166,6 @@ func impliedNames(idx []indexed) map[string]bool {
 		}
 	}
 	return names
-}
-
-// moduleDir tells the directory of the package at path, if it is one of the module at root, whose path is modPath.
-func moduleDir(root, modPath, path string) (string, bool) {
-	if path == modPath {
-		return root, true
-	}
-	rel, ok := strings.CutPrefix(path, modPath+"/")
-	return filepath.Join(root, filepath.FromSlash(rel)), ok
 }
 
 // moduleOf returns the root of the module dir is in, and the module's path.
