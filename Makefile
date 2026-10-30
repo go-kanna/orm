@@ -4,8 +4,11 @@ export GOWORK := off
 BUILD_DIR = bin
 
 # The modules of the example, each generated for a database of its own, which make example migrates and describes.
-EXAMPLES = example/postgres
+EXAMPLES = example/postgres example/mysql
 EXAMPLE_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable
+# MySQL is named by a URL to describe, and by a DSN of go-sql-driver/mysql to migrate and run on.
+EXAMPLE_MYSQL ?= mysql://kanna:kanna@127.0.0.1:13306/kanna_orm
+EXAMPLE_MYSQL_DSN ?= kanna:kanna@tcp(127.0.0.1:13306)/kanna_orm?parseTime=true&multiStatements=true
 
 .PHONY: test
 test:
@@ -30,6 +33,9 @@ example:
 	cd example/postgres && go run ./migrate '$(EXAMPLE_POSTGRES)' && \
 		go tool kanna-orm describe -database-url '$(EXAMPLE_POSTGRES)' ./... && \
 		go generate ./... && go vet ./... && go run . '$(EXAMPLE_POSTGRES)'
+	cd example/mysql && go run ./migrate '$(EXAMPLE_MYSQL_DSN)' && \
+		go tool kanna-orm describe -database-url '$(EXAMPLE_MYSQL)' ./... && \
+		go generate ./... && go vet ./... && go run . '$(EXAMPLE_MYSQL_DSN)'
 
 .PHONY: lint
 lint:

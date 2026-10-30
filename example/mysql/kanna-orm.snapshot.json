@@ -1,0 +1,116 @@
+{
+  "dialect": "mysql",
+  "tables": {
+    "customers": {
+      "columns": [
+        {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
+        {"name": "email", "type": "varchar(255)", "not_null": true},
+        {"name": "name", "type": "varchar(255)", "not_null": true},
+        {"name": "created_at", "type": "datetime(6)", "not_null": true}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [
+        ["email"]
+      ],
+      "foreign_keys": []
+    },
+    "order_lines": {
+      "columns": [
+        {"name": "order_id", "type": "bigint", "not_null": true},
+        {"name": "line_no", "type": "int", "not_null": true},
+        {"name": "sku", "type": "varchar(32)", "not_null": true},
+        {"name": "quantity", "type": "int", "not_null": true}
+      ],
+      "primary_key": ["order_id", "line_no"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]},
+        {"columns": ["sku"], "references": "products", "referenced_columns": ["sku"]}
+      ]
+    },
+    "order_tags": {
+      "columns": [
+        {"name": "order_id", "type": "bigint", "not_null": true},
+        {"name": "tag", "type": "varchar(64)", "not_null": true}
+      ],
+      "primary_key": ["order_id", "tag"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]},
+        {"columns": ["tag"], "references": "tags", "referenced_columns": ["name"]}
+      ]
+    },
+    "orders": {
+      "columns": [
+        {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
+        {"name": "customer_id", "type": "bigint", "not_null": true},
+        {"name": "status", "type": "varchar(16)", "not_null": true},
+        {"name": "placed_at", "type": "datetime(6)", "not_null": true},
+        {"name": "note", "type": "text"}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["customer_id"], "references": "customers", "referenced_columns": ["id"]}
+      ]
+    },
+    "products": {
+      "columns": [
+        {"name": "sku", "type": "varchar(32)", "not_null": true},
+        {"name": "name", "type": "varchar(255)", "not_null": true},
+        {"name": "price", "type": "bigint", "not_null": true}
+      ],
+      "primary_key": ["sku"],
+      "unique_keys": [],
+      "foreign_keys": []
+    },
+    "shipments": {
+      "columns": [
+        {"name": "order_id", "type": "bigint", "not_null": true},
+        {"name": "carrier", "type": "varchar(64)", "not_null": true},
+        {"name": "tracking", "type": "varchar(64)", "not_null": true}
+      ],
+      "primary_key": ["order_id"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]}
+      ]
+    },
+    "tags": {
+      "columns": [
+        {"name": "name", "type": "varchar(64)", "not_null": true}
+      ],
+      "primary_key": ["name"],
+      "unique_keys": [],
+      "foreign_keys": []
+    }
+  },
+  "statements": {
+    "github.com/go-kanna/orm/example/mysql/repository.MonthlySales": {
+      "digest": "95ad8f1311b0e628",
+      "params": [
+        {"name": "since"}
+      ],
+      "columns": [
+        {"name": "month", "type": "varchar", "not_null": true},
+        {"name": "orders", "type": "bigint", "not_null": true},
+        {"name": "revenue", "type": "bigint", "not_null": true}
+      ]
+    },
+    "github.com/go-kanna/orm/example/mysql/repository.Tag": {
+      "digest": "2c109bd615c74f6f",
+      "params": [
+        {"name": "orderID"},
+        {"name": "tag"}
+      ],
+      "columns": []
+    },
+    "github.com/go-kanna/orm/example/mysql/scopes.Order.PlacedInMonth": {
+      "digest": "383b1be9e62fddf2",
+      "params": [
+        {"name": "at"}
+      ],
+      "columns": []
+    }
+  }
+}
