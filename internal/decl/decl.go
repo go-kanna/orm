@@ -179,7 +179,8 @@ func (m Models) Resolve(path, root, modPath string) (importPath, dir string, ok 
 }
 
 // TableOf names the table a struct called name holds the rows of, of those hasTable reports: name in snake case with
-// its last word made plural, as order_lines for OrderLine and categories for Category, or else as it is.
+// its last word made plural, as order_lines for OrderLine, categories for Category, and people for Person, or else as
+// it is.
 func TableOf(name string, hasTable func(table string) bool) (string, bool) {
 	snake := SnakeCase(name)
 	for _, table := range []string{plural(snake), snake} {
@@ -190,7 +191,22 @@ func TableOf(name string, hasTable func(table string) bool) (string, bool) {
 	return "", false
 }
 
+// irregular are the plurals of English nouns no rule makes.
+var irregular = map[string]string{
+	"person": "people", "child": "children", "man": "men", "woman": "women", "mouse": "mice", "goose": "geese",
+	"foot": "feet", "tooth": "teeth", "datum": "data", "medium": "media", "criterion": "criteria",
+	"analysis": "analyses", "leaf": "leaves", "life": "lives", "knife": "knives", "wife": "wives", "half": "halves",
+}
+
+// plural makes the last word of a name in snake case plural.
 func plural(word string) string {
+	head, last := "", word
+	if i := strings.LastIndexByte(word, '_'); i >= 0 {
+		head, last = word[:i+1], word[i+1:]
+	}
+	if p, ok := irregular[last]; ok {
+		return head + p
+	}
 	switch {
 	case strings.HasSuffix(word, "y") && len(word) > 1 && !strings.ContainsRune("aeiou", rune(word[len(word)-2])):
 		return strings.TrimSuffix(word, "y") + "ies"
