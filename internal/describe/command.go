@@ -120,6 +120,20 @@ func run(ctx context.Context, dbURL string, patterns []string, cfg packages.Conf
 	if err != nil {
 		return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 	}
+	return describeAndClose(ctx, db, closeDB, patterns, cfg)
+}
+
+// describeAndClose describes db for the packages patterns match, and closes it with closeDB however it returns, saying
+// so in a warning when closing fails.
+func describeAndClose(
+	ctx context.Context, db Database, closeDB func() error, patterns []string, cfg packages.Config,
+) (s snapshot.Snapshot, ds []diag.Diag) {
+	defer func() {
+		if err := closeDB(); err != nil {
+			ds = append(ds, diag.Warningf(token.Position{}, "close the connection: %v", err))
+		}
+	}()
+
 	set, err := packages.Load(patterns, cfg)
 	if err != nil {
 		return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
@@ -130,11 +144,7 @@ func run(ctx context.Context, dbURL string, patterns []string, cfg packages.Conf
 	}
 	// Only the declarations matter here: code calling what is still to be generated may well not compile, and
 	// set.Diags would say so.
-	s, ds := Describe(ctx, db, set.Packages, dirs)
-	if err := closeDB(); err != nil {
-		ds = append(ds, diag.Warningf(token.Position{}, "close the connection: %v", err))
-	}
-	return s, ds
+	return Describe(ctx, db, set.Packages, dirs)
 }
 
 // sqlDirs finds the directories that patterns naming directories, as ./... does, match, but that hold .sql files and

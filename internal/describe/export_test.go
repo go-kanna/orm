@@ -7,4 +7,5 @@ var (
 	MySQLStatement    = mysqlStatement
 	MySQLDSN          = mysqlDSN
 	SQLDirs           = sqlDirs
+	DescribeAndClose  = describeAndClose
 )
