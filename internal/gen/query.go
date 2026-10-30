@@ -118,12 +118,21 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	}
 	q := query{file: filepath.Base(st.Header.Filename), sql: sql}
 	var ds []diag.Diag
-	declared := map[string]bool{}
+	declared := map[string]types.Type{}
 	for i := 1; i < params.Len(); i++ {
-		declared[params.At(i).Name()] = true
+		declared[params.At(i).Name()] = params.At(i).Type()
+	}
+	for _, p := range described.Params {
+		if t, ok := declared[p.Name]; ok {
+			if want, ok := fits(t, p.Type); !ok {
+				typ := typeName(t)
+				ds = append(ds, diag.Errorf(st.Header, "-- query: %s: :%s is %s, which %s, %s %s, is not", st.Name,
+					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want))
+			}
+		}
 	}
 	for _, n := range names {
-		if !declared[n] {
+		if _, ok := declared[n]; !ok {
 			return []diag.Diag{diag.Errorf(st.Header, "-- query: %s: :%s is none of the parameters of the method", st.Name,
 				n).WithHints(fmt.Sprintf("declare it: %s(ctx context.Context, %s ...)", m.name, n))}
 		}
@@ -235,10 +244,15 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 			continue
 		}
 		f := all[i]
+		typ := typeName(f.typ)
 		if c.Nullable && !nilable(f.typ) {
-			typ := typeName(f.typ)
 			ds = append(ds, errorf("the column %s may be NULL, which %s.%s, %s %s, cannot hold", c.Name,
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as *"+typ))
+			continue
+		}
+		if want, ok := fits(f.typ, c.Type); !ok {
+			ds = append(ds, errorf("the column %s is %s, which %s.%s, %s %s, cannot hold", c.Name, c.Type,
+				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want))
 			continue
 		}
 		matched = append(matched, column{path: f.path, typ: f.typ, col: snapshot.Column{Name: c.Name}, pos: f.pos})

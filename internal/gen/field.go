@@ -154,10 +154,19 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 	}
 	m.held[name] = label
 
+	typ := types.TypeString(f.Type(), relativeTo(f.Pkg()))
 	if !col.NotNull && !nilable(f.Type()) {
-		typ := types.TypeString(f.Type(), relativeTo(f.Pkg()))
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: %s.%s may be NULL, which %s %s cannot hold",
 			label, m.sc.table, name, article(typ), typ).WithHints("declare it as *"+typ))
+		return
+	}
+	if want, ok := fits(f.Type(), col.Type); !ok {
+		if isPointer(f.Type()) {
+			want = "*" + want
+		}
+		m.ds = append(m.ds, diag.Errorf(pos, "%s: %s.%s is %s, which %s %s cannot hold", label, m.sc.table, name,
+			col.Type, article(typ), typ).WithHints("declare it as "+want+", or as a type of your own with Scan and "+
+			"Value methods"))
 		return
 	}
 	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos})

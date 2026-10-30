@@ -407,6 +407,15 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 			}},
 			header + "error: -- query: MonthCounts: the column month may be NULL, which repository.MonthCount.Month, " +
 				"a time.Time, cannot hold\n  declare it as *time.Time"},
+		{"a column of another type than its field",
+			"\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ Month time.Time; Count string }, " +
+				"error)\n", monthCounts, described,
+			header + "error: -- query: MonthCounts: the column count is int8, which struct{Month time.Time; Count " +
+				"string}.Count, a string, cannot hold\n  declare it as int64"},
+		{"a parameter of another type than the query's",
+			"\tMonthCounts(ctx context.Context, since string) ([]MonthCount, error)\n", monthCounts, described,
+			header + "error: -- query: MonthCounts: :since is timestamptz, which since, a string, is not\n" +
+				"  declare it as time.Time"},
 		{"a query of no method", "\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
 			"-- query: Lists\nSELECT 1\n", nil,
 			header + "error: -- query: Lists is no method of a //kanna:repository interface of this package\n" +
