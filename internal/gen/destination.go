@@ -131,10 +131,10 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 }
 
 // repositoryNames names what the implementations of the repositories of pkg declare in the package at pkgPath, as
-// Set.Pending takes them, whether or not the run can write them: DB, and for each repository its struct, its
+// Set.Pending takes them, whether or not the run can write them: DBTX, and for each repository its struct, its
 // constructor, and the methods of its interface.
 func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
-	names := map[string]bool{pkgPath + ".DB": true}
+	names := map[string]bool{pkgPath + ".DBTX": true}
 	for _, file := range pkg.Syntax {
 		if ast.IsGenerated(file) {
 			continue

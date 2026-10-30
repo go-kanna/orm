@@ -26,7 +26,7 @@ type repoEmitter struct {
 	f   *gofile.File
 	d   snapshot.Dialect
 	drv driver
-	// exec, query, and queryRow are the names of the methods of DB running a statement.
+	// exec, query, and queryRow are the names of the methods of DBTX running a statement.
 	exec, query, queryRow string
 	// orm, fmt, and slices are the names the file imports those packages by.
 	orm, fmt, slices string
@@ -44,7 +44,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 ) ([]byte, []string, error) {
 	f := gofile.New(generator, pkgPath, pkgName)
 	f.Reserve(declared...)
-	f.Reserve("DB")
+	f.Reserve("DBTX")
 	for _, repo := range repos {
 		f.Reserve(repo.name, "New"+repo.name)
 	}
@@ -80,12 +80,12 @@ func (e repoEmitter) printf(format string, args ...any) {
 	fmt.Fprintf(e.f, format, args...)
 }
 
-// db writes DB, what the repositories run on.
+// db writes DBTX, what the repositories run on, named as sqlc names it.
 func (e repoEmitter) db() {
 	ctx := e.f.Import("context", "context")
 	if e.drv == driverSQL {
 		sql := e.f.Import("database/sql", "sql")
-		e.printf("// DB is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.\ntype DB interface {\n")
+		e.printf("// DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.\ntype DBTX interface {\n")
 		e.printf("ExecContext(ctx %[1]s.Context, query string, args ...any) (%[2]s.Result, error)\n", ctx, sql)
 		e.printf("QueryContext(ctx %[1]s.Context, query string, args ...any) (*%[2]s.Rows, error)\n", ctx, sql)
 		e.printf("QueryRowContext(ctx %[1]s.Context, query string, args ...any) *%[2]s.Row\n}\n\n", ctx, sql)
@@ -93,7 +93,7 @@ func (e repoEmitter) db() {
 	}
 	pgconn := e.f.Import("github.com/jackc/pgx/v5/pgconn", "pgconn")
 	pgx := e.f.Import("github.com/jackc/pgx/v5", "pgx")
-	e.printf("// DB is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DB interface {\n")
+	e.printf("// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DBTX interface {\n")
 	e.printf("Exec(ctx %[1]s.Context, sql string, args ...any) (%[2]s.CommandTag, error)\n", ctx, pgconn)
 	e.printf("Query(ctx %[1]s.Context, sql string, args ...any) (%[2]s.Rows, error)\n", ctx, pgx)
 	e.printf("QueryRow(ctx %[1]s.Context, sql string, args ...any) %[2]s.Row\n}\n\n", ctx, pgx)
@@ -111,9 +111,9 @@ func (e repoEmitter) repository(repo repository) {
 	if e.d == snapshot.MySQL {
 		database = "MySQL"
 	}
-	e.printf("// %[1]s implements %[2]s on %[3]s through %[4]s.\ntype %[1]s struct{ db DB }\n\n", repo.name, iface,
+	e.printf("// %[1]s implements %[2]s on %[3]s through %[4]s.\ntype %[1]s struct{ db DBTX }\n\n", repo.name, iface,
 		database, e.drv)
-	e.printf("// New%[1]s returns %[2]s %[1]s running on db.\nfunc New%[1]s(db DB) %[1]s { return %[1]s{db: db} }\n\n",
+	e.printf("// New%[1]s returns %[2]s %[1]s running on db.\nfunc New%[1]s(db DBTX) %[1]s { return %[1]s{db: db} }\n\n",
 		repo.name, article(repo.name))
 	e.printf("var _ %s = %s{}\n\n", iface, repo.name)
 	for _, m := range repo.methods {
@@ -319,7 +319,7 @@ func (e repoEmitter) selectRows(rm readModel) {
 	if len(rm.links) > 0 {
 		e.printf(", with the relations it loads")
 	}
-	e.printf(".\nfunc %[1]s(%[2]s %[3]s.Context, %[4]s DB, %[5]s %[6]s.Of[%[7]s]) ([]%[7]s, error) {\n", name, ctx,
+	e.printf(".\nfunc %[1]s(%[2]s %[3]s.Context, %[4]s DBTX, %[5]s %[6]s.Of[%[7]s]) ([]%[7]s, error) {\n", name, ctx,
 		e.f.Import("context", "context"), db, q, e.orm, model)
 	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\n"+
 		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
@@ -712,7 +712,7 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	}
 
 	e.printf("// %s loads into %s the relations %s loads, each by the keys of the rows.\n", name, n.rows, n.q)
-	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s DB, %[5]s []%[6]s, %[7]s %[8]s.Of[%[6]s]) error {\n", name, n.ctx,
+	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s DBTX, %[5]s []%[6]s, %[7]s %[8]s.Of[%[6]s]) error {\n", name, n.ctx,
 		e.f.Import("context", "context"), n.db, n.rows, model, n.q, e.orm)
 	e.printf("if len(%s) == 0 {\nreturn nil\n}\n", n.rows)
 	for _, lk := range rm.links {
