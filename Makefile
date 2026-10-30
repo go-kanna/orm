@@ -3,6 +3,10 @@ export GOWORK := off
 
 BUILD_DIR = bin
 
+# The modules of the example, each generated for a database of its own, which make example migrates and describes.
+EXAMPLES = example/postgres
+EXAMPLE_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable
+
 .PHONY: test
 test:
 	go test ./... -race -coverprofile=coverage.out -covermode=atomic
@@ -21,16 +25,22 @@ db-up:
 db-down:
 	docker compose down
 
+.PHONY: example
+example:
+	cd example/postgres && go run ./migrate '$(EXAMPLE_POSTGRES)' && \
+		go tool kanna-orm describe -database-url '$(EXAMPLE_POSTGRES)' ./... && \
+		go generate ./... && go vet ./... && go run . '$(EXAMPLE_POSTGRES)'
+
 .PHONY: lint
 lint:
-	@for dir in $$(go list -m -f '{{.Dir}}'); do \
+	@for dir in $$(go list -m -f '{{.Dir}}') $(addprefix $(CURDIR)/,$(EXAMPLES)); do \
 		echo ">>> lint $$dir"; \
 		(cd $$dir && golangci-lint run) || exit 1; \
 	done
 
 .PHONY: lint-fix
 lint-fix:
-	@for dir in $$(go list -m -f '{{.Dir}}'); do \
+	@for dir in $$(go list -m -f '{{.Dir}}') $(addprefix $(CURDIR)/,$(EXAMPLES)); do \
 		echo ">>> lint-fix $$dir"; \
 		(cd $$dir && golangci-lint run --fix) || exit 1; \
 	done

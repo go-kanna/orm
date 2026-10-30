@@ -17,6 +17,8 @@ linters:
   settings:
     dupword:
       comments-only: true # String literals here are mostly Go source for the generator, where "Status Status" is a field, not a typo.
+    gomoddirectives:
+      replace-local: true # The example builds on the module it sits in, which has no version for it to require yet.
     errcheck:
       exclude-functions:
         - fmt.Fprint

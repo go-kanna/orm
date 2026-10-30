@@ -80,6 +80,41 @@ jobs:
           files: coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  example:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+        env:
+          POSTGRES_USER: kanna
+          POSTGRES_PASSWORD: kanna
+          POSTGRES_DB: kanna_orm
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U kanna -d kanna_orm"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Migrate and describe the databases, regenerate the example, and run it
+        run: make example
+
+      - name: Check the example is up to date
+        run: |
+          if [ -n "$(git status --porcelain -- example)" ]; then
+            echo "::error::the example is stale; run 'make example' and commit the result"
+            git status --porcelain -- example
+            git diff -- example
+            exit 1
+          fi
+
   build:
     runs-on: ubuntu-latest
     steps:
