@@ -1,6 +1,7 @@
 package gen_test
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -116,15 +117,26 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 			},
 			PrimaryKey: []string{"token"},
 		},
+		// audits has no scope type.
+		"audits": {Columns: columns("message")},
 	}}
 }
 
 // repositories loads the module of repositoryModule, with the interface of the repository package declaring methods,
-// and queries.sql there holding sql, whose queries describe records as described has them but for their digests, and
-// reads its repositories.
+// and queries.sql in postgres, where it is implemented, holding sql, whose queries describe records as described has
+// them but for their digests, and reads its repositories.
 func repositories(t *testing.T, d snapshot.Dialect, methods, sql string, described map[string]snapshot.Statement) (
 	[]string, string,
 ) {
+	t.Helper()
+
+	return repositoriesMarked(t, d, "//kanna:repository", methods, sql, described)
+}
+
+// repositoriesMarked is repositories, with the interface marked by directive.
+func repositoriesMarked(t *testing.T, d snapshot.Dialect, directive, methods, sql string,
+	described map[string]snapshot.Statement,
+) ([]string, string) {
 	t.Helper()
 
 	dir := writeModule(t, repositoryModule+`
@@ -150,10 +162,10 @@ type MonthCount struct {
 	Count int64
 }
 
-//kanna:repository
+`+directive+`
 type OrderRepository interface {
 `+methods+`}
--- repository/queries.sql --
+-- postgres/queries.sql --
 `+sql)
 	set, err := packages.Load([]string{"./repository"}, packages.Config{Dir: dir})
 	if err != nil {
@@ -168,10 +180,10 @@ type OrderRepository interface {
 	for _, st := range stmts {
 		if desc, ok := described[st.Name]; ok {
 			desc.Digest = snapshot.Digest(st.Text)
-			s.Statements["example.com/shop/repository."+st.Name] = desc
+			s.Statements["example.com/shop/postgres."+st.Name] = desc
 		}
 	}
-	got, ds, err := gen.Repositories(set.Packages[0], s)
+	got, ds, err := gen.Repositories(set.Packages[0], s, filepath.Join(dir, "postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +308,8 @@ func TestRepositories_Mistakes(t *testing.T) {
 		{"nothing telling the table", snapshot.PostgreSQL, "\tDeleteByID(ctx context.Context, id int64) error\n",
 			at + "error: DeleteByID: nothing tells the table it reads or writes\n" +
 				"  give it the scopes of the table, as in Delete(ctx context.Context, id model.OrderID) error, or " +
-				"DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)"},
+				"DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)\n" +
+				"  or name the table of the methods that tell none: //kanna:repository table=<table>"},
 		{"an Update of a table without a primary key", snapshot.PostgreSQL,
 			"\tUpdateLog(ctx context.Context, l model.Log) error\n",
 			at + "error: UpdateLog: logs has no primary key to tell its rows by"},
@@ -362,6 +375,82 @@ func TestRepositories_Mistakes(t *testing.T) {
 	}
 }
 
+func TestRepositories_Table(t *testing.T) {
+	t.Parallel()
+
+	got, ds := repositoriesMarked(t, snapshot.PostgreSQL, "//kanna:repository table=users", `
+	DeleteUser(ctx context.Context, id int64) error
+	Get(ctx context.Context, id model.OrderID) (model.Order, error)
+	DeleteLine(ctx context.Context, orderID model.OrderID, lineNo int) error
+`, "", nil)
+	if ds != "" {
+		t.Fatalf("Repositories:\n%s", ds)
+	}
+	// table= is the table of the method that tells none; the others tell theirs by their result and their keys.
+	want := []string{
+		"OrderRepository.DeleteUser Delete users keys=id=id error",
+		"OrderRepository.Get Get orders keys=id=id row",
+		"OrderRepository.DeleteLine Delete order_lines keys=orderID=order_id,lineNo=line_no error",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Repositories =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestRepositories_TableMistakes(t *testing.T) {
+	t.Parallel()
+
+	const at = "repository.go:22:1: "
+	tests := []struct {
+		name, directive, want string
+	}{
+		{"a table the snapshot has no", "//kanna:repository table=user",
+			at + "error: OrderRepository: the snapshot has no table user, which table= names\n  did you mean users?"},
+		{"a table of no scope type", "//kanna:repository table=audits",
+			at + "error: OrderRepository: no scope type is declared for audits, which table= names\n" +
+				"  declare one where audits are queried: //kanna:scope table=audits"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			methods := "\tDeleteUser(ctx context.Context, id int64) error\n"
+			if _, ds := repositoriesMarked(t, snapshot.PostgreSQL, tt.directive, methods, "", nil); ds != tt.want {
+				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepositories_TableOfAModelNoPackageLoaded(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, repositoryModule+`
+-- repository/repository.go --
+package repository
+
+import "context"
+
+//kanna:repository table=users
+type UserRepository interface {
+	Delete(ctx context.Context, id int64) error
+}
+`)
+	set, err := packages.Load([]string{"./repository"}, packages.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ds, err := gen.Repositories(set.Packages[0], repositoryTables(snapshot.PostgreSQL), filepath.Join(dir, "postgres"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := report(ds), "repository.go:5:1: error: UserRepository: example.com/shop/model.User, the model of "+
+		"users, is in no package the run loads\n  name it in a method of UserRepository, as its result or a row it "+
+		"writes"; got != want {
+		t.Errorf("Repositories reports\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestRepositories_QueryMistakes(t *testing.T) {
 	t.Parallel()
 
@@ -418,7 +507,7 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 				"  declare it as time.Time"},
 		{"a query of no method", "\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
 			"-- query: Lists\nSELECT 1\n", nil,
-			header + "error: -- query: Lists is no method of a //kanna:repository interface of this package\n" +
+			header + "error: -- query: Lists is no method of a //kanna:repository interface of example.com/shop/repository\n" +
 				"  did you mean List?"},
 	}
 	for _, tt := range tests {

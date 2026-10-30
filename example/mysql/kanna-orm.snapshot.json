@@ -86,7 +86,14 @@
     }
   },
   "statements": {
-    "github.com/go-kanna/orm/example/mysql/repository.MonthlySales": {
+    "github.com/go-kanna/orm/example/mysql/scopes.Order.PlacedInMonth": {
+      "digest": "383b1be9e62fddf2",
+      "params": [
+        {"name": "at"}
+      ],
+      "columns": []
+    },
+    "github.com/go-kanna/orm/example/mysql/store.MonthlySales": {
       "digest": "95ad8f1311b0e628",
       "params": [
         {"name": "since"}
@@ -97,18 +104,11 @@
         {"name": "revenue", "type": "bigint", "not_null": true}
       ]
     },
-    "github.com/go-kanna/orm/example/mysql/repository.Tag": {
+    "github.com/go-kanna/orm/example/mysql/store.Tag": {
       "digest": "2c109bd615c74f6f",
       "params": [
         {"name": "orderID"},
         {"name": "tag"}
-      ],
-      "columns": []
-    },
-    "github.com/go-kanna/orm/example/mysql/scopes.Order.PlacedInMonth": {
-      "digest": "383b1be9e62fddf2",
-      "params": [
-        {"name": "at"}
       ],
       "columns": []
     }

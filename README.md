@@ -163,8 +163,9 @@ do not stop it.
 `describe` connects to the database and records, for each table, its columns, with their types, whether they may be
 NULL, and whether the database assigns them itself, as an identity, serial, or AUTO_INCREMENT column does; its primary
 key; its unique keys; and its foreign keys. It also prepares each [hand-written query and scope](#hand-written-sql) in
-the packages it is given, and records the types of their parameters and of their result columns. Nothing it runs
-writes.
+the packages it is given, and in the directories they name that hold no package yet, as the destination of the
+repositories does before their first generation, and records the types of their parameters and of their result
+columns. Nothing it runs writes.
 
 The database is the one `-database-url` names, or else `$DATABASE_URL`:
 
@@ -262,9 +263,10 @@ into, a column the database requires a value for and the model has no field for,
 model has no field for is otherwise left alone.
 
 A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text`,
-`time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, and a slice of those for an array of
-PostgreSQL, which MySQL has none of. A type with `Scan` and `Value` methods converts itself, and fits any column, and a
-type of the database kanna-orm does not know, such as an enum or `json`, is taken at the field's word.
+`time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a string for
+`uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of. A type with `Scan` and `Value` methods
+converts itself, and fits any column, and a type of the database kanna-orm does not know, such as an enum or `json`, is
+taken at the field's word.
 
 ### Methods for columns
 
@@ -481,13 +483,62 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - `Count`, `Exists`, and a `Delete` given scopes use their conditions only; a scope with an order, a limit, or a
   relation to load makes them return an error rather than ignore it.
 - A `Delete` given scopes but no condition returns an error rather than delete every row.
+- A `Delete` returning `error` alone returns `orm.ErrNotFound` when it deletes no row, as `Update` does; one returning
+  `(int64, error)` returns the number of rows it deleted, none among them.
 - A [hand-written query](#hand-written-sql) of the method's name takes the place of its verb; a method with neither
   stops generation.
 - A method you write yourself on the generated struct, in another file of the destination, is left to you; kanna-orm
   writes the rest of the interface.
 
+A method tells its model by its result, its row, or its scopes, or else by a key of a type declared with the models, as
+`model.OrderID` is. One that takes nothing but keys of another type, such as `uuid.UUID` or `int64`, tells none, and
+stops generation unless the interface names the table with `table=`:
+
+```go
+//kanna:repository table=todos
+type TodoRepository interface {
+	Get(ctx context.Context, id uuid.UUID) (model.Todo, error) // todos, by its result
+	Delete(ctx context.Context, id uuid.UUID) error            // todos, by table=
+}
+```
+
+`table=` is the table of the methods that tell none, and of no other: a method that tells its own model reads or writes
+its table, so an interface of an aggregate still reaches each of its tables.
+
 `orm.ErrNotFound` comes wrapped with what was not found, so test for it with `errors.Is`, and turn it into your
 application's error where you call the repository.
+
+### Keyed by a uuid
+
+On Go 1.27 or later, a `uuid` column is held by the `uuid.UUID` of the standard library, which pgx and database/sql
+read and write as it is; before, by a string, or by a type of your own with `Scan` and `Value` methods. A table keyed by
+one is declared as any other, but for `table=`:
+
+```go
+type Todo struct {
+	ID    uuid.UUID
+	Title string
+}
+
+//kanna:repository table=todos
+type TodoRepository interface {
+	Get(ctx context.Context, id uuid.UUID) (model.Todo, error)
+	List(ctx context.Context, s ...scopes.Todo) ([]model.Todo, error)
+	Upsert(ctx context.Context, t model.Todo) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+```
+
+- `uuid.UUID` is declared with no model, so a method that takes nothing but one tells no table: `Delete` takes its
+  table from `table=`, while `Get` tells its own by its result.
+- A uuid has no order to compare by, so its column gets `Eq`, `Ne`, `In`, `NotIn`, `Asc`, and `Desc`, but neither `Lt`
+  nor `Between`. A page still continues from a row by it, and a cursor holds it as its text.
+- A column defaulting to `uuidv7()` is not one the database assigns: an insert writes the model's ID, the zero UUID
+  included. Give each row its ID in Go, as with `uuid.NewV7()`.
+- MySQL has no `uuid` type, and kanna-orm does not take `uuid.UUID` for a `binary(16)` or a `char(36)`: hold one in a
+  `[]byte`, a string, or a type of your own with `Scan` and `Value` methods.
+
+[go-kanna/showcase](https://github.com/go-kanna/showcase) is a to-do service whose to-dos are keyed by `uuid.UUID`.
 
 ### Writing
 
@@ -562,8 +613,16 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 ## Hand-written SQL
 
-What the methods cannot say goes into a `.sql` file next to the declaration. A query becomes the repository method of
-its name; a scope becomes a method of the scope type it names.
+What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
+where that method is implemented, in the package `-destination` names: the SQL is a detail of the implementation, not
+of the interface. A scope becomes a method of the scope type it names, and is written next to it. A `.sql` file with
+neither a `-- query:` nor a `-- scope:` line, such as a migration, is none of kanna-orm's.
+
+```text
+repository/repository.go   //kanna:repository interfaces, MonthCounts among their methods
+postgres/queries.sql       -- query: MonthCounts
+scopes/order_scopes.sql    -- scope: Order.PlacedInMonth(at time.Time)
+```
 
 ```sql
 -- query: MonthCounts

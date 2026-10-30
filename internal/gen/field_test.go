@@ -171,6 +171,9 @@ func TestFields_Mistakes(t *testing.T) {
 		{"a slice for text", "\tNote []string\n", "",
 			"model.go:8:1: error: Order.Note: orders.note is text, which a []string cannot hold\n" +
 				"  declare it as string, or as a type of your own with Scan and Value methods"},
+		{"an integer for a uuid", "\tToken int64\n", "",
+			"model.go:8:1: error: Order.Token: orders.token is uuid, which an int64 cannot hold\n" +
+				"  declare it as string, or as a type of your own with Scan and Value methods"},
 		{"a type of its own for an integer", "\tCustomerID Customer\n",
 			"type Customer struct{ id int64 }\n\nfunc (c *Customer) Scan(any) error { return nil }\n", ""},
 		{"a foreign key on a column", "\tCustomerID int64 `orm:\"fk=customer_id\"`\n", "",
@@ -194,6 +197,7 @@ func TestFields_Mistakes(t *testing.T) {
 			{Name: "created_at", Type: "timestamptz", NotNull: true},
 			{Name: "customer_id", Type: "int8", NotNull: true},
 			{Name: "note", Type: "text"},
+			{Name: "token", Type: "uuid", NotNull: true},
 		}},
 	}}
 	for _, tt := range tests {
