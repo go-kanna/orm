@@ -131,10 +131,12 @@ func mustParse(t *testing.T, fset *token.FileSet, src string) *ast.File {
 func TestTableOf(t *testing.T) {
 	t.Parallel()
 
-	tables := []string{"orders", "order_lines", "categories", "statuses", "boxes", "days", "person", "http_logs"}
+	tables := []string{"orders", "order_lines", "categories", "statuses", "boxes", "days", "person", "http_logs",
+		"sales_people", "children"}
 	for name, want := range map[string]string{
 		"Order": "orders", "OrderLine": "order_lines", "Category": "categories", "Status": "statuses", "Box": "boxes",
-		"Day": "days", "Person": "person", "HTTPLog": "http_logs", "Email": "",
+		"Day": "days", "Person": "person", "HTTPLog": "http_logs", "SalesPerson": "sales_people", "Child": "children",
+		"Email": "",
 	} {
 		got, ok := decl.TableOf(name, func(table string) bool { return slices.Contains(tables, table) })
 		if got != want || ok != (want != "") {
