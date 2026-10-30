@@ -2,6 +2,8 @@ package describe_test
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-kanna/internal/cli"
+	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/packages"
 	gomysql "github.com/go-sql-driver/mysql"
 
@@ -107,6 +110,40 @@ func TestExec(t *testing.T) {
 				"  run go tool kanna-orm describe to update it\n"
 			if code, _, errs := exec(t, dir, env, "-check", "./..."); code != 1 || errs != want {
 				t.Errorf("describe -check after a column is added = %d,\n%s\nwant 1,\n%s", code, errs, want)
+			}
+		})
+	}
+}
+
+// The connection is closed once on every way out, an error before the database is read included, and an error closing
+// it is a warning.
+func TestDescribeAndClose(t *testing.T) {
+	t.Parallel()
+
+	for _, closeErr := range []error{nil, errors.New("connection reset")} {
+		t.Run(fmt.Sprint(closeErr), func(t *testing.T) {
+			t.Parallel()
+
+			closed := 0
+			closeDB := func() error {
+				closed++
+				return closeErr
+			}
+			// A directory that does not exist fails the load, before anything is described.
+			cfg := packages.Config{Dir: filepath.Join(t.TempDir(), "missing")}
+			_, ds := describe.DescribeAndClose(t.Context(), nil, closeDB, []string{"."}, cfg)
+
+			if closed != 1 {
+				t.Errorf("closed %d times, want once", closed)
+			}
+			if !diag.HasErrors(ds) {
+				t.Errorf("diagnostics = %v, want the error of the load", ds)
+			}
+			warned := slices.ContainsFunc(ds, func(d diag.Diag) bool {
+				return strings.Contains(d.String(), "close the connection: connection reset")
+			})
+			if warned != (closeErr != nil) {
+				t.Errorf("diagnostics = %v; a warning about closing: %t, want %t", ds, warned, closeErr != nil)
 			}
 		})
 	}
