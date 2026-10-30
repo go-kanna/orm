@@ -7,7 +7,7 @@ toolchain go1.26.9
 tool github.com/go-kanna/orm/cmd/kanna-orm
 
 require (
-	github.com/go-kanna/orm v0.0.0
+	github.com/go-kanna/orm v0.0.0-20261030003619-e174c80c370d
 	github.com/jackc/pgx/v5 v5.11.0
 )
 
@@ -22,5 +22,3 @@ require (
 	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 )
-
-replace github.com/go-kanna/orm => ../..
