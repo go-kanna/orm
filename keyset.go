@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -84,6 +85,11 @@ func (q Of[M]) DecodeCursor(token string, key []string, dest map[string]any) err
 		return fmt.Errorf("orm: the cursor was made in another order: %v", c.Order)
 	}
 	if len(c.Values) != len(orders) {
+		return errNotACursor
+	}
+	// Cursor never writes null, as a page cannot continue by a column that may be NULL, and null would leave the
+	// value in dest as it was, unchecked by a value type that rejects it.
+	if slices.ContainsFunc(c.Values, func(v json.RawMessage) bool { return string(bytes.TrimSpace(v)) == "null" }) {
 		return errNotACursor
 	}
 	for i, o := range orders {

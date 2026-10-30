@@ -1,6 +1,7 @@
 package orm_test
 
 import (
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
@@ -137,6 +138,12 @@ func TestCursor(t *testing.T) {
 			"orm: the cursor was made in another order: [placed_at desc id desc]"},
 		{"not base64", "!", s, "orm: the cursor is not one kanna-orm made"},
 		{"not JSON", "bm90IEpTT04", s, "orm: the cursor is not one kanna-orm made"},
+		{"a null value", forged(`{"order":["placed_at desc","id desc"],"values":[5,null]}`), s,
+			"orm: the cursor is not one kanna-orm made"},
+		{"null values only", forged(`{"order":["placed_at desc","id desc"],"values":[null, null]}`), s,
+			"orm: the cursor is not one kanna-orm made"},
+		{"a value missing", forged(`{"order":["placed_at desc","id desc"],"values":[5]}`), s,
+			"orm: the cursor is not one kanna-orm made"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -149,6 +156,11 @@ func TestCursor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// forged encodes data as a cursor, as a client could send one kanna-orm did not make.
+func forged(data string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(data))
 }
 
 func TestCursor_Errors(t *testing.T) {
