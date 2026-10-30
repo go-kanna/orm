@@ -152,9 +152,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # The numbers of a shared runner say nothing; this checks only that every benchmark still runs.
+      # The numbers of a shared runner say nothing; this checks only that every benchmark still runs. The database is
+      # the service's, so the benchmarks run here rather than in the container of make bench.
       - name: Fill the database, regenerate the benchmarks of kanna-orm, check them, and run each once
-        run: make bench BENCH_FLAGS='-benchtime=1x -benchmem'
+        run: make bench-local BENCH_FLAGS='-benchtime=1x -benchmem'
 
       - name: Check the benchmarks are up to date
         run: |

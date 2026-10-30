@@ -10,8 +10,6 @@ EXAMPLE_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=dis
 EXAMPLE_MYSQL ?= mysql://kanna:kanna@127.0.0.1:13306/kanna_orm
 EXAMPLE_MYSQL_DSN ?= kanna:kanna@tcp(127.0.0.1:13306)/kanna_orm?parseTime=true&multiStatements=true
 
-# The database make bench fills and runs the benchmarks against, in a schema of their own, and the flags of their go
-# test: -count=6, say, for benchstat.
 BENCH_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable&search_path=bench
 BENCH_FLAGS ?= -benchmem
 
@@ -44,6 +42,12 @@ example:
 
 .PHONY: bench
 bench:
+	docker compose run --rm bench make bench-local \
+		BENCH_POSTGRES='postgres://kanna:kanna@postgres:5432/kanna_orm?sslmode=disable&search_path=bench' \
+		BENCH_FLAGS='$(BENCH_FLAGS)'
+
+.PHONY: bench-local
+bench-local:
 	cd bench/postgres && go run ./migrate '$(BENCH_POSTGRES)' && \
 		go tool kanna-orm describe -database-url '$(BENCH_POSTGRES)' ./kanna/... && \
 		go generate ./kanna/... && go vet ./... && \
