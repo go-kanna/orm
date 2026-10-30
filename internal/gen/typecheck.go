@@ -101,7 +101,7 @@ func fits(t types.Type, dbType string) (want string, ok bool) {
 	case classBytes:
 		return "[]byte", isBytes(t) || str
 	case classUUID:
-		return "string", str || isBytes(t)
+		return "string", str || isBytes(t) || isUUID(t)
 	}
 	return "", true
 }

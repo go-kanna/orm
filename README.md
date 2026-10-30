@@ -262,9 +262,10 @@ into, a column the database requires a value for and the model has no field for,
 model has no field for is otherwise left alone.
 
 A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text`,
-`time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, and a slice of those for an array of
-PostgreSQL, which MySQL has none of. A type with `Scan` and `Value` methods converts itself, and fits any column, and a
-type of the database kanna-orm does not know, such as an enum or `json`, is taken at the field's word.
+`time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a string for
+`uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of. A type with `Scan` and `Value` methods
+converts itself, and fits any column, and a type of the database kanna-orm does not know, such as an enum or `json`, is
+taken at the field's word.
 
 ### Methods for columns
 
