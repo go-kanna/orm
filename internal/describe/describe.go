@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/go-kanna/orm/internal/decl"
+	"github.com/go-kanna/orm/internal/gomod"
 	"github.com/go-kanna/orm/internal/placeholder"
 	"github.com/go-kanna/orm/internal/snapshot"
 	"github.com/go-kanna/orm/internal/sqlfile"
@@ -61,9 +62,11 @@ func (db mysqlDB) Statement(ctx context.Context, sql string) (snapshot.Statement
 	return mysqlStatement(ctx, db.conn, sql)
 }
 
-// Describe asks db of its tables and of the statements written by hand in the .sql files next to the
-// //kanna:repository interfaces and the //kanna:scope types of pkgs.
-func Describe(ctx context.Context, db Database, pkgs []*packages.Package) (snapshot.Snapshot, []diag.Diag) {
+// Describe asks db of its tables and of the statements written by hand in the .sql files of pkgs, and of dirs, which
+// hold no package yet, as the package the implementations of repositories go into does before its first run.
+func Describe(ctx context.Context, db Database, pkgs []*packages.Package, dirs []string) (snapshot.Snapshot,
+	[]diag.Diag,
+) {
 	s := snapshot.Snapshot{Dialect: db.Dialect(), Statements: map[string]snapshot.Statement{}}
 
 	tables, err := db.Tables(ctx)
@@ -72,7 +75,7 @@ func Describe(ctx context.Context, db Database, pkgs []*packages.Package) (snaps
 	}
 	s.Tables = tables
 
-	found, ds := statements(pkgs, tables)
+	found, ds := statements(pkgs, dirs, tables)
 	if diag.HasErrors(ds) {
 		return s, ds
 	}
@@ -117,10 +120,10 @@ func describe(ctx context.Context, db Database, f found) (snapshot.Statement, *d
 	return st, nil
 }
 
-// statements finds the statements of the .sql files next to the //kanna:repository interfaces and the scope types of
-// pkgs, those //kanna:scopes implies of tables included. The .sql files of a package with neither are none of
-// kanna-orm's.
-func statements(pkgs []*packages.Package, tables map[string]snapshot.Table) ([]found, []diag.Diag) {
+// statements finds the statements of the .sql files of pkgs and of dirs: a scope's next to its scope type, those
+// //kanna:scopes implies of tables included, and a query's in the package its repository's implementation goes into,
+// which declares neither. A .sql file without a -- query: or a -- scope: line is none of kanna-orm's.
+func statements(pkgs []*packages.Package, dirs []string, tables map[string]snapshot.Table) ([]found, []diag.Diag) {
 	var (
 		all []found
 		ds  []diag.Diag
@@ -130,49 +133,65 @@ func statements(pkgs []*packages.Package, tables map[string]snapshot.Table) ([]f
 			continue
 		}
 		scopes, repository, pds := declarations(pkg, tables)
-		ds = append(ds, pds...)
-		if len(scopes) == 0 && !repository {
-			continue
-		}
-
-		files, err := filepath.Glob(filepath.Join(filepath.Dir(pkg.GoFiles[0]), "*.sql"))
+		got, fds := inDir(filepath.Dir(pkg.GoFiles[0]), pkg.PkgPath, scopes, len(scopes) > 0 || repository)
+		all, ds = append(all, got...), slices.Concat(ds, pds, fds)
+	}
+	for _, dir := range dirs {
+		pkgPath, err := gomod.PkgPath(dir)
 		if err != nil {
-			ds = append(ds, diag.Errorf(token.Position{}, "%s: %v", pkg.PkgPath, err))
+			ds = append(ds, diag.Errorf(token.Position{Filename: dir}, "%v", err))
 			continue
 		}
-		seen := map[string]token.Position{}
-		for _, file := range files {
-			data, err := os.ReadFile(file) //nolint:gosec // a .sql file beside the sources of a package loaded
-			if err != nil {
-				ds = append(ds, diag.Errorf(token.Position{Filename: file}, "%v", err))
+		got, fds := inDir(dir, pkgPath, nil, false)
+		all, ds = append(all, got...), append(ds, fds...)
+	}
+	return all, ds
+}
+
+// inDir finds the statements of the .sql files in dir, that of the package at pkgPath, whose scope types are scopes,
+// their tables by their names; declares tells whether the package declares scope types or repositories.
+func inDir(dir, pkgPath string, scopes map[string]string, declares bool) ([]found, []diag.Diag) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	if err != nil {
+		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%s: %v", pkgPath, err)}
+	}
+	var (
+		all  []found
+		ds   []diag.Diag
+		seen = map[string]token.Position{}
+	)
+	for _, file := range files {
+		data, err := os.ReadFile(file) //nolint:gosec // a .sql file of a directory describe is given
+		if err != nil {
+			ds = append(ds, diag.Errorf(token.Position{Filename: file}, "%v", err))
+			continue
+		}
+		stmts, fds := sqlfile.Parse(file, data)
+		ds = append(ds, fds...)
+		for _, st := range stmts {
+			f, d := place(pkgPath, st, scopes, declares)
+			if d != nil {
+				ds = append(ds, *d)
 				continue
 			}
-			stmts, fds := sqlfile.Parse(file, data)
-			ds = append(ds, fds...)
-			for _, st := range stmts {
-				f, d := place(pkg.PkgPath, st, scopes, repository)
-				if d != nil {
-					ds = append(ds, *d)
-					continue
-				}
-				if at, ok := seen[f.key]; ok {
-					ds = append(ds, diag.Errorf(st.Header, "-- %s: %s is written a second time", st.Kind, qualified(st)).
-						WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Filename), at.Line)))
-					continue
-				}
-				seen[f.key] = st.Header
-				all = append(all, f)
+			if at, ok := seen[f.key]; ok {
+				ds = append(ds, diag.Errorf(st.Header, "-- %s: %s is written a second time", st.Kind, qualified(st)).
+					WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Filename), at.Line)))
+				continue
 			}
+			seen[f.key] = st.Header
+			all = append(all, f)
 		}
 	}
 	return all, ds
 }
 
 // place names a statement of the package at path, and finds the table of a scope.
-func place(path string, st sqlfile.Statement, scopes map[string]string, repository bool) (found, *diag.Diag) {
+func place(path string, st sqlfile.Statement, scopes map[string]string, declares bool) (found, *diag.Diag) {
 	if st.Kind == sqlfile.Query {
-		if !repository {
-			d := diag.Errorf(st.Header, "-- query: %s is next to no //kanna:repository interface", st.Name)
+		if declares {
+			d := diag.Errorf(st.Header, "-- query: %s goes where the repositories are implemented, not next to the "+
+				"declarations", st.Name).WithHints("move it into the directory -destination names")
 			return found{}, &d
 		}
 		return found{key: path + "." + st.Name, stmt: st}, nil

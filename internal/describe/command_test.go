@@ -5,10 +5,13 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/go-kanna/internal/cli"
+	"github.com/go-kanna/internal/packages"
 	gomysql "github.com/go-sql-driver/mysql"
 
 	"github.com/go-kanna/orm/internal/describe"
@@ -24,11 +27,13 @@ func exec(t *testing.T, dir string, env map[string]string, args ...string) (int,
 	return code, out.String(), errs.String()
 }
 
+// shopSQL writes its query in ledger, which holds no package yet, as the implementations of repositories do not before
+// their first run.
 const shopSQL = shop + `
 -- scopes/order_scopes.sql --
 -- scope: Order.PlacedSince(at time.Time)
 placed_at >= :at
--- repository/order_repository.sql --
+-- ledger/order_queries.sql --
 -- query: CountOpen
 SELECT count(*) AS n FROM orders WHERE status = :status
 `
@@ -83,7 +88,7 @@ func TestExec(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, key := range []string{"example.com/shop/repository.CountOpen", "example.com/shop/scopes.Order.PlacedSince"} {
+			for _, key := range []string{"example.com/shop/ledger.CountOpen", "example.com/shop/scopes.Order.PlacedSince"} {
 				if _, ok := s.Statements[key]; !ok {
 					t.Errorf("the snapshot lacks %s:\n%s", key, data)
 				}
@@ -104,6 +109,70 @@ func TestExec(t *testing.T) {
 				t.Errorf("describe -check after a column is added = %d,\n%s\nwant 1,\n%s", code, errs, want)
 			}
 		})
+	}
+}
+
+func TestSQLDirs(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, shop+`
+-- scopes/order_scopes.sql --
+-- scope: Order.Open()
+status <> 'closed'
+-- ledger/order_queries.sql --
+-- query: CountOpen
+SELECT 1
+-- ledger/archive/order_queries.sql --
+-- query: CountArchived
+SELECT 1
+-- notes/notes.txt --
+no .sql file here
+-- _old/order_queries.sql --
+-- query: CountOpen
+SELECT 1
+-- testdata/order_queries.sql --
+-- query: CountOpen
+SELECT 1
+-- tools/go.mod --
+module example.com/tools
+-- tools/order_queries.sql --
+-- query: CountOpen
+SELECT 1
+`)
+	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		patterns []string
+		want     []string
+	}{
+		{[]string{"./..."}, []string{"ledger", "ledger/archive"}},
+		{[]string{"./ledger"}, []string{"ledger"}},
+		{[]string{"./ledger/..."}, []string{"ledger", "ledger/archive"}},
+		{[]string{filepath.Join(dir, "ledger")}, []string{"ledger"}},
+		{[]string{"./scopes"}, nil}, // a package, whose .sql files describe reads anyway
+		{[]string{"./missing/..."}, nil},
+		{[]string{"example.com/shop/..."}, nil}, // an import path, which names no directory
+	}
+	for _, tt := range tests {
+		got, err := describe.SQLDirs(dir, tt.patterns, set.Packages)
+		if err != nil {
+			t.Errorf("SQLDirs(%v): %v", tt.patterns, err)
+			continue
+		}
+		var rel []string
+		for _, d := range got {
+			r, err := filepath.Rel(dir, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rel = append(rel, filepath.ToSlash(r))
+		}
+		if !slices.Equal(rel, tt.want) {
+			t.Errorf("SQLDirs(%v) = %v, want %v", tt.patterns, rel, tt.want)
+		}
 	}
 }
 

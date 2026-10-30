@@ -6,4 +6,5 @@ var (
 	MySQLTables       = mysqlTables
 	MySQLStatement    = mysqlStatement
 	MySQLDSN          = mysqlDSN
+	SQLDirs           = sqlDirs
 )
