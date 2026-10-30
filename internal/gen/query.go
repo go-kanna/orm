@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
-	"github.com/go-kanna/internal/packages"
 	"github.com/go-kanna/internal/suggest"
 
 	"github.com/go-kanna/orm/internal/placeholder"
@@ -34,21 +33,19 @@ type query struct {
 	fields []column
 }
 
-// readSQL reads the statements of the .sql files next to the sources of pkg: its scopes and queries written by hand.
-func readSQL(pkg *packages.Package) ([]sqlfile.Statement, []diag.Diag) {
-	if len(pkg.GoFiles) == 0 {
-		return nil, nil
-	}
-	files, err := filepath.Glob(filepath.Join(filepath.Dir(pkg.GoFiles[0]), "*.sql"))
+// readSQL reads the statements of the .sql files in dir: the scopes written by hand next to their scope types, or the
+// queries written by hand in the destination.
+func readSQL(dir string) ([]sqlfile.Statement, []diag.Diag) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
 	if err != nil {
-		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%s: %v", pkg.PkgPath, err)}
+		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%s: %v", dir, err)}
 	}
 	var (
 		all []sqlfile.Statement
 		ds  []diag.Diag
 	)
 	for _, file := range files {
-		data, err := os.ReadFile(file) //nolint:gosec // a .sql file beside the sources of a package loaded
+		data, err := os.ReadFile(file) //nolint:gosec // a .sql file of a package the run reads or writes
 		if err != nil {
 			ds = append(ds, diag.Errorf(token.Position{Filename: file}, "%v", err))
 			continue
@@ -57,6 +54,31 @@ func readSQL(pkg *packages.Package) ([]sqlfile.Statement, []diag.Diag) {
 		all, ds = append(all, stmts...), append(ds, fds...)
 	}
 	return all, ds
+}
+
+// misplacedQueries reports the queries of stmts, those of a package declaring scope types or repositories: a query
+// goes into the destination, where the method it implements is written.
+func misplacedQueries(stmts []sqlfile.Statement) []diag.Diag {
+	var ds []diag.Diag
+	for _, st := range stmts {
+		if st.Kind == sqlfile.Query && st.Name != "" {
+			ds = append(ds, diag.Errorf(st.Header, "-- query: %s goes where the repositories are implemented, not next "+
+				"to the declarations", st.Name).WithHints("move it into the directory -destination names"))
+		}
+	}
+	return ds
+}
+
+// misplacedScopes reports the scopes of stmts, those of the destination, which declares no scope type.
+func misplacedScopes(stmts []sqlfile.Statement) []diag.Diag {
+	var ds []diag.Diag
+	for _, st := range stmts {
+		if st.Kind == sqlfile.Scope && st.Name != "" {
+			ds = append(ds, diag.Errorf(st.Header, "-- scope: %s.%s: %s is no //kanna:scope type of this package",
+				st.Type, st.Name, st.Type))
+		}
+	}
+	return ds
 }
 
 // readQueries picks the queries written by hand out of stmts, by their names.
@@ -86,7 +108,7 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	errorf := func(pos token.Position, format string, args ...any) []diag.Diag {
 		return []diag.Diag{diag.Errorf(pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
 	}
-	described, ok := r.s.Statements[r.pkg.PkgPath+"."+st.Name]
+	described, ok := r.s.Statements[r.queriesAt+"."+st.Name]
 	switch {
 	case !ok:
 		return []diag.Diag{diag.Errorf(st.Header, "-- query: %s: the snapshot has not described it", st.Name).
@@ -266,15 +288,16 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 	return matched, ds
 }
 
-// unusedQueries reports the queries of queries that none of methods, those of the repositories, is named after.
-func unusedQueries(queries map[string]sqlfile.Statement, methods []string) []diag.Diag {
+// unusedQueries reports the queries of queries that none of methods, those of the repositories of the package at
+// pkgPath, is named after.
+func unusedQueries(queries map[string]sqlfile.Statement, pkgPath string, methods []string) []diag.Diag {
 	var ds []diag.Diag
 	for _, name := range slices.Sorted(maps.Keys(queries)) {
 		if slices.Contains(methods, name) {
 			continue
 		}
-		d := diag.Errorf(queries[name].Header, "-- query: %s is no method of a //kanna:repository interface of "+
-			"this package", name)
+		d := diag.Errorf(queries[name].Header, "-- query: %s is no method of a //kanna:repository interface of %s",
+			name, pkgPath)
 		if near, ok := suggest.Closest(name, methods); ok {
 			d = d.WithHints("did you mean " + near + "?")
 		}

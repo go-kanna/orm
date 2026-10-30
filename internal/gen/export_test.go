@@ -144,7 +144,7 @@ func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, erro
 		return nil, nil, err
 	}
 	resolveModels(idx, []*packages.Package{pkg})
-	stmts, ds := readSQL(pkg)
+	stmts, ds := readSQL(dir)
 	plans, pds := plan(pkg, s, idx, stmts)
 	if ds = append(ds, pds...); diag.HasErrors(ds) {
 		return nil, ds, nil
@@ -161,7 +161,7 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 		return nil, err
 	}
 	resolveModels(idx, []*packages.Package{pkg})
-	stmts, _ := readSQL(pkg)
+	stmts, _ := readSQL(filepath.Dir(pkg.GoFiles[0]))
 	plans, _ := plan(pkg, s, idx, stmts)
 	methods := map[string][]string{}
 	for _, p := range plans {
@@ -176,20 +176,26 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 	return methods, nil
 }
 
-// Repositories reads the repositories of pkg, and each of their methods as "Repository.Method verb table", followed by
-// what else it takes and returns, or as "Repository.Method query", followed by its SQL, its arguments, and its fields.
-func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, error) {
+// Repositories reads the repositories of pkg, implemented in destDir, and each of their methods as
+// "Repository.Method verb table", followed by what else it takes and returns, or as "Repository.Method query",
+// followed by its SQL, its arguments, and its fields.
+func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([]string, []diag.Diag, error) {
 	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]), s.Tables)
 	if err != nil {
 		return nil, nil, err
 	}
+	dest, err := destinationAt(destDir)
+	if err != nil {
+		return nil, nil, err
+	}
 	scopes, _ := findScopes(pkg, s, idx)
-	stmts, ds := readSQL(pkg)
+	stmts, ds := readSQL(dest.dir)
 	queries, qds := readQueries(stmts)
 	ds = append(ds, qds...)
 	r := repoReader{
-		pkg: pkg, s: s, queries: queries, imported: importedPackages([]*packages.Package{pkg}),
-		l: linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
+		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath,
+		imported: importedPackages([]*packages.Package{pkg}),
+		l:        linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
 	}
 	repos, rds := r.findRepositories()
 	ds = append(ds, rds...)
@@ -236,9 +242,9 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.
 	return got, ds, nil
 }
 
-// EmitRepositories generates orm_gen.go for the destination, the package destName at destPath, from the repositories
-// of the package at repoPath among pkgs, running on drv, or reports why it cannot.
-func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, drv, destPath, destName string) (
+// EmitRepositories generates orm_gen.go for the destination, the package in destDir, from the repositories of the
+// package at repoPath among pkgs, running on drv, or reports why it cannot.
+func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, drv, destDir string) (
 	[]byte, []diag.Diag, error,
 ) {
 	i := slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == repoPath })
@@ -246,12 +252,20 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	if err != nil {
 		return nil, nil, err
 	}
-	stmts, ds := readSQL(pkgs[i])
-	repos, models, rds := planRepositories(pkgs[i], pkgs, s, idx, nil, stmts)
+	dir, err := filepath.Abs(destDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("the destination: %w", err)
+	}
+	dest, err := destinationAt(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	stmts, ds := readSQL(dest.dir)
+	repos, models, rds := planRepositories(pkgs[i], pkgs, s, idx, dest, stmts)
 	ds = append(ds, rds...)
 	if diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
-	src, _, err := emitRepositories(destPath, destName, s.Dialect, driver(drv), repos, models, nil)
+	src, _, err := emitRepositories(dest.pkgPath, dest.name, s.Dialect, driver(drv), repos, models, nil)
 	return src, ds, err
 }

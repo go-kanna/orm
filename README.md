@@ -163,8 +163,9 @@ do not stop it.
 `describe` connects to the database and records, for each table, its columns, with their types, whether they may be
 NULL, and whether the database assigns them itself, as an identity, serial, or AUTO_INCREMENT column does; its primary
 key; its unique keys; and its foreign keys. It also prepares each [hand-written query and scope](#hand-written-sql) in
-the packages it is given, and records the types of their parameters and of their result columns. Nothing it runs
-writes.
+the packages it is given, and in the directories they name that hold no package yet, as the destination of the
+repositories does before their first generation, and records the types of their parameters and of their result
+columns. Nothing it runs writes.
 
 The database is the one `-database-url` names, or else `$DATABASE_URL`:
 
@@ -612,8 +613,16 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 ## Hand-written SQL
 
-What the methods cannot say goes into a `.sql` file next to the declaration. A query becomes the repository method of
-its name; a scope becomes a method of the scope type it names.
+What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
+where that method is implemented, in the package `-destination` names: the SQL is a detail of the implementation, not
+of the interface. A scope becomes a method of the scope type it names, and is written next to it. A `.sql` file with
+neither a `-- query:` nor a `-- scope:` line, such as a migration, is none of kanna-orm's.
+
+```text
+repository/repository.go   //kanna:repository interfaces, MonthCounts among their methods
+postgres/queries.sql       -- query: MonthCounts
+scopes/order_scopes.sql    -- scope: Order.PlacedInMonth(at time.Time)
+```
 
 ```sql
 -- query: MonthCounts

@@ -1,6 +1,7 @@
 package gen_test
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -122,8 +123,8 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 }
 
 // repositories loads the module of repositoryModule, with the interface of the repository package declaring methods,
-// and queries.sql there holding sql, whose queries describe records as described has them but for their digests, and
-// reads its repositories.
+// and queries.sql in postgres, where it is implemented, holding sql, whose queries describe records as described has
+// them but for their digests, and reads its repositories.
 func repositories(t *testing.T, d snapshot.Dialect, methods, sql string, described map[string]snapshot.Statement) (
 	[]string, string,
 ) {
@@ -164,7 +165,7 @@ type MonthCount struct {
 `+directive+`
 type OrderRepository interface {
 `+methods+`}
--- repository/queries.sql --
+-- postgres/queries.sql --
 `+sql)
 	set, err := packages.Load([]string{"./repository"}, packages.Config{Dir: dir})
 	if err != nil {
@@ -179,10 +180,10 @@ type OrderRepository interface {
 	for _, st := range stmts {
 		if desc, ok := described[st.Name]; ok {
 			desc.Digest = snapshot.Digest(st.Text)
-			s.Statements["example.com/shop/repository."+st.Name] = desc
+			s.Statements["example.com/shop/postgres."+st.Name] = desc
 		}
 	}
-	got, ds, err := gen.Repositories(set.Packages[0], s)
+	got, ds, err := gen.Repositories(set.Packages[0], s, filepath.Join(dir, "postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +440,7 @@ type UserRepository interface {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, ds, err := gen.Repositories(set.Packages[0], repositoryTables(snapshot.PostgreSQL))
+	_, ds, err := gen.Repositories(set.Packages[0], repositoryTables(snapshot.PostgreSQL), filepath.Join(dir, "postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +507,7 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 				"  declare it as time.Time"},
 		{"a query of no method", "\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
 			"-- query: Lists\nSELECT 1\n", nil,
-			header + "error: -- query: Lists is no method of a //kanna:repository interface of this package\n" +
+			header + "error: -- query: Lists is no method of a //kanna:repository interface of example.com/shop/repository\n" +
 				"  did you mean List?"},
 	}
 	for _, tt := range tests {

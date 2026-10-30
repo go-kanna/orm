@@ -86,7 +86,14 @@
     }
   },
   "statements": {
-    "github.com/go-kanna/orm/example/postgres/repository.MonthlySales": {
+    "github.com/go-kanna/orm/example/postgres/scopes.Order.PlacedInMonth": {
+      "digest": "935d4e14ef0cc9de",
+      "params": [
+        {"name": "at", "type": "timestamptz"}
+      ],
+      "columns": []
+    },
+    "github.com/go-kanna/orm/example/postgres/store.MonthlySales": {
       "digest": "00850c7dd3b181bd",
       "params": [
         {"name": "since", "type": "timestamptz"}
@@ -97,18 +104,11 @@
         {"name": "revenue", "type": "int8"}
       ]
     },
-    "github.com/go-kanna/orm/example/postgres/repository.Tag": {
+    "github.com/go-kanna/orm/example/postgres/store.Tag": {
       "digest": "562d0cb98a094f54",
       "params": [
         {"name": "orderID", "type": "int8"},
         {"name": "tag", "type": "text"}
-      ],
-      "columns": []
-    },
-    "github.com/go-kanna/orm/example/postgres/scopes.Order.PlacedInMonth": {
-      "digest": "935d4e14ef0cc9de",
-      "params": [
-        {"name": "at", "type": "timestamptz"}
       ],
       "columns": []
     }

@@ -6,18 +6,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/build"
 	"go/token"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 
 	"github.com/go-kanna/internal/cli"
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/output"
 	"github.com/go-kanna/internal/packages"
 
+	"github.com/go-kanna/orm/internal/gomod"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -121,13 +124,66 @@ func run(ctx context.Context, dbURL string, patterns []string, cfg packages.Conf
 	if err != nil {
 		return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 	}
+	dirs, err := sqlDirs(cfg.Dir, patterns, set.Packages)
+	if err != nil {
+		return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
+	}
 	// Only the declarations matter here: code calling what is still to be generated may well not compile, and
 	// set.Diags would say so.
-	s, ds := Describe(ctx, db, set.Packages)
+	s, ds := Describe(ctx, db, set.Packages, dirs)
 	if err := closeDB(); err != nil {
 		ds = append(ds, diag.Warningf(token.Position{}, "close the connection: %v", err))
 	}
 	return s, ds
+}
+
+// sqlDirs finds the directories that patterns naming directories, as ./... does, match, but that hold .sql files and
+// no package of pkgs: the package the implementations of repositories go into, before its first run, holds the
+// queries written for them and nothing else.
+func sqlDirs(dir string, patterns []string, pkgs []*packages.Package) ([]string, error) {
+	seen := map[string]bool{}
+	for _, pkg := range pkgs {
+		if len(pkg.GoFiles) > 0 {
+			seen[filepath.Dir(pkg.GoFiles[0])] = true
+		}
+	}
+	var dirs []string
+	add := func(d string) {
+		if files, _ := filepath.Glob(filepath.Join(d, "*.sql")); len(files) > 0 && !seen[d] {
+			seen[d] = true
+			dirs = append(dirs, d)
+		}
+	}
+	for _, p := range patterns {
+		if !build.IsLocalImport(p) && !filepath.IsAbs(p) {
+			continue
+		}
+		base, all := strings.CutSuffix(filepath.ToSlash(p), "/...")
+		base = filepath.FromSlash(base)
+		if !filepath.IsAbs(base) {
+			base = filepath.Join(dir, base)
+		}
+		if _, err := os.Stat(base); err != nil || !all {
+			add(base)
+			continue
+		}
+		err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case !d.IsDir():
+				return nil
+			case path != base && gomod.Skip(path, d.Name()):
+				return filepath.SkipDir
+			}
+			add(path)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("find the .sql files of %s: %w", p, err)
+		}
+	}
+	return dirs, nil
 }
 
 // checkSnapshot reports how the snapshot at path differs from s, whose snapshot data is.

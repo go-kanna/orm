@@ -13,6 +13,7 @@ import (
 	"github.com/go-kanna/internal/packages"
 
 	"github.com/go-kanna/orm/internal/decl"
+	"github.com/go-kanna/orm/internal/gomod"
 	"github.com/go-kanna/orm/internal/snapshot"
 	"github.com/go-kanna/orm/internal/sqlfile"
 )
@@ -25,11 +26,7 @@ type destination struct {
 // destinationAt tells the package in dir, which need not exist yet: its import path, from the module it is in, and
 // its name, that of its Go files or else of dir.
 func destinationAt(dir string) (destination, error) {
-	root, modPath, err := moduleOf(dir)
-	if err != nil {
-		return destination{}, err
-	}
-	rel, err := filepath.Rel(root, dir)
+	pkgPath, err := gomod.PkgPath(dir)
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
@@ -37,7 +34,7 @@ func destinationAt(dir string) (destination, error) {
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
-	return destination{dir: dir, pkgPath: strings.TrimSuffix(modPath+"/"+filepath.ToSlash(rel), "/."), name: name}, nil
+	return destination{dir: dir, pkgPath: pkgPath, name: name}, nil
 }
 
 // holds reports whether pkg is the package in d, if there is a destination.
@@ -109,19 +106,23 @@ func (d destination) handWritten() map[string]map[string]bool {
 	return methods
 }
 
-// planRepositories reads the repositories of pkg, leaving out the methods skip names, and the models they read whole
-// rows of. pkgs are the packages the run loads, whose scope types the repositories may take, and stmts the statements
-// of the .sql files of pkg.
+// planRepositories reads the repositories of pkg, for their implementations in dest, leaving out the methods dest
+// declares by hand, and the models they read whole rows of. pkgs are the packages the run loads, whose scope types the
+// repositories may take, and stmts the statements of the .sql files of dest.
 func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed,
-	skip map[string]map[string]bool, stmts []sqlfile.Statement,
+	dest destination, stmts []sqlfile.Statement,
 ) ([]repository, map[string]readModel, []diag.Diag) {
 	scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 	queries, ds := readQueries(stmts)
 	others := slices.DeleteFunc(slices.Clone(pkgs), func(p *packages.Package) bool { return p == pkg })
-	r := repoReader{pkg: pkg, s: s, queries: queries, skip: skip, imported: importedPackages(pkgs), l: linker{
-		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
-		loaded: loadedScopes(others, s, idx),
-	}}
+	r := repoReader{
+		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
+		imported: importedPackages(pkgs),
+		l: linker{
+			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
+			loaded: loadedScopes(others, s, idx),
+		},
+	}
 	repos, rds := r.findRepositories()
 	if ds = append(ds, rds...); diag.HasErrors(ds) {
 		return nil, nil, ds

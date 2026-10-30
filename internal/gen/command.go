@@ -100,23 +100,28 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 			set, scopePkgs, repoPkgs, roots = l.set, l.scopePkgs, l.repoPkgs, l.roots
 			resolveModels(idx, set.Packages)
 		}
-		// Each .sql file is read once, though both the scopes and the queries of a package may be written there.
-		stmts := map[*packages.Package][]sqlfile.Statement{}
 		for _, pkg := range roots {
-			if slices.Contains(scopePkgs, pkg) || slices.Contains(repoPkgs, pkg) {
+			var stmts []sqlfile.Statement
+			if (slices.Contains(scopePkgs, pkg) || slices.Contains(repoPkgs, pkg)) && len(pkg.GoFiles) > 0 {
 				var sds []diag.Diag
-				stmts[pkg], sds = readSQL(pkg)
-				ds = append(ds, sds...)
+				stmts, sds = readSQL(filepath.Dir(pkg.GoFiles[0]))
+				ds = slices.Concat(ds, sds, misplacedQueries(stmts))
 			}
-			ps, pds := plan(pkg, s, idx, stmts[pkg])
+			ps, pds := plan(pkg, s, idx, stmts)
 			plans[pkg] = ps
 			ds = append(ds, pds...)
 		}
 		pending = generatedNames(plans, s.Dialect)
 		maps.Copy(pending, impliedNames(idx))
 		if len(repoPkgs) > 0 {
+			var queries []sqlfile.Statement
+			if dest != nil {
+				var sds []diag.Diag
+				queries, sds = readSQL(dest.dir)
+				ds = slices.Concat(ds, sds, misplacedScopes(queries))
+			}
 			var rds []diag.Diag
-			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver, stmts[repoPkgs[0]])
+			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver, queries)
 			ds = append(ds, rds...)
 			for _, pkg := range repoPkgs {
 				if dest != nil {
@@ -321,7 +326,8 @@ type repoPlan struct {
 }
 
 // planRepository reads the repositories of the one package of repoPkgs, among pkgs, the packages the run loads, for
-// their implementations in dest on the driver the -driver flag names, or else the one of the database.
+// their implementations in dest on the driver the -driver flag names, or else the one of the database, with the
+// queries written by hand there, of stmts.
 func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed, dest *destination,
 	drvFlag string, stmts []sqlfile.Statement,
 ) (repoPlan, []diag.Diag) {
@@ -348,7 +354,7 @@ func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx
 	if drv == driverPgx && s.Dialect == snapshot.MySQL {
 		return repoPlan{}, errorf("-driver pgx runs on PostgreSQL, but the snapshot is of MySQL")
 	}
-	repos, models, ds := planRepositories(pkg, pkgs, s, idx, dest.handWritten(), stmts)
+	repos, models, ds := planRepositories(pkg, pkgs, s, idx, *dest, stmts)
 	return repoPlan{repos: repos, models: models, driver: drv}, ds
 }
 
