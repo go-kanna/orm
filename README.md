@@ -121,13 +121,13 @@ func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order
 	const q = `INSERT INTO orders (id, customer_id, status, placed_at, note)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id, customer_id, status, placed_at, note`
-	var got model.Order
+	var row model.Order
 	err := r.db.QueryRow(ctx, q, o.ID, o.CustomerID, o.Status, o.PlacedAt, o.Memo).
-		Scan(&got.ID, &got.CustomerID, &got.Status, &got.PlacedAt, &got.Memo)
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
 	}
-	return got, nil
+	return row, nil
 }
 
 // ...
@@ -351,15 +351,20 @@ o, err := repo.Get(ctx, id, scopes.Orders().
 ```
 
 Each relation costs one query, however many rows there are: the call above runs four, one each for orders, customers,
-order lines, and products. The related rows are read by the keys of the rows already read, with `= ANY($1)` on
-PostgreSQL and `IN (?, ...)` on MySQL, in several queries when there are more keys than one statement can take.
+order lines, and products. A relation through a table between costs two, one for the pairs of keys in that table and
+one for the related rows. The related rows are read by the keys of the rows already read, each key once, with
+`= ANY($1)` on PostgreSQL and `IN (?, ...)` on MySQL, where the keys go a thousand at a time: the rows related to one
+row come in one query, in the order of the scope given for them.
 
 - A slice that was loaded is never nil: it is empty when nothing is related. A nil slice was not loaded.
 - A pointer is nil both when it was not loaded and when nothing is related. Telling the two apart would take a type of
   kanna-orm's in your model.
 - A limit or an offset on the related rows would count all of them, not those of each row, so a scope given to a `With`
   method that holds one makes the query return an error. To read the first few of each, write the query by hand.
-- Relations are read, never written: `Insert` and `Update` write the row's own columns.
+- Relations are read, never written: `Insert` and `Update` write the row's own columns, and a row read back holds
+  them alone.
+- A relation by a foreign key of more than one column is not loaded yet: a repository reading its model stops
+  generation.
 
 ### Paging
 
@@ -473,7 +478,9 @@ column's default: a `false` for a column defaulting to `true` stays `false`. Set
 domain, or leave them out of the model for the database's defaults to fill.
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
-done.
+done. MySQL reads it back by `LAST_INSERT_ID()` when the database assigns its primary key, and by its primary key
+otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
+whether the row is there before returning `orm.ErrNotFound`.
 
 ### Upserting
 
@@ -502,8 +509,10 @@ VALUES (?, ?, ?, ?) AS new
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name
 ```
 
-The columns must be the primary key or a unique key of the table, exactly. MySQL updates on a conflict over any unique
-key, so a table with unique keys besides the one named gets a warning:
+The columns must be the primary key or a unique key of the table, exactly, and none the database assigns, as an insert
+never gives those to meet a row by. The row met gets every column but those of the key, the primary key, and those
+`keep=` names; with none left, the key is set to itself, so that the row is still read back. MySQL updates on a conflict
+over any unique key, so a table with unique keys besides the one named gets a warning:
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
@@ -529,6 +538,8 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
   placeholders than one can take. Give the constructor a transaction to have them stand or fall together.
 - MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
 - PostgreSQL rejects an upsert in which two rows have the same key.
+- `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
+  one by one.
 
 ## Hand-written SQL
 
