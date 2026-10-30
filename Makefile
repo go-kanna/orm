@@ -1,10 +1,10 @@
-# Use this module alone even when GOWORK points at the go-kanna-wide workspace.
-export GOWORK := off
+# Use this repository's go.work even when GOWORK points at the go-kanna-wide one.
+export GOWORK := $(CURDIR)/go.work
 
 BUILD_DIR = bin
 
-# The modules of the example, each generated for a database of its own, which make example migrates and describes.
-EXAMPLES = example/postgres example/mysql
+# The databases make example migrates, describes, and runs the example against, each generated for in a module of its
+# own.
 EXAMPLE_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable
 # MySQL is named by a URL to describe, and by a DSN of go-sql-driver/mysql to migrate and run on.
 EXAMPLE_MYSQL ?= mysql://kanna:kanna@127.0.0.1:13306/kanna_orm
@@ -39,14 +39,14 @@ example:
 
 .PHONY: lint
 lint:
-	@for dir in $$(go list -m -f '{{.Dir}}') $(addprefix $(CURDIR)/,$(EXAMPLES)); do \
+	@for dir in $$(go list -m -f '{{.Dir}}'); do \
 		echo ">>> lint $$dir"; \
 		(cd $$dir && golangci-lint run) || exit 1; \
 	done
 
 .PHONY: lint-fix
 lint-fix:
-	@for dir in $$(go list -m -f '{{.Dir}}') $(addprefix $(CURDIR)/,$(EXAMPLES)); do \
+	@for dir in $$(go list -m -f '{{.Dir}}'); do \
 		echo ">>> lint-fix $$dir"; \
 		(cd $$dir && golangci-lint run --fix) || exit 1; \
 	done
