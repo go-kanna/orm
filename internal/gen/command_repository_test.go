@@ -227,6 +227,12 @@ func TestCommand_RepositoryMistakes(t *testing.T) {
 		{"no destination", snapshot.PostgreSQL, "repository", nil, "",
 			"error: example.com/shop/repository declares //kanna:repository interfaces, whose implementations go into " +
 				"the package -destination names\n  as in //go:generate go tool kanna-orm -destination ../postgres\n"},
+		{"a mistake in the scope types, besides", snapshot.PostgreSQL, "repository", nil,
+			"-- scopes/broken.go --\npackage scopes\n\nvar _ int = \"one\"\n",
+			"../scopes/broken.go:3:13: error: cannot use \"one\" (untyped string constant) as int value in variable " +
+				"declaration\n" +
+				"error: example.com/shop/repository declares //kanna:repository interfaces, whose implementations go into " +
+				"the package -destination names\n  as in //go:generate go tool kanna-orm -destination ../postgres\n"},
 		{"a driver kanna-orm does not know", snapshot.PostgreSQL, "repository",
 			[]string{"-destination", "../postgres", "-driver", "sqlite"}, "",
 			"error: -driver takes pgx or database/sql, not \"sqlite\"\n"},
@@ -249,11 +255,10 @@ func TestCommand_RepositoryMistakes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			// The scopes are not generated yet, as go generate ./... leaves them for after repository, and what of
+			// them is missing goes unsaid.
 			dir := writeModule(t, repositoryShop+tt.extra)
 			describeRepositoryShop(t, dir, tt.dialect)
-			if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
-				t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
-			}
 			code, _, errOut := run(t, filepath.Join(dir, tt.dir), tt.args...)
 			if code != cli.ExitFailure || errOut != tt.want {
 				t.Errorf("kanna-orm %s = %d\n%s\nwant %d\n%s", strings.Join(tt.args, " "), code, errOut,

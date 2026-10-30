@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -77,6 +78,7 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 
 	var (
 		s       snapshot.Snapshot
+		idx     []indexed
 		plans   = map[*packages.Package][]scopePlan{}
 		repo    repoPlan
 		ds      []diag.Diag
@@ -89,8 +91,7 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		if s, d = readSnapshot(dir, cfg.snapshot); d != nil {
 			return nil, []diag.Diag{*d}
 		}
-		idx, err := readIndex(dir)
-		if err != nil {
+		if idx, err = readIndex(dir); err != nil {
 			return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 		}
 		// Each .sql file is read once, though both the scopes and the queries of a package may be written there.
@@ -128,7 +129,8 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	if ds = append(blocking, ds...); diag.HasErrors(ds) {
 		// What is wrong with a declaration may well be one of the type errors, but for those of a call to what the
 		// run generates.
-		return nil, packages.Stopped(deferred, ds, set.Pending(pending))
+		inRoots, inScopes := set.Pending(pending), pendingInScopes(idx, roots)
+		return nil, packages.Stopped(deferred, ds, func(d diag.Diag) bool { return inRoots(d) || inScopes(d) })
 	}
 
 	changes, ods := outputs(roots, plans, s.Dialect, repo, dest, len(repoPkgs) > 0)
@@ -142,6 +144,51 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		ds = append(ds, nothingDeclared(roots, patterns))
 	}
 	return changes, ds
+}
+
+// The type errors of code calling what kanna-orm generates, as go/types writes them.
+var (
+	undefinedFunc   = regexp.MustCompile(`^undefined: (\w+)$`)
+	undefinedMethod = regexp.MustCompile(`\(type \*?(\S+) has no field or method \w+`)
+)
+
+// pendingInScopes tells whether d is an error of a package of scope types, of idx, that the run loads but does not
+// generate for, roots being those it does, saying no more than that the function returning a scope, or a method of a
+// scope type, is not there: what the run of that package writes.
+func pendingInScopes(idx []indexed, roots []*packages.Package) func(d diag.Diag) bool {
+	type names struct{ types, funcs map[string]bool }
+	dirs := map[string]names{}
+	for _, e := range idx {
+		dir := filepath.Dir(e.pos.Filename)
+		n, ok := dirs[dir]
+		if !ok {
+			n = names{types: map[string]bool{}, funcs: map[string]bool{}}
+			dirs[dir] = n
+		}
+		n.types[e.name] = true
+		if fn, ok := funcName(e.table); ok {
+			n.funcs[fn] = true
+		}
+	}
+	for _, pkg := range roots {
+		if len(pkg.GoFiles) > 0 {
+			delete(dirs, filepath.Dir(pkg.GoFiles[0]))
+		}
+	}
+	return func(d diag.Diag) bool {
+		n, ok := dirs[filepath.Dir(d.Pos.Filename)]
+		if !ok || d.Severity != diag.Error {
+			return false
+		}
+		first, _, _ := strings.Cut(d.Message, "\n")
+		if m := undefinedFunc.FindStringSubmatch(first); m != nil {
+			return n.funcs[m[1]]
+		}
+		if m := undefinedMethod.FindStringSubmatch(first); m != nil {
+			return n.types[m[1][strings.LastIndex(m[1], ".")+1:]]
+		}
+		return false
+	}
 }
 
 // readDestination tells the package the -destination flag of a run in dir names, if it names one, and checks the
