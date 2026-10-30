@@ -15,7 +15,7 @@ import (
 )
 
 // uuidShop declares orders and their lines, keyed by the uuid.UUID of the standard library, the scope types
-// //kanna:scopes implies of them, and a repository of them.
+// //kanna:scopes implies of them, and a repository of them, whose Delete tells its table by table= alone.
 const uuidShop = `
 -- model/model.go --
 package model
@@ -46,12 +46,13 @@ import (
 	"example.com/shop/scopes"
 )
 
-//kanna:repository
+//kanna:repository table=orders
 type OrderRepository interface {
 	Get(ctx context.Context, id uuid.UUID, s ...scopes.Order) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	Insert(ctx context.Context, o model.Order) error
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 `
 

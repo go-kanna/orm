@@ -487,6 +487,21 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - A method you write yourself on the generated struct, in another file of the destination, is left to you; kanna-orm
   writes the rest of the interface.
 
+A method tells its model by its result, its row, or its scopes, or else by a key of a type declared with the models, as
+`model.OrderID` is. One that takes nothing but keys of another type, such as `uuid.UUID` or `int64`, tells none, and
+stops generation unless the interface names the table with `table=`:
+
+```go
+//kanna:repository table=todos
+type TodoRepository interface {
+	Get(ctx context.Context, id uuid.UUID) (model.Todo, error) // todos, by its result
+	Delete(ctx context.Context, id uuid.UUID) error            // todos, by table=
+}
+```
+
+`table=` is the table of the methods that tell none, and of no other: a method that tells its own model reads or writes
+its table, so an interface of an aggregate still reaches each of its tables.
+
 `orm.ErrNotFound` comes wrapped with what was not found, so test for it with `errors.Is`, and turn it into your
 application's error where you call the repository.
 
