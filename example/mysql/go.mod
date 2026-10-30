@@ -7,7 +7,7 @@ toolchain go1.26.9
 tool github.com/go-kanna/orm/cmd/kanna-orm
 
 require (
-	github.com/go-kanna/orm v0.0.0-20261030003619-e174c80c370d
+	github.com/go-kanna/orm v0.0.3
 	github.com/go-sql-driver/mysql v1.10.1
 )
 
