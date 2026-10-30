@@ -13,6 +13,7 @@ import (
 	"github.com/go-kanna/internal/packages"
 
 	"github.com/go-kanna/orm/internal/decl"
+	"github.com/go-kanna/orm/internal/gomod"
 	"github.com/go-kanna/orm/internal/snapshot"
 	"github.com/go-kanna/orm/internal/sqlfile"
 )
@@ -25,11 +26,7 @@ type destination struct {
 // destinationAt tells the package in dir, which need not exist yet: its import path, from the module it is in, and
 // its name, that of its Go files or else of dir.
 func destinationAt(dir string) (destination, error) {
-	root, modPath, err := moduleOf(dir)
-	if err != nil {
-		return destination{}, err
-	}
-	rel, err := filepath.Rel(root, dir)
+	pkgPath, err := gomod.PkgPath(dir)
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
@@ -37,7 +34,7 @@ func destinationAt(dir string) (destination, error) {
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
-	return destination{dir: dir, pkgPath: strings.TrimSuffix(modPath+"/"+filepath.ToSlash(rel), "/."), name: name}, nil
+	return destination{dir: dir, pkgPath: pkgPath, name: name}, nil
 }
 
 // holds reports whether pkg is the package in d, if there is a destination.

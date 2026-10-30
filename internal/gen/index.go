@@ -2,7 +2,6 @@ package gen
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -19,9 +18,9 @@ import (
 
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/packages"
-	"golang.org/x/mod/modfile"
 
 	"github.com/go-kanna/orm/internal/decl"
+	"github.com/go-kanna/orm/internal/gomod"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -44,9 +43,9 @@ type indexed struct {
 // the module is large. A scope type whose syntax does not tell its model is left out, for the run generating its own
 // package to report, and so is one implied of a model or a table a //kanna:scope type holds.
 func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) {
-	root, modPath, err := moduleOf(dir)
+	root, modPath, err := gomod.Of(dir)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // it names dir already
 	}
 
 	var idx []indexed
@@ -55,7 +54,7 @@ func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) 
 		switch {
 		case err != nil:
 			return err
-		case d.IsDir() && file != root && skipDir(file, d.Name()):
+		case d.IsDir() && file != root && gomod.Skip(file, d.Name()):
 			return filepath.SkipDir
 		case d.IsDir() || !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, "_test.go"):
 			return nil
@@ -166,34 +165,6 @@ func impliedNames(idx []indexed) map[string]bool {
 		}
 	}
 	return names
-}
-
-// moduleOf returns the root of the module dir is in, and the module's path.
-func moduleOf(dir string) (root, modPath string, err error) {
-	for d := dir; ; d = filepath.Dir(d) {
-		data, err := os.ReadFile(filepath.Join(d, "go.mod")) //nolint:gosec // the go.mod of the module
-		switch {
-		case err == nil:
-			if modPath = modfile.ModulePath(data); modPath == "" {
-				return "", "", fmt.Errorf("%s names no module", filepath.Join(d, "go.mod"))
-			}
-			return d, modPath, nil
-		case !errors.Is(err, fs.ErrNotExist):
-			return "", "", fmt.Errorf("find the module of %s: %w", dir, err)
-		case filepath.Dir(d) == d:
-			return "", "", fmt.Errorf("no go.mod in %s or above it", dir)
-		}
-	}
-}
-
-// skipDir reports whether the go command leaves the directory at file, named name, out of ./...: one starting with .
-// or _, testdata, vendor, and the root of another module.
-func skipDir(file, name string) bool {
-	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata" || name == "vendor" {
-		return true
-	}
-	_, err := os.Stat(filepath.Join(file, "go.mod"))
-	return err == nil
 }
 
 // modelSyntax reads the model of the scope type spec declares, in the package at pkgPath, from the orm.Of[M] of its
