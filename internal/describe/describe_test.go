@@ -19,6 +19,16 @@ import (
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
+// TestMain loads every module the tests write outside any workspace. A GOWORK pinned by the Makefile or the
+// environment would otherwise put them outside the modules it lists, which the go command refuses to load.
+func TestMain(m *testing.M) {
+	// Before any test runs: t.Setenv would rule out t.Parallel.
+	if err := os.Setenv("GOWORK", "off"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 // module writes the files of archive, a txtar archive, into a module of its own, example.com/shop, and loads its
 // packages.
 func module(t *testing.T, archive string) []*packages.Package {
