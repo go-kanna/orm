@@ -146,20 +146,25 @@ func TestTableOf(t *testing.T) {
 func TestImply(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "model"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	for name, src := range map[string]string{
 		"model.go": "package model\n\ntype Order struct{}\n\ntype (\n\tOrderLine struct{}\n\tEmail struct{}\n" +
 			"\tStatus string\n\tAlias = Order\n\tpage[T any] struct{}\n)\n\ntype customer struct{}\n",
 		"model_test.go": "package model\n\ntype Customer struct{}\n",
 	} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, "model", name), []byte(src), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	tables := []string{"orders", "order_lines", "customers", "aliases", "statuses"}
-	implied := decl.Imply(decl.Models{Paths: []string{"example.com/shop/model", "example.com/elsewhere"}},
-		func(path string) (string, bool) { return dir, path == "example.com/shop/model" },
-		func(table string) bool { return slices.Contains(tables, table) })
+	m := decl.Models{
+		Pos:   token.Position{Filename: filepath.Join(root, "scopes", "scopes.go")},
+		Paths: []string{"../model", "example.com/elsewhere", "../../outside"},
+	}
+	implied := decl.Imply(m, root, "example.com/shop", func(table string) bool { return slices.Contains(tables, table) })
 	got := make([]string, 0, len(implied))
 	for _, im := range implied {
 		got = append(got, im.ModelPath+"."+im.Model+" "+im.Table)
@@ -167,6 +172,27 @@ func TestImply(t *testing.T) {
 	if want := []string{"example.com/shop/model.Order orders", "example.com/shop/model.OrderLine order_lines"}; !reflect.
 		DeepEqual(got, want) {
 		t.Errorf("Imply = %q, want %q", got, want)
+	}
+}
+
+func TestModels_Resolve(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.FromSlash("/src/shop")
+	m := decl.Models{Pos: token.Position{Filename: filepath.Join(root, "scopes", "scopes.go")}}
+	for _, tt := range []struct{ path, importPath, dir string }{
+		{"example.com/shop/model", "example.com/shop/model", filepath.Join(root, "model")},
+		{"../model", "example.com/shop/model", filepath.Join(root, "model")},
+		{"./internal/model", "example.com/shop/scopes/internal/model", filepath.Join(root, "scopes", "internal", "model")},
+		{"..", "example.com/shop", root},
+		{"example.com/shop", "example.com/shop", root},
+		{"example.com/shopping/model", "", ""},
+		{"../../elsewhere", "", ""},
+	} {
+		importPath, dir, ok := m.Resolve(tt.path, root, "example.com/shop")
+		if importPath != tt.importPath || dir != tt.dir || ok != (tt.importPath != "") {
+			t.Errorf("Resolve(%s) = %s, %s, %v; want %s, %s", tt.path, importPath, dir, ok, tt.importPath, tt.dir)
+		}
 	}
 }
 

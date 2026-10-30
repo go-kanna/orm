@@ -217,16 +217,9 @@ func declarations(pkg *packages.Package, tables map[string]snapshot.Table) (map[
 	if pkg.Module == nil {
 		return scopes, repository, ds
 	}
-	dirOf := func(path string) (string, bool) {
-		if path == pkg.Module.Path {
-			return pkg.Module.Dir, true
-		}
-		rel, ok := strings.CutPrefix(path, pkg.Module.Path+"/")
-		return filepath.Join(pkg.Module.Dir, filepath.FromSlash(rel)), ok
-	}
 	hasTable := func(table string) bool { _, ok := tables[table]; return ok }
 	for _, m := range models {
-		for _, im := range decl.Imply(m, dirOf, hasTable) {
+		for _, im := range decl.Imply(m, pkg.Module.Dir, pkg.Module.Path, hasTable) {
 			if _, ok := scopes[im.Model]; !ok {
 				scopes[im.Model] = im.Table
 			}

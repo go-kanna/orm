@@ -6,7 +6,7 @@ import "github.com/go-kanna/orm/example/postgres/model"
 
 //go:generate go tool kanna-orm
 
-//kanna:scopes github.com/go-kanna/orm/example/postgres/model
+//kanna:scopes ../model
 
 // Open narrows to the orders neither shipped nor canceled.
 func (s Order) Open() Order {

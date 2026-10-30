@@ -138,22 +138,44 @@ type Implied struct {
 	Pos token.Position
 }
 
-// Imply implies the scope types of m: one for each struct of the packages it names, each in the directory dirOf tells
-// of it, that a table hasTable reports is named after. A package dirOf knows no directory of is left out.
-func Imply(m Models, dirOf func(path string) (string, bool), hasTable func(table string) bool) []Implied {
+// Imply implies the scope types of m, a directive of the module at root whose path is modPath: one for each struct of
+// the packages it names that a table hasTable reports is named after. A package of another module is left out.
+func Imply(m Models, root, modPath string, hasTable func(table string) bool) []Implied {
 	var implied []Implied
 	for _, path := range m.Paths {
-		dir, ok := dirOf(path)
+		importPath, dir, ok := m.Resolve(path, root, modPath)
 		if !ok {
 			continue
 		}
 		for _, name := range structs(dir) {
 			if table, ok := TableOf(name, hasTable); ok {
-				implied = append(implied, Implied{Model: name, ModelPath: path, Table: table, Pos: m.Pos})
+				implied = append(implied, Implied{Model: name, ModelPath: importPath, Table: table, Pos: m.Pos})
 			}
 		}
 	}
 	return implied
+}
+
+// Resolve tells the import path and the directory of the package path names in m, a directive of the module at root
+// whose path is modPath: an import path, or a path relative to the directory of the file m is in, as ../model is.
+// It reports a package of another module.
+func (m Models) Resolve(path, root, modPath string) (importPath, dir string, ok bool) {
+	if path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+		dir = filepath.Join(filepath.Dir(m.Pos.Filename), filepath.FromSlash(path))
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", "", false
+		}
+		return strings.TrimSuffix(modPath+"/"+filepath.ToSlash(rel), "/."), dir, true
+	}
+	if path == modPath {
+		return path, root, true
+	}
+	rel, ok := strings.CutPrefix(path, modPath+"/")
+	if !ok {
+		return "", "", false
+	}
+	return path, filepath.Join(root, filepath.FromSlash(rel)), true
 }
 
 // TableOf names the table a struct called name holds the rows of, of those hasTable reports: name in snake case with

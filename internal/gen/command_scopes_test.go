@@ -34,7 +34,7 @@ type Email struct{ s string }
 -- scopes/scopes.go --
 package scopes
 
-//kanna:scopes example.com/shop/model
+//kanna:scopes ../model
 
 // Open narrows to the orders that are not closed.
 func (s Order) Open() Order {
