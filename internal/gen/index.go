@@ -117,20 +117,7 @@ func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) 
 // resolveModels finds the models of the scope types of idx that //kanna:scopes directives imply, among the packages
 // pkgs are and import, and returns the import paths of the packages of those it cannot find.
 func resolveModels(idx []indexed, pkgs []*packages.Package) []string {
-	byPath := map[string]*types.Package{}
-	var walk func(p *types.Package)
-	walk = func(p *types.Package) {
-		if p == nil || byPath[p.Path()] != nil {
-			return
-		}
-		byPath[p.Path()] = p
-		for _, imported := range p.Imports() {
-			walk(imported)
-		}
-	}
-	for _, pkg := range pkgs {
-		walk(pkg.Types)
-	}
+	byPath := importedPackages(pkgs)
 	var missing []string
 	for i, e := range idx {
 		if !e.implied {
@@ -150,6 +137,25 @@ func resolveModels(idx []indexed, pkgs []*packages.Package) []string {
 		}
 	}
 	return missing
+}
+
+// importedPackages maps the import path of each of pkgs, and of each package they import, to its types.
+func importedPackages(pkgs []*packages.Package) map[string]*types.Package {
+	byPath := map[string]*types.Package{}
+	var walk func(p *types.Package)
+	walk = func(p *types.Package) {
+		if p == nil || byPath[p.Path()] != nil {
+			return
+		}
+		byPath[p.Path()] = p
+		for _, imported := range p.Imports() {
+			walk(imported)
+		}
+	}
+	for _, pkg := range pkgs {
+		walk(pkg.Types)
+	}
+	return byPath
 }
 
 // impliedNames names, as Set.Pending takes them, the scope types //kanna:scopes implies of idx, and the functions

@@ -35,14 +35,24 @@ type Models struct {
 	Paths []string
 }
 
+// Repository is an interface marked //kanna:repository.
+type Repository struct {
+	Spec *ast.TypeSpec
+	// Pos is where the directive is.
+	Pos token.Position
+	// Table is the table of the methods that tell none themselves, when table= names one.
+	Table string
+}
+
 // Decls is what a file declares for kanna-orm.
 type Decls struct {
 	Scopes       []Scope
 	Models       []Models
-	Repositories []*ast.TypeSpec
+	Repositories []Repository
 }
 
-// Read reads the declarations of file. A scope type whose directive cannot be read is reported, and left out.
+// Read reads the declarations of file. A scope type or a repository whose directive cannot be read is reported, and
+// left out.
 func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 	var (
 		decls Decls
@@ -80,7 +90,12 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			d, fds = directive.Find(fset, doc, "repository")
 			ds = append(ds, fds...)
 			if d.Found {
-				decls.Repositories = append(decls.Repositories, ts)
+				table, err := repositoryArgs(d.Args)
+				if err != nil {
+					ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:repository table=orders"))
+				} else {
+					decls.Repositories = append(decls.Repositories, Repository{Spec: ts, Pos: d.Pos, Table: table})
+				}
 			}
 		}
 	}
@@ -128,6 +143,22 @@ func scopeArgs(args string) (table, fn string, err error) {
 		return "", "", errors.New("//kanna:scope wants the table its type is a scope of")
 	}
 	return table, fn, nil
+}
+
+// repositoryArgs reads what follows //kanna:repository: the table table= names, if any.
+func repositoryArgs(args string) (table string, err error) {
+	for field := range strings.FieldsSeq(args) {
+		key, value, _ := strings.Cut(field, "=")
+		switch {
+		case key == "table" && table != "":
+			return "", errors.New("//kanna:repository gives table= twice")
+		case key == "table" && value != "":
+			table = value
+		default:
+			return "", fmt.Errorf("//kanna:repository takes table=, not %q", field)
+		}
+	}
+	return table, nil
 }
 
 // Implied is a scope type a //kanna:scopes directive implies: one named after the struct it holds, Model, of the

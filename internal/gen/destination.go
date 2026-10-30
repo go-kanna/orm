@@ -115,10 +115,14 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 	scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 	queries, ds := readQueries(stmts)
 	others := slices.DeleteFunc(slices.Clone(pkgs), func(p *packages.Package) bool { return p == pkg })
-	r := repoReader{pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(), l: linker{
-		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
-		loaded: loadedScopes(others, s, idx),
-	}}
+	r := repoReader{
+		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
+		imported: importedPackages(pkgs),
+		l: linker{
+			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
+			loaded: loadedScopes(others, s, idx),
+		},
+	}
 	repos, rds := r.findRepositories()
 	if ds = append(ds, rds...); diag.HasErrors(ds) {
 		return nil, nil, ds
@@ -137,7 +141,8 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 			continue
 		}
 		decls, _ := decl.Read(pkg.Fset, file) // findRepositories reports what is wrong with the directives
-		for _, ts := range decls.Repositories {
+		for _, d := range decls.Repositories {
+			ts := d.Spec
 			names[pkgPath+"."+ts.Name.Name] = true
 			names[pkgPath+".New"+ts.Name.Name] = true
 			if it, ok := ts.Type.(*ast.InterfaceType); ok {

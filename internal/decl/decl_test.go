@@ -16,8 +16,8 @@ import (
 	"github.com/go-kanna/orm/internal/decl"
 )
 
-// read parses src as the file scopes.go, and reads its declarations as "Name table func" for each scope type, and the
-// name of each repository interface.
+// read parses src as the file scopes.go, and reads its declarations as "Name table func" for each scope type, and
+// "Name table" for each repository interface.
 func read(t *testing.T, src string) (scopes, repositories []string, ds []diag.Diag) {
 	t.Helper()
 
@@ -31,7 +31,7 @@ func read(t *testing.T, src string) (scopes, repositories []string, ds []diag.Di
 		scopes = append(scopes, strings.TrimSpace(s.Spec.Name.Name+" "+s.Table+" "+s.Func))
 	}
 	for _, r := range decls.Repositories {
-		repositories = append(repositories, r.Name.Name)
+		repositories = append(repositories, strings.TrimSpace(r.Spec.Name.Name+" "+r.Table))
 	}
 	return scopes, repositories, ds
 }
@@ -69,6 +69,9 @@ type (
 //kanna:repository
 type OrderRepository interface{}
 
+//kanna:repository table=people
+type PersonRepository interface{}
+
 var _ = 0
 `)
 	if len(ds) > 0 {
@@ -78,7 +81,7 @@ var _ = 0
 		scopes, want) {
 		t.Errorf("scopes = %q, want %q", scopes, want)
 	}
-	if want := []string{"OrderRepository"}; !reflect.DeepEqual(repositories, want) {
+	if want := []string{"OrderRepository", "PersonRepository people"}; !reflect.DeepEqual(repositories, want) {
 		t.Errorf("repositories = %q, want %q", repositories, want)
 	}
 }
@@ -219,17 +222,25 @@ func TestRead_Mistakes(t *testing.T) {
 		{"a function no Go function can be named", "//kanna:scope table=orders func=all-orders",
 			"scopes.go:3:1: error: //kanna:scope func=all-orders: \"all-orders\" is not a name a Go function can have\n" +
 				"  as in //kanna:scope table=orders"},
+		{"an option a repository does not take", "//kanna:repository table=orders func=Orders",
+			"scopes.go:3:1: error: //kanna:repository takes table=, not \"func=Orders\"\n" +
+				"  as in //kanna:repository table=orders"},
+		{"a repository of no table", "//kanna:repository table=",
+			"scopes.go:3:1: error: //kanna:repository takes table=, not \"table=\"\n" +
+				"  as in //kanna:repository table=orders"},
+		{"a repository's table given twice", "//kanna:repository table=orders table=order_lines",
+			"scopes.go:3:1: error: //kanna:repository gives table= twice\n  as in //kanna:repository table=orders"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			scopes, _, ds := read(t, "package scopes\n\n"+tt.directive+"\ntype Order struct{}\n")
+			scopes, repositories, ds := read(t, "package scopes\n\n"+tt.directive+"\ntype Order interface{}\n")
 			if got := report(ds); got != tt.want {
 				t.Errorf("Read reports\n%s\nwant\n%s", got, tt.want)
 			}
-			if len(scopes) > 0 {
-				t.Errorf("scopes = %q, want none", scopes)
+			if len(scopes) > 0 || len(repositories) > 0 {
+				t.Errorf("scopes = %q, repositories = %q, want none", scopes, repositories)
 			}
 		})
 	}

@@ -194,7 +194,8 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 	ds = append(ds, qds...)
 	r := repoReader{
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath,
-		l: linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
+		imported: importedPackages([]*packages.Package{pkg}),
+		l:        linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
 	}
 	repos, rds := r.findRepositories()
 	ds = append(ds, rds...)
