@@ -10,6 +10,11 @@ EXAMPLE_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=dis
 EXAMPLE_MYSQL ?= mysql://kanna:kanna@127.0.0.1:13306/kanna_orm
 EXAMPLE_MYSQL_DSN ?= kanna:kanna@tcp(127.0.0.1:13306)/kanna_orm?parseTime=true&multiStatements=true
 
+# The database make bench fills and runs the benchmarks against, in a schema of their own, and the flags of their go
+# test: -count=6, say, for benchstat.
+BENCH_POSTGRES ?= postgres://kanna:kanna@127.0.0.1:15432/kanna_orm?sslmode=disable&search_path=bench
+BENCH_FLAGS ?= -benchmem
+
 .PHONY: test
 test:
 	go test ./... -race -coverprofile=coverage.out -covermode=atomic
@@ -36,6 +41,19 @@ example:
 	cd example/mysql && go run ./migrate '$(EXAMPLE_MYSQL_DSN)' && \
 		go tool kanna-orm describe -database-url '$(EXAMPLE_MYSQL)' ./... && \
 		go generate ./... && go vet ./... && go run . '$(EXAMPLE_MYSQL_DSN)'
+
+.PHONY: bench
+bench:
+	cd bench/postgres && go run ./migrate '$(BENCH_POSTGRES)' && \
+		go tool kanna-orm describe -database-url '$(BENCH_POSTGRES)' ./kanna/... && \
+		go generate ./kanna/... && go vet ./... && \
+		KANNA_ORM_BENCH_POSTGRES='$(BENCH_POSTGRES)' go test -count=1 -run '^TestSame' . && \
+		KANNA_ORM_BENCH_POSTGRES='$(BENCH_POSTGRES)' go test -run '^$$' -bench . $(BENCH_FLAGS) .
+
+# bench-gen regenerates the code of sqlc and ent, which make bench leaves as it is: sqlc is built from source, with cgo.
+.PHONY: bench-gen
+bench-gen:
+	cd bench/postgres && go generate ./sqlc ./ent/db
 
 .PHONY: lint
 lint:

@@ -1,4 +1,8 @@
-DROP TABLE IF EXISTS order_lines, orders, customers;
+-- The tables are in a schema of their own, apart from those of the example in the same database, and the URLs the
+-- benchmarks run on choose it with ?search_path=bench.
+DROP SCHEMA IF EXISTS bench CASCADE;
+CREATE SCHEMA bench;
+SET search_path TO bench;
 
 CREATE TABLE customers (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
