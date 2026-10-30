@@ -4,6 +4,7 @@ toolchain go1.26.9
 
 use (
 	.
+	./bench/postgres
 	./example/mysql
 	./example/postgres
 )

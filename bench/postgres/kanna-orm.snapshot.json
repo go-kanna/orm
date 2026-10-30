@@ -1,0 +1,46 @@
+{
+  "dialect": "postgresql",
+  "tables": {
+    "customers": {
+      "columns": [
+        {"name": "id", "type": "int8", "not_null": true, "assigned": true},
+        {"name": "email", "type": "text", "not_null": true},
+        {"name": "name", "type": "text", "not_null": true},
+        {"name": "created_at", "type": "timestamptz", "not_null": true}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [
+        ["email"]
+      ],
+      "foreign_keys": []
+    },
+    "order_lines": {
+      "columns": [
+        {"name": "id", "type": "int8", "not_null": true, "assigned": true},
+        {"name": "order_id", "type": "int8", "not_null": true},
+        {"name": "sku", "type": "text", "not_null": true},
+        {"name": "quantity", "type": "int4", "not_null": true}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]}
+      ]
+    },
+    "orders": {
+      "columns": [
+        {"name": "id", "type": "int8", "not_null": true, "assigned": true},
+        {"name": "customer_id", "type": "int8", "not_null": true},
+        {"name": "status", "type": "text", "not_null": true},
+        {"name": "placed_at", "type": "timestamptz", "not_null": true},
+        {"name": "note", "type": "text"}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["customer_id"], "references": "customers", "referenced_columns": ["id"]}
+      ]
+    }
+  },
+  "statements": {}
+}
