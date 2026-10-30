@@ -397,9 +397,9 @@ var connect = sync.OnceValues(func() (env, error) {
 	subjects := []subject{
 		newSubject("pgx", pgx.New(pool), pgxOrder, pgxOrder),
 		newSubject("sqlc", sqlc.New(pool), sqlcOrder, sqlcOrderWithLines),
-		newSubject("kanna",
+		newSubject("kanna(pgx)",
 			kanna.New(pgxstore.NewCustomerRepository(pool), pgxstore.NewOrderRepository(pool)), kannaOrder, kannaOrder),
-		newSubject("kanna-sql",
+		newSubject("kanna(sql.DB)",
 			kanna.New(sqlstore.NewCustomerRepository(db), sqlstore.NewOrderRepository(db)), kannaOrder, kannaOrder),
 		newSubject("gorm", g, gormOrder, gormOrder),
 		newSubject("bun", bun.New(config), bunOrder, bunOrder),
