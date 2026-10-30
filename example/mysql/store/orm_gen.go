@@ -16,18 +16,18 @@ import (
 	"github.com/go-kanna/orm/example/mysql/scopes"
 )
 
-// DB is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.
-type DB interface {
+// DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.
+type DBTX interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // CustomerRepository implements repository.CustomerRepository on MySQL through database/sql.
-type CustomerRepository struct{ db DB }
+type CustomerRepository struct{ db DBTX }
 
 // NewCustomerRepository returns a CustomerRepository running on db.
-func NewCustomerRepository(db DB) CustomerRepository { return CustomerRepository{db: db} }
+func NewCustomerRepository(db DBTX) CustomerRepository { return CustomerRepository{db: db} }
 
 var _ repository.CustomerRepository = CustomerRepository{}
 
@@ -66,10 +66,10 @@ func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model
 }
 
 // ProductRepository implements repository.ProductRepository on MySQL through database/sql.
-type ProductRepository struct{ db DB }
+type ProductRepository struct{ db DBTX }
 
 // NewProductRepository returns a ProductRepository running on db.
-func NewProductRepository(db DB) ProductRepository { return ProductRepository{db: db} }
+func NewProductRepository(db DBTX) ProductRepository { return ProductRepository{db: db} }
 
 var _ repository.ProductRepository = ProductRepository{}
 
@@ -120,10 +120,10 @@ VALUES (?)`+strings.Repeat(`, (?)`, len(chunk)-1), args...); err != nil {
 }
 
 // OrderRepository implements repository.OrderRepository on MySQL through database/sql.
-type OrderRepository struct{ db DB }
+type OrderRepository struct{ db DBTX }
 
 // NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DB) OrderRepository { return OrderRepository{db: db} }
+func NewOrderRepository(db DBTX) OrderRepository { return OrderRepository{db: db} }
 
 var _ repository.OrderRepository = OrderRepository{}
 
@@ -312,7 +312,7 @@ ORDER BY 1`
 }
 
 // selectCustomers reads the rows of customers that q matches, in its order.
-func selectCustomers(ctx context.Context, db DB, q orm.Of[model.Customer]) ([]model.Customer, error) {
+func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer]) ([]model.Customer, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -340,7 +340,7 @@ func selectCustomers(ctx context.Context, db DB, q orm.Of[model.Customer]) ([]mo
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads.
-func selectOrderLines(ctx context.Context, db DB, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -371,7 +371,7 @@ func selectOrderLines(ctx context.Context, db DB, q orm.Of[model.OrderLine]) ([]
 }
 
 // preloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrderLines(ctx context.Context, db DB, rows []model.OrderLine, q orm.Of[model.OrderLine]) error {
+func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q orm.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -404,7 +404,7 @@ func preloadOrderLines(ctx context.Context, db DB, rows []model.OrderLine, q orm
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads.
-func selectOrders(ctx context.Context, db DB, q orm.Of[model.Order]) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order]) ([]model.Order, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -435,7 +435,7 @@ func selectOrders(ctx context.Context, db DB, q orm.Of[model.Order]) ([]model.Or
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -560,7 +560,7 @@ func preloadOrders(ctx context.Context, db DB, rows []model.Order, q orm.Of[mode
 }
 
 // selectProducts reads the rows of products that q matches, in its order.
-func selectProducts(ctx context.Context, db DB, q orm.Of[model.Product]) ([]model.Product, error) {
+func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product]) ([]model.Product, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -588,7 +588,7 @@ func selectProducts(ctx context.Context, db DB, q orm.Of[model.Product]) ([]mode
 }
 
 // selectShipments reads the rows of shipments that q matches, in its order.
-func selectShipments(ctx context.Context, db DB, q orm.Of[model.Shipment]) ([]model.Shipment, error) {
+func selectShipments(ctx context.Context, db DBTX, q orm.Of[model.Shipment]) ([]model.Shipment, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -616,7 +616,7 @@ func selectShipments(ctx context.Context, db DB, q orm.Of[model.Shipment]) ([]mo
 }
 
 // selectTags reads the rows of tags that q matches, in its order.
-func selectTags(ctx context.Context, db DB, q orm.Of[model.Tag]) ([]model.Tag, error) {
+func selectTags(ctx context.Context, db DBTX, q orm.Of[model.Tag]) ([]model.Tag, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
