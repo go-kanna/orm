@@ -189,18 +189,24 @@ func holdsModels(t types.Type) bool {
 }
 
 // scalar reports whether a driver reads a column into a t: a boolean, a number, or a string, or a type made of one; a
-// time.Time; or a type whose pointer has a Scan method, as a value type has.
+// time.Time or a uuid.UUID; or a type whose pointer has a Scan method, as a value type has.
 func scalar(t types.Type) bool {
 	if b, ok := t.Underlying().(*types.Basic); ok {
 		info := b.Info()
 		return info&(types.IsBoolean|types.IsNumeric|types.IsString) != 0 && info&types.IsComplex == 0
 	}
-	return isTime(t) || scanner(t)
+	return isTime(t) || isUUID(t) || scanner(t)
 }
 
 func isTime(t types.Type) bool {
 	n, ok := types.Unalias(t).(*types.Named)
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time"
+}
+
+// isUUID reports whether t is the uuid.UUID of the standard library, from Go 1.27 on, which pgx and database/sql read
+// a uuid into, though it has no Scan method.
+func isUUID(t types.Type) bool {
+	return isNamed(t, "uuid", "UUID")
 }
 
 // scanner reports whether a *t has the method Scan(any) error, which makes it a sql.Scanner.
