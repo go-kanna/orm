@@ -3,10 +3,11 @@ package bun
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 )
@@ -42,8 +43,12 @@ type OrderLine struct {
 
 type Store struct{ db *bun.DB }
 
-// New returns a Store on db, which runs queries in the simple protocol: bun puts the arguments into the query itself.
-func New(db *sql.DB) Store { return Store{db: bun.NewDB(db, pgdialect.New())} }
+// New returns a Store connecting by config through pgx/stdlib in the simple protocol, as bun's docs run pgx: bun puts
+// the arguments into the query itself, and has nothing to prepare.
+func New(config pgx.ConnConfig) Store {
+	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	return Store{db: bun.NewDB(stdlib.OpenDB(config), pgdialect.New())}
+}
 
 func (s Store) Get(ctx context.Context, id int64) (Order, error) {
 	var o Order
