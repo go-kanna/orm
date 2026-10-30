@@ -160,7 +160,14 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 			s.params[p.Name()] = local
 		}
 		if s, ok := p.Type().(*types.Slice); ok && variadic {
-			params = append(params, local+" ..."+types.TypeString(s.Elem(), e.f.Qualifier))
+			elem := types.TypeString(s.Elem(), e.f.Qualifier)
+			if is := m.impliedScope; is != nil && m.scoped {
+				elem = is.name
+				if pkg := e.f.Import(is.pkgPath, is.pkgName); pkg != "" {
+					elem = pkg + "." + is.name
+				}
+			}
+			params = append(params, local+" ..."+elem)
 			continue
 		}
 		params = append(params, local+" "+types.TypeString(p.Type(), e.f.Qualifier))

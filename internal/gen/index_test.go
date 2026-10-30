@@ -108,7 +108,7 @@ package unparsable
 //kanna:scope table=unparsable
 type Order struct{
 `)
-	got, err := gen.Index(filepath.Join(dir, "scopes"))
+	got, err := gen.Index(filepath.Join(dir, "scopes"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestIndex_NoModule(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := gen.Index(dir); err == nil || !strings.Contains(err.Error(), "no go.mod in "+dir+" or above it") {
+	if _, err := gen.Index(dir, nil); err == nil || !strings.Contains(err.Error(), "no go.mod in "+dir+" or above it") {
 		t.Errorf("Index(%s) error = %v, want no go.mod", dir, err)
 	}
 }

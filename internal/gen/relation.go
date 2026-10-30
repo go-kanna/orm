@@ -191,10 +191,10 @@ func (l linker) scopeOf(model *types.Named) (indexed, bool) {
 }
 
 // loadedScopes returns the scope types of pkgs as the index has them, for a linker to look them up in.
-func loadedScopes(pkgs []*packages.Package, s snapshot.Snapshot) []indexed {
+func loadedScopes(pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed) []indexed {
 	var all []indexed
 	for _, pkg := range pkgs {
-		scopes, _ := findScopes(pkg, s) // plan reports what is wrong with them
+		scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 		for _, sc := range scopes {
 			all = append(all, indexed{
 				pkgPath: pkg.PkgPath, pkgName: pkg.Name, name: sc.name,

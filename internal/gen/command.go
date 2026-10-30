@@ -66,15 +66,11 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 			load = []string{".", dest.dir}
 		}
 	}
-	set, err := packages.Load(load, packages.Config{Dir: dir, Tags: cfg.tags, Regenerated: []string{outputName}})
-	if err != nil {
-		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
-	}
-	scopePkgs, repoPkgs := declarations(set.Packages)
-	if d := dest.check(cfg.destination, scopePkgs, repoPkgs); d != nil {
+	l, d := loadRun(dir, cfg, load, dest, nil)
+	if d != nil {
 		return nil, []diag.Diag{*d}
 	}
-	roots := slices.DeleteFunc(slices.Clone(set.Packages), dest.holds)
+	set, scopePkgs, repoPkgs, roots := l.set, l.scopePkgs, l.repoPkgs, l.roots
 
 	var (
 		s       snapshot.Snapshot
@@ -91,8 +87,18 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		if s, d = readSnapshot(dir, cfg.snapshot); d != nil {
 			return nil, []diag.Diag{*d}
 		}
-		if idx, err = readIndex(dir); err != nil {
+		var err error
+		if idx, err = readIndex(dir, s.Tables); err != nil {
 			return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
+		}
+		// The models //kanna:scopes implies scope types of are read from their packages, which are loaded too when
+		// nothing loaded imports them yet, as nothing does before the first run.
+		if missing := resolveModels(idx, set.Packages); len(missing) > 0 {
+			if l, d = loadRun(dir, cfg, load, dest, missing); d != nil {
+				return nil, []diag.Diag{*d}
+			}
+			set, scopePkgs, repoPkgs, roots = l.set, l.scopePkgs, l.repoPkgs, l.roots
+			resolveModels(idx, set.Packages)
 		}
 		// Each .sql file is read once, though both the scopes and the queries of a package may be written there.
 		stmts := map[*packages.Package][]sqlfile.Statement{}
@@ -107,6 +113,7 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 			ds = append(ds, pds...)
 		}
 		pending = generatedNames(plans, s.Dialect)
+		maps.Copy(pending, impliedNames(idx))
 		if len(repoPkgs) > 0 {
 			var rds []diag.Diag
 			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver, stmts[repoPkgs[0]])
@@ -137,13 +144,46 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	if ds = append(ds, ods...); diag.HasErrors(ods) {
 		return nil, ds
 	}
-	if rds := packages.Recheck(set, changes); len(rds) > 0 {
+	// What another package's run declares, as a scope type //kanna:scopes implies, is no mistake of this run's.
+	rds := slices.DeleteFunc(packages.Recheck(set, changes), set.Pending(impliedNames(idx)))
+	if len(rds) > 0 {
 		return nil, slices.Concat(ds, rds, set.SetAsideWarnings())
 	}
 	if len(scopePkgs) == 0 && len(repoPkgs) == 0 {
 		ds = append(ds, nothingDeclared(roots, patterns))
 	}
 	return changes, ds
+}
+
+// loadedRun is what a run loads: set, of which scopePkgs declare scope types, repoPkgs repositories, and roots are
+// those the run generates for.
+type loadedRun struct {
+	set                        packages.Set
+	scopePkgs, repoPkgs, roots []*packages.Package
+}
+
+// loadRun loads the packages load names for a run in dir, and those at the import paths of extra, which it reads but
+// does not generate for, and checks that dest is none of those it generates for.
+func loadRun(dir string, cfg config, load []string, dest *destination, extra []string) (loadedRun, *diag.Diag) {
+	if len(extra) > 0 {
+		if len(load) == 0 {
+			load = []string{"."}
+		}
+		load = append(slices.Clone(load), extra...)
+	}
+	set, err := packages.Load(load, packages.Config{Dir: dir, Tags: cfg.tags, Regenerated: []string{outputName}})
+	if err != nil {
+		d := diag.Errorf(token.Position{}, "%v", err)
+		return loadedRun{}, &d
+	}
+	scopePkgs, repoPkgs := declarations(set.Packages)
+	if d := dest.check(cfg.destination, scopePkgs, repoPkgs); d != nil {
+		return loadedRun{}, d
+	}
+	roots := slices.DeleteFunc(slices.Clone(set.Packages), func(p *packages.Package) bool {
+		return dest.holds(p) || slices.Contains(extra, p.PkgPath)
+	})
+	return loadedRun{set: set, scopePkgs: scopePkgs, repoPkgs: repoPkgs, roots: roots}, nil
 }
 
 // The type errors of code calling what kanna-orm generates, as go/types writes them.
@@ -182,7 +222,7 @@ func pendingInScopes(idx []indexed, roots []*packages.Package) func(d diag.Diag)
 		}
 		first, _, _ := strings.Cut(d.Message, "\n")
 		if m := undefinedFunc.FindStringSubmatch(first); m != nil {
-			return n.funcs[m[1]]
+			return n.funcs[m[1]] || n.types[m[1]]
 		}
 		if m := undefinedMethod.FindStringSubmatch(first); m != nil {
 			return n.types[m[1][strings.LastIndex(m[1], ".")+1:]]
@@ -321,7 +361,7 @@ func declarations(pkgs []*packages.Package) (scoped, repos []*packages.Package) 
 				continue
 			}
 			decls, _ := decl.Read(pkg.Fset, f)
-			hasScopes = hasScopes || len(decls.Scopes) > 0
+			hasScopes = hasScopes || len(decls.Scopes) > 0 || len(decls.Models) > 0
 			hasRepos = hasRepos || len(decls.Repositories) > 0
 		}
 		if hasScopes {
@@ -380,6 +420,9 @@ func generatedNames(plans map[*packages.Package][]scopePlan, d snapshot.Dialect)
 	for pkg, ps := range plans {
 		for _, p := range ps {
 			names[pkg.PkgPath+"."+p.fn] = true
+			if p.implied {
+				names[pkg.PkgPath+"."+p.name] = true
+			}
 			for _, m := range methodsOf(p, d) {
 				names[pkg.PkgPath+"."+p.name+"."+m.name] = true
 			}

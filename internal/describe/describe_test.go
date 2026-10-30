@@ -72,13 +72,17 @@ type OrderRepository interface {
 }
 `
 
-// fake is a database that only rewrites the parameters of what it is asked to describe, and keeps what it was asked.
-type fake struct{ asked []string }
+// fake is a database of tables that only rewrites the parameters of what it is asked to describe, and keeps what it
+// was asked.
+type fake struct {
+	tables map[string]snapshot.Table
+	asked  []string
+}
 
 func (*fake) Dialect() snapshot.Dialect { return snapshot.PostgreSQL }
 
-func (*fake) Tables(context.Context) (map[string]snapshot.Table, error) {
-	return map[string]snapshot.Table{}, nil
+func (f *fake) Tables(context.Context) (map[string]snapshot.Table, error) {
+	return f.tables, nil
 }
 
 func (f *fake) Statement(_ context.Context, sql string) (snapshot.Statement, error) {
@@ -149,6 +153,35 @@ SELECT 1
 	// A scope is asked about as the condition of a query of its table.
 	if !slices.Contains(db.asked, "SELECT 1 FROM \"orders\" WHERE (\nplaced_at >= :at\n)") {
 		t.Errorf("asked:\n%s", strings.Join(db.asked, "\n---\n"))
+	}
+}
+
+func TestDescribe_ImpliedScopes(t *testing.T) {
+	t.Parallel()
+
+	pkgs := module(t, `
+-- model/model.go --
+package model
+
+type Order struct{ Status string }
+
+type Email struct{ s string }
+-- scopes/scopes.go --
+package scopes
+
+//kanna:scopes example.com/shop/model
+-- scopes/order_scopes.sql --
+-- scope: Order.Open()
+status <> 'closed'
+`)
+	db := &fake{tables: map[string]snapshot.Table{"orders": {}}}
+	s, ds := describe.Describe(t.Context(), db, pkgs)
+	if len(ds) > 0 {
+		t.Fatalf("Describe:\n%s", report(ds))
+	}
+	if _, ok := s.Statements["example.com/shop/scopes.Order.Open"]; !ok ||
+		!slices.Contains(db.asked, "SELECT 1 FROM \"orders\" WHERE (\nstatus <> 'closed'\n)") {
+		t.Errorf("statements = %+v, asked:\n%s", s.Statements, strings.Join(db.asked, "\n---\n"))
 	}
 }
 

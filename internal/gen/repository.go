@@ -109,6 +109,65 @@ type repoMethod struct {
 	conflict, keep []string
 	// query is the query written by hand that implements the method, if one does.
 	query *query
+	// impliedScope is the scope type its scopes are of, when //kanna:scopes implies it and it is not declared yet.
+	impliedScope *indexed
+}
+
+// scopeParam reads the model of p, the variadic parameter of the method field, of the repository ts declares, from the
+// scope type it takes: one declared, or one //kanna:scopes implies, which is not declared before its package is
+// generated.
+func (r repoReader) scopeParam(p *types.Var, field *ast.Field, ts *ast.TypeSpec) (*types.Named, *indexed, bool) {
+	elem := p.Type().(*types.Slice).Elem() //nolint:forcetypeassert // a variadic one is
+	if model, ok := scopeModel(elem); ok || !packages.Invalid(elem) {
+		return model, nil, ok
+	}
+	if e, ok := r.impliedScope(field, ts); ok && e.model != nil {
+		return e.model, &e, true
+	}
+	return nil, nil, false
+}
+
+// impliedScope finds, among the scope types //kanna:scopes implies, the one the last parameter of the method field
+// declares takes, of the repository ts declares: by the name its syntax gives, as in s ...scopes.Order.
+func (r repoReader) impliedScope(field *ast.Field, ts *ast.TypeSpec) (indexed, bool) {
+	if field == nil {
+		return indexed{}, false
+	}
+	ft, ok := field.Type.(*ast.FuncType)
+	if !ok || ft.Params == nil || len(ft.Params.List) == 0 {
+		return indexed{}, false
+	}
+	ell, ok := ft.Params.List[len(ft.Params.List)-1].Type.(*ast.Ellipsis)
+	if !ok {
+		return indexed{}, false
+	}
+	pkgPath, name := r.pkg.PkgPath, ""
+	switch x := ell.Elt.(type) {
+	case *ast.Ident:
+		name = x.Name
+	case *ast.SelectorExpr:
+		id, ok := x.X.(*ast.Ident)
+		if !ok {
+			return indexed{}, false
+		}
+		pkgPath, name = r.importPath(ts, id.Name), x.Sel.Name
+	}
+	for _, e := range r.l.idx {
+		if e.implied && e.pkgPath == pkgPath && e.name == name {
+			return e, true
+		}
+	}
+	return indexed{}, false
+}
+
+// importPath is the path of the package the file declaring ts imports as name.
+func (r repoReader) importPath(ts *ast.TypeSpec, name string) string {
+	for _, f := range r.pkg.Syntax {
+		if f.Pos() <= ts.Pos() && ts.End() <= f.End() {
+			return importNames(f)[name]
+		}
+	}
+	return ""
 }
 
 // key is a parameter naming a column, which the rows must equal.
@@ -164,10 +223,10 @@ func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {
 	}
 	iface := obj.Type().Underlying().(*types.Interface) //nolint:forcetypeassert // its syntax is an interface's
 
-	docs := map[string]*ast.CommentGroup{}
+	docs := map[string]*ast.Field{}
 	for _, f := range syntax.Methods.List {
 		for _, n := range f.Names {
-			docs[n.Name] = f.Doc
+			docs[n.Name] = f
 		}
 	}
 	methods := make([]*types.Func, 0, iface.NumMethods())
@@ -181,16 +240,20 @@ func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {
 		if r.skip[repo.name][fn.Name()] {
 			continue
 		}
-		m, mds := r.method(fn, docs[fn.Name()])
+		m, mds := r.method(fn, docs[fn.Name()], ts)
 		ds = append(ds, mds...)
 		repo.methods = append(repo.methods, m)
 	}
 	return repo, ds
 }
 
-// method reads fn, a method of a repository whose doc is doc.
-func (r repoReader) method(fn *types.Func, doc *ast.CommentGroup) (repoMethod, []diag.Diag) {
+// method reads fn, a method of the repository ts declares, as field, its syntax, declares it.
+func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec) (repoMethod, []diag.Diag) {
 	m := repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos()), fn: fn}
+	var doc *ast.CommentGroup
+	if field != nil {
+		doc = field.Doc
+	}
 	errorf := func(format string, args ...any) []diag.Diag {
 		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
 	}
@@ -228,7 +291,8 @@ func (r repoReader) method(fn *types.Func, doc *ast.CommentGroup) (repoMethod, [
 	for i := 1; i < params.Len(); i++ {
 		p := params.At(i)
 		if sig.Variadic() && i == params.Len()-1 {
-			model, ok := scopeModel(p.Type().(*types.Slice).Elem()) //nolint:forcetypeassert // a variadic one is
+			model, implied, ok := r.scopeParam(p, field, ts)
+			m.impliedScope = implied
 			if !ok {
 				return m, errorf("its last parameter, %s, takes no scope type", p.Name())
 			}

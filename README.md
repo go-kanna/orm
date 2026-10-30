@@ -36,18 +36,14 @@ go tool kanna-orm describe -database-url "$DATABASE_URL" ./...
 Commit `kanna-orm.snapshot.json` along with the migration: the change to the schema shows in review, and generation
 reads the snapshot alone, so it needs no database.
 
-Declare a scope type for each table, holding the model its rows are read into:
+Name the package of your models, and kanna-orm declares a scope type for each of them that a table is named after:
 
 ```go
 package scopes
 
 //go:generate go tool kanna-orm
 
-//kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
-
-//kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+//kanna:scopes example.com/shop/model
 ```
 
 and the repository the rest of your code depends on:
@@ -210,10 +206,25 @@ $ go tool kanna-orm describe -check ./...
 
 ## Scope types
 
-A scope type is a struct marked `//kanna:scope table=<name>` whose only field is an unexported `orm.Of[M]`, `M` being
-the model the table's rows are read into, so that nothing but its methods narrows it. Each table kanna-orm reads or
-writes has one, and each model belongs to one table: the scope type is the only place where the two are tied together. A
-model that a relation reaches but no scope type names stops generation:
+A scope type is a struct whose only field is an unexported `orm.Of[M]`, `M` being the model the table's rows are read
+into, so that nothing but its methods narrows it. Each table kanna-orm reads or writes has one, and each model belongs
+to one table: the scope type is the only place where the two are tied together.
+
+`//kanna:scopes`, followed by the import paths of packages of the module, declares one, in `orm_gen.go`, for each
+struct of those packages that a table of the snapshot is named after: the struct's name in snake case with its last
+word made plural, as `order_lines` for `OrderLine` and `categories` for `Category`, or else as it is. A struct no table
+is named after, such as a value type, gets none, and neither does a table no struct is named after, such as one between
+two others. Methods of your own are written on the type as on any other, in another file of the package.
+
+A table named otherwise, or a scope type of a name of your own, is declared by hand, and wins over the one
+`//kanna:scopes` would imply of its model or its table:
+
+```go
+//kanna:scope table=people
+type Person struct{ q orm.Of[model.Person] }
+```
+
+A model that a relation reaches but no scope type names stops generation:
 
 ```console
 ../model/order_line.go:9:1: error: OrderLine.Product: no scope type is declared for model.Product
@@ -222,8 +233,10 @@ model that a relation reaches but no scope type names stops generation:
 
 For each scope type, kanna-orm writes:
 
+- the type, when `//kanna:scopes` implies it;
 - a function returning the empty scope, named after the table: `Orders()` for `orders`. When the name is the type's own,
-  or is taken otherwise, choose another with `func=`, as in `//kanna:scope table=person func=People`;
+  or is taken otherwise, declare the type by hand and choose another with `func=`, as in
+  `//kanna:scope table=person func=People`;
 - a method for each column, each relation, and each [hand-written scope](#hand-written-sql);
 - `Limit`, `Offset`, `Or`, `Not`, `After`, `Before`, `Cursor`, and `AfterCursor`.
 

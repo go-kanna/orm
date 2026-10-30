@@ -1,31 +1,12 @@
-// Package scopes holds the scope types the repositories read through, one for each table.
+// Package scopes holds the scope types the repositories read through, one for each table, which kanna-orm declares
+// of the models.
 package scopes
 
-import (
-	"github.com/go-kanna/orm"
-
-	"github.com/go-kanna/orm/example/postgres/model"
-)
+import "github.com/go-kanna/orm/example/postgres/model"
 
 //go:generate go tool kanna-orm
 
-//kanna:scope table=customers
-type Customer struct{ q orm.Of[model.Customer] }
-
-//kanna:scope table=products
-type Product struct{ q orm.Of[model.Product] }
-
-//kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
-
-//kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
-
-//kanna:scope table=shipments
-type Shipment struct{ q orm.Of[model.Shipment] }
-
-//kanna:scope table=tags
-type Tag struct{ q orm.Of[model.Tag] }
+//kanna:scopes github.com/go-kanna/orm/example/postgres/model
 
 // Open narrows to the orders neither shipped nor canceled.
 func (s Order) Open() Order {

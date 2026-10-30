@@ -39,16 +39,31 @@ type scope struct {
 	table string
 	// fn names the function returning the empty scope.
 	fn string
+	// implied reports whether a //kanna:scopes directive implies it, so that the run declares it too.
+	implied bool
 }
 
-// findScopes returns the //kanna:scope types of pkg, in the order they are declared, and reports those that are not
-// declared as a scope type is, or whose table s does not have.
-func findScopes(pkg *packages.Package, s snapshot.Snapshot) ([]scope, []diag.Diag) {
+// findScopes returns the //kanna:scope types of pkg, in the order they are declared, then those its //kanna:scopes
+// directives imply, as idx has them, and reports those that are not declared as a scope type is, or whose table s
+// does not have.
+func findScopes(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scope, []diag.Diag) {
 	var (
 		scopes []scope
 		ds     []diag.Diag
 		fns    = map[string]string{}
+		models []decl.Models
 	)
+	add := func(sc scope, sds []diag.Diag) {
+		if fn, ok := fns[sc.fn]; ok {
+			sds = append(sds, diag.Errorf(sc.pos, "%s: %s is the function returning the empty scope of %s too",
+				sc.name, sc.fn, fn).WithHints("name another with func="))
+		}
+		ds = append(ds, sds...)
+		if len(sds) == 0 {
+			scopes = append(scopes, sc)
+			fns[sc.fn] = sc.name
+		}
+	}
 	for _, file := range pkg.Syntax {
 		if ast.IsGenerated(file) {
 			continue
@@ -56,19 +71,67 @@ func findScopes(pkg *packages.Package, s snapshot.Snapshot) ([]scope, []diag.Dia
 		decls, fds := decl.Read(pkg.Fset, file)
 		ds = append(ds, fds...)
 		for _, d := range decls.Scopes {
-			sc, sds := scopeOf(pkg, s, d)
-			if fn, ok := fns[sc.fn]; ok {
-				sds = append(sds, diag.Errorf(d.Pos, "%s: %s is the function returning the empty scope of %s too",
-					sc.name, sc.fn, fn).WithHints("name another with func="))
+			add(scopeOf(pkg, s, d))
+		}
+		models = append(models, decls.Models...)
+	}
+	for _, e := range idx {
+		if e.implied && e.pkgPath == pkg.PkgPath {
+			add(impliedScope(pkg, e))
+		}
+	}
+	return scopes, append(ds, impliesNothing(pkg, s, models)...)
+}
+
+// impliedScope reads the scope type e, which a //kanna:scopes directive of pkg implies.
+func impliedScope(pkg *packages.Package, e indexed) (scope, []diag.Diag) {
+	sc := scope{name: e.name, pos: e.pos, field: "q", model: e.model, table: e.table, implied: true}
+	errorf := func(format string, args ...any) []diag.Diag {
+		return []diag.Diag{diag.Errorf(e.pos, "%s: %s", sc.name, fmt.Sprintf(format, args...))}
+	}
+	fn, ok := funcName(e.table)
+	sc.fn = fn
+	switch {
+	case e.model == nil:
+		return sc, errorf("kanna-orm loaded no struct %s of %s, which //kanna:scopes implies it of", e.modelName,
+			e.modelPath)
+	case !ok:
+		return sc, errorf("no Go name can be made of %s for the function returning the empty scope", e.table)
+	}
+	for _, name := range []string{sc.name, fn} {
+		if pos, ok := declared(pkg, name); ok {
+			return sc, []diag.Diag{diag.Errorf(e.pos, "%s: %s, which the scope type //kanna:scopes implies of %s needs, "+
+				"is declared already", sc.name, name, e.table).WithHints(
+				fmt.Sprintf("it is declared at %s:%d", filepath.Base(pos.Filename), pos.Line),
+				"declare the scope type yourself: //kanna:scope table="+e.table)}
+		}
+	}
+	return sc, nil
+}
+
+// impliesNothing reports the packages the //kanna:scopes directives of pkg, models, name that no scope type can be
+// implied of: one outside the module of pkg, or one with no struct named after a table of s.
+func impliesNothing(pkg *packages.Package, s snapshot.Snapshot, models []decl.Models) []diag.Diag {
+	if pkg.Module == nil {
+		return nil
+	}
+	dirOf := func(path string) (string, bool) { return moduleDir(pkg.Module.Dir, pkg.Module.Path, path) }
+	hasTable := func(table string) bool { _, ok := s.Tables[table]; return ok }
+	var ds []diag.Diag
+	for _, m := range models {
+		for _, path := range m.Paths {
+			if _, ok := dirOf(path); !ok {
+				ds = append(ds, diag.Errorf(m.Pos, "//kanna:scopes takes the packages of %s, not %s", pkg.Module.Path,
+					path).WithHints("declare a scope type of each table of its models with //kanna:scope"))
+				continue
 			}
-			ds = append(ds, sds...)
-			if len(sds) == 0 {
-				scopes = append(scopes, sc)
-				fns[sc.fn] = sc.name
+			if len(decl.Imply(decl.Models{Pos: m.Pos, Paths: []string{path}}, dirOf, hasTable)) == 0 {
+				ds = append(ds, diag.Warningf(m.Pos, "//kanna:scopes %s implies no scope type: no struct of it is named "+
+					"after a table of the snapshot", path).WithHints("as order_lines is after OrderLine"))
 			}
 		}
 	}
-	return scopes, ds
+	return ds
 }
 
 // scopeOf reads the scope type d declares.

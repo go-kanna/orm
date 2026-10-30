@@ -9,6 +9,9 @@ import (
 	"github.com/go-kanna/orm/example/postgres/model"
 )
 
+// Customer is the scope of customers, whose rows are read into model.Customer, as //kanna:scopes implies it.
+type Customer struct{ q orm.Of[model.Customer] }
+
 // Customers returns a scope over all the rows of customers.
 func Customers() Customer { return Customer{} }
 
@@ -354,6 +357,9 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 	return s.After(row), nil
 }
 
+// Product is the scope of products, whose rows are read into model.Product, as //kanna:scopes implies it.
+type Product struct{ q orm.Of[model.Product] }
+
 // Products returns a scope over all the rows of products.
 func Products() Product { return Product{} }
 
@@ -638,6 +644,9 @@ func (s Product) AfterCursor(cursor string) (Product, error) {
 	}
 	return s.After(row), nil
 }
+
+// Order is the scope of orders, whose rows are read into model.Order, as //kanna:scopes implies it.
+type Order struct{ q orm.Of[model.Order] }
 
 // Orders returns a scope over all the rows of orders.
 func Orders() Order { return Order{} }
@@ -1094,6 +1103,9 @@ func (s Order) AfterCursor(cursor string) (Order, error) {
 	return s.After(row), nil
 }
 
+// OrderLine is the scope of order_lines, whose rows are read into model.OrderLine, as //kanna:scopes implies it.
+type OrderLine struct{ q orm.Of[model.OrderLine] }
+
 // OrderLines returns a scope over all the rows of order_lines.
 func OrderLines() OrderLine { return OrderLine{} }
 
@@ -1428,6 +1440,9 @@ func (s OrderLine) AfterCursor(cursor string) (OrderLine, error) {
 	return s.After(row), nil
 }
 
+// Shipment is the scope of shipments, whose rows are read into model.Shipment, as //kanna:scopes implies it.
+type Shipment struct{ q orm.Of[model.Shipment] }
+
 // Shipments returns a scope over all the rows of shipments.
 func Shipments() Shipment { return Shipment{} }
 
@@ -1712,6 +1727,9 @@ func (s Shipment) AfterCursor(cursor string) (Shipment, error) {
 	}
 	return s.After(row), nil
 }
+
+// Tag is the scope of tags, whose rows are read into model.Tag, as //kanna:scopes implies it.
+type Tag struct{ q orm.Of[model.Tag] }
 
 // Tags returns a scope over all the rows of tags.
 func Tags() Tag { return Tag{} }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -21,9 +22,10 @@ import (
 	"golang.org/x/mod/modfile"
 
 	"github.com/go-kanna/orm/internal/decl"
+	"github.com/go-kanna/orm/internal/snapshot"
 )
 
-// indexed is a //kanna:scope type of the module, as its syntax declares it.
+// indexed is a //kanna:scope type of the module, as its syntax declares it, or one a //kanna:scopes directive implies.
 type indexed struct {
 	// pkgPath and pkgName are those of the package declaring it.
 	pkgPath, pkgName, name string
@@ -31,12 +33,17 @@ type indexed struct {
 	modelPath, modelName string
 	table                string
 	pos                  token.Position
+	// implied reports whether a //kanna:scopes directive implies it, and model is then its model, once a run that
+	// loads the model's package has found it.
+	implied bool
+	model   *types.Named
 }
 
-// readIndex reads the //kanna:scope types of the module dir is in, from their syntax alone: type-checking the whole
-// module would make every run of go generate as slow as the module is large. A scope type whose syntax does not tell
-// its model is left out, for the run generating its own package to report.
-func readIndex(dir string) ([]indexed, error) {
+// readIndex reads the //kanna:scope types of the module dir is in, and those the //kanna:scopes directives there imply
+// of tables, from their syntax alone: type-checking the whole module would make every run of go generate as slow as
+// the module is large. A scope type whose syntax does not tell its model is left out, for the run generating its own
+// package to report, and so is one implied of a model or a table a //kanna:scope type holds.
+func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) {
 	root, modPath, err := moduleOf(dir)
 	if err != nil {
 		return nil, err
@@ -80,12 +87,95 @@ func readIndex(dir string) ([]indexed, error) {
 				modelPath: modelPath, modelName: modelName, table: sc.Table, pos: sc.Pos,
 			})
 		}
+		dirOf := func(path string) (string, bool) { return moduleDir(root, modPath, path) }
+		hasTable := func(table string) bool { _, ok := tables[table]; return ok }
+		for _, m := range decls.Models {
+			for _, im := range decl.Imply(m, dirOf, hasTable) {
+				idx = append(idx, indexed{
+					pkgPath: pkgPath, pkgName: f.Name.Name, name: im.Model,
+					modelPath: im.ModelPath, modelName: im.Model, table: im.Table, pos: im.Pos, implied: true,
+				})
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read the scope types of %s: %w", modPath, err)
 	}
-	return idx, nil
+
+	// A //kanna:scope type wins over one implied of its model or its table.
+	explicit := map[string]bool{}
+	for _, e := range idx {
+		if !e.implied {
+			explicit[e.modelPath+"."+e.modelName] = true
+			explicit[e.table] = true
+		}
+	}
+	return slices.DeleteFunc(idx, func(e indexed) bool {
+		return e.implied && (explicit[e.modelPath+"."+e.modelName] || explicit[e.table])
+	}), nil
+}
+
+// resolveModels finds the models of the scope types of idx that //kanna:scopes directives imply, among the packages
+// pkgs are and import, and returns the import paths of the packages of those it cannot find.
+func resolveModels(idx []indexed, pkgs []*packages.Package) []string {
+	byPath := map[string]*types.Package{}
+	var walk func(p *types.Package)
+	walk = func(p *types.Package) {
+		if p == nil || byPath[p.Path()] != nil {
+			return
+		}
+		byPath[p.Path()] = p
+		for _, imported := range p.Imports() {
+			walk(imported)
+		}
+	}
+	for _, pkg := range pkgs {
+		walk(pkg.Types)
+	}
+	var missing []string
+	for i, e := range idx {
+		if !e.implied {
+			continue
+		}
+		p := byPath[e.modelPath]
+		if p == nil {
+			if !slices.Contains(missing, e.modelPath) {
+				missing = append(missing, e.modelPath)
+			}
+			continue
+		}
+		if obj, ok := p.Scope().Lookup(e.modelName).(*types.TypeName); ok {
+			if n, ok := types.Unalias(obj.Type()).(*types.Named); ok && isStruct(n) {
+				idx[i].model = n
+			}
+		}
+	}
+	return missing
+}
+
+// impliedNames names, as Set.Pending takes them, the scope types //kanna:scopes implies of idx, and the functions
+// returning their empty scopes: what the run of their packages declares.
+func impliedNames(idx []indexed) map[string]bool {
+	names := map[string]bool{}
+	for _, e := range idx {
+		if e.implied {
+			names[e.pkgPath+"."+e.name] = true
+			if fn, ok := funcName(e.table); ok {
+				names[e.pkgPath+"."+fn] = true
+			}
+		}
+	}
+	return names
+}
+
+// moduleDir tells the directory of the package at path, if it is one of the module at root, whose path is modPath.
+func moduleDir(root, modPath, path string) (string, bool) {
+	if path == modPath {
+		return root, true
+	}
+	rel, ok := strings.CutPrefix(path, modPath+"/")
+	return filepath.Join(root, filepath.FromSlash(rel)), ok
 }
 
 // moduleOf returns the root of the module dir is in, and the module's path.
