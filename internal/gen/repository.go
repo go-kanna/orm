@@ -181,8 +181,10 @@ type repoReader struct {
 	pkg *packages.Package
 	s   snapshot.Snapshot
 	l   linker
-	// queries are the queries written by hand next to the repositories, by their names.
-	queries map[string]sqlfile.Statement
+	// queries are the queries written by hand in the destination, by their names, and queriesAt the destination's
+	// import path, by which the snapshot keeps them.
+	queries   map[string]sqlfile.Statement
+	queriesAt string
 	// skip names, by repository, the methods the destination declares by hand, which are left to it.
 	skip map[string]map[string]bool
 }
@@ -210,7 +212,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 			}
 		}
 	}
-	return repos, append(ds, unusedQueries(r.queries, methods)...)
+	return repos, append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
 }
 
 func (r repoReader) repository(ts *ast.TypeSpec) (repository, []diag.Diag) {

@@ -333,13 +333,13 @@ func TestEmitRepositories(t *testing.T) {
 			if len(set.Diags) > 0 {
 				t.Fatalf("load: %v", set.Diags)
 			}
-			s := snapshot.Snapshot{Dialect: tt.d, Tables: tables, Statements: described(t, tt.repo)}
+			s := snapshot.Snapshot{Dialect: tt.d, Tables: tables, Statements: described(t, tt.dest)}
 			for name, columns := range results {
-				st := s.Statements[testdata+tt.repo+"."+name]
+				st := s.Statements[testdata+tt.dest+"."+name]
 				st.Columns = columns
-				s.Statements[testdata+tt.repo+"."+name] = st
+				s.Statements[testdata+tt.dest+"."+name] = st
 			}
-			got, ds, err := gen.EmitRepositories(set.Packages, testdata+tt.repo, s, tt.drv, testdata+tt.dest, tt.dest)
+			got, ds, err := gen.EmitRepositories(set.Packages, testdata+tt.repo, s, tt.drv, filepath.Join("testdata", tt.dest))
 			if len(ds) > 0 {
 				t.Fatalf("EmitRepositories:\n%s", report(ds))
 			}
@@ -419,7 +419,7 @@ type OrderRepository interface {
 		},
 	}}
 	_, ds, err := gen.EmitRepositories(set.Packages, "example.com/shop/repository", s, "pgx",
-		"example.com/shop/postgres", "postgres")
+		filepath.Join(dir, "postgres"))
 	if err != nil {
 		t.Fatal(err)
 	}

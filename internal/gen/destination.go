@@ -106,16 +106,16 @@ func (d destination) handWritten() map[string]map[string]bool {
 	return methods
 }
 
-// planRepositories reads the repositories of pkg, leaving out the methods skip names, and the models they read whole
-// rows of. pkgs are the packages the run loads, whose scope types the repositories may take, and stmts the statements
-// of the .sql files of pkg.
+// planRepositories reads the repositories of pkg, for their implementations in dest, leaving out the methods dest
+// declares by hand, and the models they read whole rows of. pkgs are the packages the run loads, whose scope types the
+// repositories may take, and stmts the statements of the .sql files of dest.
 func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed,
-	skip map[string]map[string]bool, stmts []sqlfile.Statement,
+	dest destination, stmts []sqlfile.Statement,
 ) ([]repository, map[string]readModel, []diag.Diag) {
 	scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 	queries, ds := readQueries(stmts)
 	others := slices.DeleteFunc(slices.Clone(pkgs), func(p *packages.Package) bool { return p == pkg })
-	r := repoReader{pkg: pkg, s: s, queries: queries, skip: skip, l: linker{
+	r := repoReader{pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(), l: linker{
 		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
 		loaded: loadedScopes(others, s, idx),
 	}}

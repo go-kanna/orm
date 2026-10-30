@@ -64,7 +64,7 @@ type OrderRepository interface {
 	ReopenNew(ctx context.Context) (int64, error)
 	Archive(ctx context.Context, id int64) error
 }
--- repository/queries.sql --
+-- postgres/queries.sql --
 -- query: ReopenNew
 UPDATE orders SET status = 'open' WHERE status = 'new';
 -- postgres/archive.go --
@@ -103,7 +103,7 @@ func describeRepositoryShop(t *testing.T, dir string, d snapshot.Dialect) {
 			},
 		},
 		Statements: map[string]snapshot.Statement{
-			"example.com/shop/repository.ReopenNew": {
+			"example.com/shop/postgres.ReopenNew": {
 				Digest: snapshot.Digest("UPDATE orders SET status = 'open' WHERE status = 'new';"),
 			},
 		},
@@ -180,6 +180,38 @@ func TestCommand_RepositoriesRemoved(t *testing.T) {
 	code, out, errOut = run(t, repository, append([]string{"-v"}, args...)...)
 	if code != cli.ExitOK || out != "removed ../postgres/orm_gen.go\n" {
 		t.Errorf("kanna-orm -v = %d\n%s%s", code, out, errOut)
+	}
+}
+
+func TestCommand_StatementsWrittenElsewhere(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ name, archive, want string }{
+		{"a query next to the repositories", `
+-- repository/stale.sql --
+-- query: CloseStale
+UPDATE orders SET status = 'closed' WHERE status = 'new';
+`, "./stale.sql:1:1: error: -- query: CloseStale goes where the repositories are implemented, not next to the " +
+			"declarations\n  move it into the directory -destination names\n"},
+		{"a scope where the repositories are implemented", `
+-- postgres/order_scopes.sql --
+-- scope: Order.Closed()
+status = 'closed'
+`, "../postgres/order_scopes.sql:1:1: error: -- scope: Order.Closed: Order is no //kanna:scope type of this " +
+			"package\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, repositoryShop+tt.archive)
+			describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+			code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../postgres", "-driver",
+				"database/sql")
+			if code != cli.ExitFailure || !strings.Contains(errOut, tt.want) {
+				t.Errorf("kanna-orm = %d\n%s\nwant\n%s", code, errOut, tt.want)
+			}
+		})
 	}
 }
 
