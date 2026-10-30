@@ -162,6 +162,17 @@ func TestFields_Mistakes(t *testing.T) {
 		{"a column that may be NULL in a value type", "\tNote Text\n",
 			"type Text struct{ s string }\n\nfunc (t *Text) Scan(any) error { return nil }\n",
 			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a Text cannot hold\n  declare it as *Text"},
+		{"a string for an integer", "\tCustomerID string\n", "",
+			"model.go:8:1: error: Order.CustomerID: orders.customer_id is int8, which a string cannot hold\n" +
+				"  declare it as int64, or as a type of your own with Scan and Value methods"},
+		{"a time for text", "\tNote *time.Time\n", "",
+			"model.go:8:1: error: Order.Note: orders.note is text, which a *time.Time cannot hold\n" +
+				"  declare it as *string, or as a type of your own with Scan and Value methods"},
+		{"a slice for text", "\tNote []string\n", "",
+			"model.go:8:1: error: Order.Note: orders.note is text, which a []string cannot hold\n" +
+				"  declare it as string, or as a type of your own with Scan and Value methods"},
+		{"a type of its own for an integer", "\tCustomerID Customer\n",
+			"type Customer struct{ id int64 }\n\nfunc (c *Customer) Scan(any) error { return nil }\n", ""},
 		{"a foreign key on a column", "\tCustomerID int64 `orm:\"fk=customer_id\"`\n", "",
 			`model.go:8:1: error: Order.CustomerID: orm:"fk=customer_id" is for a relation, and CustomerID holds a column`},
 		{"a column on a relation", "\tLines []OrderLine `orm:\"lines\"`\n", "type OrderLine struct{ ID int64 }\n",
@@ -204,5 +215,30 @@ type Order struct {
 				t.Errorf("Fields reports\n%s\nwant\n%s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFields_MySQLHasNoArrays(t *testing.T) {
+	t.Parallel()
+
+	pkg := module(t, orderScope+`
+-- model/model.go --
+package model
+
+type Order struct {
+	ID   int64
+	Tags []string
+}
+`)
+	s := snapshot.Snapshot{Dialect: snapshot.MySQL, Tables: map[string]snapshot.Table{
+		"orders": {Columns: []snapshot.Column{
+			{Name: "id", Type: "bigint unsigned", NotNull: true},
+			{Name: "tags", Type: "varchar(255)"},
+		}},
+	}}
+	_, ds := gen.Fields(pkg, s)
+	if got, want := report(ds), "model.go:5:1: error: Order.Tags: orders.tags is varchar(255), which a []string "+
+		"cannot hold\n  declare it as string, or as a type of your own with Scan and Value methods"; got != want {
+		t.Errorf("Fields reports\n%s\nwant\n%s", got, want)
 	}
 }

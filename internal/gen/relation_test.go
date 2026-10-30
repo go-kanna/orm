@@ -10,10 +10,11 @@ import (
 )
 
 // columns makes columns that may not be NULL, of the names given.
+// columns are columns of names, which may not be NULL, of a type no field is checked against.
 func columns(names ...string) []snapshot.Column {
 	cs := make([]snapshot.Column, 0, len(names))
 	for _, n := range names {
-		cs = append(cs, snapshot.Column{Name: n, Type: "int8", NotNull: true})
+		cs = append(cs, snapshot.Column{Name: n, NotNull: true})
 	}
 	return cs
 }
