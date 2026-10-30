@@ -37,7 +37,7 @@ type scopePlan struct {
 func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sqlfile.Statement) (
 	[]scopePlan, []diag.Diag,
 ) {
-	scopes, ds := findScopes(pkg, s)
+	scopes, ds := findScopes(pkg, s, idx)
 	ds = append(ds, checkUnique(pkg, scopes, idx)...)
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
@@ -128,6 +128,10 @@ func (e emitter) printf(format string, args ...any) {
 func (e emitter) scope() {
 	p := e.p
 	model := types.TypeString(p.model, e.f.Qualifier)
+	if p.implied {
+		e.printf("// %[1]s is the scope of %[2]s, whose rows are read into %[3]s, as //kanna:scopes implies it.\n"+
+			"type %[1]s struct{ q %[4]s.Of[%[3]s] }\n\n", p.name, p.table, model, e.orm)
+	}
 	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\nfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
 		p.fn, p.table, p.name)
 	s := e.f.Scope().Name("s")

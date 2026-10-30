@@ -115,12 +115,12 @@ func (d destination) handWritten() map[string]map[string]bool {
 func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed,
 	skip map[string]map[string]bool, stmts []sqlfile.Statement,
 ) ([]repository, map[string]readModel, []diag.Diag) {
-	scopes, _ := findScopes(pkg, s) // plan reports what is wrong with them
+	scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 	queries, ds := readQueries(stmts)
 	others := slices.DeleteFunc(slices.Clone(pkgs), func(p *packages.Package) bool { return p == pkg })
 	r := repoReader{pkg: pkg, s: s, queries: queries, skip: skip, l: linker{
 		fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
-		loaded: loadedScopes(others, s),
+		loaded: loadedScopes(others, s, idx),
 	}}
 	repos, rds := r.findRepositories()
 	if ds = append(ds, rds...); diag.HasErrors(ds) {

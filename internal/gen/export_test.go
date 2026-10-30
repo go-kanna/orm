@@ -23,11 +23,19 @@ func ParseTag(tag string) (column string, skip bool, fk string, err error) {
 	return t.column, t.skip, t.fk, err
 }
 
+// index reads the index of the module of pkg, with the models of the scope types //kanna:scopes implies found among
+// what pkg imports.
+func index(pkg *packages.Package, s snapshot.Snapshot) []indexed {
+	idx, _ := readIndex(filepath.Dir(pkg.GoFiles[0]), s.Tables) // the tests of the index report its errors
+	resolveModels(idx, []*packages.Package{pkg})
+	return idx
+}
+
 // Scope is a scope type as findScopes finds it, its model named by the name of its package.
 type Scope struct{ Name, Field, Model, Table, Func string }
 
 func FindScopes(pkg *packages.Package, s snapshot.Snapshot) ([]Scope, []diag.Diag) {
-	found, ds := findScopes(pkg, s)
+	found, ds := findScopes(pkg, s, index(pkg, s))
 	scopes := make([]Scope, 0, len(found))
 	for _, sc := range found {
 		model := types.TypeString(sc.model, (*types.Package).Name)
@@ -40,7 +48,7 @@ func FindScopes(pkg *packages.Package, s snapshot.Snapshot) ([]Scope, []diag.Dia
 // column as "Model.Path type column", then those holding other models as "Model.Path type relation", with the foreign
 // key their tag names.
 func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) {
-	scopes, ds := findScopes(pkg, s)
+	scopes, ds := findScopes(pkg, s, index(pkg, s))
 	var got []string
 	for _, sc := range scopes {
 		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
@@ -62,34 +70,41 @@ func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) 
 	return got, ds
 }
 
-// Index reads the index of the module dir is in, each scope type as "pkgPath.Name modelPath.Name table file:line",
-// the file named from dir.
-func Index(dir string) ([]string, error) {
-	idx, err := readIndex(dir)
+// Index reads the index of the module dir is in, of tables, each scope type as
+// "pkgPath.Name modelPath.Name table file:line", the file named from dir, and "implied" after one //kanna:scopes
+// implies.
+func Index(dir string, tables map[string]snapshot.Table) ([]string, error) {
+	idx, err := readIndex(dir, tables)
 	got := make([]string, 0, len(idx))
 	for _, e := range idx {
 		rel, _ := filepath.Rel(dir, e.pos.Filename)
-		got = append(got, fmt.Sprintf("%s.%s %s.%s %s %s:%d",
-			e.pkgPath, e.name, e.modelPath, e.modelName, e.table, filepath.ToSlash(rel), e.pos.Line))
+		line := fmt.Sprintf("%s.%s %s.%s %s %s:%d",
+			e.pkgPath, e.name, e.modelPath, e.modelName, e.table, filepath.ToSlash(rel), e.pos.Line)
+		if e.implied {
+			line += " implied"
+		}
+		got = append(got, line)
 	}
 	return got, err
 }
 
 // CheckUnique finds the scope types of pkg, and reports those whose model or table is another's too.
 func CheckUnique(pkg *packages.Package, s snapshot.Snapshot) ([]diag.Diag, error) {
-	scopes, ds := findScopes(pkg, s)
-	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]), s.Tables)
+	resolveModels(idx, []*packages.Package{pkg})
+	scopes, ds := findScopes(pkg, s, idx)
 	return append(ds, checkUnique(pkg, scopes, idx)...), err
 }
 
 // Links finds the foreign keys the relations of the models of the scope types of pkg follow, each as
 // "Model.Path kind pkg.Target: way; keys = targetKeys".
 func Links(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, error) {
-	scopes, ds := findScopes(pkg, s)
-	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]), s.Tables)
 	if err != nil {
 		return nil, nil, err
 	}
+	resolveModels(idx, []*packages.Package{pkg})
+	scopes, ds := findScopes(pkg, s, idx)
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	var got []string
 	for _, sc := range scopes {
@@ -124,10 +139,11 @@ func Reserved(d snapshot.Dialect) []string {
 // Emit generates orm_gen.go for pkg from s, or reports why it cannot.
 func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, error) {
 	dir := filepath.Dir(pkg.GoFiles[0])
-	idx, err := readIndex(dir)
+	idx, err := readIndex(dir, s.Tables)
 	if err != nil {
 		return nil, nil, err
 	}
+	resolveModels(idx, []*packages.Package{pkg})
 	stmts, ds := readSQL(pkg)
 	plans, pds := plan(pkg, s, idx, stmts)
 	if ds = append(ds, pds...); diag.HasErrors(ds) {
@@ -140,10 +156,11 @@ func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, erro
 
 // Methods names the methods emit writes on each scope type of pkg, the scopes written by hand included, sorted.
 func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, error) {
-	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]), s.Tables)
 	if err != nil {
 		return nil, err
 	}
+	resolveModels(idx, []*packages.Package{pkg})
 	stmts, _ := readSQL(pkg)
 	plans, _ := plan(pkg, s, idx, stmts)
 	methods := map[string][]string{}
@@ -162,11 +179,11 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 // Repositories reads the repositories of pkg, and each of their methods as "Repository.Method verb table", followed by
 // what else it takes and returns, or as "Repository.Method query", followed by its SQL, its arguments, and its fields.
 func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, error) {
-	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]))
+	idx, err := readIndex(filepath.Dir(pkg.GoFiles[0]), s.Tables)
 	if err != nil {
 		return nil, nil, err
 	}
-	scopes, _ := findScopes(pkg, s)
+	scopes, _ := findScopes(pkg, s, idx)
 	stmts, ds := readSQL(pkg)
 	queries, qds := readQueries(stmts)
 	ds = append(ds, qds...)
@@ -225,7 +242,7 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	[]byte, []diag.Diag, error,
 ) {
 	i := slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == repoPath })
-	idx, err := readIndex(filepath.Dir(pkgs[i].GoFiles[0]))
+	idx, err := readIndex(filepath.Dir(pkgs[i].GoFiles[0]), s.Tables)
 	if err != nil {
 		return nil, nil, err
 	}

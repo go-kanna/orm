@@ -1,13 +1,17 @@
 // Package decl reads, from the syntax of a file alone, what is declared there for kanna-orm: the types marked
-// //kanna:scope, and the interfaces marked //kanna:repository.
+// //kanna:scope, the packages of models //kanna:scopes implies scope types for, and the interfaces marked
+// //kanna:repository.
 package decl
 
 import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/directive"
@@ -23,9 +27,18 @@ type Scope struct {
 	Func string
 }
 
+// Models is a //kanna:scopes directive, which implies a scope type for each struct of the packages it names that a
+// table is named after.
+type Models struct {
+	// Pos is where the directive is.
+	Pos   token.Position
+	Paths []string
+}
+
 // Decls is what a file declares for kanna-orm.
 type Decls struct {
 	Scopes       []Scope
+	Models       []Models
 	Repositories []*ast.TypeSpec
 }
 
@@ -34,12 +47,14 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 	var (
 		decls Decls
 		ds    []diag.Diag
+		docs  = map[*ast.CommentGroup]bool{}
 	)
 	for _, node := range file.Decls {
 		gd, ok := node.(*ast.GenDecl)
 		if !ok || gd.Tok != token.TYPE {
 			continue
 		}
+		docs[gd.Doc] = true
 		for _, spec := range gd.Specs {
 			ts, ok := spec.(*ast.TypeSpec)
 			if !ok {
@@ -49,6 +64,7 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			if doc == nil && len(gd.Specs) == 1 {
 				doc = gd.Doc
 			}
+			docs[doc] = true
 
 			d, fds := directive.Find(fset, doc, "scope")
 			ds = append(ds, fds...)
@@ -67,6 +83,25 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 				decls.Repositories = append(decls.Repositories, ts)
 			}
 		}
+	}
+
+	// //kanna:scopes marks no declaration, so it stands in a comment of its own.
+	for _, cg := range file.Comments {
+		if docs[cg] {
+			continue
+		}
+		d, fds := directive.Find(fset, cg, "scopes")
+		ds = append(ds, fds...)
+		if !d.Found {
+			continue
+		}
+		paths := strings.Fields(d.Args)
+		if len(paths) == 0 {
+			ds = append(ds, diag.Errorf(d.Pos, "//kanna:scopes wants the packages of the models").
+				WithHints("as in //kanna:scopes example.com/shop/model"))
+			continue
+		}
+		decls.Models = append(decls.Models, Models{Pos: d.Pos, Paths: paths})
 	}
 	return decls, ds
 }
@@ -93,4 +128,105 @@ func scopeArgs(args string) (table, fn string, err error) {
 		return "", "", errors.New("//kanna:scope wants the table its type is a scope of")
 	}
 	return table, fn, nil
+}
+
+// Implied is a scope type a //kanna:scopes directive implies: one named after the struct it holds, Model, of the
+// package at ModelPath, whose rows are those of Table.
+type Implied struct {
+	Model, ModelPath, Table string
+	// Pos is where the directive is.
+	Pos token.Position
+}
+
+// Imply implies the scope types of m: one for each struct of the packages it names, each in the directory dirOf tells
+// of it, that a table hasTable reports is named after. A package dirOf knows no directory of is left out.
+func Imply(m Models, dirOf func(path string) (string, bool), hasTable func(table string) bool) []Implied {
+	var implied []Implied
+	for _, path := range m.Paths {
+		dir, ok := dirOf(path)
+		if !ok {
+			continue
+		}
+		for _, name := range structs(dir) {
+			if table, ok := TableOf(name, hasTable); ok {
+				implied = append(implied, Implied{Model: name, ModelPath: path, Table: table, Pos: m.Pos})
+			}
+		}
+	}
+	return implied
+}
+
+// TableOf names the table a struct called name holds the rows of, of those hasTable reports: name in snake case with
+// its last word made plural, as order_lines for OrderLine and categories for Category, or else as it is.
+func TableOf(name string, hasTable func(table string) bool) (string, bool) {
+	snake := SnakeCase(name)
+	for _, table := range []string{plural(snake), snake} {
+		if hasTable(table) {
+			return table, true
+		}
+	}
+	return "", false
+}
+
+func plural(word string) string {
+	switch {
+	case strings.HasSuffix(word, "y") && len(word) > 1 && !strings.ContainsRune("aeiou", rune(word[len(word)-2])):
+		return strings.TrimSuffix(word, "y") + "ies"
+	case strings.HasSuffix(word, "s"), strings.HasSuffix(word, "x"), strings.HasSuffix(word, "z"),
+		strings.HasSuffix(word, "ch"), strings.HasSuffix(word, "sh"):
+		return word + "es"
+	}
+	return word + "s"
+}
+
+// SnakeCase writes name in snake case. A word starts at an upper-case letter after a lower-case one or a digit, and at
+// the last of a run of upper-case letters that a lower-case one follows, so that CustomerID is customer_id and
+// HTTPServer http_server. There is no list of acronyms to consult: OAuthToken is o_auth_token.
+func SnakeCase(name string) string {
+	runes := []rune(name)
+	var b strings.Builder
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) {
+			prev := runes[i-1]
+			nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+			if unicode.IsLower(prev) || unicode.IsDigit(prev) || (unicode.IsUpper(prev) && nextLower) {
+				b.WriteByte('_')
+			}
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
+}
+
+// structs names the exported structs the Go files in dir declare, but its tests, which a //kanna:scopes directive may
+// imply scope types for.
+func structs(dir string) []string {
+	files, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+	var names []string
+	fset := token.NewFileSet()
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
+		if err != nil {
+			continue // the build of its own package reports it
+		}
+		for _, node := range f.Decls {
+			gd, ok := node.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || !ts.Name.IsExported() || ts.TypeParams != nil || ts.Assign.IsValid() {
+					continue
+				}
+				if _, ok := ts.Type.(*ast.StructType); ok {
+					names = append(names, ts.Name.Name)
+				}
+			}
+		}
+	}
+	return names
 }

@@ -1,10 +1,13 @@
 package decl_test
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,6 +80,93 @@ var _ = 0
 	}
 	if want := []string{"OrderRepository"}; !reflect.DeepEqual(repositories, want) {
 		t.Errorf("repositories = %q, want %q", repositories, want)
+	}
+}
+
+func TestRead_Models(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "scopes.go", `package scopes
+
+//go:generate go tool kanna-orm
+
+//kanna:scopes example.com/shop/model example.com/shop/billing
+
+//kanna:scope table=order_lines
+type Line struct{}
+`, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, ds := decl.Read(fset, file)
+	if len(ds) > 0 {
+		t.Fatalf("Read:\n%s", report(ds))
+	}
+	if len(decls.Models) != 1 || decls.Models[0].Pos.Line != 5 || !reflect.DeepEqual(decls.Models[0].Paths,
+		[]string{"example.com/shop/model", "example.com/shop/billing"}) {
+		t.Errorf("Models = %+v", decls.Models)
+	}
+	if len(decls.Scopes) != 1 {
+		t.Errorf("Scopes = %+v, want Line alone", decls.Scopes)
+	}
+
+	_, ds = decl.Read(fset, mustParse(t, fset, "package scopes\n\n//kanna:scopes\n"))
+	if got, want := report(ds), "scopes.go:3:1: error: //kanna:scopes wants the packages of the models\n"+
+		"  as in //kanna:scopes example.com/shop/model"; got != want {
+		t.Errorf("Read of //kanna:scopes alone reports\n%s\nwant\n%s", got, want)
+	}
+}
+
+func mustParse(t *testing.T, fset *token.FileSet, src string) *ast.File {
+	t.Helper()
+
+	file, err := parser.ParseFile(fset, "scopes.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+func TestTableOf(t *testing.T) {
+	t.Parallel()
+
+	tables := []string{"orders", "order_lines", "categories", "statuses", "boxes", "days", "person", "http_logs"}
+	for name, want := range map[string]string{
+		"Order": "orders", "OrderLine": "order_lines", "Category": "categories", "Status": "statuses", "Box": "boxes",
+		"Day": "days", "Person": "person", "HTTPLog": "http_logs", "Email": "",
+	} {
+		got, ok := decl.TableOf(name, func(table string) bool { return slices.Contains(tables, table) })
+		if got != want || ok != (want != "") {
+			t.Errorf("TableOf(%s) = %q, %v; want %q", name, got, ok, want)
+		}
+	}
+}
+
+func TestImply(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for name, src := range map[string]string{
+		"model.go": "package model\n\ntype Order struct{}\n\ntype (\n\tOrderLine struct{}\n\tEmail struct{}\n" +
+			"\tStatus string\n\tAlias = Order\n\tpage[T any] struct{}\n)\n\ntype customer struct{}\n",
+		"model_test.go": "package model\n\ntype Customer struct{}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tables := []string{"orders", "order_lines", "customers", "aliases", "statuses"}
+	implied := decl.Imply(decl.Models{Paths: []string{"example.com/shop/model", "example.com/elsewhere"}},
+		func(path string) (string, bool) { return dir, path == "example.com/shop/model" },
+		func(table string) bool { return slices.Contains(tables, table) })
+	got := make([]string, 0, len(implied))
+	for _, im := range implied {
+		got = append(got, im.ModelPath+"."+im.Model+" "+im.Table)
+	}
+	if want := []string{"example.com/shop/model.Order orders", "example.com/shop/model.OrderLine order_lines"}; !reflect.
+		DeepEqual(got, want) {
+		t.Errorf("Imply = %q, want %q", got, want)
 	}
 }
 

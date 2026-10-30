@@ -72,7 +72,7 @@ func Describe(ctx context.Context, db Database, pkgs []*packages.Package) (snaps
 	}
 	s.Tables = tables
 
-	found, ds := statements(pkgs)
+	found, ds := statements(pkgs, tables)
 	if diag.HasErrors(ds) {
 		return s, ds
 	}
@@ -117,9 +117,10 @@ func describe(ctx context.Context, db Database, f found) (snapshot.Statement, *d
 	return st, nil
 }
 
-// statements finds the statements of the .sql files next to the //kanna:repository interfaces and the //kanna:scope
-// types of pkgs. The .sql files of a package with neither are none of kanna-orm's.
-func statements(pkgs []*packages.Package) ([]found, []diag.Diag) {
+// statements finds the statements of the .sql files next to the //kanna:repository interfaces and the scope types of
+// pkgs, those //kanna:scopes implies of tables included. The .sql files of a package with neither are none of
+// kanna-orm's.
+func statements(pkgs []*packages.Package, tables map[string]snapshot.Table) ([]found, []diag.Diag) {
 	var (
 		all []found
 		ds  []diag.Diag
@@ -128,7 +129,7 @@ func statements(pkgs []*packages.Package) ([]found, []diag.Diag) {
 		if len(pkg.GoFiles) == 0 {
 			continue
 		}
-		scopes, repository, pds := declarations(pkg)
+		scopes, repository, pds := declarations(pkg, tables)
 		ds = append(ds, pds...)
 		if len(scopes) == 0 && !repository {
 			continue
@@ -195,10 +196,12 @@ func qualified(st sqlfile.Statement) string {
 	return st.Name
 }
 
-// declarations reads the tables of the //kanna:scope types of pkg, and whether it has a //kanna:repository interface.
-func declarations(pkg *packages.Package) (map[string]string, bool, []diag.Diag) {
+// declarations reads the tables of the scope types of pkg, by their names, those //kanna:scopes implies of tables
+// included, and whether it has a //kanna:repository interface.
+func declarations(pkg *packages.Package, tables map[string]snapshot.Table) (map[string]string, bool, []diag.Diag) {
 	var (
 		scopes     = map[string]string{}
+		models     []decl.Models
 		repository bool
 		ds         []diag.Diag
 	)
@@ -208,7 +211,26 @@ func declarations(pkg *packages.Package) (map[string]string, bool, []diag.Diag) 
 		for _, sc := range decls.Scopes {
 			scopes[sc.Spec.Name.Name] = sc.Table
 		}
+		models = append(models, decls.Models...)
 		repository = repository || len(decls.Repositories) > 0
+	}
+	if pkg.Module == nil {
+		return scopes, repository, ds
+	}
+	dirOf := func(path string) (string, bool) {
+		if path == pkg.Module.Path {
+			return pkg.Module.Dir, true
+		}
+		rel, ok := strings.CutPrefix(path, pkg.Module.Path+"/")
+		return filepath.Join(pkg.Module.Dir, filepath.FromSlash(rel)), ok
+	}
+	hasTable := func(table string) bool { _, ok := tables[table]; return ok }
+	for _, m := range models {
+		for _, im := range decl.Imply(m, dirOf, hasTable) {
+			if _, ok := scopes[im.Model]; !ok {
+				scopes[im.Model] = im.Table
+			}
+		}
 	}
 	return scopes, repository, ds
 }
