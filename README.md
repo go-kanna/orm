@@ -682,10 +682,13 @@ generators; the file is gone as it should be ([golang/go#36068](https://github.c
 
 ## Example
 
-[`example`](example) is an order service with customers, products, and order lines, generated once for PostgreSQL
-through pgx and once for MySQL through database/sql. It has scopes of its own, keyset paging with cursors, each kind of
-relation, an upsert by a natural key, many rows written at once, and a query written by hand. CI migrates both
-databases, describes them, regenerates the example, fails if the output would change, and runs it against each.
+[`example`](example) is an order service with customers, products, orders, and their lines, shipments, and tags,
+generated once for PostgreSQL through pgx, in [`example/postgres`](example/postgres), and once for MySQL through
+database/sql, in [`example/mysql`](example/mysql): each a module of its own, as a table has one scope type in a module.
+It has scopes of its own, in Go and in SQL, keyset paging with cursors, each kind of relation, an upsert by a natural
+key, many rows written at once, and queries written by hand. `make example` migrates the databases of `make db-up`,
+describes them, regenerates the example, and runs it against each; CI does the same, and fails if the output would
+change.
 
 ## Development
 
@@ -694,7 +697,7 @@ make test       # unit tests
 make db-up      # start the PostgreSQL and the MySQL of compose.yaml, on ports 15432 and 13306
 make test-db    # unit tests, and the tests against those databases
 make lint       # golangci-lint
-make example    # regenerate the example, then build and run it
+make example    # migrate and describe the databases of db-up, regenerate the example, and run it
 ```
 
 ## License

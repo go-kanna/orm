@@ -96,6 +96,20 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
+      mysql:
+        image: mysql:8.4.13@sha256:a0225d1ea6631c8bc2385dc4c2faba17bbf1834ecf369e1659a9a382bd8d5dd7
+        env:
+          MYSQL_ROOT_PASSWORD: kanna
+          MYSQL_USER: kanna
+          MYSQL_PASSWORD: kanna
+          MYSQL_DATABASE: kanna_orm
+        ports:
+          - 13306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ukanna -pkanna"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
