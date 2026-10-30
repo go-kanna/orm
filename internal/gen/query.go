@@ -34,8 +34,8 @@ type query struct {
 	fields []column
 }
 
-// readQueries reads the queries written by hand in the .sql files of pkg, by their names.
-func readQueries(pkg *packages.Package) (map[string]sqlfile.Statement, []diag.Diag) {
+// readSQL reads the statements of the .sql files next to the sources of pkg: its scopes and queries written by hand.
+func readSQL(pkg *packages.Package) ([]sqlfile.Statement, []diag.Diag) {
 	if len(pkg.GoFiles) == 0 {
 		return nil, nil
 	}
@@ -44,8 +44,8 @@ func readQueries(pkg *packages.Package) (map[string]sqlfile.Statement, []diag.Di
 		return nil, []diag.Diag{diag.Errorf(token.Position{}, "%s: %v", pkg.PkgPath, err)}
 	}
 	var (
-		queries = map[string]sqlfile.Statement{}
-		ds      []diag.Diag
+		all []sqlfile.Statement
+		ds  []diag.Diag
 	)
 	for _, file := range files {
 		data, err := os.ReadFile(file) //nolint:gosec // a .sql file beside the sources of a package loaded
@@ -54,20 +54,29 @@ func readQueries(pkg *packages.Package) (map[string]sqlfile.Statement, []diag.Di
 			continue
 		}
 		stmts, fds := sqlfile.Parse(file, data)
-		ds = append(ds, fds...)
-		for _, st := range stmts {
-			if st.Kind != sqlfile.Query || st.Name == "" || st.Text == "" {
-				continue
-			}
-			if at, ok := queries[st.Name]; ok {
-				if at.Header.Filename != st.Header.Filename { // sqlfile.Parse reports one written twice in a file
-					ds = append(ds, diag.Errorf(st.Header, "-- query: %s is written a second time", st.Name).
-						WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Header.Filename), at.Header.Line)))
-				}
-				continue
-			}
-			queries[st.Name] = st
+		all, ds = append(all, stmts...), append(ds, fds...)
+	}
+	return all, ds
+}
+
+// readQueries picks the queries written by hand out of stmts, by their names.
+func readQueries(stmts []sqlfile.Statement) (map[string]sqlfile.Statement, []diag.Diag) {
+	var (
+		queries = map[string]sqlfile.Statement{}
+		ds      []diag.Diag
+	)
+	for _, st := range stmts {
+		if st.Kind != sqlfile.Query || st.Name == "" || st.Text == "" {
+			continue
 		}
+		if at, ok := queries[st.Name]; ok {
+			if at.Header.Filename != st.Header.Filename { // sqlfile.Parse reports one written twice in a file
+				ds = append(ds, diag.Errorf(st.Header, "-- query: %s is written a second time", st.Name).
+					WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Header.Filename), at.Header.Line)))
+			}
+			continue
+		}
+		queries[st.Name] = st
 	}
 	return queries, ds
 }

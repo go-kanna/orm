@@ -12,6 +12,7 @@ import (
 	"github.com/go-kanna/internal/valuetype"
 
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 const generator = "kanna-orm"
@@ -33,7 +34,9 @@ type scopePlan struct {
 
 // plan finds the scope types of pkg, checks them against s and against the others of the module in idx, and matches
 // the fields of their models to the columns and the relations of their tables.
-func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePlan, []diag.Diag) {
+func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sqlfile.Statement) (
+	[]scopePlan, []diag.Diag,
+) {
 	scopes, ds := findScopes(pkg, s)
 	ds = append(ds, checkUnique(pkg, scopes, idx)...)
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
@@ -51,7 +54,7 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]scopePla
 		plans = append(plans, scopePlan{scope: sc, columns: f.columns, links: links, primaryKey: key,
 			unchecked: f.unchecked})
 	}
-	written, wds := sqlScopes(pkg, s, plans)
+	written, wds := sqlScopes(pkg, s, plans, stmts)
 	for i := range plans {
 		plans[i].written = written[plans[i].name]
 	}

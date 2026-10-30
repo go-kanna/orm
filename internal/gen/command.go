@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 // config holds what kanna-orm's own flags set.
@@ -92,15 +93,22 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		if err != nil {
 			return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 		}
+		// Each .sql file is read once, though both the scopes and the queries of a package may be written there.
+		stmts := map[*packages.Package][]sqlfile.Statement{}
 		for _, pkg := range roots {
-			ps, pds := plan(pkg, s, idx)
+			if slices.Contains(scopePkgs, pkg) || slices.Contains(repoPkgs, pkg) {
+				var sds []diag.Diag
+				stmts[pkg], sds = readSQL(pkg)
+				ds = append(ds, sds...)
+			}
+			ps, pds := plan(pkg, s, idx, stmts[pkg])
 			plans[pkg] = ps
 			ds = append(ds, pds...)
 		}
 		pending = generatedNames(plans, s.Dialect)
 		if len(repoPkgs) > 0 {
 			var rds []diag.Diag
-			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver)
+			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver, stmts[repoPkgs[0]])
 			ds = append(ds, rds...)
 			for _, pkg := range repoPkgs {
 				if dest != nil {
@@ -228,7 +236,7 @@ type repoPlan struct {
 // planRepository reads the repositories of the one package of repoPkgs, among pkgs, the packages the run loads, for
 // their implementations in dest on the driver the -driver flag names, or else the one of the database.
 func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed, dest *destination,
-	drvFlag string,
+	drvFlag string, stmts []sqlfile.Statement,
 ) (repoPlan, []diag.Diag) {
 	pkg := repoPkgs[0]
 	errorf := func(format string, args ...any) []diag.Diag {
@@ -253,7 +261,7 @@ func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx
 	if drv == driverPgx && s.Dialect == snapshot.MySQL {
 		return repoPlan{}, errorf("-driver pgx runs on PostgreSQL, but the snapshot is of MySQL")
 	}
-	repos, models, ds := planRepositories(pkg, pkgs, s, idx, dest.handWritten())
+	repos, models, ds := planRepositories(pkg, pkgs, s, idx, dest.handWritten(), stmts)
 	return repoPlan{repos: repos, models: models, driver: drv}, ds
 }
 

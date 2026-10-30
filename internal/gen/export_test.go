@@ -128,8 +128,9 @@ func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, erro
 	if err != nil {
 		return nil, nil, err
 	}
-	plans, ds := plan(pkg, s, idx)
-	if diag.HasErrors(ds) {
+	stmts, ds := readSQL(pkg)
+	plans, pds := plan(pkg, s, idx, stmts)
+	if ds = append(ds, pds...); diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
 	declared := slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkg.Name)))
@@ -143,7 +144,8 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 	if err != nil {
 		return nil, err
 	}
-	plans, _ := plan(pkg, s, idx)
+	stmts, _ := readSQL(pkg)
+	plans, _ := plan(pkg, s, idx, stmts)
 	methods := map[string][]string{}
 	for _, p := range plans {
 		for _, m := range methodsOf(p, s.Dialect) {
@@ -165,7 +167,9 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.
 		return nil, nil, err
 	}
 	scopes, _ := findScopes(pkg, s)
-	queries, ds := readQueries(pkg)
+	stmts, ds := readSQL(pkg)
+	queries, qds := readQueries(stmts)
+	ds = append(ds, qds...)
 	r := repoReader{
 		pkg: pkg, s: s, queries: queries,
 		l: linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
@@ -225,7 +229,9 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	if err != nil {
 		return nil, nil, err
 	}
-	repos, models, ds := planRepositories(pkgs[i], pkgs, s, idx, nil)
+	stmts, ds := readSQL(pkgs[i])
+	repos, models, rds := planRepositories(pkgs[i], pkgs, s, idx, nil, stmts)
+	ds = append(ds, rds...)
 	if diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
