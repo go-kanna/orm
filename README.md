@@ -787,7 +787,11 @@ make db-up      # start the PostgreSQL and the MySQL of compose.yaml, on ports 1
 make test-db    # unit tests, and the tests against those databases
 make lint       # golangci-lint
 make example    # migrate and describe the databases of db-up, regenerate the example, and run it
+make bench      # fill a schema of the PostgreSQL of db-up, and run the benchmarks against it
 ```
+
+[`bench/postgres`](bench/postgres) measures kanna-orm against pgx alone, sqlc, GORM, bun, and ent; its README has the
+results, and how they were taken.
 
 ## License
 
