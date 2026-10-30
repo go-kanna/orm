@@ -11,7 +11,7 @@ tool (
 
 require (
 	entgo.io/ent v0.14.6
-	github.com/go-kanna/orm v0.0.3
+	github.com/go-kanna/orm v0.0.4
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/uptrace/bun v1.3.0
 	github.com/uptrace/bun/dialect/pgdialect v1.3.0
@@ -29,7 +29,7 @@ require (
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/go-kanna/internal v0.0.12 // indirect
+	github.com/go-kanna/internal v0.0.14 // indirect
 	github.com/go-openapi/inflect v0.19.0 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
