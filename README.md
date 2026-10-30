@@ -382,8 +382,8 @@ row come in one query, in the order of the scope given for them.
   method that holds one makes the query return an error. To read the first few of each, write the query by hand.
 - Relations are read, never written: `Insert` and `Update` write the row's own columns, and a row read back holds
   them alone.
-- A relation by a foreign key of more than one column is not loaded yet: a repository reading its model stops
-  generation.
+- A relation by a foreign key of more than one column is read by its columns as a row: `(a, b) IN (SELECT * FROM
+  unnest($1, $2))` on PostgreSQL, and `(a, b) IN ((?, ?), ...)` on MySQL.
 
 ### Paging
 

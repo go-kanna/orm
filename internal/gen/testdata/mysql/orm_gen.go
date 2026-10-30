@@ -1137,6 +1137,24 @@ func (s OrderLine) WithOrder(sub ...Order) OrderLine {
 	return OrderLine{orm.Preload(s.q, "Order", orm.Join(qs...))}
 }
 
+// WithNotes loads Notes, from line_notes by order_id and line_no.
+func (s OrderLine) WithNotes(sub ...LineNote) OrderLine {
+	qs := make([]orm.Of[model.LineNote], len(sub))
+	for i, x := range sub {
+		qs[i] = x.Of()
+	}
+	return OrderLine{orm.Preload(s.q, "Notes", orm.Join(qs...))}
+}
+
+// WithTags loads Tags, from tags through line_tags.
+func (s OrderLine) WithTags(sub ...Tag) OrderLine {
+	qs := make([]orm.Of[model.Tag], len(sub))
+	for i, x := range sub {
+		qs[i] = x.Of()
+	}
+	return OrderLine{orm.Preload(s.q, "Tags", orm.Join(qs...))}
+}
+
 // Limit keeps the first n rows.
 func (s OrderLine) Limit(n int) OrderLine {
 	return OrderLine{s.q.Limit(n)}
@@ -1303,4 +1321,232 @@ func (s Tag) Or(alternatives ...Tag) Tag {
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s Tag) Not(other Tag) Tag {
 	return Tag{s.q.Not(other.q)}
+}
+
+// LineNotes returns a scope over all the rows of line_notes.
+func LineNotes() LineNote { return LineNote{} }
+
+// Of returns the scope as a repository reads it.
+func (s LineNote) Of() orm.Of[model.LineNote] { return s.q }
+
+// OrderIDEq narrows to the rows whose order_id is v.
+func (s LineNote) OrderIDEq(v model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id = `, v)}
+}
+
+// OrderIDNe narrows to the rows whose order_id is not v.
+func (s LineNote) OrderIDNe(v model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id <> `, v)}
+}
+
+// OrderIDIn narrows to the rows whose order_id is one of vs.
+func (s LineNote) OrderIDIn(vs ...model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id IN (`, orm.List(vs), `)`)}
+}
+
+// OrderIDNotIn narrows to the rows whose order_id is none of vs.
+func (s LineNote) OrderIDNotIn(vs ...model.OrderID) LineNote {
+	if len(vs) == 0 {
+		return s
+	}
+	return LineNote{s.q.Where(`order_id NOT IN (`, orm.List(vs), `)`)}
+}
+
+// OrderIDLt narrows to the rows whose order_id is less than v.
+func (s LineNote) OrderIDLt(v model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id < `, v)}
+}
+
+// OrderIDLte narrows to the rows whose order_id is at most v.
+func (s LineNote) OrderIDLte(v model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id <= `, v)}
+}
+
+// OrderIDGt narrows to the rows whose order_id is greater than v.
+func (s LineNote) OrderIDGt(v model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id > `, v)}
+}
+
+// OrderIDGte narrows to the rows whose order_id is at least v.
+func (s LineNote) OrderIDGte(v model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id >= `, v)}
+}
+
+// OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
+func (s LineNote) OrderIDBetween(lo, hi model.OrderID) LineNote {
+	return LineNote{s.q.Where(`order_id BETWEEN `, lo, ` AND `, hi)}
+}
+
+// OrderIDAsc orders the rows by order_id, smallest first.
+func (s LineNote) OrderIDAsc() LineNote {
+	return LineNote{s.q.OrderBy(`order_id`, false)}
+}
+
+// OrderIDDesc orders the rows by order_id, largest first.
+func (s LineNote) OrderIDDesc() LineNote {
+	return LineNote{s.q.OrderBy(`order_id`, true)}
+}
+
+// LineNoEq narrows to the rows whose line_no is v.
+func (s LineNote) LineNoEq(v int) LineNote {
+	return LineNote{s.q.Where(`line_no = `, v)}
+}
+
+// LineNoNe narrows to the rows whose line_no is not v.
+func (s LineNote) LineNoNe(v int) LineNote {
+	return LineNote{s.q.Where(`line_no <> `, v)}
+}
+
+// LineNoIn narrows to the rows whose line_no is one of vs.
+func (s LineNote) LineNoIn(vs ...int) LineNote {
+	return LineNote{s.q.Where(`line_no IN (`, orm.List(vs), `)`)}
+}
+
+// LineNoNotIn narrows to the rows whose line_no is none of vs.
+func (s LineNote) LineNoNotIn(vs ...int) LineNote {
+	if len(vs) == 0 {
+		return s
+	}
+	return LineNote{s.q.Where(`line_no NOT IN (`, orm.List(vs), `)`)}
+}
+
+// LineNoLt narrows to the rows whose line_no is less than v.
+func (s LineNote) LineNoLt(v int) LineNote {
+	return LineNote{s.q.Where(`line_no < `, v)}
+}
+
+// LineNoLte narrows to the rows whose line_no is at most v.
+func (s LineNote) LineNoLte(v int) LineNote {
+	return LineNote{s.q.Where(`line_no <= `, v)}
+}
+
+// LineNoGt narrows to the rows whose line_no is greater than v.
+func (s LineNote) LineNoGt(v int) LineNote {
+	return LineNote{s.q.Where(`line_no > `, v)}
+}
+
+// LineNoGte narrows to the rows whose line_no is at least v.
+func (s LineNote) LineNoGte(v int) LineNote {
+	return LineNote{s.q.Where(`line_no >= `, v)}
+}
+
+// LineNoBetween narrows to the rows whose line_no is between lo and hi, both included.
+func (s LineNote) LineNoBetween(lo, hi int) LineNote {
+	return LineNote{s.q.Where(`line_no BETWEEN `, lo, ` AND `, hi)}
+}
+
+// LineNoAsc orders the rows by line_no, smallest first.
+func (s LineNote) LineNoAsc() LineNote {
+	return LineNote{s.q.OrderBy(`line_no`, false)}
+}
+
+// LineNoDesc orders the rows by line_no, largest first.
+func (s LineNote) LineNoDesc() LineNote {
+	return LineNote{s.q.OrderBy(`line_no`, true)}
+}
+
+// BodyEq narrows to the rows whose body is v.
+func (s LineNote) BodyEq(v string) LineNote {
+	return LineNote{s.q.Where(`body = `, v)}
+}
+
+// BodyNe narrows to the rows whose body is not v.
+func (s LineNote) BodyNe(v string) LineNote {
+	return LineNote{s.q.Where(`body <> `, v)}
+}
+
+// BodyIn narrows to the rows whose body is one of vs.
+func (s LineNote) BodyIn(vs ...string) LineNote {
+	return LineNote{s.q.Where(`body IN (`, orm.List(vs), `)`)}
+}
+
+// BodyNotIn narrows to the rows whose body is none of vs.
+func (s LineNote) BodyNotIn(vs ...string) LineNote {
+	if len(vs) == 0 {
+		return s
+	}
+	return LineNote{s.q.Where(`body NOT IN (`, orm.List(vs), `)`)}
+}
+
+// BodyLt narrows to the rows whose body is less than v.
+func (s LineNote) BodyLt(v string) LineNote {
+	return LineNote{s.q.Where(`body < `, v)}
+}
+
+// BodyLte narrows to the rows whose body is at most v.
+func (s LineNote) BodyLte(v string) LineNote {
+	return LineNote{s.q.Where(`body <= `, v)}
+}
+
+// BodyGt narrows to the rows whose body is greater than v.
+func (s LineNote) BodyGt(v string) LineNote {
+	return LineNote{s.q.Where(`body > `, v)}
+}
+
+// BodyGte narrows to the rows whose body is at least v.
+func (s LineNote) BodyGte(v string) LineNote {
+	return LineNote{s.q.Where(`body >= `, v)}
+}
+
+// BodyBetween narrows to the rows whose body is between lo and hi, both included.
+func (s LineNote) BodyBetween(lo, hi string) LineNote {
+	return LineNote{s.q.Where(`body BETWEEN `, lo, ` AND `, hi)}
+}
+
+// BodyLike narrows to the rows whose body matches pattern, as LIKE does.
+func (s LineNote) BodyLike(pattern string) LineNote {
+	return LineNote{s.q.Where(`body LIKE `, pattern)}
+}
+
+// BodyHasPrefix narrows to the rows whose body starts with prefix.
+func (s LineNote) BodyHasPrefix(prefix string) LineNote {
+	return LineNote{s.q.Where(`body LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+}
+
+// BodyContains narrows to the rows whose body contains substr.
+func (s LineNote) BodyContains(substr string) LineNote {
+	return LineNote{s.q.Where(`body LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+}
+
+// BodyAsc orders the rows by body, in ascending order.
+func (s LineNote) BodyAsc() LineNote {
+	return LineNote{s.q.OrderBy(`body`, false)}
+}
+
+// BodyDesc orders the rows by body, in descending order.
+func (s LineNote) BodyDesc() LineNote {
+	return LineNote{s.q.OrderBy(`body`, true)}
+}
+
+// WithLine loads Line, from order_lines by order_id and line_no.
+func (s LineNote) WithLine(sub ...OrderLine) LineNote {
+	qs := make([]orm.Of[model.OrderLine], len(sub))
+	for i, x := range sub {
+		qs[i] = x.Of()
+	}
+	return LineNote{orm.Preload(s.q, "Line", orm.Join(qs...))}
+}
+
+// Limit keeps the first n rows.
+func (s LineNote) Limit(n int) LineNote {
+	return LineNote{s.q.Limit(n)}
+}
+
+// Offset skips the first n rows.
+func (s LineNote) Offset(n int) LineNote {
+	return LineNote{s.q.Offset(n)}
+}
+
+// Or narrows to the rows any of alternatives matches, each holding conditions alone.
+func (s LineNote) Or(alternatives ...LineNote) LineNote {
+	qs := make([]orm.Of[model.LineNote], len(alternatives))
+	for i, a := range alternatives {
+		qs[i] = a.q
+	}
+	return LineNote{s.q.Or(qs...)}
+}
+
+// Not narrows to the rows other, holding conditions alone, does not match.
+func (s LineNote) Not(other LineNote) LineNote {
+	return LineNote{s.q.Not(other.q)}
 }

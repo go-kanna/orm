@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -111,6 +112,19 @@ CREATE TABLE order_tags (
 	PRIMARY KEY (order_id, tag)
 );
 CREATE TABLE labels (order_id bigint PRIMARY KEY REFERENCES orders ON DELETE CASCADE, names text[]);
+CREATE TABLE line_notes (
+	order_id bigint NOT NULL,
+	line_no integer NOT NULL,
+	body text NOT NULL,
+	FOREIGN KEY (order_id, line_no) REFERENCES order_lines
+);
+CREATE TABLE line_tags (
+	order_id bigint NOT NULL,
+	line_no integer NOT NULL,
+	tag text NOT NULL REFERENCES tags,
+	PRIMARY KEY (order_id, line_no, tag),
+	FOREIGN KEY (order_id, line_no) REFERENCES order_lines
+);
 INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order") VALUES
 	(10, 'open', '2026-10-01T00:00:00Z', 'gift', 100, false, 'ann@example.com', '\x00ff', 1),
 	(10, 'closed', '2026-10-02T00:00:00Z', NULL, 200, true, NULL, NULL, 2),
@@ -120,6 +134,8 @@ INSERT INTO customers VALUES (10, 'Ann'), (20, 'Bob');
 INSERT INTO tags VALUES ('gift'), ('rush');
 INSERT INTO order_tags VALUES (1, 'rush'), (1, 'gift'), (3, 'rush');
 INSERT INTO labels VALUES (1, '{a,b}');
+INSERT INTO line_notes VALUES (1, 1, 'wrap it'), (1, 1, 'fragile'), (1, 2, 'spare');
+INSERT INTO line_tags VALUES (1, 2, 'rush'), (1, 2, 'gift'), (1, 1, 'gift');
 `
 
 func ids(orders []model.Order) []model.OrderID {
@@ -253,6 +269,16 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 		}
 		if !slices.Equal(tags, []string{"gift", "rush"}) {
 			t.Errorf("Tags = %v, want [gift rush], by name", tags)
+		}
+
+		lines, err := repo.Get(ctx, 1, postgres.Orders().WithLines(postgres.OrderLines().LineNoAsc().
+			WithNotes(postgres.LineNotes().BodyAsc().WithLine()).
+			WithTags(postgres.Tags().NameAsc())))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := compositeRelations(lines.Lines); got != "1: [fragile wrap it] [gift]; 2: [spare] [gift rush]" {
+			t.Errorf("the notes and tags of the lines of order 1, by both columns of their key = %s", got)
 		}
 
 		all, err := repo.List(ctx, postgres.Orders().IDAsc().WithLines().WithTags())
@@ -415,4 +441,25 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// compositeRelations writes the notes and the tags of each of lines, which reach them by both columns of their key,
+// as "line_no: [bodies] [tags]", checking each note's line is its own.
+func compositeRelations(lines []model.OrderLine) string {
+	described := make([]string, 0, len(lines))
+	for _, l := range lines {
+		bodies := make([]string, 0, len(l.Notes))
+		for _, n := range l.Notes {
+			if n.Line == nil || n.Line.LineNo != l.LineNo {
+				return fmt.Sprintf("the line of a note of line %d is %+v", l.LineNo, n.Line)
+			}
+			bodies = append(bodies, n.Body)
+		}
+		tags := make([]string, 0, len(l.Tags))
+		for _, t := range l.Tags {
+			tags = append(tags, t.Name)
+		}
+		described = append(described, fmt.Sprintf("%d: %v %v", l.LineNo, bodies, tags))
+	}
+	return strings.Join(described, "; ")
 }

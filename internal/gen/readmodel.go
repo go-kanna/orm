@@ -2,6 +2,7 @@ package gen
 
 import (
 	"go/types"
+	"slices"
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
@@ -56,25 +57,27 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 	return models, ds
 }
 
-// loadable reports what keeps lk, a relation of model, from being loaded: a key of more than one column, keys of
-// types unlike, or a key no map can be keyed by.
+// loadable reports what keeps lk, a relation of model, from being loaded: keys of types unlike, or a key no map can be
+// keyed by.
 func loadable(model *types.Named, lk link) (diag.Diag, bool) {
 	label := model.Obj().Name() + "." + strings.Join(lk.field.path, ".")
-	if len(lk.keys) != 1 || len(lk.targetKeys) != 1 {
-		return diag.Errorf(lk.field.pos, "%s: kanna-orm does not load a relation by a key of more than one column yet",
-			label), false
-	}
-	own, other := elemOf(lk.keys[0].typ), elemOf(lk.targetKeys[0].typ)
 	field := func(m *types.Named, c column) string {
 		return m.Obj().Name() + "." + strings.Join(c.path, ".")
 	}
-	switch {
-	case lk.way.kind != manyToMany && !types.Identical(own, other):
-		return diag.Errorf(lk.field.pos, "%s: %s is %s %s, but %s, which it is loaded by, is %s %s", label,
-			field(model, lk.keys[0]), article(typeName(own)), typeName(own), field(lk.model, lk.targetKeys[0]),
-			article(typeName(other)), typeName(other)).WithHints("declare them alike"), false
-	case !types.Comparable(own) || !types.Comparable(other):
-		return diag.Errorf(lk.field.pos, "%s: its keys are of a type no map can be keyed by", label), false
+	// Through a table between, the keys of each side are their own, and may be of a column each or not.
+	if lk.way.kind != manyToMany {
+		for i := range lk.keys {
+			if own, other := elemOf(lk.keys[i].typ), elemOf(lk.targetKeys[i].typ); !types.Identical(own, other) {
+				return diag.Errorf(lk.field.pos, "%s: %s is %s %s, but %s, which it is loaded by, is %s %s", label,
+					field(model, lk.keys[i]), article(typeName(own)), typeName(own), field(lk.model, lk.targetKeys[i]),
+					article(typeName(other)), typeName(other)).WithHints("declare them alike"), false
+			}
+		}
+	}
+	for _, c := range slices.Concat(lk.keys, lk.targetKeys) {
+		if !types.Comparable(elemOf(c.typ)) {
+			return diag.Errorf(lk.field.pos, "%s: its keys are of a type no map can be keyed by", label), false
+		}
 	}
 	return diag.Diag{}, true
 }

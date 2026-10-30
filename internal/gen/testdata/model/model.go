@@ -39,6 +39,16 @@ type OrderLine struct {
 	LineNo  int
 	SKU     string
 	Order   *Order
+	Notes   []LineNote // by both columns of the key of order_lines
+	Tags    []Tag      // through line_tags, by both columns of the key of order_lines
+}
+
+// LineNote is a note on an order line, which it refers to by both columns of its key.
+type LineNote struct {
+	OrderID OrderID
+	LineNo  int
+	Body    string
+	Line    *OrderLine
 }
 
 type Tag struct{ Name string }
