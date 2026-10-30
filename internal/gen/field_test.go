@@ -174,6 +174,19 @@ func TestFields_Mistakes(t *testing.T) {
 		{"an integer for a uuid", "\tToken int64\n", "",
 			"model.go:8:1: error: Order.Token: orders.token is uuid, which an int64 cannot hold\n" +
 				"  declare it as string, or as a type of your own with Scan and Value methods"},
+		{"an integer narrower than the column", "\tCustomerID int32\n", "",
+			"model.go:8:1: error: Order.CustomerID: orders.customer_id is int8, which an int32 cannot hold\n" +
+				"  declare it as int64, or as a type of your own with Scan and Value methods"},
+		{"an unsigned integer for a signed column", "\tCustomerID uint64\n", "",
+			"model.go:8:1: error: Order.CustomerID: orders.customer_id is int8, which a uint64 cannot hold\n" +
+				"  declare it as int64, or as a type of your own with Scan and Value methods"},
+		{"an int, taken to be 64 bits wide", "\tCustomerID int\n", "", ""},
+		{"a float32 for a float8", "\tWeight float32\n", "",
+			"model.go:8:1: error: Order.Weight: orders.weight is float8, which a float32 cannot hold\n" +
+				"  declare it as float64, or as a type of your own with Scan and Value methods"},
+		{"a slice of integers narrower than the array's", "\tScores []int16\n", "",
+			"model.go:8:1: error: Order.Scores: orders.scores is int4[], which a []int16 cannot hold\n" +
+				"  declare it as []int64, or as a type of your own with Scan and Value methods"},
 		{"a type of its own for an integer", "\tCustomerID Customer\n",
 			"type Customer struct{ id int64 }\n\nfunc (c *Customer) Scan(any) error { return nil }\n", ""},
 		{"a foreign key on a column", "\tCustomerID int64 `orm:\"fk=customer_id\"`\n", "",
@@ -198,6 +211,8 @@ func TestFields_Mistakes(t *testing.T) {
 			{Name: "customer_id", Type: "int8", NotNull: true},
 			{Name: "note", Type: "text"},
 			{Name: "token", Type: "uuid", NotNull: true},
+			{Name: "weight", Type: "float8", NotNull: true},
+			{Name: "scores", Type: "int4[]", NotNull: true},
 		}},
 	}}
 	for _, tt := range tests {
@@ -230,7 +245,7 @@ func TestFields_MySQLHasNoArrays(t *testing.T) {
 package model
 
 type Order struct {
-	ID   int64
+	ID   uint64
 	Tags []string
 }
 `)

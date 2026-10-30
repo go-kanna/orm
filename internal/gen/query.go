@@ -272,7 +272,7 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as *"+typ))
 			continue
 		}
-		if want, ok := fits(f.typ, c.Type); !ok {
+		if want, ok := readable(f.typ, c.Type); !ok {
 			ds = append(ds, errorf("the column %s is %s, which %s.%s, %s %s, cannot hold", c.Name, c.Type,
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want))
 			continue

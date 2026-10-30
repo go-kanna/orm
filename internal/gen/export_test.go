@@ -17,6 +17,11 @@ import (
 
 var ColumnName = columnName
 
+// Readable is readable, for a Go type named by its basic kind.
+func Readable(kind types.BasicKind, dbType string) (string, bool) {
+	return readable(types.Typ[kind], dbType)
+}
+
 // ParseTag is parseTag, with what the tag says spread out.
 func ParseTag(tag string) (column string, skip bool, fk string, err error) {
 	t, err := parseTag(tag)
