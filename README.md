@@ -268,6 +268,14 @@ A field's type must be one the driver reads the column's type into: an integer t
 converts itself, and fits any column, and a type of the database kanna-orm does not know, such as an enum or `json`, is
 taken at the field's word.
 
+A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
+scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least
+as wide as the column, `int64` for `bigint` and `int32` for `integer`, signed for a signed column, and unsigned or a
+bit wider for an unsigned one: `uint64` for `bigint unsigned`, `int64` for `int unsigned`. `int` and `uint` are taken
+to be 64 bits wide, as on amd64. Writing needs no such width, as the database rejects a value beyond its column rather
+than store another, so a field wider than its column, as an `int` for an `integer`, is fine, and so is a parameter of
+any width. The range of `numeric` is not recorded, so any number reads it.
+
 ### Methods for columns
 
 The methods are named after the field, so the column `note`, held by `Memo`, gives `MemoContains`. Each column gets the

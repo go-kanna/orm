@@ -501,6 +501,11 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 				"error)\n", monthCounts, described,
 			header + "error: -- query: MonthCounts: the column count is int8, which struct{Month time.Time; Count " +
 				"string}.Count, a string, cannot hold\n  declare it as int64"},
+		{"a column wider than its field",
+			"\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ Month time.Time; Count int32 }, " +
+				"error)\n", monthCounts, described,
+			header + "error: -- query: MonthCounts: the column count is int8, which struct{Month time.Time; Count " +
+				"int32}.Count, an int32, cannot hold\n  declare it as int64"},
 		{"a parameter of another type than the query's",
 			"\tMonthCounts(ctx context.Context, since string) ([]MonthCount, error)\n", monthCounts, described,
 			header + "error: -- query: MonthCounts: :since is timestamptz, which since, a string, is not\n" +

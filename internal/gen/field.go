@@ -160,7 +160,7 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 			label, m.sc.table, name, article(typ), typ).WithHints("declare it as *"+typ))
 		return
 	}
-	if want, ok := fits(f.Type(), col.Type); !ok {
+	if want, ok := readable(f.Type(), col.Type); !ok {
 		if isPointer(f.Type()) {
 			want = "*" + want
 		}
