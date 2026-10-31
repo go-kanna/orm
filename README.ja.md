@@ -9,7 +9,7 @@
 
 kanna-orm は、リポジトリのインターフェースの裏側で動くデータベースのコードを生成します。インターフェースと、それが読み取るテーブルごとのスコープ型を宣言すると、kanna-orm は実装を生成し、クエリの絞り込み、並べ替え、ページング、行が参照する先の読み込みの方法ごとに、スコープ型のメソッドも生成します。SQL はリテラルとして生成コードに残り、スキーマと合わないカラムや型で止まるのはリクエストではなく、生成かコンパイルです。
 
-[kanna](https://github.com/go-kanna/kanna) コードジェネレータファミリーの 1 つです。Go 1.26 以上と、pgx か database/sql 経由の PostgreSQL、または database/sql 経由の MySQL 8.4 以上が必要です。
+[kanna](https://go-kanna.github.io/ja/) コードジェネレータファミリーの 1 つです。Go 1.26 以上と、pgx か database/sql 経由の PostgreSQL、または database/sql 経由の MySQL 8.4 以上が必要です。
 
 ## インストール
 
