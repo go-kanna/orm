@@ -3,6 +3,7 @@ package describe_test
 import (
 	"context"
 	"crypto/rand"
+	"maps"
 	"os"
 	"reflect"
 	"strings"
@@ -153,7 +154,7 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
         {"name": "status", "type": "text", "not_null": true, "default": true},
         {"name": "mood", "type": "mood"},
         {"name": "tags", "type": "text[]", "not_null": true, "default": true},
-        {"name": "total", "type": "numeric", "not_null": true},
+        {"name": "total", "type": "numeric(10,2)", "not_null": true},
         {"name": "total_with_tax", "type": "numeric", "assigned": true},
         {"name": "note", "type": "text"}
       ],
@@ -172,6 +173,41 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
 	got := snapshot.Marshal(snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables})
 	if string(got) != want {
 		t.Errorf("tables:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A column's type keeps the length or precision it declares, as MySQL's does, in
+// a domain and an array too; one without has none.
+func TestPostgresTables_LengthAndPrecision(t *testing.T) {
+	t.Parallel()
+
+	conn, _ := postgres(t)
+	postgresExec(t, conn, `
+CREATE DOMAIN code AS varchar(8);
+CREATE TABLE labels (
+	id bigint PRIMARY KEY,
+	name varchar(40) NOT NULL,
+	free varchar NOT NULL,
+	short code,
+	aliases varchar(16)[],
+	at timestamptz(3),
+	price numeric(12, 0)
+);`)
+
+	tables, err := describe.PostgresTables(t.Context(), conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]string)
+	for _, c := range tables["labels"].Columns {
+		got[c.Name] = c.Type
+	}
+	want := map[string]string{
+		"id": "int8", "name": "varchar(40)", "free": "varchar", "short": "varchar(8)",
+		"aliases": "varchar(16)[]", "at": "timestamptz(3)", "price": "numeric(12,0)",
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("types = %v, want %v", got, want)
 	}
 }
 

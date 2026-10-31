@@ -190,9 +190,9 @@ func (e repoEmitter) inKeys(columns, dbTypes []string, keys string, fieldCols []
 	arrays = e.keyArrays(keys, fieldCols, arrays, c)
 	parts := []string{goString(row + "SELECT * FROM unnest("), arrays[0]} //nolint:unqueryvet // unnest gives the key
 	for i := 1; i < n; i++ {
-		parts = append(parts, goString("::"+dbTypes[i-1]+"[], "), arrays[i])
+		parts = append(parts, goString("::"+castType(dbTypes[i-1])+"[], "), arrays[i])
 	}
-	return strings.Join(append(parts, goString("::"+dbTypes[n-1]+"[]))")), ", ")
+	return strings.Join(append(parts, goString("::"+castType(dbTypes[n-1])+"[]))")), ", ")
 }
 
 // keyArrays writes the arrays of the fields of keys, a slice of structs of the types of fieldCols, one for each
@@ -240,7 +240,7 @@ func (e repoEmitter) throughPairsComposite(lk link, n preloadNames, c compositeN
 		arrays := e.keyArrays(keys, lk.keys, c.arrays, c)
 		unnest := make([]string, 0, len(lk.keys))
 		for i, col := range lk.keys {
-			unnest = append(unnest, "$"+strconv.Itoa(i+1)+"::"+col.col.Type+"[]")
+			unnest = append(unnest, "$"+strconv.Itoa(i+1)+"::"+castType(col.col.Type)+"[]")
 		}
 		e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s, %[7]s)\n", n.pairs, n.err, n.db, e.query, n.ctx,
 			goString(query+"SELECT * FROM unnest("+strings.Join(unnest, ", ")+"))"), //nolint:unqueryvet // the key

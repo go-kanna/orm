@@ -178,6 +178,19 @@ The types are what the database itself answers, so kanna-orm has no SQL parser o
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
 wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows.
 
+The snapshot records what generation needs, and no more, so `make db-describe-check`, or `describe -check`, tells that
+the code was generated from the schema there is, not that two schemas are the same:
+
+| Recorded                                                                                   | Not recorded                              |
+|--------------------------------------------------------------------------------------------|-------------------------------------------|
+| a column's type, with the length or precision it declares: `varchar(100)`, `numeric(10,2)` | what a default is, only that there is one |
+| whether a column may be NULL, has a default, or is assigned by the database                | CHECK constraints                         |
+| primary keys, unique keys, and foreign keys                                                | the conditions of partial indexes         |
+| the types of each hand-written query's parameters and result columns                       | triggers, collations, and comments        |
+
+A migration changing only what is not recorded leaves the snapshot as it was. To review those, or to compare two
+databases, use the tools of your migrations.
+
 The snapshot is JSON with one column to a line, in a fixed order, so that a migration shows as the lines it changes:
 
 ```diff

@@ -205,3 +205,14 @@ func isBytes(t types.Type) bool {
 	b, ok := s.Elem().Underlying().(*types.Basic)
 	return ok && b.Kind() == types.Byte
 }
+
+// castType returns dbType without the length or precision it declares, for a cast in SQL: a cast to varchar(2)
+// would cut a longer value short rather than reject it, as the column does.
+func castType(dbType string) string {
+	if i := strings.IndexByte(dbType, '('); i >= 0 {
+		if j := strings.IndexByte(dbType[i:], ')'); j >= 0 {
+			return dbType[:i] + dbType[i+j+1:]
+		}
+	}
+	return dbType
+}
