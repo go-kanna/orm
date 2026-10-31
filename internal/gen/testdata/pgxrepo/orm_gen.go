@@ -39,7 +39,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...postgre
 	}
 	q := orm.Join(qs...)
 	q = q.Where(`id = `, id)
-	rows, err := selectOrders(ctx, r.db, q)
+	rows, err := selectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -56,7 +56,7 @@ func (r OrderRepository) First(ctx context.Context, s ...postgres.Order) (model.
 	}
 	q := orm.Join(qs...)
 	q = q.Limit(1)
-	rows, err := selectOrders(ctx, r.db, q)
+	rows, err := selectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -72,7 +72,7 @@ func (r OrderRepository) List(ctx context.Context, s ...postgres.Order) ([]model
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	return selectOrders(ctx, r.db, q)
+	return selectOrders(ctx, r.db, q, "")
 }
 
 func (r OrderRepository) ListByCustomer(ctx context.Context, customerID int64, s ...postgres.Order) ([]model.Order, error) {
@@ -82,7 +82,7 @@ func (r OrderRepository) ListByCustomer(ctx context.Context, customerID int64, s
 	}
 	q := orm.Join(qs...)
 	q = q.Where(`customer_id = `, customerID)
-	return selectOrders(ctx, r.db, q)
+	return selectOrders(ctx, r.db, q, "")
 }
 
 func (r OrderRepository) Count(ctx context.Context, s ...postgres.Order) (int64, error) {
@@ -169,7 +169,7 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 	var q orm.Of[model.OrderLine]
 	q = q.Where(`order_id = `, orderID)
 	q = q.Where(`line_no = `, lineNo)
-	rows, err := selectOrderLines(ctx, r.db, q)
+	rows, err := selectOrderLines(ctx, r.db, q, "")
 	if err != nil {
 		return model.OrderLine{}, err
 	}
@@ -177,6 +177,122 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 		return model.OrderLine{}, fmt.Errorf("order_lines with order_id %v and line_no %v: %w", orderID, lineNo, orm.ErrNotFound)
 	}
 	return rows[0], nil
+}
+
+func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	var q orm.Of[model.Order]
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) GetForNoKeyUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: GetForNoKeyUpdate needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	var q orm.Of[model.Order]
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR NO KEY UPDATE`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	var q orm.Of[model.Order]
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR SHARE`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) GetForKeyShare(ctx context.Context, id model.OrderID) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: GetForKeyShare needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	var q orm.Of[model.Order]
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR KEY SHARE`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...postgres.Order) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: GetNoWait needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE NOWAIT`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...postgres.Order) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: FirstUnlocked needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Limit(1)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r OrderRepository) ListUnlocked(ctx context.Context, s ...postgres.Order) ([]model.Order, error) {
+	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+		return nil, fmt.Errorf("orm: ListUnlocked needs a transaction to hold its lock: give the repository a pgx.Tx")
+	}
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	return selectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 }
 
 func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
@@ -348,7 +464,7 @@ RETURNING name`
 func (r OrderRepository) GetLabel(ctx context.Context, orderID model.OrderID) (model.Label, error) {
 	var q orm.Of[model.Label]
 	q = q.Where(`order_id = `, orderID)
-	rows, err := selectLabels(ctx, r.db, q)
+	rows, err := selectLabels(ctx, r.db, q, "")
 	if err != nil {
 		return model.Label{}, err
 	}
@@ -436,13 +552,13 @@ func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
 	return nil
 }
 
-// selectCustomers reads the rows of customers that q matches, in its order.
-func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer]) ([]model.Customer, error) {
+// selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
+func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT id, name FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT id, name FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
 	}
@@ -464,13 +580,13 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer]) ([]
 	return out, nil
 }
 
-// selectLabels reads the rows of labels that q matches, in its order.
-func selectLabels(ctx context.Context, db DBTX, q orm.Of[model.Label]) ([]model.Label, error) {
+// selectLabels reads the rows of labels that q matches, in its order. lock is the locking clause of the query, if any.
+func selectLabels(ctx context.Context, db DBTX, q orm.Of[model.Label], lock string) ([]model.Label, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT order_id, names FROM labels`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT order_id, names FROM labels`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read labels: %w", err)
 	}
@@ -492,13 +608,13 @@ func selectLabels(ctx context.Context, db DBTX, q orm.Of[model.Label]) ([]model.
 	return out, nil
 }
 
-// selectLineNotes reads the rows of line_notes that q matches, in its order, with the relations it loads.
-func selectLineNotes(ctx context.Context, db DBTX, q orm.Of[model.LineNote]) ([]model.LineNote, error) {
+// selectLineNotes reads the rows of line_notes that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func selectLineNotes(ctx context.Context, db DBTX, q orm.Of[model.LineNote], lock string) ([]model.LineNote, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT order_id, line_no, body FROM line_notes`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT order_id, line_no, body FROM line_notes`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read line_notes: %w", err)
 	}
@@ -549,7 +665,7 @@ func preloadLineNotes(ctx context.Context, db DBTX, rows []model.LineNote, q orm
 			k0s = append(k0s, k.k0)
 			k1s = append(k1s, k.k1)
 		}
-		related, err := selectOrderLines(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`))
+		related, err := selectOrderLines(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`), "")
 		if err != nil {
 			return err
 		}
@@ -567,13 +683,13 @@ func preloadLineNotes(ctx context.Context, db DBTX, rows []model.LineNote, q orm
 	return nil
 }
 
-// selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads.
-func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
+// selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT order_id, line_no, sku FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT order_id, line_no, sku FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
@@ -613,7 +729,7 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 			}
 		}
 		byKey := map[model.OrderID]model.Order{}
-		related, err := selectOrders(ctx, db, sub.Where(`id = ANY(`, keys, `)`))
+		related, err := selectOrders(ctx, db, sub.Where(`id = ANY(`, keys, `)`), "")
 		if err != nil {
 			return err
 		}
@@ -643,7 +759,7 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 			k0s = append(k0s, k.k0)
 			k1s = append(k1s, k.k1)
 		}
-		related, err := selectLineNotes(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`))
+		related, err := selectLineNotes(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`), "")
 		if err != nil {
 			return err
 		}
@@ -702,7 +818,7 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 		for _, k := range targetKeys {
 			tk0s = append(tk0s, k.k0)
 		}
-		related, err := selectTags(ctx, db, sub.Where(`(name) IN (SELECT * FROM unnest(`, tk0s, `::text[]))`))
+		related, err := selectTags(ctx, db, sub.Where(`(name) IN (SELECT * FROM unnest(`, tk0s, `::text[]))`), "")
 		if err != nil {
 			return err
 		}
@@ -723,13 +839,13 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 	return nil
 }
 
-// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads.
-func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order]) ([]model.Order, error) {
+// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -769,7 +885,7 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 			}
 		}
 		byKey := map[int64]model.Customer{}
-		related, err := selectCustomers(ctx, db, sub.Where(`id = ANY(`, keys, `)`))
+		related, err := selectCustomers(ctx, db, sub.Where(`id = ANY(`, keys, `)`), "")
 		if err != nil {
 			return err
 		}
@@ -788,7 +904,7 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[model.OrderID][]model.OrderLine{}
-		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`))
+		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
 		if err != nil {
 			return err
 		}
@@ -829,7 +945,7 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 		if err := pairs.Err(); err != nil {
 			return fmt.Errorf("read order_tags: %w", err)
 		}
-		related, err := selectTags(ctx, db, sub.Where(`name = ANY(`, targetKeys, `)`))
+		related, err := selectTags(ctx, db, sub.Where(`name = ANY(`, targetKeys, `)`), "")
 		if err != nil {
 			return err
 		}
@@ -848,13 +964,13 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 	return nil
 }
 
-// selectTags reads the rows of tags that q matches, in its order.
-func selectTags(ctx context.Context, db DBTX, q orm.Of[model.Tag]) ([]model.Tag, error) {
+// selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
+func selectTags(ctx context.Context, db DBTX, q orm.Of[model.Tag], lock string) ([]model.Tag, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read tags: %w", err)
 	}

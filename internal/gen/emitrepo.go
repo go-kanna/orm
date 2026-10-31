@@ -233,6 +233,9 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	model := types.TypeString(m.model, e.f.Qualifier)
 	table := sqlName(e.d, m.target.table)
 	q := sc.Name("q")
+	if m.lock != "" {
+		e.inTransaction(m, sc, recv, model)
+	}
 	if m.scoped {
 		qs, i, x := sc.Name("qs"), sc.Name("i"), sc.Name("x")
 		e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.orm, model, sig.scopes)
@@ -267,11 +270,12 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		if m.verb == verbFirst {
 			e.printf("%[1]s = %[1]s.Limit(1)\n", q)
 		}
-		e.printf("%s, %s := select%s(%s, %s.db, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q)
+		e.printf("%s, %s := select%s(%s, %s.db, %s, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q,
+			lockClause(m))
 		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\n", err, model)
 		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound)
 	case verbList:
-		e.printf("return select%s(%s, %s.db, %s)\n", e.names[m.target.table], sig.ctx, recv, q)
+		e.printf("return select%s(%s, %s.db, %s, %s)\n", e.names[m.target.table], sig.ctx, recv, q, lockClause(m))
 	case verbCount, verbExists:
 		query, typ, zero := "`SELECT count(*) FROM "+table+"`+"+rd+".Where()", "int64", "0"
 		if m.verb == verbExists {
@@ -310,13 +314,37 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	}
 }
 
+// inTransaction writes the check that m, which locks rows, runs on what can hold a lock: a transaction, which alone has
+// a Commit among what DBTX is implemented by.
+func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv, model string) {
+	commit, tx := "Commit() error", "*sql.Tx"
+	if e.drv == driverPgx {
+		commit, tx = "Commit("+e.f.Import("context", "context")+".Context) error", "pgx.Tx"
+	}
+	zero := model + "{}"
+	if m.result == resultRows {
+		zero = "nil"
+	}
+	e.printf("if _, %[1]s := %[2]s.db.(interface{ %[3]s }); !%[1]s {\nreturn %[4]s, %[5]s.Errorf(%[6]q)\n}\n",
+		sc.Name("ok"), recv, commit, zero, e.fmt,
+		"orm: "+m.name+" needs a transaction to hold its lock: give the repository a "+tx)
+}
+
+// lockClause is the locking clause of m, as the argument of select<table>.
+func lockClause(m repoMethod) string {
+	if m.lock == "" {
+		return `""`
+	}
+	return goString(" " + m.lock)
+}
+
 // selectRows writes the function reading the whole rows of rm that a scope matches, in its order, with the relations
-// the scope loads.
+// the scope loads. A method that locks them gives the locking clause, and the relations are read without it.
 func (e repoEmitter) selectRows(rm readModel) {
 	name := "select" + e.names[rm.target.table]
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
-	ctx, db, q := sc.Name("ctx"), sc.Name("db"), sc.Name("q")
+	ctx, db, q, lock := sc.Name("ctx"), sc.Name("db"), sc.Name("q"), sc.Name("lock")
 	rd, err, rows, out, row := sc.Name("rd"), sc.Name("err"), sc.Name("rows"), sc.Name("out"), sc.Name("row")
 
 	query := "SELECT " + e.columnList(rm.columns) + " FROM " + sqlName(e.d, rm.target.table)
@@ -326,12 +354,13 @@ func (e repoEmitter) selectRows(rm readModel) {
 	if len(rm.links) > 0 {
 		e.printf(", with the relations it loads")
 	}
-	e.printf(".\nfunc %[1]s(%[2]s %[3]s.Context, %[4]s DBTX, %[5]s %[6]s.Of[%[7]s]) ([]%[7]s, error) {\n", name, ctx,
-		e.f.Import("context", "context"), db, q, e.orm, model)
+	e.printf(". %s is the locking clause of the query, if any.\n", lock)
+	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s DBTX, %[5]s %[6]s.Of[%[7]s], %[8]s string) ([]%[7]s, error) {\n", name,
+		ctx, e.f.Import("context", "context"), db, q, e.orm, model, lock)
 	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\n"+
 		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
-	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit(), %[7]s.Args()...)\n",
-		rows, err, db, e.query, ctx, goString(query), rd)
+	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
+		"%[7]s.Args()...)\n", rows, err, db, e.query, ctx, goString(query), rd, lock)
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
 	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.slices, out)
@@ -782,7 +811,7 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 	if e.d == snapshot.MySQL {
 		cond = goString(sqlName(e.d, other.col.Name)+" IN (") + ", " + e.orm + ".List(" + keys + ")"
 	}
-	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s, %[8]s))\n"+
+	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s, %[8]s), \"\")\n"+
 		"if %[2]s != nil {\nreturn %[2]s\n}\n", n.related, n.err, e.names[lk.target.table], n.ctx, n.db, n.sub, cond,
 		goString(")"))
 
