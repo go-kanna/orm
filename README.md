@@ -155,9 +155,10 @@ $ go generate ./...
   use List, or add a unique index on orders (status)
 ```
 
-The repository interface names `scopes.Order`, a type you declare, so it compiles before anything is generated. Code
-may also call a method that is generated before it is: errors saying only that a method the run generates is missing
-do not stop it.
+The repository interface names `scopes.Order`, which does not exist until `//kanna:scopes` generates it, so the code
+does not compile before the first run. That does not stop the run: kanna-orm knows the type from that directive, and
+`go generate` can reach the two packages in either order. Code may also call a method that is generated before it is:
+errors saying only that a method the run generates is missing do not stop it.
 
 ## The snapshot
 
@@ -179,8 +180,8 @@ The types are what the database itself answers, so kanna-orm has no SQL parser o
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
 wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows.
 
-The snapshot records what generation needs, and no more, so `make db-describe-check`, or `describe -check`, tells that
-the code was generated from the schema there is, not that two schemas are the same:
+The snapshot records what generation needs, and no more, so `describe -check` tells that the code was generated from
+the schema there is, not that two schemas are the same:
 
 | Recorded                                                                                   | Not recorded                              |
 |--------------------------------------------------------------------------------------------|-------------------------------------------|
@@ -393,11 +394,11 @@ o, err := repo.Get(ctx, id, scopes.Orders().
 		WithProduct()))
 ```
 
-Each relation costs one query, however many rows there are: the call above runs four, one each for orders, customers,
-order lines, and products. A relation through a table between costs two, one for the pairs of keys in that table and
-one for the related rows. The related rows are read by the keys of the rows already read, each key once, with
-`= ANY($1)` on PostgreSQL and `IN (?, ...)` on MySQL, where the keys go a thousand at a time: the rows related to one
-row come in one query, in the order of the scope given for them.
+On PostgreSQL, each relation costs one query, however many rows there are: the call above runs four, one each for
+orders, customers, order lines, and products. A relation through a table between costs two, one for the pairs of keys
+in that table and one for the related rows. The related rows are read by the keys of the rows already read, each key
+once, with `= ANY($1)` on PostgreSQL and `IN (?, ...)` on MySQL, where the keys go a thousand at a time, each thousand
+in a query of its own: the rows related to one row come in one query, in the order of the scope given for them.
 
 - A slice that was loaded is never nil: it is empty when nothing is related. A nil slice was not loaded.
 - A pointer is nil both when it was not loaded and when nothing is related. Telling the two apart would take a type of
@@ -683,9 +684,9 @@ ORDER BY 1`
 }
 ```
 
-- A parameter is `:` followed by a name, as `:since` is. A `:` after another `:`, a letter, a digit, or `]` starts
-  none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a quoted
-  name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
+- A parameter is `:` followed by a name, as `:since` is. A `:` after another `:`, a letter, a digit, `_`, or `]`
+  starts none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a
+  quoted name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
 - A query's parameters take their types from the method, and its result columns go to the fields of their names, tags
   included; both are checked against what `describe` recorded. A result of `[]T` is every row, `T` one row or
   `orm.ErrNotFound`, `(int64, error)` the number of rows affected, and `error` alone nothing.
