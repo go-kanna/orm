@@ -7,13 +7,13 @@ toolchain go1.26.9
 tool github.com/go-kanna/orm/cmd/kanna-orm
 
 require (
-	github.com/go-kanna/orm v0.0.6
+	github.com/go-kanna/orm v0.0.7
 	github.com/go-sql-driver/mysql v1.10.1
 )
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
-	github.com/go-kanna/internal v0.0.15 // indirect
+	github.com/go-kanna/internal v0.0.16 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.11.0 // indirect
