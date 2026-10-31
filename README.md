@@ -12,7 +12,7 @@ each table it reads; kanna-orm writes the implementation, and a method on the sc
 narrowed, ordered, paged, or made to load what a row refers to. The SQL stays in the generated code as literals, and a
 column or a type that does not match the schema stops generation, or compilation, rather than a request.
 
-Part of the [kanna](https://github.com/go-kanna/kanna) family of code generators. Requires Go 1.26, and PostgreSQL
+Part of the [kanna](https://go-kanna.github.io/) family of code generators. Requires Go 1.26, and PostgreSQL
 through pgx or database/sql, or MySQL 8.4 or later through database/sql.
 
 ## Install
