@@ -5,6 +5,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/go-kanna/orm.svg)](https://pkg.go.dev/github.com/go-kanna/orm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/tag/go-kanna/orm?label=release&sort=semver)](https://github.com/go-kanna/orm/tags)
+[![日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-blue.svg)](README.ja.md)
 
 kanna-orm writes the database code behind your repository interfaces. You declare the interface, and a scope type for
 each table it reads; kanna-orm writes the implementation, and a method on the scope type for each way a query can be
