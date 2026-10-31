@@ -109,6 +109,35 @@ func TestRender_Errors(t *testing.T) {
 	}
 }
 
+func TestOr_ChecksEveryAlternative(t *testing.T) {
+	t.Parallel()
+
+	const partial = "orm: Or takes conditions alone, but its scope keeps only some of the rows"
+	var q orm.Of[order]
+	tests := []struct {
+		name string
+		bad  orm.Of[order]
+		want string
+	}{
+		{"a limit", q.Limit(1), partial},
+		{"an offset", q.Offset(1), partial},
+		{"an order", q.OrderBy("id", false), "orm: Or takes conditions alone, but its scope orders the rows"},
+		{"a preload", orm.Preload(q, "Lines", orm.Of[order]{}), "orm: Or takes conditions alone, but its scope loads Lines"},
+		{"an error of its own", q.Limit(-1), "orm: a limit of -1 rows"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, alternatives := range [][]orm.Of[order]{{q, tt.bad}, {tt.bad, q}} {
+				if _, err := q.Or(alternatives...).Render(orm.Postgres, 1); err == nil || err.Error() != tt.want {
+					t.Errorf("Render error = %v, want %q", err, tt.want)
+				}
+			}
+		})
+	}
+}
+
 func TestOf_LeavesItsReceiverAlone(t *testing.T) {
 	t.Parallel()
 
