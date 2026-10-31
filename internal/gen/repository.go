@@ -108,6 +108,8 @@ type repoMethod struct {
 	result result
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
+	// lock is the locking clause //kanna:lock gives a read, if any.
+	lock string
 	// query is the query written by hand that implements the method, if one does.
 	query *query
 	// impliedScope is the scope type its scopes are of, when //kanna:scopes implies it and it is not declared yet.
@@ -215,6 +217,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 				repos = append(repos, repo)
 			}
 		}
+		ds = append(ds, strayLocks(r.pkg.Fset, file, decls.Repositories)...)
 	}
 	return repos, append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
 }
@@ -252,6 +255,11 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	var ds []diag.Diag
 	for _, fn := range methods {
 		if r.skip[repo.name][fn.Name()] {
+			if f := docs[fn.Name()]; f != nil {
+				if d, _ := directive.Find(r.pkg.Fset, f.Doc, "lock"); d.Found {
+					ds = append(ds, hasNoGeneratedSQL(d, fn.Name(), "the method the destination declares"))
+				}
+			}
 			continue
 		}
 		m, mds := r.method(fn, docs[fn.Name()], ts, tableModel)
@@ -275,9 +283,14 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
 	}
 	conflict, cds := directive.Find(r.pkg.Fset, doc, "conflict")
+	lock, lds := directive.Find(r.pkg.Fset, doc, "lock")
+	cds = append(cds, lds...)
 	if st, ok := r.queries[m.name]; ok {
 		if conflict.Found {
 			cds = append(cds, diag.Errorf(conflict.Pos, "%s: //kanna:conflict is for an Upsert", m.name))
+		}
+		if lock.Found {
+			cds = append(cds, hasNoGeneratedSQL(lock, m.name, "-- query: "+m.name))
 		}
 		return m, append(cds, r.query(&m, fn, st)...)
 	}
@@ -359,6 +372,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 	if conflict.Found {
 		ds = r.conflict(&m, conflict)
 	}
+	ds = append(ds, r.lock(&m, lock)...)
 	ds = append(ds, r.verbRules(&m)...)
 	if !diag.HasErrors(ds) {
 		ds = append(ds, r.writeRules(m)...)

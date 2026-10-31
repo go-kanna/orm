@@ -200,7 +200,7 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 	queries, qds := readQueries(stmts)
 	ds = append(ds, qds...)
 	r := repoReader{
-		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath,
+		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
 		imported: importedPackages([]*packages.Package{pkg}),
 		l:        linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
 	}
@@ -242,6 +242,9 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 			}
 			if len(m.keep) > 0 {
 				line += " keep=" + strings.Join(m.keep, ",")
+			}
+			if m.lock != "" {
+				line += fmt.Sprintf(" lock=%q", m.lock)
 			}
 			got = append(got, line)
 		}

@@ -39,10 +39,12 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 	}
 	defer func() { _ = db.Close() }()
 	ex := example{
-		customers: store.NewCustomerRepository(db),
-		products:  store.NewProductRepository(db),
-		orders:    store.NewOrderRepository(db),
-		w:         w,
+		db:          db,
+		customers:   store.NewCustomerRepository(db),
+		products:    store.NewProductRepository(db),
+		orders:      store.NewOrderRepository(db),
+		fulfillment: store.NewFulfillmentRepository(db),
+		w:           w,
 	}
 	for _, step := range []struct {
 		name string
@@ -54,7 +56,9 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 		{"read the open orders", ex.openOrders},
 		{"page through the orders", ex.page},
 		{"report", ex.report},
+		{"cancel an order", ex.cancel},
 		{"delete the stale orders", ex.deleteStale},
+		{"ship the next order", ex.shipNext},
 	} {
 		if err := step.do(ctx); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
@@ -65,11 +69,13 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 
 // example is what each step of the example runs on, and the customers it has written.
 type example struct {
-	customers store.CustomerRepository
-	products  store.ProductRepository
-	orders    store.OrderRepository
-	w         io.Writer
-	ann, bob  model.Customer
+	db          *sql.DB
+	customers   store.CustomerRepository
+	products    store.ProductRepository
+	orders      store.OrderRepository
+	fulfillment store.FulfillmentRepository
+	w           io.Writer
+	ann, bob    model.Customer
 }
 
 // catalog writes many rows at once, in one statement: the products, then a price changed.
@@ -149,7 +155,7 @@ func (ex *example) placeOrders(ctx context.Context) error {
 			return fmt.Errorf("the lines of order %d: %w", o.ID, err)
 		}
 		if p.shipped {
-			if err := ex.ship(ctx, o); err != nil {
+			if err := ex.ship(ctx, ex.fulfillment, o); err != nil {
 				return fmt.Errorf("order %d: %w", o.ID, err)
 			}
 		}
@@ -163,13 +169,13 @@ func (ex *example) placeOrders(ctx context.Context) error {
 }
 
 // ship writes the shipment of o, and o as shipped.
-func (ex *example) ship(ctx context.Context, o model.Order) error {
+func (ex *example) ship(ctx context.Context, fulfillment store.FulfillmentRepository, o model.Order) error {
 	s := model.Shipment{OrderID: o.ID, Carrier: "Kanna Post", Tracking: fmt.Sprintf("KP%06d", o.ID)}
-	if err := ex.orders.InsertShipment(ctx, s); err != nil {
+	if err := fulfillment.InsertShipment(ctx, s); err != nil {
 		return fmt.Errorf("the shipment: %w", err)
 	}
 	o.Status = model.OrderShipped
-	if err := ex.orders.Update(ctx, o); err != nil {
+	if err := fulfillment.Update(ctx, o); err != nil {
 		return fmt.Errorf("the status: %w", err)
 	}
 	return nil
@@ -247,6 +253,68 @@ func (ex *example) report(ctx context.Context) error {
 	}
 	for _, s := range sales {
 		fmt.Fprintf(ex.w, "%s: %d orders, %d\n", s.Month, s.Orders, s.Revenue)
+	}
+	return nil
+}
+
+// cancel cancels an order that is still open. The lock keeps other transactions off it between the check and the write.
+func (ex *example) cancel(ctx context.Context) error {
+	tx, err := ex.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	fulfillment := store.NewFulfillmentRepository(tx)
+	o, err := fulfillment.GetForUpdate(ctx, 3)
+	if err != nil {
+		return fmt.Errorf("order 3: %w", err)
+	}
+	if o.Status != model.OrderOpen {
+		return fmt.Errorf("order 3 is %s", o.Status)
+	}
+	o.Status = model.OrderCanceled
+	if err := fulfillment.Update(ctx, o); err != nil {
+		return fmt.Errorf("order 3: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	fmt.Fprintf(ex.w, "order %d is %s\n", o.ID, o.Status)
+	return nil
+}
+
+// shipNext has two workers each take the oldest open order, in a transaction of its own. The first holds it until it
+// commits, so the second passes it over, and finds none left.
+func (ex *example) shipNext(ctx context.Context) error {
+	next := scopes.Orders().Open().PlacedAtAsc()
+
+	first, err := ex.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = first.Rollback() }()
+	fulfillment := store.NewFulfillmentRepository(first)
+	o, err := fulfillment.FirstToShip(ctx, next)
+	if err != nil {
+		return fmt.Errorf("worker 1: %w", err)
+	}
+	fmt.Fprintf(ex.w, "worker 1 takes order %d\n", o.ID)
+
+	second, err := ex.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = second.Rollback() }()
+	if _, err := store.NewFulfillmentRepository(second).FirstToShip(ctx, next); !errors.Is(err, orm.ErrNotFound) {
+		return fmt.Errorf("worker 2: %w, not orm.ErrNotFound", err)
+	}
+	fmt.Fprintln(ex.w, "worker 2 finds no order to take")
+
+	if err := ex.ship(ctx, fulfillment, o); err != nil {
+		return fmt.Errorf("order %d: %w", o.ID, err)
+	}
+	if err := first.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
 }

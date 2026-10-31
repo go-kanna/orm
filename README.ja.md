@@ -527,6 +527,63 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
 - `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込んでください。
 
+### 行ロック
+
+`//kanna:lock` を付けた `Get`、`First`、`List` は、読んだ行をトランザクションが終わるまでロックします。読んだ内容が、書き戻す時点でも変わっていないようにするためです:
+
+```go
+//kanna:repository
+type OrderRepository interface {
+	//kanna:lock update
+	GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)
+
+	// FirstToShip passes over the orders other workers hold.
+	//kanna:lock update skip-locked
+	FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error)
+}
+```
+
+```go
+tx, err := pool.Begin(ctx)
+if err != nil {
+	return err
+}
+defer tx.Rollback(ctx)
+
+orders := store.NewOrderRepository(tx)
+o, err := orders.GetForUpdate(ctx, id)
+if err != nil {
+	return err
+}
+if o.Status != model.OrderOpen {
+	return ErrNotOpen
+}
+o.Status = model.OrderCanceled
+if err := orders.Update(ctx, o); err != nil {
+	return err
+}
+return tx.Commit(ctx)
+```
+
+| 強さ            | 句                  | PostgreSQL | MySQL |
+|-----------------|---------------------|------------|-------|
+| `update`        | `FOR UPDATE`        | 対応       | 対応  |
+| `no-key-update` | `FOR NO KEY UPDATE` | 対応       | 非対応 |
+| `share`         | `FOR SHARE`         | 対応       | 対応  |
+| `key-share`     | `FOR KEY SHARE`     | 対応       | 非対応 |
+
+他のトランザクションが保持している行は、解放されるまで待ちます。強さの後に `nowait` を書くと待たずにデータベースのエラーを返し、`skip-locked` を書くとその行を飛ばします。
+
+- ロックはスコープではなくメソッドに属します。スコープはこれまでどおり行の絞り込み、並べ替え、ページングを行い、呼び出し側がロックを外したり変えたりすることはできません。
+- ロックはトランザクションの間だけ続くので、ロックするメソッドはトランザクション以外の上で実行するとエラーを返します。実行の土台に `Commit` があるかどうかで判定するので、トランザクションを包む独自の `DBTX` にも `Commit` が必要です。
+- `nowait`、タイムアウト、デッドロックなどでロックを取れなかった場合は、データベースのエラーをラップして返し、`orm.ErrNotFound` にはしません。リトライは呼び出し側で行います。
+- `skip-locked` の `First` が返す `orm.ErrNotFound` は、条件に合う空いた行がないことを表し、行そのものがないことは意味しません。`Get` では保持されている行をないものとして報告してしまうので、`skip-locked` を付けると生成を止めます。`nowait` を使ってください。
+- スコープが読み込むリレーションは、ロックせずに読みます。
+- 確実にロックされるのは存在する行だけなので、行の挿入を防げるとは当てにしないでください。
+- PostgreSQL は `Offset` で飛ばした行もロックします。InnoDB は返した行ではなく走査した行をロックするので、条件に使えるインデックスがない読み取りはテーブル全体をロックします。
+- `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や自分で書いたメソッドに付けた場合も同じです。ロックはそちらに書いてください。
+- `GetForUpdate` のようにロックしそうな名前の `Get`、`First`、`List` に `//kanna:lock` がないと、警告が出ます。
+
 ## 手書きの SQL
 
 メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前のリポジトリのメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。SQL は実装の詳細であり、インターフェースの詳細ではないからです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
@@ -657,7 +714,7 @@ describe:
 
 ## サンプル
 
-[`example`](example) は、顧客、商品、注文と、注文の明細、出荷、タグを扱う注文サービスです。pgx 経由の PostgreSQL 向けに [`example/postgres`](example/postgres) に、database/sql 経由の MySQL 向けに [`example/mysql`](example/mysql) に、それぞれ生成しています。1 つのモジュールではテーブルにスコープ型が 1 つなので、それぞれが独立したモジュールです。Go と SQL で書いた独自のスコープ、カーソルによるキーセットページング、各種のリレーション、自然キーによる upsert、複数行の一括書き込み、手書きのクエリが含まれます。`make example` は `make db-up` のデータベースをマイグレーションして内容を読み取り、サンプルを再生成して、それぞれに対して実行します。CI も同じことを行い、出力が変わる場合は失敗します。
+[`example`](example) は、顧客、商品、注文と、注文の明細、出荷、タグを扱う注文サービスです。pgx 経由の PostgreSQL 向けに [`example/postgres`](example/postgres) に、database/sql 経由の MySQL 向けに [`example/mysql`](example/mysql) に、それぞれ生成しています。1 つのモジュールではテーブルにスコープ型が 1 つなので、それぞれが独立したモジュールです。Go と SQL で書いた独自のスコープ、カーソルによるキーセットページング、各種のリレーション、自然キーによる upsert、複数行の一括書き込み、手書きのクエリ、トランザクションの中での行ロックが含まれます。`make example` は `make db-up` のデータベースをマイグレーションして内容を読み取り、サンプルを再生成して、それぞれに対して実行します。CI も同じことを行い、出力が変わる場合は失敗します。
 
 ## 開発
 

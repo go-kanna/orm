@@ -34,12 +34,24 @@ type OrderRepository interface {
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
-	InsertShipment(ctx context.Context, s model.Shipment) error
-	Update(ctx context.Context, o model.Order) error
 	DeleteAll(ctx context.Context, s ...scopes.Order) (int64, error)
 
 	Tag(ctx context.Context, orderID model.OrderID, tag string) error
 	MonthlySales(ctx context.Context, since time.Time) ([]MonthSales, error)
+}
+
+// FulfillmentRepository takes an order from one status to the next.
+//
+//kanna:repository
+type FulfillmentRepository interface {
+	// GetForUpdate keeps the order as it is read until the transaction ends.
+	//kanna:lock update
+	GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)
+	// FirstToShip passes over the orders other workers hold, so that no two take the same one.
+	//kanna:lock update skip-locked
+	FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error)
+	InsertShipment(ctx context.Context, s model.Shipment) error
+	Update(ctx context.Context, o model.Order) error
 }
 
 // MonthSales is what the orders of a month sold.

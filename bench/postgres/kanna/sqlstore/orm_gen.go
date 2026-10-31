@@ -67,7 +67,7 @@ var _ repository.OrderRepository = OrderRepository{}
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
 	var q orm.Of[model.Order]
 	q = q.Where(`id = `, id)
-	rows, err := selectOrders(ctx, r.db, q)
+	rows, err := selectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -83,7 +83,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	return selectOrders(ctx, r.db, q)
+	return selectOrders(ctx, r.db, q, "")
 }
 
 func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error) {
@@ -120,13 +120,13 @@ RETURNING id, order_id, sku, quantity`
 	return out, nil
 }
 
-// selectOrderLines reads the rows of order_lines that q matches, in its order.
-func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine]) ([]model.OrderLine, error) {
+// selectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
+func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, order_id, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.QueryContext(ctx, `SELECT id, order_id, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
@@ -148,13 +148,13 @@ func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine]) (
 	return out, nil
 }
 
-// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads.
-func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order]) ([]model.Order, error) {
+// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := db.QueryContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -190,7 +190,7 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[int64][]model.OrderLine{}
-		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`))
+		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
 		if err != nil {
 			return err
 		}

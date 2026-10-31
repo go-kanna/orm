@@ -21,6 +21,17 @@ type OrderRepository interface {
 	DeleteStale(ctx context.Context, s ...mysql.Order) (int64, error)
 	GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error)
 
+	//kanna:lock update
+	GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)
+	//kanna:lock share
+	GetForShare(ctx context.Context, id model.OrderID) (model.Order, error)
+	//kanna:lock update nowait
+	GetNoWait(ctx context.Context, id model.OrderID, s ...mysql.Order) (model.Order, error)
+	//kanna:lock update skip-locked
+	FirstUnlocked(ctx context.Context, s ...mysql.Order) (model.Order, error)
+	//kanna:lock update skip-locked
+	ListUnlocked(ctx context.Context, s ...mysql.Order) ([]model.Order, error)
+
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLine(ctx context.Context, line model.OrderLine) (model.OrderLine, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error

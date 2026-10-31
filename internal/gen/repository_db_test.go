@@ -51,8 +51,8 @@ func postgresSchema(t *testing.T) string {
 	return url + "&search_path=" + name
 }
 
-// pgxRepository opens OrderRepository through pgx on the database at url, closed when the test ends.
-func pgxRepository(t *testing.T, url string) repository.OrderRepository {
+// pgxConn connects through pgx to the database at url, closed when the test ends.
+func pgxConn(t *testing.T, url string) *pgx.Conn {
 	t.Helper()
 
 	conn, err := pgx.Connect(t.Context(), url)
@@ -64,7 +64,14 @@ func pgxRepository(t *testing.T, url string) repository.OrderRepository {
 			t.Error(err)
 		}
 	})
-	return pgxrepo.NewOrderRepository(conn)
+	return conn
+}
+
+// pgxRepository opens OrderRepository through pgx on the database at url, closed when the test ends.
+func pgxRepository(t *testing.T, url string) repository.OrderRepository {
+	t.Helper()
+
+	return pgxrepo.NewOrderRepository(pgxConn(t, url))
 }
 
 // onPostgres runs test on OrderRepository through each driver, each on a schema of its own.

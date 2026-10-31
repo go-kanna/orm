@@ -95,7 +95,7 @@ func (e repoEmitter) preloadComposite(lk link, n preloadNames, c compositeNames)
 		}
 	}
 	cond := e.inKeys(columns, dbTypes, keys, fieldCols, arrays, c)
-	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s))\nif %[2]s != nil {\nreturn %[2]s\n}\n",
+	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s), \"\")\nif %[2]s != nil {\nreturn %[2]s\n}\n",
 		n.related, n.err, e.names[lk.target.table], n.ctx, n.db, n.sub, cond)
 
 	elem := n.related + "[" + n.j + "]"
