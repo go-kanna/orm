@@ -394,7 +394,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 			v := sc.Name(lowerFirst(c.path[len(c.path)-1]))
 			e.printf("%s := make([]%s, len(%s))\n", v, types.TypeString(c.typ, e.f.Qualifier), sig.row)
 			args = append(args, v)
-			casts = append(casts, fmt.Sprintf("$%d::%s[]", len(casts)+1, c.col.Type))
+			casts = append(casts, fmt.Sprintf("$%d::%s[]", len(casts)+1, castType(c.col.Type)))
 		}
 		i := sc.Name("i")
 		e.printf("for %s := range %s {\n", i, sig.row)

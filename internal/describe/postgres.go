@@ -26,12 +26,23 @@ const (
        END`
 	postgresTypeJoins = `LEFT JOIN pg_type bt ON bt.oid = t.typbasetype
 LEFT JOIN pg_type et ON et.oid = t.typelem`
+
+	// postgresColumnTypeName is postgresTypeName with the length or precision a column declares, varchar(100) or
+	// numeric(10,2), as MySQL's types spell it: what format_type writes in parentheses, after the name.
+	postgresColumnTypeName = `CASE
+         WHEN t.typtype = 'd'
+           THEN bt.typname || coalesce(substring(format_type(t.typbasetype, t.typtypmod) from '\(.*\)'), '')
+         WHEN t.typcategory = 'A'
+           THEN et.typname || coalesce(substring(format_type(a.atttypid, a.atttypmod) from '\(.*\)'), '')
+             || '[]'
+         ELSE t.typname || coalesce(substring(format_type(a.atttypid, a.atttypmod) from '\(.*\)'), '')
+       END`
 )
 
 const postgresColumnsQuery = `
 SELECT c.relname,
        a.attname,
-       ` + postgresTypeName + `,
+       ` + postgresColumnTypeName + `,
        a.attnotnull,
        a.attidentity <> '' OR a.attgenerated <> '' OR coalesce(pg_get_expr(d.adbin, d.adrelid), '') LIKE 'nextval(%',
        a.atthasdef

@@ -61,3 +61,22 @@ func TestReadable(t *testing.T) {
 		})
 	}
 }
+
+// A cast in SQL names the type without the length or precision the column
+// declares, as a cast to varchar(2) would cut a longer value short.
+func TestCastType(t *testing.T) {
+	t.Parallel()
+
+	for in, want := range map[string]string{
+		"varchar(100)":    "varchar",
+		"numeric(10,2)":   "numeric",
+		"varchar(16)[]":   "varchar[]",
+		"timestamptz(3)":  "timestamptz",
+		"int8":            "int8",
+		"bigint unsigned": "bigint unsigned",
+	} {
+		if got := gen.CastType(in); got != want {
+			t.Errorf("CastType(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -17,6 +17,8 @@ import (
 
 var ColumnName = columnName
 
+var CastType = castType
+
 // Readable is readable, for a Go type named by its basic kind.
 func Readable(kind types.BasicKind, dbType string) (string, bool) {
 	return readable(types.Typ[kind], dbType)
