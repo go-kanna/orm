@@ -101,15 +101,15 @@ func (q Of[M]) Or(alternatives ...Of[M]) Of[M] {
 			q.err = cmp.Or(q.err, err)
 			return q
 		}
-		if len(a.conds) == 0 {
-			return q // This alternative matches every row, and so does Or.
-		}
 	}
 	if len(alternatives) == 0 {
 		return q.Where("1 = 0")
 	}
 	parts := make([]cond, 0, len(alternatives))
 	for _, a := range alternatives {
+		if len(a.conds) == 0 {
+			return q // This alternative matches every row, and so does Or.
+		}
 		parts = append(parts, joinConds(a.conds, " AND "))
 	}
 	q.conds = append(slices.Clip(q.conds), joinConds(parts, " OR "))
