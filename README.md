@@ -684,9 +684,9 @@ ORDER BY 1`
 }
 ```
 
-- A parameter is `:` followed by a name, as `:since` is. A `:` after another `:`, a letter, a digit, or `]` starts
-  none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a quoted
-  name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
+- A parameter is `:` followed by a name, as `:since` is. A `:` after another `:`, a letter, a digit, `_`, or `]`
+  starts none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a
+  quoted name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
 - A query's parameters take their types from the method, and its result columns go to the fields of their names, tags
   included; both are checked against what `describe` recorded. A result of `[]T` is every row, `T` one row or
   `orm.ErrNotFound`, `(int64, error)` the number of rows affected, and `error` alone nothing.
