@@ -180,8 +180,8 @@ The types are what the database itself answers, so kanna-orm has no SQL parser o
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
 wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows.
 
-The snapshot records what generation needs, and no more, so `make db-describe-check`, or `describe -check`, tells that
-the code was generated from the schema there is, not that two schemas are the same:
+The snapshot records what generation needs, and no more, so `describe -check` tells that the code was generated from
+the schema there is, not that two schemas are the same:
 
 | Recorded                                                                                   | Not recorded                              |
 |--------------------------------------------------------------------------------------------|-------------------------------------------|
