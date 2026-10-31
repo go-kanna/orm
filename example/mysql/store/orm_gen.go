@@ -211,40 +211,6 @@ VALUES (?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?)`, len(chunk)-1), args...); e
 	return nil
 }
 
-func (r OrderRepository) InsertShipment(ctx context.Context, s model.Shipment) error {
-	const q = `INSERT INTO shipments (order_id, carrier, tracking)
-VALUES (?, ?, ?)`
-	if _, err := r.db.ExecContext(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
-		return fmt.Errorf("insert into shipments: %w", err)
-	}
-	return nil
-}
-
-func (r OrderRepository) Update(ctx context.Context, o model.Order) error {
-	const q = `UPDATE orders
-SET customer_id = ?, status = ?, placed_at = ?, note = ?
-WHERE id = ?`
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.ID)
-	if err != nil {
-		return fmt.Errorf("update orders: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("update orders: %w", err)
-	}
-	if n == 0 {
-		// MySQL counts the rows an update changes, not those it finds: see whether the row is there.
-		var found bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
-			return fmt.Errorf("update orders: %w", err)
-		}
-		if !found {
-			return fmt.Errorf("orders with id %v: %w", o.ID, orm.ErrNotFound)
-		}
-	}
-	return nil
-}
-
 func (r OrderRepository) DeleteAll(ctx context.Context, s ...scopes.Order) (int64, error) {
 	qs := make([]orm.Of[model.Order], len(s))
 	for i, x := range s {
@@ -309,6 +275,84 @@ ORDER BY 1`
 		return nil, fmt.Errorf("query MonthlySales: %w", err)
 	}
 	return out, nil
+}
+
+// FulfillmentRepository implements repository.FulfillmentRepository on MySQL through database/sql.
+type FulfillmentRepository struct{ db DBTX }
+
+// NewFulfillmentRepository returns a FulfillmentRepository running on db.
+func NewFulfillmentRepository(db DBTX) FulfillmentRepository { return FulfillmentRepository{db: db} }
+
+var _ repository.FulfillmentRepository = FulfillmentRepository{}
+
+func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit() error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx")
+	}
+	var q orm.Of[model.Order]
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
+	if _, ok := r.db.(interface{ Commit() error }); !ok {
+		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a *sql.Tx")
+	}
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Limit(1)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
+	if err != nil {
+		return model.Order{}, err
+	}
+	if len(rows) == 0 {
+		return model.Order{}, fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
+	}
+	return rows[0], nil
+}
+
+func (r FulfillmentRepository) InsertShipment(ctx context.Context, s model.Shipment) error {
+	const q = `INSERT INTO shipments (order_id, carrier, tracking)
+VALUES (?, ?, ?)`
+	if _, err := r.db.ExecContext(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
+		return fmt.Errorf("insert into shipments: %w", err)
+	}
+	return nil
+}
+
+func (r FulfillmentRepository) Update(ctx context.Context, o model.Order) error {
+	const q = `UPDATE orders
+SET customer_id = ?, status = ?, placed_at = ?, note = ?
+WHERE id = ?`
+	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.ID)
+	if err != nil {
+		return fmt.Errorf("update orders: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update orders: %w", err)
+	}
+	if n == 0 {
+		// MySQL counts the rows an update changes, not those it finds: see whether the row is there.
+		var found bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
+			return fmt.Errorf("update orders: %w", err)
+		}
+		if !found {
+			return fmt.Errorf("orders with id %v: %w", o.ID, orm.ErrNotFound)
+		}
+	}
+	return nil
 }
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.

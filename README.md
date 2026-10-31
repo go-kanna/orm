@@ -634,6 +634,71 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
   one by one.
 
+### Locking rows
+
+`//kanna:lock` has a `Get`, a `First`, or a `List` lock the rows it reads until the transaction ends, so that what was
+read still holds when it is written back:
+
+```go
+//kanna:repository
+type OrderRepository interface {
+	//kanna:lock update
+	GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)
+
+	// FirstToShip passes over the orders other workers hold.
+	//kanna:lock update skip-locked
+	FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error)
+}
+```
+
+```go
+tx, err := pool.Begin(ctx)
+if err != nil {
+	return err
+}
+defer tx.Rollback(ctx)
+
+orders := store.NewOrderRepository(tx)
+o, err := orders.GetForUpdate(ctx, id)
+if err != nil {
+	return err
+}
+if o.Status != model.OrderOpen {
+	return ErrNotOpen
+}
+o.Status = model.OrderCanceled
+if err := orders.Update(ctx, o); err != nil {
+	return err
+}
+return tx.Commit(ctx)
+```
+
+| Strength        | Clause              | PostgreSQL | MySQL |
+|-----------------|---------------------|------------|-------|
+| `update`        | `FOR UPDATE`        | yes        | yes   |
+| `no-key-update` | `FOR NO KEY UPDATE` | yes        | no    |
+| `share`         | `FOR SHARE`         | yes        | yes   |
+| `key-share`     | `FOR KEY SHARE`     | yes        | no    |
+
+A read waits for the rows other transactions hold. `nowait` after the strength has it return the database's error at
+once instead, and `skip-locked` has it pass those rows over.
+
+- The lock belongs to the method, not to its scopes: they narrow, order, and page the rows as ever, and no caller can
+  leave the lock out or change it.
+- A lock lasts as long as its transaction, so a method with one returns an error on anything else. It tells by whether
+  what it runs on has a `Commit`, so a `DBTX` of your own wrapping a transaction needs one too.
+- A lock not given, by `nowait`, a timeout, or a deadlock, comes back as the database's error, wrapped, never as
+  `orm.ErrNotFound`. Retrying is yours to do.
+- With `skip-locked`, `orm.ErrNotFound` from a `First` says that no free row matches, not that no row does. A `Get`
+  would say a held row is not there, so `skip-locked` on one stops generation; use `nowait`.
+- The relations a scope loads are read without a lock.
+- Only rows that exist are sure to be locked, so do not count on a lock to keep a row from being inserted.
+- PostgreSQL also locks the rows an `Offset` skips. InnoDB locks the rows it scans, not those it returns, so a read with
+  no index for its condition locks the whole table.
+- `//kanna:lock` anywhere but right above such a method stops generation, rather than leave the method unlocked. So does
+  one on a method a [hand-written query](#hand-written-sql) or your own code implements: write the lock there.
+- A `Get`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
+
 ## Hand-written SQL
 
 What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
@@ -798,9 +863,9 @@ generators; the file is gone as it should be ([golang/go#36068](https://github.c
 generated once for PostgreSQL through pgx, in [`example/postgres`](example/postgres), and once for MySQL through
 database/sql, in [`example/mysql`](example/mysql): each a module of its own, as a table has one scope type in a module.
 It has scopes of its own, in Go and in SQL, keyset paging with cursors, each kind of relation, an upsert by a natural
-key, many rows written at once, and queries written by hand. `make example` migrates the databases of `make db-up`,
-describes them, regenerates the example, and runs it against each; CI does the same, and fails if the output would
-change.
+key, many rows written at once, queries written by hand, and rows locked in transactions. `make example` migrates the
+databases of `make db-up`, describes them, regenerates the example, and runs it against each; CI does the same, and
+fails if the output would change.
 
 ## Development
 
