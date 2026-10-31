@@ -47,7 +47,8 @@ func Command() cli.Command[config] {
 				"the snapshot to read (default: "+snapshot.Name+" at the root of the module)")
 			fs.StringVar(&cfg.tags, "tags", "", "comma-separated build tags")
 		},
-		Run: run,
+		Run:  run,
+		Deps: reportDeps,
 	}
 }
 
@@ -70,66 +71,13 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	if d != nil {
 		return nil, []diag.Diag{*d}
 	}
-	set, scopePkgs, repoPkgs, roots := l.set, l.scopePkgs, l.repoPkgs, l.roots
 
-	var (
-		s       snapshot.Snapshot
-		idx     []indexed
-		plans   = map[*packages.Package][]scopePlan{}
-		repo    repoPlan
-		ds      []diag.Diag
-		pending map[string]bool
-	)
-	if len(scopePkgs) > 0 || len(repoPkgs) > 0 {
-		// Without the snapshot or the index, what the run generates is unknown, and so which errors loading the
-		// packages say only that it is missing: they wait for the run that can tell.
-		var d *diag.Diag
-		if s, d = readSnapshot(dir, cfg.snapshot); d != nil {
-			return nil, []diag.Diag{*d}
-		}
-		var err error
-		if idx, err = readIndex(dir, s.Tables); err != nil {
-			return nil, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
-		}
-		// The models //kanna:scopes implies scope types of are read from their packages, which are loaded too when
-		// nothing loaded imports them yet, as nothing does before the first run.
-		if missing := resolveModels(idx, set.Packages); len(missing) > 0 {
-			if l, d = loadRun(dir, cfg, load, dest, missing); d != nil {
-				return nil, []diag.Diag{*d}
-			}
-			set, scopePkgs, repoPkgs, roots = l.set, l.scopePkgs, l.repoPkgs, l.roots
-			resolveModels(idx, set.Packages)
-		}
-		for _, pkg := range roots {
-			var stmts []sqlfile.Statement
-			if (slices.Contains(scopePkgs, pkg) || slices.Contains(repoPkgs, pkg)) && len(pkg.GoFiles) > 0 {
-				var sds []diag.Diag
-				stmts, sds = readSQL(filepath.Dir(pkg.GoFiles[0]))
-				ds = slices.Concat(ds, sds, misplacedQueries(stmts))
-			}
-			ps, pds := plan(pkg, s, idx, stmts)
-			plans[pkg] = ps
-			ds = append(ds, pds...)
-		}
-		pending = generatedNames(plans, s.Dialect)
-		maps.Copy(pending, impliedNames(idx))
-		if len(repoPkgs) > 0 {
-			var queries []sqlfile.Statement
-			if dest != nil {
-				var sds []diag.Diag
-				queries, sds = readSQL(dest.dir)
-				ds = slices.Concat(ds, sds, misplacedScopes(queries))
-			}
-			var rds []diag.Diag
-			repo, rds = planRepository(repoPkgs, set.Packages, s, idx, dest, cfg.driver, queries)
-			ds = append(ds, rds...)
-			for _, pkg := range repoPkgs {
-				if dest != nil {
-					maps.Copy(pending, repositoryNames(pkg, dest.pkgPath))
-				}
-			}
-		}
+	p, stop := planRun(dir, cfg, load, dest, l)
+	if stop != nil {
+		return nil, stop
 	}
+	set, repoPkgs, roots := p.set, p.repoPkgs, p.roots
+	s, idx, plans, repo, ds, pending := p.s, p.idx, p.plans, p.repo, p.ds, p.pending
 
 	// Code calling what this run generates does not compile before it has run, nor does code calling it as the run
 	// is about to change it. So a type error of a package generated for does not stop the run here: packages.Recheck
@@ -154,10 +102,80 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 	if len(rds) > 0 {
 		return nil, slices.Concat(ds, rds, set.SetAsideWarnings())
 	}
-	if len(scopePkgs) == 0 && len(repoPkgs) == 0 {
+	if len(p.scopePkgs) == 0 && len(repoPkgs) == 0 {
 		ds = append(ds, nothingDeclared(roots, patterns))
 	}
 	return changes, ds
+}
+
+// plannedRun is what a run in dir works out from the packages it loaded, before it looks at their type errors.
+type plannedRun struct {
+	loadedRun
+
+	s       snapshot.Snapshot
+	idx     []indexed
+	plans   map[*packages.Package][]scopePlan
+	repo    repoPlan
+	ds      []diag.Diag
+	pending map[string]bool
+}
+
+// planRun works out what a run generates from l, which it loads again should the models need it, and what load and
+// dest gave it. The diagnostics it returns stop the run; those of plannedRun.ds wait for the type errors of the load.
+func planRun(dir string, cfg config, load []string, dest *destination, l loadedRun) (plannedRun, []diag.Diag) {
+	p := plannedRun{loadedRun: l, plans: map[*packages.Package][]scopePlan{}}
+	if len(p.scopePkgs) == 0 && len(p.repoPkgs) == 0 {
+		return p, nil
+	}
+
+	// Without the snapshot or the index, what the run generates is unknown, and so which errors loading the
+	// packages say only that it is missing: they wait for the run that can tell.
+	var d *diag.Diag
+	if p.s, d = readSnapshot(dir, cfg.snapshot); d != nil {
+		return p, []diag.Diag{*d}
+	}
+	var err error
+	if p.idx, err = readIndex(dir, p.s.Tables); err != nil {
+		return p, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
+	}
+	// The models //kanna:scopes implies scope types of are read from their packages, which are loaded too when
+	// nothing loaded imports them yet, as nothing does before the first run.
+	if missing := resolveModels(p.idx, p.set.Packages); len(missing) > 0 {
+		if p.loadedRun, d = loadRun(dir, cfg, load, dest, missing); d != nil {
+			return p, []diag.Diag{*d}
+		}
+		resolveModels(p.idx, p.set.Packages)
+	}
+	for _, pkg := range p.roots {
+		var stmts []sqlfile.Statement
+		if (slices.Contains(p.scopePkgs, pkg) || slices.Contains(p.repoPkgs, pkg)) && len(pkg.GoFiles) > 0 {
+			var sds []diag.Diag
+			stmts, sds = readSQL(filepath.Dir(pkg.GoFiles[0]))
+			p.ds = slices.Concat(p.ds, sds, misplacedQueries(stmts))
+		}
+		ps, pds := plan(pkg, p.s, p.idx, stmts)
+		p.plans[pkg] = ps
+		p.ds = append(p.ds, pds...)
+	}
+	p.pending = generatedNames(p.plans, p.s.Dialect)
+	maps.Copy(p.pending, impliedNames(p.idx))
+	if len(p.repoPkgs) > 0 {
+		var queries []sqlfile.Statement
+		if dest != nil {
+			var sds []diag.Diag
+			queries, sds = readSQL(dest.dir)
+			p.ds = slices.Concat(p.ds, sds, misplacedScopes(queries))
+		}
+		var rds []diag.Diag
+		p.repo, rds = planRepository(p.repoPkgs, p.set.Packages, p.s, p.idx, dest, cfg.driver, queries)
+		p.ds = append(p.ds, rds...)
+		for _, pkg := range p.repoPkgs {
+			if dest != nil {
+				maps.Copy(p.pending, repositoryNames(pkg, dest.pkgPath))
+			}
+		}
+	}
+	return p, nil
 }
 
 // loadedRun is what a run loads: set, of which scopePkgs declare scope types, repoPkgs repositories, and roots are
