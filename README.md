@@ -394,11 +394,11 @@ o, err := repo.Get(ctx, id, scopes.Orders().
 		WithProduct()))
 ```
 
-Each relation costs one query, however many rows there are: the call above runs four, one each for orders, customers,
-order lines, and products. A relation through a table between costs two, one for the pairs of keys in that table and
-one for the related rows. The related rows are read by the keys of the rows already read, each key once, with
-`= ANY($1)` on PostgreSQL and `IN (?, ...)` on MySQL, where the keys go a thousand at a time: the rows related to one
-row come in one query, in the order of the scope given for them.
+On PostgreSQL, each relation costs one query, however many rows there are: the call above runs four, one each for
+orders, customers, order lines, and products. A relation through a table between costs two, one for the pairs of keys
+in that table and one for the related rows. The related rows are read by the keys of the rows already read, each key
+once, with `= ANY($1)` on PostgreSQL and `IN (?, ...)` on MySQL, where the keys go a thousand at a time, each thousand
+in a query of its own: the rows related to one row come in one query, in the order of the scope given for them.
 
 - A slice that was loaded is never nil: it is empty when nothing is related. A nil slice was not loaded.
 - A pointer is nil both when it was not loaded and when nothing is related. Telling the two apart would take a type of
