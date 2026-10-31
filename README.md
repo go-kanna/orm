@@ -155,9 +155,10 @@ $ go generate ./...
   use List, or add a unique index on orders (status)
 ```
 
-The repository interface names `scopes.Order`, a type you declare, so it compiles before anything is generated. Code
-may also call a method that is generated before it is: errors saying only that a method the run generates is missing
-do not stop it.
+The repository interface names `scopes.Order`, which does not exist until `//kanna:scopes` generates it, so the code
+does not compile before the first run. That does not stop the run: kanna-orm knows the type from that directive, and
+`go generate` can reach the two packages in either order. Code may also call a method that is generated before it is:
+errors saying only that a method the run generates is missing do not stop it.
 
 ## The snapshot
 
