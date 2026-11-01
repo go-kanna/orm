@@ -72,7 +72,7 @@ func (e repoEmitter) preloadComposite(lk link, n preloadNames, c compositeNames)
 
 	keys := n.keys
 	if e.d == snapshot.MySQL {
-		e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.slices, n.keys, inChunk)
+		e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.f.Import("slices", "slices"), n.keys, inChunk)
 		keys = n.chunk
 	}
 	byTarget, targetType := lk.targetKeys, c.key

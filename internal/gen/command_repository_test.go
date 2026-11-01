@@ -2,6 +2,7 @@ package gen_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,6 +146,50 @@ func TestCommand_Repositories(t *testing.T) {
 	}
 	if code, _, errOut := run(t, repository, append([]string{"-check"}, args...)...); code != cli.ExitOK {
 		t.Errorf("kanna-orm -check right after generating = %d\n%s", code, errOut)
+	}
+}
+
+func TestCommand_RepositoriesWithoutRowReads(t *testing.T) {
+	t.Parallel()
+
+	const repository = `-- repository/repository.go --
+package repository
+
+import (
+	"context"
+
+	"example.com/shop/scopes"
+)
+
+//kanna:repository table=orders
+type Orders interface {
+	Count(ctx context.Context, s ...scopes.Order) (int64, error)
+	Exists(ctx context.Context, id int64) (bool, error)
+	Delete(ctx context.Context, id int64) (int64, error)
+}
+`
+	for _, driver := range []string{"pgx", "database/sql"} {
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+
+			models, _, _ := strings.Cut(repositoryShop, "-- repository/repository.go --")
+			dir := writeModule(t, models+repository)
+			describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+
+			if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+				t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+			}
+			args := []string{"-destination", "../postgres", "-driver", driver}
+			if code, _, errOut := run(t, filepath.Join(dir, "repository"), args...); code != cli.ExitOK {
+				t.Fatalf("kanna-orm in repository = %d\n%s", code, errOut)
+			}
+			cmd := exec.CommandContext(t.Context(), "go", "test", "-mod=mod", "./...")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "GOWORK=off")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("the module does not compile once generated: %v\n%s", err, out)
+			}
+		})
 	}
 }
 
