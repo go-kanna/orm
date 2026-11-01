@@ -456,6 +456,36 @@ An interface marked `//kanna:repository` declares what the code above the databa
 `kanna-orm -destination <dir>`, which writes the implementation into `orm_gen.go` there: a struct named after the
 interface, its constructor, and the `DBTX` it runs on, named as sqlc names it.
 
+Use `-destination .` to keep the interface and its implementation in the same package. The interface must be exported;
+`Category` generates an unexported `category`, a `newCategory(db DBTX) *category` constructor, and pointer receiver
+methods. Keep scope types in a separate package, since their methods also go into `orm_gen.go`.
+
+Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
+such as `Bind`, is left to your implementation. When you implement a method with a recognized verb or SQL query,
+kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can call `r.upsert`
+before translating its error. The helper name must not already be declared. Queries belong in the destination's
+`.sql` files, including when the destination also declares the interface.
+
+```go
+//go:generate go tool kanna-orm -destination .
+
+//kanna:repository table=categories
+type Category interface {
+	Bind(db DBTX) Category
+	Upsert(ctx context.Context, c model.Category) error
+}
+
+func NewCategory(db DBTX) Category { return newCategory(db) }
+
+func (r *category) Bind(db DBTX) Category { return newCategory(db) }
+
+func (r *category) Upsert(ctx context.Context, c model.Category) error {
+	return translateError(r.upsert(ctx, c))
+}
+```
+
+Separate-package generation retains its exported struct, value constructor, and value receiver methods.
+
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
 type DBTX interface {

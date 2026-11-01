@@ -46,7 +46,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve(declared...)
 	f.Reserve("DBTX")
 	for _, repo := range repos {
-		f.Reserve(repo.name, "New"+repo.name)
+		f.Reserve(repo.implementation(), repo.constructor())
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
 		names: readNames(models)}
@@ -111,14 +111,34 @@ func (e repoEmitter) repository(repo repository) {
 	if e.d == snapshot.MySQL {
 		database = "MySQL"
 	}
-	e.printf("// %[1]s implements %[2]s on %[3]s through %[4]s.\ntype %[1]s struct{ db DBTX }\n\n", repo.name, iface,
+	name, constructor := repo.implementation(), repo.constructor()
+	e.printf("// %[1]s implements %[2]s on %[3]s through %[4]s.\ntype %[1]s struct{ db DBTX }\n\n", name, iface,
 		database, e.drv)
-	e.printf("// New%[1]s returns %[2]s %[1]s running on db.\nfunc New%[1]s(db DBTX) %[1]s { return %[1]s{db: db} }\n\n",
-		repo.name, article(repo.name))
-	e.printf("var _ %s = %s{}\n\n", iface, repo.name)
+	if repo.local {
+		e.printf("func %s(db DBTX) *%s { return &%s{db: db} }\n\n", constructor, name, name)
+		e.printf("var _ %s = (*%s)(nil)\n\n", iface, name)
+	} else {
+		e.printf("// New%[1]s returns %[2]s %[1]s running on db.\nfunc New%[1]s(db DBTX) %[1]s { return %[1]s{db: db} }\n\n",
+			repo.name, article(repo.name))
+		e.printf("var _ %s = %s{}\n\n", iface, repo.name)
+	}
 	for _, m := range repo.methods {
 		e.method(repo, m)
 	}
+}
+
+func (r repository) implementation() string {
+	if r.local {
+		return lowerFirst(r.name)
+	}
+	return r.name
+}
+
+func (r repository) constructor() string {
+	if r.local {
+		return "new" + r.name
+	}
+	return "New" + r.name
 }
 
 // signature is the signature of a method as written, with the names of its parameters in the body.
@@ -201,7 +221,11 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	if m.query != nil {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
 	}
-	e.printf("func (%s %s) %s%s {\n", recv, repo.name, m.name, sig.text)
+	receiver := repo.implementation()
+	if repo.local {
+		receiver = "*" + receiver
+	}
+	e.printf("func (%s %s) %s%s {\n", recv, receiver, m.name, sig.text)
 	switch m.verb {
 	case "":
 		e.handWritten(m, sc, recv, sig)

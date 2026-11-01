@@ -42,17 +42,11 @@ func (d *destination) holds(pkg *packages.Package) bool {
 	return d != nil && len(pkg.GoFiles) > 0 && output.SameDir(d.dir, filepath.Dir(pkg.GoFiles[0]))
 }
 
-// check says what is wrong with d, which the -destination flag names as flag, being the package of the scope types
-// or of the repositories: either has a file of its own to write, or imports the implementations.
-func (d *destination) check(flag string, scopePkgs, repoPkgs []*packages.Package) *diag.Diag {
+// check keeps scope methods and repository implementations from writing the same file.
+func (d *destination) check(flag string, scopePkgs []*packages.Package) *diag.Diag {
 	if i := slices.IndexFunc(scopePkgs, d.holds); i >= 0 {
 		e := diag.Errorf(token.Position{}, "-destination %s holds the //kanna:scope types of %s, whose methods go "+
 			"into its %s", flag, scopePkgs[i].PkgPath, outputName).WithHints("name a directory of the implementations' own")
-		return &e
-	}
-	if i := slices.IndexFunc(repoPkgs, d.holds); i >= 0 {
-		e := diag.Errorf(token.Position{}, "-destination %s is %s, whose interfaces the implementations import", flag,
-			repoPkgs[i].PkgPath).WithHints("name a directory of the implementations' own")
 		return &e
 	}
 	return nil
@@ -117,7 +111,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 	others := slices.DeleteFunc(slices.Clone(pkgs), func(p *packages.Package) bool { return p == pkg })
 	r := repoReader{
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
-		imported: importedPackages(pkgs),
+		imported: importedPackages(pkgs), local: dest.holds(pkg),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
 			loaded: loadedScopes(others, s, idx),
@@ -143,12 +137,20 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 		decls, _ := decl.Read(pkg.Fset, file) // findRepositories reports what is wrong with the directives
 		for _, d := range decls.Repositories {
 			ts := d.Spec
-			names[pkgPath+"."+ts.Name.Name] = true
-			names[pkgPath+".New"+ts.Name.Name] = true
+			name, constructor := ts.Name.Name, "New"+ts.Name.Name
+			if pkgPath == pkg.PkgPath {
+				name = lowerFirst(name)
+				constructor = "new" + ts.Name.Name
+			}
+			names[pkgPath+"."+name] = true
+			names[pkgPath+"."+constructor] = true
 			if it, ok := ts.Type.(*ast.InterfaceType); ok {
 				for _, f := range it.Methods.List {
 					for _, n := range f.Names {
-						names[pkgPath+"."+ts.Name.Name+"."+n.Name] = true
+						names[pkgPath+"."+name+"."+n.Name] = true
+						if pkgPath == pkg.PkgPath {
+							names[pkgPath+"."+name+"."+lowerFirst(n.Name)] = true
+						}
 					}
 				}
 			}

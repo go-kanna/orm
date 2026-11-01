@@ -207,18 +207,30 @@ status <> 'closed'
 	}
 }
 
+func TestDescribe_QueryInRepositoryPackage(t *testing.T) {
+	t.Parallel()
+
+	pkgs := module(t, shop+`
+-- repository/order_queries.sql --
+-- query: CountOpen
+SELECT count(*) AS n FROM orders
+`)
+	db := &fake{tables: map[string]snapshot.Table{"orders": {}}}
+	s, ds := describe.Describe(t.Context(), db, pkgs, nil)
+	if len(ds) > 0 {
+		t.Fatalf("Describe:\n%s", report(ds))
+	}
+	if _, ok := s.Statements["example.com/shop/repository.CountOpen"]; !ok {
+		t.Errorf("repository query missing from statements: %+v", s.Statements)
+	}
+}
+
 func TestDescribe_Mistakes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name, archive, want string
 	}{
-		{"a query next to the repositories", `
--- repository/order_queries.sql --
--- query: CountOpen
-SELECT count(*) FROM orders
-`, "order_queries.sql:1:1: error: -- query: CountOpen goes where the repositories are implemented, not next to " +
-			"the declarations\n  move it into the directory -destination names"},
 		{"a query next to the scope types", `
 -- scopes/order_scopes.sql --
 -- query: CountOpen
