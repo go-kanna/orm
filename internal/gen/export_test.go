@@ -211,8 +211,16 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 		for _, m := range repo.methods {
 			line := repo.name + "." + m.name
 			if q := m.query; q != nil {
-				line += fmt.Sprintf(" query %q args=%s %s", q.sql, strings.Join(q.args, ","),
-					[]string{"error", "row", "rows", "count", "bool"}[m.result])
+				args := make([]string, 0, len(q.args))
+				for _, arg := range q.args {
+					name := arg.parameter
+					if arg.field != nil {
+						name += "." + fieldPath(*arg.field)
+					}
+					args = append(args, name)
+				}
+				line += fmt.Sprintf(" query %q args=%s %s", q.sql, strings.Join(args, ","),
+					[]string{"error", "row", "rows", "count", "bool", "scalar"}[m.result])
 				if q.row != nil {
 					line += " " + types.TypeString(q.row, (*types.Package).Name) + "{" + fieldNames(q.fields) + "}"
 				}

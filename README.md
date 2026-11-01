@@ -269,6 +269,7 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 |---------------------------------|---------------------------------------------------------------------------------|
 | *(none)*                        | the column named as the field is, in snake case                                 |
 | `orm:"note"`                    | the column `note`                                                               |
+| `orm:"note,nullzero"`           | a nullable string column: read NULL as the zero string and write the zero string as NULL |
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
 | `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
 | `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
@@ -276,6 +277,11 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 A field with no column, a column that may be NULL held by a field that cannot be nil, and, on a table something inserts
 into, a column the database requires a value for and the model has no field for, all stop generation. A column the
 model has no field for is otherwise left alone.
+
+Use `nullzero` only when a nullable string column represents absence as the field's zero value. It works with named
+string types, including enums implementing `sql.Scanner`: generated code uses `sql.Null[T]`, so NULL bypasses the
+enum's non-null scanner, while non-null values still go through it. It applies to table operations and hand-written
+query models. Fields not stored in that row, such as a device's loaded topics, can use `orm:"-"`.
 
 A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text`,
 `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a string for
@@ -814,12 +820,18 @@ ORDER BY 1`
 - A parameter is `:` followed by a name, as `:since` is. A `:` after another `:`, a letter, a digit, `_`, or `]`
   starts none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a
   quoted name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
-- A query's parameters take their types from the method, and its result columns go to the fields of their names, tags
-  included; both are checked against what `describe` recorded. A result of `[]T` is every row, `T` one row or
-  `orm.ErrNotFound`, `(int64, error)` the number of rows affected, and `error` alone nothing.
+- A query's parameters take their types from the method. A struct argument can provide parameters through its exported
+  fields, by column name (including tags) or lower-camel field name. Explicit method parameters take precedence; fields
+  of multiple structs matching the same used name stop generation. This lets a model be written without a separate
+  parameter DTO. The `nullzero` option also applies to these field arguments.
+- Result columns go directly into model fields by column name and tag. A one-column result can instead be a scalar
+  or enum, and `[]T` can collect those values directly. `T` returns one row or `orm.ErrNotFound`; `[]T` returns every
+  row. With no result columns, `(int64, error)` reports affected rows; with one bigint column, it scans that value.
+  An `error`-only method returns no columns. Inputs and results are checked against the snapshot.
 - Each result column needs a name of its own, since the fields take them by name; MySQL cannot even describe a query
   whose columns share a name. Give them aliases, as in `SELECT o.id, c.id AS customer_id`.
-- A result column that may be NULL needs a field that can be nil. A field that cannot be nil stops generation where
+- A result column that may be NULL needs a field that can be nil, or a string field tagged `nullzero`.
+  Other fields that cannot be nil stop generation where
   the database says its column may be NULL; where the database cannot tell, the field's type is taken at its word.
   MySQL tells for every column. PostgreSQL tells only for a column read straight from a table, and as the table
   declares it, even through an outer join that leaves it NULL: hold such a column, as `c.email` from

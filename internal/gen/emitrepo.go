@@ -417,7 +417,7 @@ func (e repoEmitter) selectRows(rm readModel) {
 	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
 		"%[7]s.Args()...)\n", rows, err, db, e.query, ctx, goString(query), rd, lock)
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
-	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns)
+	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns, sc)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	if len(rm.links) > 0 {
 		e.printf("if %[1]s := preload%[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
@@ -441,14 +441,12 @@ type scanNames struct {
 }
 
 // scanRows writes the loop reading the rows of model, each column into the field holding it.
-func (e repoEmitter) scanRows(n scanNames, model string, columns []column) {
-	dests := make([]string, 0, len(columns))
-	for _, c := range columns {
-		dests = append(dests, "&"+n.row+"."+fieldPath(c))
-	}
+func (e repoEmitter) scanRows(n scanNames, model string, columns []column, sc gofile.Scope) {
 	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", n.out, model, n.rows, n.row)
+	dests, assignments := e.scanTargets(sc, n.row, columns)
 	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", n.err, n.rows,
 		strings.Join(dests, ", "), n.wrap)
+	e.assignScanned(assignments)
 	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", n.out, n.row)
 	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", n.err, n.rows, n.wrap)
 }
@@ -476,14 +474,14 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		casts := make([]string, 0, len(inserted))
 		for _, c := range inserted {
 			v := sc.Name(lowerFirst(c.path[len(c.path)-1]))
-			e.printf("%s := make([]%s, len(%s))\n", v, types.TypeString(c.typ, e.f.Qualifier), sig.row)
+			e.printf("%s := make([]%s, len(%s))\n", v, e.storageType(c), sig.row)
 			args = append(args, v)
 			casts = append(casts, fmt.Sprintf("$%d::%s[]", len(casts)+1, castType(c.col.Type)))
 		}
 		i := sc.Name("i")
 		e.printf("for %s := range %s {\n", i, sig.row)
 		for j, c := range inserted {
-			e.printf("%s[%s] = %s[%s].%s\n", args[j], i, sig.row, i, fieldPath(c))
+			e.printf("%s[%s] = %s\n", args[j], i, e.storageValue(c, sig.row+"["+i+"]."+fieldPath(c)))
 		}
 		e.printf("}\n")
 		fmt.Fprintf(&query, "SELECT * FROM unnest(%s)", //nolint:unqueryvet // unnest gives the columns listed
@@ -491,7 +489,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	} else {
 		params := make([]string, 0, len(inserted))
 		for _, c := range inserted {
-			args = append(args, sig.row+"."+fieldPath(c))
+			args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
 			params = append(params, fmt.Sprintf("$%d", len(params)+1))
 		}
 		fmt.Fprintf(&query, "VALUES (%s)", strings.Join(params, ", "))
@@ -526,23 +524,22 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	switch m.result {
 	case resultRow:
 		row := sc.Name("row")
-		dests := make([]string, 0, len(m.columns))
-		for _, c := range m.columns {
-			dests = append(dests, "&"+row+"."+fieldPath(c))
-		}
 		e.printf("var %s %s\n", row, model)
-		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n"+
-			"return %[8]s, nil\n", err, recv, e.queryRow, call, strings.Join(dests, ", "), model, wrap, row)
+		dests, assignments := e.scanTargets(sc, row, m.columns)
+		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
+			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, wrap)
+		e.assignScanned(assignments)
+		e.printf("return %s, nil\n", row)
 	case resultRows:
 		rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn nil, %[6]s\n}\n"+
 			"defer %[1]s.Close()\n", rows, err, recv, e.query, call, wrap)
-		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, m.columns)
+		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, m.columns, sc)
 		e.printf("return %s, nil\n", out)
 	case resultNone:
 		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
 			e.exec, call, wrap)
-	case resultCount, resultBool: // shaped turns them down for a write
+	case resultCount, resultBool, resultScalar: // shaped turns them down for a write
 	}
 }
 
@@ -554,7 +551,7 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	sets, conds := make([]string, 0, len(updated)), make([]string, 0, len(key))
 	args, keyArgs := make([]string, 0, len(updated)+len(key)), make([]string, 0, len(key))
 	for _, c := range updated {
-		args = append(args, sig.row+"."+fieldPath(c))
+		args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
 		sets = append(sets, sqlName(e.d, c.col.Name)+" = "+e.placeholder(len(args)))
 	}
 	for _, name := range key {
@@ -619,7 +616,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		chunk, args, i := sc.Name("chunk"), sc.Name("args"), sc.Name("i")
 		fields := make([]string, 0, len(inserted))
 		for _, c := range inserted {
-			fields = append(fields, chunk+"["+i+"]."+fieldPath(c))
+			fields = append(fields, e.storageValue(c, chunk+"["+i+"]."+fieldPath(c)))
 		}
 		capacity := "len(" + chunk + ")"
 		if len(inserted) > 1 {
@@ -644,7 +641,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	args := make([]string, 0, 2+len(inserted))
 	args = append(args, sig.ctx, q)
 	for _, c := range inserted {
-		args = append(args, sig.row+"."+fieldPath(c))
+		args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
 	}
 	call := strings.Join(args, ", ")
 	e.printf("const %s = %s\n", q, goString(head+tail))
@@ -684,15 +681,14 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		}
 	}
 	row := sc.Name("row")
-	dests := make([]string, 0, len(m.columns))
-	for _, c := range m.columns {
-		dests = append(dests, "&"+row+"."+fieldPath(c))
-	}
 	query := "SELECT " + e.columnList(m.columns) + " FROM " + table + " WHERE " + strings.Join(conds, " AND ")
 	e.printf("var %s %s\n", row, model)
-	e.printf("%[1]s %[2]s %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s).\nScan(%[8]s)\nif %[1]s != nil {\nreturn %[9]s%[10]s\n}\n"+
-		"return %[11]s, nil\n", err, assign, recv, e.queryRow, sig.ctx, goString(query), strings.Join(keyArgs, ", "),
-		strings.Join(dests, ", "), zero, wrap, row)
+	dests, assignments := e.scanTargets(sc, row, m.columns)
+	e.printf("%[1]s %[2]s %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s).\nScan(%[8]s)\nif %[1]s != nil {\nreturn %[9]s%[10]s\n}\n",
+		err, assign, recv, e.queryRow, sig.ctx, goString(query), strings.Join(keyArgs, ", "),
+		strings.Join(dests, ", "), zero, wrap)
+	e.assignScanned(assignments)
+	e.printf("return %s, nil\n", row)
 }
 
 // placeholder is the placeholder of the nth parameter of a statement.
@@ -710,7 +706,11 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 	args := make([]string, 0, 2+len(m.query.args))
 	args = append(args, sig.ctx, q)
 	for _, a := range m.query.args {
-		args = append(args, sig.params[a])
+		value := sig.params[a.parameter]
+		if a.field != nil {
+			value = e.storageValue(*a.field, value+"."+fieldPath(*a.field))
+		}
+		args = append(args, value)
 	}
 	call := strings.Join(args, ", ")
 	what := fmt.Sprintf("%q", "query "+m.name+": %w")
@@ -725,25 +725,38 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn 0, %[6]s\n}\n", res, err, recv,
 			e.exec, call, wrap)
 		e.printf("return %s, nil\n", e.rowsAffected(sc, res, err, "0, ", wrap))
-	case resultRow:
+	case resultRow, resultScalar:
 		row := sc.Name("row")
 		typ := types.TypeString(m.query.row, e.f.Qualifier)
-		dests := make([]string, 0, len(m.query.fields))
-		for _, c := range m.query.fields {
-			dests = append(dests, "&"+row+"."+fieldPath(c))
-		}
 		e.printf("var %s %s\n", row, typ)
+		dests, assignments := []string{"&" + row}, []string(nil)
+		if !m.query.scalar {
+			dests, assignments = e.scanTargets(sc, row, m.query.fields)
+		}
 		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\n", err, recv, e.queryRow, call,
 			strings.Join(dests, ", "))
-		e.printf("if %[1]s.Is(%[2]s, %[3]s.ErrNoRows) {\nreturn %[4]s{}, %[5]s.Errorf(%[6]s, %[7]s.ErrNotFound)\n}\n",
-			e.f.Import("errors", "errors"), err, e.driverPkg(), typ, e.fmtPkg(), what, e.ormPkg())
-		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[3]s\n}\nreturn %[4]s, nil\n", err, typ, wrap, row)
+		zeroDeclaration, zeroValue := "", typ+"{}"
+		if m.query.scalar {
+			zeroValue = sc.Name("zero")
+			zeroDeclaration = "var " + zeroValue + " " + typ + "\n"
+		}
+		e.printf("if %[1]s.Is(%[2]s, %[3]s.ErrNoRows) {\n%[4]s"+
+			"return %[5]s, %[6]s.Errorf(%[7]s, %[8]s.ErrNotFound)\n}\n",
+			e.f.Import("errors", "errors"), err, e.driverPkg(), zeroDeclaration, zeroValue, e.fmtPkg(), what, e.ormPkg())
+		e.printf("if %[1]s != nil {\n%[2]sreturn %[3]s, %[4]s\n}\n", err, zeroDeclaration, zeroValue, wrap)
+		e.assignScanned(assignments)
+		e.printf("return %s, nil\n", row)
 	case resultRows:
 		rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 		typ := types.TypeString(m.query.row, e.f.Qualifier)
 		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn nil, %[6]s\n}\n"+
 			"defer %[1]s.Close()\n", rows, err, recv, e.query, call, wrap)
-		e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, m.query.fields)
+		n := scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}
+		if m.query.scalar {
+			e.scalarRows(n, typ)
+		} else {
+			e.scanRows(n, typ, m.query.fields, sc)
+		}
 		e.printf("return %s, nil\n", out)
 	case resultBool: // a query written by hand returns no bool
 	}

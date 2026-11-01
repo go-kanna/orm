@@ -69,11 +69,12 @@ func verbOf(name string) (verb, bool) {
 type result int
 
 const (
-	resultNone  result = iota // error alone
-	resultRow                 // the model
-	resultRows                // a slice of the model
-	resultCount               // an int64
-	resultBool                // a bool
+	resultNone   result = iota // error alone
+	resultRow                  // the model
+	resultRows                 // a slice of the model
+	resultCount                // an int64
+	resultBool                 // a bool
+	resultScalar               // one column of a query written by hand
 )
 
 // repository is a //kanna:repository interface.

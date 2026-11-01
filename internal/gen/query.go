@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -27,9 +26,10 @@ type query struct {
 	// sql is the statement, its parameters the placeholders of the database, and args the parameters of the method
 	// passed for them, in order.
 	sql  string
-	args []string
+	args []queryArgument
 	// row is T, of a result of T or []T, and fields its fields holding the columns of the result, in their order.
 	row    types.Type
+	scalar bool
 	fields []column
 }
 
@@ -140,45 +140,71 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	}
 	q := query{file: filepath.Base(st.Header.Filename), sql: sql}
 	var ds []diag.Diag
-	declared := map[string]types.Type{}
-	for i := 1; i < params.Len(); i++ {
-		declared[params.At(i).Name()] = params.At(i).Type()
-	}
+	declared, ambiguous, ads := queryArguments(r.pkg.Fset, params)
+	ds = append(ds, ads...)
 	for _, p := range described.Params {
-		if t, ok := declared[p.Name]; ok {
-			if want, ok := fits(t, p.Type); !ok {
-				typ := typeName(t)
+		if arg, ok := declared[p.Name]; ok {
+			if want, ok := fits(arg.typ, p.Type); !ok {
+				typ := typeName(arg.typ)
 				ds = append(ds, diag.Errorf(st.Header, "-- query: %s: :%s is %s, which %s, %s %s, is not", st.Name,
 					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want))
 			}
 		}
 	}
+	used := map[string]bool{}
 	for _, n := range names {
-		if _, ok := declared[n]; !ok {
+		arg, ok := declared[n]
+		if !ok {
 			return []diag.Diag{diag.Errorf(st.Header, "-- query: %s: :%s is none of the parameters of the method", st.Name,
 				n).WithHints(fmt.Sprintf("declare it: %s(ctx context.Context, %s ...)", m.name, n))}
 		}
-		q.args = append(q.args, n)
+		if ambiguous[n] {
+			return errorf(st.Header, ":%s matches fields of multiple parameters; declare it as its own parameter", n)
+		}
+		q.args = append(q.args, arg)
+		used[arg.parameter] = true
 	}
 	for i := 1; i < params.Len(); i++ {
-		if p := params.At(i).Name(); !slices.Contains(names, p) {
+		if p := params.At(i).Name(); !used[p] {
 			ds = append(ds, diag.Warningf(m.pos, "%s: the query does not use %s", m.name, p))
 		}
 	}
 
+	rds := r.queryResult(m, &q, results, described, st, shape)
+	if diag.HasErrors(rds) {
+		return append(ds, rds...)
+	}
+	m.query = &q
+	return ds
+}
+
+func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, described snapshot.Statement,
+	st sqlfile.Statement, shape []diag.Diag,
+) []diag.Diag {
 	if results.Len() == 1 {
 		m.result = resultNone
 	} else {
 		switch t := results.At(0).Type(); {
-		case isBasic(t, types.Int64):
+		case isBasic(t, types.Int64) && len(described.Columns) == 0:
 			m.result = resultCount
 		default:
 			m.result, q.row = resultRow, t
 			if s, ok := t.Underlying().(*types.Slice); ok {
 				m.result, q.row = resultRows, s.Elem()
 			}
-			if _, ok := q.row.Underlying().(*types.Struct); !ok {
-				return shape
+			if _, ok := q.row.Underlying().(*types.Struct); !ok || holdsColumn(q.row) {
+				if len(described.Columns) != 1 {
+					return shape
+				}
+				c := described.Columns[0]
+				if _, ok := readable(q.row, c.Type); !ok || c.Nullable && !nilable(q.row) {
+					return []diag.Diag{diag.Errorf(st.Header, "%s: the scalar result cannot hold column %s (%s)",
+						m.name, c.Name, c.Type)}
+				}
+				q.scalar = true
+				if m.result == resultRow {
+					m.result = resultScalar
+				}
 			}
 		}
 	}
@@ -190,15 +216,14 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	case m.result == resultCount && len(described.Columns) > 0:
 		return []diag.Diag{diag.Errorf(m.pos, "%s: the query returns columns, but (int64, error) is the number of "+
 			"rows it affects", m.name).WithHints(rowsHint)}
-	case m.result == resultRow || m.result == resultRows:
+	case !q.scalar && (m.result == resultRow || m.result == resultRows):
 		fields, fds := resultFields(r.pkg.Fset, q.row, described.Columns, st.Header, m.name)
 		if diag.HasErrors(fds) {
-			return append(ds, fds...)
+			return fds
 		}
 		q.fields = fields
 	}
-	m.query = &q
-	return ds
+	return nil
 }
 
 // resultFields matches the fields of row, a struct, to columns, the result of a query written by hand at header, for
@@ -209,52 +234,18 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(header, "-- query: %s: %s", name, fmt.Sprintf(format, args...))
 	}
-	type field struct {
-		path   []string
-		typ    types.Type
-		pos    token.Position
-		column string
-	}
-	var (
-		all []field
-		ds  []diag.Diag
-	)
-	var walk func(st *types.Struct, path []string)
-	walk = func(st *types.Struct, path []string) {
-		for i := range st.NumFields() {
-			f := st.Field(i)
-			tag, err := parseTag(st.Tag(i))
-			fpath := append(slices.Clip(path), f.Name())
-			switch t := f.Type(); {
-			case err != nil:
-				ds = append(ds, diag.Errorf(fset.Position(f.Pos()), "%s: %v", strings.Join(fpath, "."), err))
-			case f.Name() == "_", tag.skip:
-			case !f.Exported():
-				ds = append(ds, diag.Errorf(fset.Position(f.Pos()), "%s: the code kanna-orm writes cannot reach an "+
-					"unexported field", strings.Join(fpath, ".")).WithHints(`export it, or leave it out with orm:"-"`))
-			case f.Embedded() && isModel(t) && reflect.StructTag(st.Tag(i)).Get("orm") == "":
-				walk(t.Underlying().(*types.Struct), fpath) //nolint:forcetypeassert // a model is a struct
-			case holdsColumn(t):
-				column := tag.column
-				if column == "" {
-					column = columnName(f.Name())
-				}
-				all = append(all, field{path: fpath, typ: t, pos: fset.Position(f.Pos()), column: column})
-			}
-		}
-	}
-	walk(row.Underlying().(*types.Struct), nil) //nolint:forcetypeassert // the caller has made sure
+	all, ds := queryColumns(fset, row)
 	if diag.HasErrors(ds) {
 		return nil, ds
 	}
 
 	names := make([]string, 0, len(all))
 	for _, f := range all {
-		names = append(names, f.column)
+		names = append(names, f.col.Name)
 	}
 	var matched []column
 	for _, c := range columns {
-		i := slices.IndexFunc(all, func(f field) bool { return f.column == c.Name })
+		i := slices.IndexFunc(all, func(f column) bool { return f.col.Name == c.Name })
 		if i < 0 {
 			d := errorf("%s has no field for the column %s", typeName(row), c.Name)
 			if near, ok := suggest.Closest(c.Name, names); ok {
@@ -267,7 +258,7 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 		}
 		f := all[i]
 		typ := typeName(f.typ)
-		if c.Nullable && !nilable(f.typ) {
+		if c.Nullable && !nilable(f.typ) && !f.nullzero {
 			ds = append(ds, errorf("the column %s may be NULL, which %s.%s, %s %s, cannot hold", c.Name,
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as *"+typ))
 			continue
@@ -277,11 +268,12 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want))
 			continue
 		}
-		matched = append(matched, column{path: f.path, typ: f.typ, col: snapshot.Column{Name: c.Name}, pos: f.pos})
+		matched = append(matched, column{path: f.path, typ: f.typ, col: snapshot.Column{Name: c.Name},
+			pos: f.pos, nullzero: f.nullzero})
 	}
 	for _, f := range all {
-		if !slices.ContainsFunc(columns, func(c snapshot.Result) bool { return c.Name == f.column }) {
-			ds = append(ds, errorf("the query returns no column %s for %s.%s", f.column, typeName(row),
+		if !slices.ContainsFunc(columns, func(c snapshot.Result) bool { return c.Name == f.col.Name }) {
+			ds = append(ds, errorf("the query returns no column %s for %s.%s", f.col.Name, typeName(row),
 				strings.Join(f.path, ".")).WithHints(`select it, or leave the field out with orm:"-"`))
 		}
 	}
