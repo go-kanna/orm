@@ -45,6 +45,9 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve("DBTX")
 	for _, repo := range repos {
 		f.Reserve(repo.implementation(), repo.constructor())
+		if repo.publicConstructor {
+			f.Reserve("New" + repo.name)
+		}
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
 		names: readNames(models)}
@@ -121,6 +124,14 @@ func (e repoEmitter) repository(repo repository) {
 		database, e.drv)
 	if repo.local {
 		e.printf("func %s(db DBTX) *%s { return &%s{db: db} }\n\n", constructor, name, name)
+		if repo.publicConstructor {
+			input := "DBTX"
+			if repo.constructorDB != nil {
+				input = types.TypeString(repo.constructorDB, e.f.Qualifier)
+			}
+			e.printf("// New%[1]s returns %[1]s running on db.\nfunc New%[1]s(db %[2]s) %[1]s { return %[3]s(db) }\n\n",
+				repo.name, input, constructor)
+		}
 		e.printf("var _ %s = (*%s)(nil)\n\n", iface, name)
 	} else {
 		e.printf("// New%[1]s returns %[2]s %[1]s running on db.\nfunc New%[1]s(db DBTX) %[1]s { return %[1]s{db: db} }\n\n",
@@ -165,6 +176,8 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 		name, variadic := p.Name(), sig.Variadic() && i == sig.Params().Len()-1
 		if name == "" || name == "_" {
 			switch {
+			case i == 0 && m.bind != nil:
+				name = "db"
 			case i == 0:
 				name = "ctx"
 			case variadic:
@@ -174,6 +187,11 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 			}
 		}
 		local := sc.Name(name)
+		if m.bind != nil && m.bind.localDBTX {
+			s.ctx = local
+			params = append(params, local+" DBTX")
+			continue
+		}
 		switch {
 		case i == 0:
 			s.ctx = local
@@ -231,6 +249,14 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		receiver = "*" + receiver
 	}
 	e.printf("func (%s %s) %s%s {\n", recv, receiver, m.name, sig.text)
+	if m.bind != nil {
+		input := sig.ctx
+		if m.bind.accessor {
+			input += ".DBTX()"
+		}
+		e.printf("return %s(%s)\n}\n\n", repo.constructor(), input)
+		return
+	}
 	switch m.verb {
 	case "":
 		e.handWritten(m, sc, recv, sig)

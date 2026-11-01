@@ -381,9 +381,19 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 ### 同じパッケージに実装する
 
-`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX) *category` コンストラクタ、ポインタレシーバーのメソッドを生成します。スコープのメソッドも `orm_gen.go` に出力されるため、スコープ型は別のパッケージに置いてください。
+`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX) *category` コンストラクタ、ポインタレシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX) Category` も生成します。スコープのメソッドも `orm_gen.go` に出力されるため、スコープ型は別のパッケージに置いてください。
 
-アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` のように認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` から `r.upsert` を呼び、そのエラーを変換できます。
+`Bind(db DBTX) Category` を宣言すると、トランザクションへの接続も生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
+
+DI に具体的な引数型を渡すには、`-constructor-db` で公開コンストラクタの引数型を指定します:
+
+```go
+//go:generate go tool kanna-orm -destination . -constructor-db "*example.com/app/db.Reader"
+```
+
+これで `NewCategory(db *db.Reader) Category` が生成され、Bind では引き続きトランザクションの DBTX を使えます。フラグには公開型の完全なインポートパスと名前を指定し、必要なら先頭に `*` を付けます。生成器がそのパッケージを読み込み、選択したドライバの DBTX を実装しているか検証します。同一パッケージへの生成に限り指定できます。コンストラクタや Bind を手書きでラップする必要はありません。
+
+アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` から `r.upsert` を呼び、そのエラーを変換できます。
 
 このヘルパーの生成は同一パッケージへの出力に限ります。ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
 
@@ -395,10 +405,6 @@ type Category interface {
 	Bind(db DBTX) Category
 	Upsert(ctx context.Context, c model.Category) error
 }
-
-func NewCategory(db DBTX) Category { return newCategory(db) }
-
-func (r *category) Bind(db DBTX) Category { return newCategory(db) }
 
 func (r *category) Upsert(ctx context.Context, c model.Category) error {
 	return translateError(r.upsert(ctx, c))
@@ -732,6 +738,7 @@ kanna-orm describe [flags] [packages]
 | フラグ | 意味 |
 |---|---|
 | `-destination <dir>` | リポジトリの実装を dir に書き出す。インターフェースがある場合は必須。`.` ならインターフェースと同じパッケージに出力する |
+| `-constructor-db <type>` | 同一パッケージに生成する公開コンストラクタの引数型。例: `*example.com/app/db.Reader`。デフォルトは `DBTX` |
 | `-driver <name>` | `pgx` または `database/sql`（デフォルト: PostgreSQL では `pgx`、MySQL では `database/sql`） |
 | `-snapshot <file>` | 読み込むスナップショット（デフォルト: モジュールのルートの `kanna-orm.snapshot.json`） |
 | `-tags <list>` | カンマ区切りのビルドタグ |

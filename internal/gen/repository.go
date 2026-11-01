@@ -82,8 +82,10 @@ type repository struct {
 	local bool
 	pos   token.Position
 	// iface is the package declaring it.
-	iface   *types.Package
-	methods []repoMethod
+	iface             *types.Package
+	methods           []repoMethod
+	constructorDB     types.Type
+	publicConstructor bool
 }
 
 // repoMethod is a method of a repository, with what it reads or writes.
@@ -91,6 +93,7 @@ type repoMethod struct {
 	name string
 	pos  token.Position
 	fn   *types.Func
+	bind *binding
 	// verb is what it does, or nothing for a method a query written by hand implements.
 	verb verb
 	// target is the scope type holding model, the model of the rows the method reads or writes; table is its table,
@@ -193,8 +196,11 @@ type repoReader struct {
 	skip map[string]map[string]bool
 	// imported are the packages the run loads, and those they import, by their import paths, among which the model
 	// of a table table= names is found.
-	imported map[string]*types.Package
-	local    bool
+	imported      map[string]*types.Package
+	local         bool
+	driver        driver
+	constructorDB types.Type
+	declared      map[string]token.Position
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -228,6 +234,9 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
+	repo.constructorDB = r.constructorDB
+	_, manualConstructor := r.declared["New"+repo.name]
+	repo.publicConstructor = r.local && !manualConstructor
 	if r.local && !ts.Name.IsExported() {
 		return repo, []diag.Diag{diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
 			repo.name)}
@@ -272,7 +281,14 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 			}
 			continue
 		}
-		m, mds := r.method(fn, docs[fn.Name()], ts, tableModel)
+		var m repoMethod
+		var mds []diag.Diag
+		if r.local && fn.Name() == "Bind" {
+			m, mds = r.bindMethod(repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos()), fn: fn},
+				docs[fn.Name()], ts)
+		} else {
+			m, mds = r.method(fn, docs[fn.Name()], ts, tableModel)
+		}
 		if overridden {
 			m.name = lowerFirst(m.name)
 			if r.skip[implementation][m.name] {
