@@ -11,7 +11,7 @@ tool (
 
 require (
 	entgo.io/ent v0.14.6
-	github.com/go-kanna/orm v0.0.8
+	github.com/go-kanna/orm v0.0.9
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/uptrace/bun v1.3.0
 	github.com/uptrace/bun/dialect/pgdialect v1.3.0
