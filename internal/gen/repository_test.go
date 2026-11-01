@@ -406,9 +406,8 @@ func TestRepositories_TableMistakes(t *testing.T) {
 	}{
 		{"a table the snapshot has no", "//kanna:repository table=user",
 			at + "error: OrderRepository: the snapshot has no table user, which table= names\n  did you mean users?"},
-		{"a table of no scope type", "//kanna:repository table=audits",
-			at + "error: OrderRepository: no scope type is declared for audits, which table= names\n" +
-				"  declare one where audits are queried: //kanna:scope table=audits"},
+		{"a table without the parameter's column", "//kanna:repository table=audits",
+			"repository.go:24:2: error: DeleteUser: audits has no column for the parameter id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -419,6 +418,20 @@ func TestRepositories_TableMistakes(t *testing.T) {
 				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
 			}
 		})
+	}
+}
+
+func TestRepositories_TableWithoutScopeKeepsInferredModels(t *testing.T) {
+	t.Parallel()
+
+	got, ds := repositoriesMarked(t, snapshot.PostgreSQL, "//kanna:repository table=audits",
+		"\tDeleteLine(ctx context.Context, orderID model.OrderID, lineNo int) error\n", "", nil)
+	if ds != "" {
+		t.Fatalf("Repositories:\n%s", ds)
+	}
+	want := []string{"OrderRepository.DeleteLine Delete order_lines keys=orderID=order_id,lineNo=line_no error"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Repositories = %v, want %v", got, want)
 	}
 }
 

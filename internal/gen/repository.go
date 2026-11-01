@@ -288,7 +288,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 			m, mds = r.bindMethod(repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos()), fn: fn},
 				docs[fn.Name()], ts)
 		} else {
-			m, mds = r.method(fn, docs[fn.Name()], ts, tableModel)
+			m, mds = r.method(fn, docs[fn.Name()], ts, tableModel, d.Table)
 		}
 		if overridden {
 			m.name = lowerFirst(m.name)
@@ -305,7 +305,9 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 
 // method reads fn, a method of the repository ts declares, as field, its syntax, declares it. tableModel is the model
 // of the table table= of the repository names, if it names one, which fn reads or writes when it tells no table.
-func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, tableModel *types.Named) (
+func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec,
+	tableModel *types.Named, tableName string,
+) (
 	repoMethod, []diag.Diag,
 ) {
 	m := repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos()), fn: fn}
@@ -393,10 +395,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 		}
 	}
 
-	if ds := r.target(&m, models, keyParams, tableModel); ds != nil {
-		return m, ds
-	}
-	if ds := r.keys(&m, keyParams); ds != nil {
+	if ds := r.matchParameters(&m, models, keyParams, tableModel, tableName); ds != nil {
 		return m, ds
 	}
 	if !m.shaped() {
@@ -412,6 +411,19 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 		ds = append(ds, r.writeRules(m)...)
 	}
 	return m, append(cds, ds...)
+}
+
+func (r repoReader) matchParameters(m *repoMethod, models []*types.Named, params []*types.Var,
+	tableModel *types.Named, tableName string,
+) []diag.Diag {
+	if m.verb == verbDelete && len(models) == 0 && !m.scoped && tableName != "" && tableModel == nil &&
+		len(r.modelsOfKeys(params)) == 0 {
+		return r.tableDelete(m, params, tableName)
+	}
+	if ds := r.target(m, models, params, tableModel); ds != nil {
+		return ds
+	}
+	return r.keys(m, params)
 }
 
 // target finds the model the method reads or writes, from those its result, its row, and its scopes have, or else
@@ -459,6 +471,22 @@ func (r repoReader) modelOfKeys(m *repoMethod, keyParams []*types.Var, tableMode
 		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...)).
 			WithHints("give it the scopes of the table, as in " + shapes[m.verb])}
 	}
+	candidates := r.modelsOfKeys(keyParams)
+	switch {
+	case len(candidates) == 0 && tableModel != nil:
+		return tableModel, nil
+	case len(candidates) == 0:
+		return nil, []diag.Diag{diag.Errorf(m.pos, "%s: nothing tells the table it reads or writes", m.name).
+			WithHints("give it the scopes of the table, as in "+shapes[m.verb],
+				"or name the table of the methods that tell none: //kanna:repository table=<table>")}
+	case len(candidates) == 1:
+		return candidates[0], nil
+	}
+	return nil, errorf("its parameters are the columns of both %s and %s", typeName(candidates[0]),
+		typeName(candidates[1]))
+}
+
+func (r repoReader) modelsOfKeys(keyParams []*types.Var) []*types.Named {
 	var candidates []*types.Named
 	seen := map[*types.Named]bool{}
 	for _, p := range keyParams {
@@ -480,18 +508,7 @@ func (r repoReader) modelOfKeys(m *repoMethod, keyParams []*types.Var, tableMode
 			}
 		}
 	}
-	switch {
-	case len(candidates) == 0 && tableModel != nil:
-		return tableModel, nil
-	case len(candidates) == 0:
-		return nil, []diag.Diag{diag.Errorf(m.pos, "%s: nothing tells the table it reads or writes", m.name).
-			WithHints("give it the scopes of the table, as in "+shapes[m.verb],
-				"or name the table of the methods that tell none: //kanna:repository table=<table>")}
-	case len(candidates) == 1:
-		return candidates[0], nil
-	}
-	return nil, errorf("its parameters are the columns of both %s and %s", typeName(candidates[0]),
-		typeName(candidates[1]))
+	return candidates
 }
 
 // modelOfTable finds the model of the table that table= of the repository d declares names, by its scope type.
@@ -525,8 +542,7 @@ func (r repoReader) modelOfTable(d decl.Repository) (*types.Named, []diag.Diag) 
 			name, e.modelPath, e.modelName, d.Table).
 			WithHints("name it in a method of " + name + ", as its result or a row it writes")}
 	}
-	return nil, []diag.Diag{diag.Errorf(d.Pos, "%s: no scope type is declared for %s, which table= names", name,
-		d.Table).WithHints(fmt.Sprintf("declare one where %s are queried: //kanna:scope table=%[1]s", d.Table))}
+	return nil, nil
 }
 
 // hasFields reports whether model has a field for each of params, named as it is, in upper case, and of its type.

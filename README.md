@@ -586,6 +586,10 @@ type TodoRepository interface {
 `table=` is the table of the methods that tell none, and of no other: a method that tells its own model reads or writes
 its table, so an interface of an aggregate still reaches each of its tables.
 
+A `Delete` taking only column parameters can use `table=` without a model or scope type. Its parameter names and
+types are checked against the snapshot, and an `error`-only result still requires a primary or unique key. Return
+`(int64, error)` to delete by other conditions and receive the affected row count.
+
 `orm.ErrNotFound` comes wrapped with what was not found, so test for it with `errors.Is`, and turn it into your
 application's error where you call the repository.
 

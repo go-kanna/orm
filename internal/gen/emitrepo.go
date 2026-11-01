@@ -285,7 +285,10 @@ func (e repoEmitter) notFound(table string, names, args []string) string {
 
 // read writes the body of m, a method reading or deleting the rows its keys and its scopes match.
 func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signature) {
-	model := types.TypeString(m.model, e.f.Qualifier)
+	model := "any"
+	if m.model != nil {
+		model = types.TypeString(m.model, e.f.Qualifier)
+	}
 	table := sqlName(e.d, m.target.table)
 	q := sc.Name("q")
 	if m.lock != "" {
