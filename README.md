@@ -460,10 +460,28 @@ interface when generated into a separate package, its constructor, and the `DBTX
 
 Use `-destination .` to keep the interface and its implementation in the same package. The interface must be exported;
 `Category` generates an unexported `category`, a `newCategory(db DBTX) *category` constructor, and pointer receiver
-methods. Keep scope types in a separate package, since their methods also go into `orm_gen.go`.
+methods. It also generates `NewCategory(db DBTX) Category` unless you already declare `NewCategory` yourself.
+Keep scope types in a separate package, since their methods also go into `orm_gen.go`.
+
+Declare `Bind(db DBTX) Category` to generate transaction binding. The argument may instead be a concrete database or
+transaction type implementing DBTX, or a type exposing a parameterless `DBTX()` method that returns one, such as
+`Bind(tx tx.Tx) Category`. Bind returns a new implementation using that connection and leaves the original unchanged.
+The input must match the selected driver's statement methods, and the result must be the repository's own interface.
+An existing hand-written `Bind` is preserved.
+
+For dependency injection, `-constructor-db` chooses a concrete argument type for generated public constructors:
+
+```go
+//go:generate go tool kanna-orm -destination . -constructor-db "*example.com/app/db.Reader"
+```
+
+This generates `NewCategory(db *db.Reader) Category`, while Bind can still use the transaction's DBTX. The flag takes
+an exported type's full import path and name, optionally prefixed with `*`, loads that package, and checks that the
+type implements the selected driver's DBTX. It applies only to same-package generation. You need no constructor or
+binding wrapper of your own.
 
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
-such as `Bind`, is left to your implementation. When you implement a method with a recognized verb or SQL query,
+other than `Bind` is left to your implementation. When you implement a method with a recognized verb or SQL query,
 kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can call `r.upsert`
 before translating its error. This helper behavior applies only to same-package generation. The helper has the same
 signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
@@ -478,10 +496,6 @@ type Category interface {
 	Bind(db DBTX) Category
 	Upsert(ctx context.Context, c model.Category) error
 }
-
-func NewCategory(db DBTX) Category { return newCategory(db) }
-
-func (r *category) Bind(db DBTX) Category { return newCategory(db) }
 
 func (r *category) Upsert(ctx context.Context, c model.Category) error {
 	return translateError(r.upsert(ctx, c))
@@ -879,6 +893,7 @@ Generating:
 | Flag                 | Meaning                                                                                                     |
 |----------------------|-------------------------------------------------------------------------------------------------------------|
 | `-destination <dir>` | write repository implementations into dir; required for repository interfaces; `.` keeps them in the interface package |
+| `-constructor-db <type>` | argument type for generated public constructors in the interface package, as `*example.com/app/db.Reader` (default: `DBTX`) |
 | `-driver <name>`     | `pgx` or `database/sql` (default: `pgx` on PostgreSQL, `database/sql` on MySQL)                             |
 | `-snapshot <file>`   | the snapshot to read (default: `kanna-orm.snapshot.json` at the root of the module)                         |
 | `-tags <list>`       | comma-separated build tags                                                                                  |

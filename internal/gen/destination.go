@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -105,6 +106,7 @@ func (d destination) handWritten() map[string]map[string]bool {
 // repositories may take, and stmts the statements of the .sql files of dest.
 func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed,
 	dest destination, stmts []sqlfile.Statement,
+	drv driver, constructorDB types.Type,
 ) ([]repository, map[string]readModel, []diag.Diag) {
 	scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 	queries, ds := readQueries(stmts)
@@ -112,6 +114,8 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 	r := repoReader{
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
 		imported: importedPackages(pkgs), local: dest.holds(pkg),
+		driver: drv, constructorDB: constructorDB,
+		declared: output.DeclaredNames(dest.dir, outputName, dest.name),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
 			loaded: loadedScopes(others, s, idx),
@@ -141,6 +145,7 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 			if pkgPath == pkg.PkgPath {
 				name = lowerFirst(name)
 				constructor = "new" + ts.Name.Name
+				names[pkgPath+".New"+ts.Name.Name] = true
 			}
 			names[pkgPath+"."+name] = true
 			names[pkgPath+"."+constructor] = true

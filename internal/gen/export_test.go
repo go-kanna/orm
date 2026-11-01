@@ -271,7 +271,7 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 		return nil, nil, err
 	}
 	stmts, ds := readSQL(dest.dir)
-	repos, models, rds := planRepositories(pkgs[i], pkgs, s, idx, dest, stmts)
+	repos, models, rds := planRepositories(pkgs[i], pkgs, s, idx, dest, stmts, driver(drv), nil)
 	ds = append(ds, rds...)
 	if diag.HasErrors(ds) {
 		return nil, ds, nil
