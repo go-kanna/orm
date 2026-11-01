@@ -194,6 +194,50 @@ type Orders interface {
 	}
 }
 
+func TestCommand_RepositoriesWithoutRuntimeImports(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name, declaration string
+	}{
+		{"insert", `
+import (
+	"context"
+	"example.com/shop/model"
+)
+//kanna:repository
+type Orders interface { Insert(ctx context.Context, row model.Order) error }
+`},
+		{"empty", `
+//kanna:repository
+type Orders interface{}
+`},
+	} {
+		for _, driver := range []string{"pgx", "database/sql"} {
+			t.Run(tt.name+"/"+driver, func(t *testing.T) {
+				t.Parallel()
+
+				models, _, _ := strings.Cut(repositoryShop, "-- repository/repository.go --")
+				dir := writeModule(t, models+"-- repository/repository.go --\npackage repository\n"+tt.declaration)
+				describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+				if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+					t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+				}
+				args := []string{"-destination", "../postgres", "-driver", driver}
+				if code, _, errOut := run(t, filepath.Join(dir, "repository"), args...); code != cli.ExitOK {
+					t.Fatalf("kanna-orm in repository = %d\n%s", code, errOut)
+				}
+				cmd := exec.CommandContext(t.Context(), "go", "test", "-mod=mod", "./...")
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "GOWORK=off")
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("generated module does not compile: %v\n%s", err, out)
+				}
+			})
+		}
+	}
+}
+
 func TestCommand_RepositoriesInOwnPackage(t *testing.T) {
 	t.Parallel()
 
