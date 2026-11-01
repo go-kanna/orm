@@ -16,6 +16,8 @@ type fieldTag struct {
 	// fk is the foreign key a relation follows, when more than one could serve.
 	fk       string
 	nullzero bool
+	relation string
+	value    string
 }
 
 // parseTag reads the orm key of a struct tag. A tag that reflect cannot read is an error rather than no tag, since
@@ -27,6 +29,38 @@ func parseTag(tag string) (fieldTag, error) {
 			return fieldTag{}, errors.New(`the struct tag is not one reflect can read: write it as orm:"name"`)
 		}
 		return fieldTag{}, nil
+	}
+	if strings.HasPrefix(value, "relation=") {
+		var tag fieldTag
+		for part := range strings.SplitSeq(value, ",") {
+			key, val, valid := strings.Cut(part, "=")
+			if !valid || val == "" || strings.ContainsAny(val, "= \t\n") {
+				return fieldTag{}, fmt.Errorf("invalid scalar relation tag %q", value)
+			}
+			switch key {
+			case "relation":
+				if tag.relation != "" {
+					return fieldTag{}, errors.New("duplicate relation option")
+				}
+				tag.relation = val
+			case "column":
+				if tag.value != "" {
+					return fieldTag{}, errors.New("duplicate column option")
+				}
+				tag.value = val
+			case "fk":
+				if tag.fk != "" {
+					return fieldTag{}, errors.New("duplicate fk option")
+				}
+				tag.fk = val
+			default:
+				return fieldTag{}, fmt.Errorf("unknown scalar relation option %q", key)
+			}
+		}
+		if tag.value == "" {
+			return fieldTag{}, errors.New("scalar relation requires column=<column>")
+		}
+		return tag, nil
 	}
 	if name, option, ok := strings.Cut(value, ","); ok && option == "nullzero" && name != "-" &&
 		!strings.ContainsAny(name, ",= ") {

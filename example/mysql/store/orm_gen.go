@@ -119,6 +119,19 @@ VALUES (?)`+strings.Repeat(`, (?)`, len(chunk)-1), args...); err != nil {
 	return nil
 }
 
+type orderRepositoryOperation string
+
+const orderRepositoryOperationGet orderRepositoryOperation = "Get"
+const orderRepositoryOperationList orderRepositoryOperation = "List"
+const orderRepositoryOperationCount orderRepositoryOperation = "Count"
+const orderRepositoryOperationInsert orderRepositoryOperation = "Insert"
+const orderRepositoryOperationInsertLines orderRepositoryOperation = "InsertLines"
+const orderRepositoryOperationDeleteAll orderRepositoryOperation = "DeleteAll"
+const orderRepositoryOperationTag orderRepositoryOperation = "Tag"
+const orderRepositoryOperationMonthlySales orderRepositoryOperation = "MonthlySales"
+
+var _ func(orderRepositoryOperation, error) error = translateOrderError
+
 // OrderRepository implements repository.OrderRepository on MySQL through database/sql.
 type OrderRepository struct{ db DBTX }
 
@@ -127,7 +140,12 @@ func NewOrderRepository(db DBTX) OrderRepository { return OrderRepository{db: db
 
 var _ repository.OrderRepository = OrderRepository{}
 
-func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
+func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (result model.Order, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationGet, resultErr)
+		}
+	}()
 	qs := make([]orm.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -144,7 +162,12 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	return rows[0], nil
 }
 
-func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
+func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []model.Order, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationList, resultErr)
+		}
+	}()
 	qs := make([]orm.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -153,7 +176,12 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 	return selectOrders(ctx, r.db, q, "")
 }
 
-func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
+func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationCount, resultErr)
+		}
+	}()
 	qs := make([]orm.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -173,10 +201,15 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, e
 	return n, nil
 }
 
-func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+func (r OrderRepository) Insert(ctx context.Context, o model.Order) (result model.Order, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationInsert, resultErr)
+		}
+	}()
 	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
 VALUES (?, ?, ?, ?)`
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo)
+	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""})
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
 	}
@@ -185,15 +218,22 @@ VALUES (?, ?, ?, ?)`
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
 	}
 	var row model.Order
+	var nullableMemo sql.Null[string]
 	err = r.db.QueryRowContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo)
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
 	}
+	row.Memo = nullableMemo.V
 	return row, nil
 }
 
-func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) error {
+func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) (resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationInsertLines, resultErr)
+		}
+	}()
 	if len(lines) == 0 {
 		return nil
 	}
@@ -211,7 +251,12 @@ VALUES (?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?)`, len(chunk)-1), args...); e
 	return nil
 }
 
-func (r OrderRepository) DeleteAll(ctx context.Context, s ...scopes.Order) (int64, error) {
+func (r OrderRepository) DeleteAll(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationDeleteAll, resultErr)
+		}
+	}()
 	qs := make([]orm.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -239,7 +284,12 @@ func (r OrderRepository) DeleteAll(ctx context.Context, s ...scopes.Order) (int6
 }
 
 // Tag runs the query of its name in queries.sql.
-func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, tag string) error {
+func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, tag string) (resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationTag, resultErr)
+		}
+	}()
 	const q = `INSERT IGNORE INTO order_tags (order_id, tag) VALUES (?, ?)`
 	if _, err := r.db.ExecContext(ctx, q, orderID, tag); err != nil {
 		return fmt.Errorf("query Tag: %w", err)
@@ -248,7 +298,12 @@ func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, tag str
 }
 
 // MonthlySales runs the query of its name in queries.sql.
-func (r OrderRepository) MonthlySales(ctx context.Context, since time.Time) ([]repository.MonthSales, error) {
+func (r OrderRepository) MonthlySales(ctx context.Context, since time.Time) (result []repository.MonthSales, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationMonthlySales, resultErr)
+		}
+	}()
 	const q = `SELECT COALESCE(DATE_FORMAT(o.placed_at, '%Y-%m'), '') AS month,
        count(DISTINCT o.id) AS orders,
        CAST(COALESCE(sum(l.quantity * p.price), 0) AS SIGNED) AS revenue
@@ -334,7 +389,7 @@ func (r FulfillmentRepository) Update(ctx context.Context, o model.Order) error 
 	const q = `UPDATE orders
 SET customer_id = ?, status = ?, placed_at = ?, note = ?
 WHERE id = ?`
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.ID)
+	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}, o.ID)
 	if err != nil {
 		return fmt.Errorf("update orders: %w", err)
 	}
@@ -461,9 +516,11 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 	out := []model.Order{}
 	for rows.Next() {
 		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo); err != nil {
+		var nullableMemo sql.Null[string]
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
+		row.Memo = nullableMemo.V
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {

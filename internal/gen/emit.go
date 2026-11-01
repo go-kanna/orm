@@ -173,6 +173,13 @@ func (e emitter) scope() {
 
 // with writes the method loading the relation lk, which takes scopes of the related rows.
 func (e emitter) with(lk link) {
+	if lk.scalar != nil {
+		name := lk.field.path[len(lk.field.path)-1]
+		e.printf("func (s %s) With%s() %s {\n", e.p.name, name, e.p.name)
+		e.printf("return %s{%s.Preload(%s, %q, %s.Of[%s]{})}\n}\n\n", e.p.name, e.orm, e.q("s"),
+			strings.Join(lk.field.path, "."), e.orm, types.TypeString(lk.scalar.typ, e.f.Qualifier))
+		return
+	}
 	name := lk.field.path[len(lk.field.path)-1]
 	target := lk.target.name
 	if pkg := e.f.Import(lk.target.pkgPath, lk.target.pkgName); pkg != "" {

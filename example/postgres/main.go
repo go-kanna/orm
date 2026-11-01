@@ -52,6 +52,7 @@ func run(ctx context.Context, url string, w io.Writer) error {
 		{"write the catalog", ex.catalog},
 		{"write the customers", ex.signUp},
 		{"place the orders", ex.placeOrders},
+		{"read optional memos", ex.readMemos},
 		{"read the open orders", ex.openOrders},
 		{"page through the orders", ex.page},
 		{"report", ex.report},
@@ -140,7 +141,13 @@ func (ex *example) placeOrders(ctx context.Context) error {
 		{ex.ann.ID, time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC), map[model.SKU]int{"TEA": 5}, false, []string{"rush"}},
 		{ex.bob.ID, time.Date(2026, 3, 9, 18, 0, 0, 0, time.UTC), map[model.SKU]int{"CUP": 4}, false, nil},
 	} {
-		o, err := ex.orders.Insert(ctx, model.Order{CustomerID: p.customer, Status: model.OrderOpen, PlacedAt: p.placed})
+		memo := ""
+		if p.shipped {
+			memo = "Leave at reception"
+		}
+		o, err := ex.orders.Insert(ctx, model.Order{
+			CustomerID: p.customer, Status: model.OrderOpen, PlacedAt: p.placed, Memo: memo,
+		})
 		if err != nil {
 			return fmt.Errorf("an order: %w", err)
 		}
@@ -206,8 +213,8 @@ func (ex *example) openOrders(ctx context.Context) error {
 		return fmt.Errorf("order 1: %w", err)
 	}
 	fmt.Fprintf(ex.w, "order 1 is %s by %s\n", shipped.Status, shipped.Shipment.Carrier)
-	if _, err := ex.orders.Get(ctx, 99); !errors.Is(err, orm.ErrNotFound) {
-		return fmt.Errorf("order 99: %w, not orm.ErrNotFound", err)
+	if _, err := ex.orders.Get(ctx, 99); !errors.Is(err, model.ErrOrderNotFound) {
+		return fmt.Errorf("order 99: %w, not model.ErrOrderNotFound", err)
 	}
 	return nil
 }

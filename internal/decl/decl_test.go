@@ -223,13 +223,21 @@ func TestRead_Mistakes(t *testing.T) {
 			"scopes.go:3:1: error: //kanna:scope func=all-orders: \"all-orders\" is not a name a Go function can have\n" +
 				"  as in //kanna:scope table=orders"},
 		{"an option a repository does not take", "//kanna:repository table=orders func=Orders",
-			"scopes.go:3:1: error: //kanna:repository takes table=, not \"func=Orders\"\n" +
+			"scopes.go:3:1: error: //kanna:repository takes table= or errors=, not \"func=Orders\"\n" +
 				"  as in //kanna:repository table=orders"},
 		{"a repository of no table", "//kanna:repository table=",
-			"scopes.go:3:1: error: //kanna:repository takes table=, not \"table=\"\n" +
+			"scopes.go:3:1: error: //kanna:repository takes table= or errors=, not \"table=\"\n" +
 				"  as in //kanna:repository table=orders"},
 		{"a repository's table given twice", "//kanna:repository table=orders table=order_lines",
 			"scopes.go:3:1: error: //kanna:repository gives table= twice\n  as in //kanna:repository table=orders"},
+		{"an error translator given twice", "//kanna:repository errors=translate errors=other",
+			"scopes.go:3:1: error: //kanna:repository gives errors= twice\n  as in //kanna:repository table=orders"},
+		{"an error translator without a name", "//kanna:repository errors=",
+			"scopes.go:3:1: error: //kanna:repository takes table= or errors=, not \"errors=\"\n" +
+				"  as in //kanna:repository table=orders"},
+		{"a qualified error translator", "//kanna:repository errors=other.translate",
+			"scopes.go:3:1: error: //kanna:repository takes table= or errors=, not \"errors=other.translate\"\n" +
+				"  as in //kanna:repository table=orders"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

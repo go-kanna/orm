@@ -121,6 +121,15 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 			loaded: loadedScopes(others, s, idx),
 		},
 	}
+	for _, candidate := range pkgs {
+		if dest.holds(candidate) {
+			r.errorPkg = candidate
+			break
+		}
+	}
+	if r.local {
+		r.errorPkg = pkg
+	}
 	repos, rds := r.findRepositories()
 	if ds = append(ds, rds...); diag.HasErrors(ds) {
 		return nil, nil, ds
@@ -141,6 +150,10 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 		decls, _ := decl.Read(pkg.Fset, file) // findRepositories reports what is wrong with the directives
 		for _, d := range decls.Repositories {
 			ts := d.Spec
+			operation := lowerFirst(ts.Name.Name) + "Operation"
+			if d.Errors != "" {
+				names[pkgPath+"."+operation] = true
+			}
 			name, constructor := ts.Name.Name, "New"+ts.Name.Name
 			if pkgPath == pkg.PkgPath {
 				name = lowerFirst(name)
@@ -152,6 +165,9 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 			if it, ok := ts.Type.(*ast.InterfaceType); ok {
 				for _, f := range it.Methods.List {
 					for _, n := range f.Names {
+						if d.Errors != "" && n.Name != "Bind" {
+							names[pkgPath+"."+operation+n.Name] = true
+						}
 						names[pkgPath+"."+name+"."+n.Name] = true
 						if pkgPath == pkg.PkgPath {
 							names[pkgPath+"."+name+"."+lowerFirst(n.Name)] = true

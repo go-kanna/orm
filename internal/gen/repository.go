@@ -87,6 +87,7 @@ type repository struct {
 	methods           []repoMethod
 	constructorDB     types.Type
 	publicConstructor bool
+	errors            string
 }
 
 // repoMethod is a method of a repository, with what it reads or writes.
@@ -202,6 +203,7 @@ type repoReader struct {
 	driver        driver
 	constructorDB types.Type
 	declared      map[string]token.Position
+	errorPkg      *packages.Package
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -234,7 +236,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
-	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
+	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local, errors: d.Errors}
 	repo.constructorDB = r.constructorDB
 	_, manualConstructor := r.declared["New"+repo.name]
 	repo.publicConstructor = r.local && !manualConstructor
@@ -299,6 +301,10 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		}
 		ds = append(ds, mds...)
 		repo.methods = append(repo.methods, m)
+	}
+	if repo.errors != "" {
+		ds = append(ds, r.operationCollisions(repo)...)
+		ds = append(ds, r.validateTranslation(repo)...)
 	}
 	return repo, ds
 }

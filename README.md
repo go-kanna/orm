@@ -281,7 +281,18 @@ model has no field for is otherwise left alone.
 Use `nullzero` only when a nullable string column represents absence as the field's zero value. It works with named
 string types, including enums implementing `sql.Scanner`: generated code uses `sql.Null[T]`, so NULL bypasses the
 enum's non-null scanner, while non-null values still go through it. It applies to table operations and hand-written
-query models. Fields not stored in that row, such as a device's loaded topics, can use `orm:"-"`.
+query models. Omit the column name, as `orm:",nullzero"`, when the field's snake-case name already matches it.
+
+The [PostgreSQL](example/postgres/model/model.go) and [MySQL](example/mysql/model/model.go) examples use this for the
+optional order memo:
+
+```go
+Memo string `orm:"note,nullzero"`
+```
+
+Their [readMemos step](example/postgres/memos.go) selects orders with `MemoIsNull()` and verifies that empty memos were
+stored as SQL NULL and read back as empty strings, while a non-empty memo remains unchanged. `note` is explicit here
+because the field is named `Memo`; a field named `Note` would need only `orm:",nullzero"`.
 
 A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text`,
 `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a string for
@@ -508,6 +519,33 @@ func (r *category) Upsert(ctx context.Context, c model.Category) error {
 }
 ```
 
+### Error translation
+
+The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples translate a missing order into
+`model.ErrOrderNotFound`. Their repository declares `//kanna:repository errors=translateOrderError`, and the
+implementation package defines the function in [store/errors.go](example/postgres/store/errors.go).
+
+```go
+func translateOrderError(op orderRepositoryOperation, err error) error {
+    if op == orderRepositoryOperationGet && errors.Is(err, orm.ErrNotFound) {
+        return model.ErrOrderNotFound
+    }
+    return err
+}
+```
+
+The generator emits a private `orderRepositoryOperation` string type and a typed constant for each generated
+error-returning method, such as `orderRepositoryOperationGet` and `orderRepositoryOperationInsert`. `Bind` is excluded.
+The examples' main programs verify that `Get` returns `model.ErrOrderNotFound` for order 99, while repositories
+without translation continue returning `orm.ErrNotFound`.
+
+The function's presence and exact `func(orderRepositoryOperation, error) error` signature are checked during generation,
+including the first run before the operation type exists. Generated operation names must not collide with handwritten
+declarations. Translation runs once for a non-nil error, after adding the generated method's error context, including
+custom SQL and relation-loading errors. A generated private helper passes its original interface method's operation.
+Handwritten method bodies are not translated automatically. Without `errors=`, no operation type or translation code
+is generated. Return an unrecognized error unchanged to preserve its error chain.
+
 ### Separate-package implementations
 
 With a separate destination such as `-destination ../postgres`, kanna-orm generates an exported struct with the
@@ -620,6 +658,37 @@ type TodoRepository interface {
   `[]byte`, a string, or a type of your own with `Scan` and `Value` methods.
 
 [go-kanna/showcase](https://github.com/go-kanna/showcase) is a to-do service whose to-dos are keyed by `uuid.UUID`.
+
+### Scalar relations
+
+A relation can load one column of related rows directly into a slice, including a slice of enums. Name the related
+table and the column to read; no intermediate row model or scope type is needed:
+
+```go
+type Device struct {
+    ID uuid.UUID
+    Topics []Topic `orm:"relation=device_topics,column=topic"`
+}
+```
+
+The snapshot must have a foreign key from `device_topics` to `devices`. Its referenced columns must be held by the
+parent model. When multiple foreign keys connect the tables, select one with
+`orm:"relation=device_topics,column=topic,fk=device_id"`. Generation checks the column's type and nullability against
+the slice element type.
+
+Composite foreign keys work the same way: a relation from `order_tags.(tenant_id, order_id)` to
+`orders.(tenant_id, id)` matches and groups by the whole pair. The parent model must hold both referenced columns.
+Related values are loaded in batches using tuple conditions, so rows with the same ID in different tenants remain
+separate. A parent with a nil pointer in any key component has no related values loaded.
+
+The generated device scope has `WithTopics()`. A normal generated read loads this relation only when requested, in
+batches, ordered by the selected column. Each enum value goes through its scanner. An explicitly loaded relation with
+no rows is an empty slice; an unrequested relation remains nil. Parent inserts and updates leave the relation alone,
+and custom SQL model mappings exclude it. Write application-specific relation updates separately.
+
+```go
+device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTopics())
+```
 
 ### Writing
 
