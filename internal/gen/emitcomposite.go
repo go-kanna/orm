@@ -57,7 +57,7 @@ func (e repoEmitter) preloadComposite(lk link, n preloadNames, c compositeNames)
 		valueType = "[]" + elemType
 	}
 
-	e.printf("if %[1]s, %[2]s := %[3]s.Preloaded[%[4]s](%[5]s, %[6]q); %[2]s {\n", n.sub, n.ok, e.orm,
+	e.printf("if %[1]s, %[2]s := %[3]s.Preloaded[%[4]s](%[5]s, %[6]q); %[2]s {\n", n.sub, n.ok, e.ormPkg(),
 		types.TypeString(lk.model, e.f.Qualifier), n.q, strings.Join(lk.field.path, "."))
 	e.printf("type %s struct{ %s }\n", c.key, e.keyFields(lk.keys))
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, c.key, n.rows)
@@ -223,7 +223,7 @@ func (e repoEmitter) throughPairsComposite(lk link, n preloadNames, c compositeN
 	}
 	query := "SELECT " + strings.Join(selected, ", ") + " FROM " + sqlName(e.d, lk.way.table) + " WHERE (" +
 		strings.Join(fk, ", ") + ") IN ("
-	wrap := e.fmt + ".Errorf(" + fmt.Sprintf("%q", "read "+lk.way.table+": %w") + ", " + n.err + ")"
+	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "read "+lk.way.table+": %w") + ", " + n.err + ")"
 	if e.d == snapshot.MySQL {
 		fields := make([]string, 0, len(lk.keys))
 		for i := range lk.keys {
