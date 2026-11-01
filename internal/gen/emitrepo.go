@@ -28,8 +28,8 @@ type repoEmitter struct {
 	drv driver
 	// exec, query, and queryRow are the names of the methods of DBTX running a statement.
 	exec, query, queryRow string
-	// orm, fmt, and slices are the names the file imports those packages by.
-	orm, fmt, slices string
+	// orm and fmt are the names the file imports those packages by.
+	orm, fmt string
 	// models are the models whose whole rows the repositories read, by table, and names the names of the functions
 	// reading them, select<name>, and loading their relations, preload<name>.
 	models map[string]readModel
@@ -56,7 +56,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	for _, name := range e.names {
 		f.Reserve("select"+name, "preload"+name)
 	}
-	e.orm, e.fmt, e.slices = f.Import(ormPath, "orm"), f.Import("fmt", "fmt"), f.Import("slices", "slices")
+	e.orm, e.fmt = f.Import(ormPath, "orm"), f.Import("fmt", "fmt")
 
 	e.db()
 	for _, repo := range repos {
@@ -363,7 +363,7 @@ func (e repoEmitter) selectRows(rm readModel) {
 		"%[7]s.Args()...)\n", rows, err, db, e.query, ctx, goString(query), rd, lock)
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
 	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns)
-	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.slices, out)
+	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	if len(rm.links) > 0 {
 		e.printf("if %[1]s := preload%[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
 			e.names[rm.target.table], ctx, db, out, q)
@@ -578,7 +578,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
 		e.printf("// As many rows to a statement as its 65,535 placeholders take.\n")
 		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, %[6]s)\n"+
-			"for %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.slices, sig.row,
+			"for %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.f.Import("slices", "slices"), sig.row,
 			65535/len(inserted), args, capacity, i, strings.Join(fields, ", "))
 		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n"+
 			"return nil\n", err, recv, e.exec, sig.ctx, query, args, wrap)
@@ -800,7 +800,7 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 
 	keys := n.keys
 	if e.d == snapshot.MySQL {
-		e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.slices, n.keys, inChunk)
+		e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.f.Import("slices", "slices"), n.keys, inChunk)
 		keys = n.chunk
 	}
 	if lk.way.kind == manyToMany {
