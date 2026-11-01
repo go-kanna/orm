@@ -132,8 +132,8 @@ func statements(pkgs []*packages.Package, dirs []string, tables map[string]snaps
 		if len(pkg.GoFiles) == 0 {
 			continue
 		}
-		scopes, repository, pds := declarations(pkg, tables)
-		got, fds := inDir(filepath.Dir(pkg.GoFiles[0]), pkg.PkgPath, scopes, len(scopes) > 0 || repository)
+		scopes, _, pds := declarations(pkg, tables)
+		got, fds := inDir(filepath.Dir(pkg.GoFiles[0]), pkg.PkgPath, scopes, len(scopes) > 0)
 		all, ds = append(all, got...), slices.Concat(ds, pds, fds)
 	}
 	for _, dir := range dirs {

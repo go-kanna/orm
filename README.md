@@ -454,7 +454,45 @@ cursor a client has altered changes where the page starts, and nothing else.
 
 An interface marked `//kanna:repository` declares what the code above the database may do with it. Its package runs
 `kanna-orm -destination <dir>`, which writes the implementation into `orm_gen.go` there: a struct named after the
-interface, its constructor, and the `DBTX` it runs on, named as sqlc names it.
+interface when generated into a separate package, its constructor, and the `DBTX` it runs on, named as sqlc names it.
+
+### Same-package implementations
+
+Use `-destination .` to keep the interface and its implementation in the same package. The interface must be exported;
+`Category` generates an unexported `category`, a `newCategory(db DBTX) *category` constructor, and pointer receiver
+methods. Keep scope types in a separate package, since their methods also go into `orm_gen.go`.
+
+Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
+such as `Bind`, is left to your implementation. When you implement a method with a recognized verb or SQL query,
+kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can call `r.upsert`
+before translating its error. This helper behavior applies only to same-package generation. The helper has the same
+signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
+already be declared. Queries belong in the destination's
+`.sql` files, including when the destination also declares the interface.
+
+```go
+//go:generate go tool kanna-orm -destination .
+
+//kanna:repository table=categories
+type Category interface {
+	Bind(db DBTX) Category
+	Upsert(ctx context.Context, c model.Category) error
+}
+
+func NewCategory(db DBTX) Category { return newCategory(db) }
+
+func (r *category) Bind(db DBTX) Category { return newCategory(db) }
+
+func (r *category) Upsert(ctx context.Context, c model.Category) error {
+	return translateError(r.upsert(ctx, c))
+}
+```
+
+### Separate-package implementations
+
+With a separate destination such as `-destination ../postgres`, kanna-orm generates an exported struct with the
+interface's name, a value constructor, and value receiver methods. Methods written by hand on that struct are skipped
+without generating helpers.
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
@@ -510,8 +548,8 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
   `(int64, error)` returns the number of rows it deleted, none among them.
 - A [hand-written query](#hand-written-sql) of the method's name takes the place of its verb; a method with neither
   stops generation.
-- A method you write yourself on the generated struct, in another file of the destination, is left to you; kanna-orm
-  writes the rest of the interface.
+- A method you write yourself on the generated struct stays in your file. For [same-package implementations](#same-package-implementations),
+  a recognized verb or named query also generates a private helper. Separate-package implementations skip the method.
 
 A method tells its model by its result, its row, or its scopes, or else by a key of a type declared with the models, as
 `model.OrderID` is. One that takes nothing but keys of another type, such as `uuid.UUID` or `int64`, tells none, and
@@ -696,19 +734,29 @@ once instead, and `skip-locked` has it pass those rows over.
 - PostgreSQL also locks the rows an `Offset` skips. InnoDB locks the rows it scans, not those it returns, so a read with
   no index for its condition locks the whole table.
 - `//kanna:lock` anywhere but right above such a method stops generation, rather than leave the method unlocked. So does
-  one on a method a [hand-written query](#hand-written-sql) or your own code implements: write the lock there.
+  one on a method a [hand-written query](#hand-written-sql) or your own code alone implements: write the lock there.
+  A same-package method delegating to a generated helper keeps its lock on that helper.
 - A `Get`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
 
 ## Hand-written SQL
 
 What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
-where that method is implemented, in the package `-destination` names: the SQL is a detail of the implementation, not
-of the interface. A scope becomes a method of the scope type it names, and is written next to it. A `.sql` file with
+where that method is implemented, in the package `-destination` names. With `-destination .`, queries sit next to the
+repository interface. A scope becomes a method of the scope type it names, and is written next to it. A `.sql` file with
 neither a `-- query:` nor a `-- scope:` line, such as a migration, is none of kanna-orm's.
 
 ```text
 repository/repository.go   //kanna:repository interfaces, MonthCounts among their methods
 postgres/queries.sql       -- query: MonthCounts
+scopes/order_scopes.sql    -- scope: Order.PlacedInMonth(at time.Time)
+```
+
+For `-destination .`, the layout is:
+
+```text
+repository/repository.go   //kanna:repository interfaces; //go:generate go tool kanna-orm -destination .
+repository/queries.sql     -- query: MonthCounts
+repository/orm_gen.go      generated private implementations and DBTX
 scopes/order_scopes.sql    -- scope: Order.PlacedInMonth(at time.Time)
 ```
 
@@ -830,7 +878,7 @@ Generating:
 
 | Flag                 | Meaning                                                                                                     |
 |----------------------|-------------------------------------------------------------------------------------------------------------|
-| `-destination <dir>` | write the implementations of the package's `//kanna:repository` interfaces into dir; required if it has any |
+| `-destination <dir>` | write repository implementations into dir; required for repository interfaces; `.` keeps them in the interface package |
 | `-driver <name>`     | `pgx` or `database/sql` (default: `pgx` on PostgreSQL, `database/sql` on MySQL)                             |
 | `-snapshot <file>`   | the snapshot to read (default: `kanna-orm.snapshot.json` at the root of the module)                         |
 | `-tags <list>`       | comma-separated build tags                                                                                  |

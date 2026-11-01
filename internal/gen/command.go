@@ -200,7 +200,7 @@ func loadRun(dir string, cfg config, load []string, dest *destination, extra []s
 		return loadedRun{}, &d
 	}
 	scopePkgs, repoPkgs := declarations(set.Packages)
-	if d := dest.check(cfg.destination, scopePkgs, repoPkgs); d != nil {
+	if d := dest.check(cfg.destination, scopePkgs); d != nil {
 		return loadedRun{}, d
 	}
 	roots := slices.DeleteFunc(slices.Clone(set.Packages), func(p *packages.Package) bool {

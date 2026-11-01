@@ -167,6 +167,7 @@ type Orders interface {
 	Exists(ctx context.Context, id int64) (bool, error)
 	Delete(ctx context.Context, id int64) (int64, error)
 }
+
 `
 	for _, driver := range []string{"pgx", "database/sql"} {
 		t.Run(driver, func(t *testing.T) {
@@ -188,6 +189,90 @@ type Orders interface {
 			cmd.Env = append(os.Environ(), "GOWORK=off")
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("the module does not compile once generated: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
+func TestCommand_RepositoriesInOwnPackage(t *testing.T) {
+	t.Parallel()
+
+	for _, driver := range []string{"pgx", "database/sql"} {
+		t.Run(driver, func(t *testing.T) {
+			t.Parallel()
+
+			archive := strings.ReplaceAll(repositoryShop, "postgres/", "repository/")
+			archive = strings.ReplaceAll(archive, "package postgres", "package repository")
+			archive = strings.ReplaceAll(archive, "(r OrderRepository)", "(r *orderRepository)")
+			if driver == "pgx" {
+				archive = strings.ReplaceAll(archive, "r.db.ExecContext(", "r.db.Exec(")
+			}
+			archive += `
+-- repository/custom.go --
+package repository
+
+import (
+	"context"
+	"example.com/shop/model"
+)
+
+func NewOrderRepository(db DBTX) OrderRepository { return newOrderRepository(db) }
+
+func (r *orderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+	return r.insert(ctx, o)
+}
+
+func (r *orderRepository) ReopenNew(ctx context.Context) (int64, error) {
+	return r.reopenNew(ctx)
+}
+`
+			dir := writeModule(t, archive)
+			describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+			path := filepath.Join(dir, snapshot.Name)
+			data, err := os.ReadFile(path) //nolint:gosec // the fixture written above
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = []byte(strings.ReplaceAll(string(data), "shop/postgres.", "shop/repository."))
+			//nolint:gosec // the snapshot fixture written above
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			repository := filepath.Join(dir, "repository")
+			args := []string{"-destination", ".", "-driver", driver}
+			for range 2 {
+				if code, _, errOut := run(t, repository, args...); code != cli.ExitOK {
+					t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+				}
+			}
+			if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+				t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+			}
+			cmd := exec.CommandContext(t.Context(), "go", "test", "-mod=mod", "./...")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "GOWORK=off")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("generated module does not compile: %v\n%s", err, out)
+			}
+			if code, _, errOut := run(t, repository, append([]string{"-check"}, args...)...); code != cli.ExitOK {
+				t.Fatalf("kanna-orm -check = %d\n%s", code, errOut)
+			}
+
+			collision := []byte(`package repository
+import (
+	"context"
+	"example.com/shop/model"
+)
+func (r *orderRepository) insert(ctx context.Context, o model.Order) (model.Order, error) { return o, nil }
+`)
+			if err := os.WriteFile(filepath.Join(repository, "collision.go"), collision, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, _, errOut := run(t, repository, args...)
+			if want := "generated helper orderRepository.insert is already declared"; code != cli.ExitFailure ||
+				!strings.Contains(errOut, want) {
+				t.Fatalf("kanna-orm with helper collision = %d\n%s", code, errOut)
 			}
 		})
 	}
@@ -315,10 +400,6 @@ func TestCommand_RepositoryMistakes(t *testing.T) {
 			"error: -driver takes pgx or database/sql, not \"sqlite\"\n"},
 		{"pgx on MySQL", snapshot.MySQL, "repository", []string{"-destination", "../postgres", "-driver", "pgx"}, "",
 			"error: -driver pgx runs on PostgreSQL, but the snapshot is of MySQL\n"},
-		{"the destination the repositories are in", snapshot.PostgreSQL, "repository",
-			[]string{"-destination", "."}, "",
-			"error: -destination . is example.com/shop/repository, whose interfaces the implementations import\n" +
-				"  name a directory of the implementations' own\n"},
 		{"the destination the scope types are in", snapshot.PostgreSQL, "repository",
 			[]string{"-destination", "../scopes"}, "",
 			"error: -destination ../scopes holds the //kanna:scope types of example.com/shop/scopes, whose methods " +

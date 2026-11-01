@@ -377,7 +377,37 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 ## リポジトリ
 
-`//kanna:repository` を付けたインターフェースは、データベースより上のコードがデータベースに対して何をしてよいかを宣言します。そのパッケージで `kanna-orm -destination <dir>` を実行すると、そのディレクトリの `orm_gen.go` に実装が書き出されます。インターフェースにちなんだ名前の構造体、そのコンストラクタ、実行の土台となる `DBTX`（sqlc と同じ名前）です。
+`//kanna:repository` を付けたインターフェースは、データベースより上のコードがデータベースに対して何をしてよいかを宣言します。そのパッケージで `kanna-orm -destination <dir>` を実行すると、そのディレクトリの `orm_gen.go` に実装の構造体、そのコンストラクタ、実行の土台となる `DBTX`（sqlc と同じ名前）が書き出されます。
+
+### 同じパッケージに実装する
+
+`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX) *category` コンストラクタ、ポインタレシーバーのメソッドを生成します。スコープのメソッドも `orm_gen.go` に出力されるため、スコープ型は別のパッケージに置いてください。
+
+アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` のように認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` から `r.upsert` を呼び、そのエラーを変換できます。
+
+このヘルパーの生成は同一パッケージへの出力に限ります。ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
+
+```go
+//go:generate go tool kanna-orm -destination .
+
+//kanna:repository table=categories
+type Category interface {
+	Bind(db DBTX) Category
+	Upsert(ctx context.Context, c model.Category) error
+}
+
+func NewCategory(db DBTX) Category { return newCategory(db) }
+
+func (r *category) Bind(db DBTX) Category { return newCategory(db) }
+
+func (r *category) Upsert(ctx context.Context, c model.Category) error {
+	return translateError(r.upsert(ctx, c))
+}
+```
+
+### 別のパッケージに実装する
+
+`-destination ../postgres` のように別のパッケージを指定すると、インターフェースと同じ名前の公開構造体、値を返すコンストラクタ、値レシーバーのメソッドを生成します。その構造体に手書きしたメソッドは生成対象から外し、ヘルパーも生成しません。
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
@@ -426,7 +456,7 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - スコープを渡しても条件がない `Delete` は、すべての行を削除せずにエラーを返します。
 - `error` だけを返す `Delete` は、`Update` と同じく、1 行も削除しなかったときに `orm.ErrNotFound` を返します。`(int64, error)` を返す `Delete` は削除した行数を返します。0 行の場合も同じです。
 - メソッドと同じ名前の[手書きのクエリ](#手書きの-sql)があれば、動詞の代わりにそれが使われます。動詞も手書きのクエリもないメソッドは生成を止めます。
-- 生成された構造体のメソッドを出力先の別のファイルに自分で書いた場合、そのメソッドには手を付けず、kanna-orm はインターフェースの残りを生成します。
+- 生成された構造体のメソッドを自分で書いた場合、その実装は手書きのファイルに残ります。[同じパッケージへの出力](#同じパッケージに実装する)で、認識できる動詞か手書きのクエリがある場合は、非公開のヘルパーも生成します。別のパッケージへの出力では、そのメソッドを生成対象から外します。
 
 メソッドのモデルは、戻り値、書き込む行、スコープから決まり、それらがなければ `model.OrderID` のようにモデルと一緒に宣言された型のキーから決まります。`uuid.UUID` や `int64` のような他の型のキーしか受け取らないメソッドからはモデルが決まらず、インターフェースが `table=` でテーブルを指定しない限り、生成を止めます:
 
@@ -581,16 +611,25 @@ return tx.Commit(ctx)
 - スコープが読み込むリレーションは、ロックせずに読みます。
 - 確実にロックされるのは存在する行だけなので、行の挿入を防げるとは当てにしないでください。
 - PostgreSQL は `Offset` で飛ばした行もロックします。InnoDB は返した行ではなく走査した行をロックするので、条件に使えるインデックスがない読み取りはテーブル全体をロックします。
-- `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や自分で書いたメソッドに付けた場合も同じです。ロックはそちらに書いてください。
+- `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や手書きのコードだけで実装するメソッドに付けた場合も同じです。ロックはそちらに書いてください。同一パッケージで生成ヘルパーを呼ぶメソッドでは、そのヘルパーにロックを引き継ぎます。
 - `GetForUpdate` のようにロックしそうな名前の `Get`、`First`、`List` に `//kanna:lock` がないと、警告が出ます。
 
 ## 手書きの SQL
 
-メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前のリポジトリのメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。SQL は実装の詳細であり、インターフェースの詳細ではないからです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
+メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前のリポジトリのメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。`-destination .` なら、インターフェースと同じディレクトリです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
 
 ```text
 repository/repository.go   //kanna:repository interfaces, MonthCounts among their methods
 postgres/queries.sql       -- query: MonthCounts
+scopes/order_scopes.sql    -- scope: Order.PlacedInMonth(at time.Time)
+```
+
+`-destination .` の配置は次のとおりです:
+
+```text
+repository/repository.go   //kanna:repository interfaces; //go:generate go tool kanna-orm -destination .
+repository/queries.sql     -- query: MonthCounts
+repository/orm_gen.go      generated private implementations and DBTX
 scopes/order_scopes.sql    -- scope: Order.PlacedInMonth(at time.Time)
 ```
 
@@ -692,7 +731,7 @@ kanna-orm describe [flags] [packages]
 
 | フラグ | 意味 |
 |---|---|
-| `-destination <dir>` | パッケージの `//kanna:repository` インターフェースの実装を dir に書き出す。インターフェースがある場合は必須 |
+| `-destination <dir>` | リポジトリの実装を dir に書き出す。インターフェースがある場合は必須。`.` ならインターフェースと同じパッケージに出力する |
 | `-driver <name>` | `pgx` または `database/sql`（デフォルト: PostgreSQL では `pgx`、MySQL では `database/sql`） |
 | `-snapshot <file>` | 読み込むスナップショット（デフォルト: モジュールのルートの `kanna-orm.snapshot.json`） |
 | `-tags <list>` | カンマ区切りのビルドタグ |

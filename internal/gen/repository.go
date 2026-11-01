@@ -78,8 +78,9 @@ const (
 
 // repository is a //kanna:repository interface.
 type repository struct {
-	name string
-	pos  token.Position
+	name  string
+	local bool
+	pos   token.Position
 	// iface is the package declaring it.
 	iface   *types.Package
 	methods []repoMethod
@@ -193,6 +194,7 @@ type repoReader struct {
 	// imported are the packages the run loads, and those they import, by their import paths, among which the model
 	// of a table table= names is found.
 	imported map[string]*types.Package
+	local    bool
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -211,7 +213,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 			repo, rds := r.repository(d)
 			ds = append(ds, rds...)
 			for _, m := range repo.methods {
-				methods = append(methods, m.name)
+				methods = append(methods, m.fn.Name())
 			}
 			if !diag.HasErrors(rds) {
 				repos = append(repos, repo)
@@ -225,7 +227,11 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
-	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types}
+	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
+	if r.local && !ts.Name.IsExported() {
+		return repo, []diag.Diag{diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
+			repo.name)}
+	}
 	obj, _ := r.pkg.Types.Scope().Lookup(ts.Name.Name).(*types.TypeName)
 	syntax, isInterface := ts.Type.(*ast.InterfaceType)
 	if obj == nil || !isInterface || ts.TypeParams != nil {
@@ -253,8 +259,12 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	slices.SortFunc(methods, func(a, b *types.Func) int { return cmp.Compare(a.Pos(), b.Pos()) })
 
 	var ds []diag.Diag
+	implementation := repo.implementation()
 	for _, fn := range methods {
-		if r.skip[repo.name][fn.Name()] {
+		overridden := r.skip[implementation][fn.Name()]
+		_, generated := verbOf(fn.Name())
+		_, query := r.queries[fn.Name()]
+		if overridden && (!r.local || (!generated && !query)) {
 			if f := docs[fn.Name()]; f != nil {
 				if d, _ := directive.Find(r.pkg.Fset, f.Doc, "lock"); d.Found {
 					ds = append(ds, hasNoGeneratedSQL(d, fn.Name(), "the method the destination declares"))
@@ -263,6 +273,13 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 			continue
 		}
 		m, mds := r.method(fn, docs[fn.Name()], ts, tableModel)
+		if overridden {
+			m.name = lowerFirst(m.name)
+			if r.skip[implementation][m.name] {
+				mds = append(mds, diag.Errorf(m.pos, "%s: generated helper %s.%s is already declared", fn.Name(),
+					implementation, m.name))
+			}
+		}
 		ds = append(ds, mds...)
 		repo.methods = append(repo.methods, m)
 	}
