@@ -30,8 +30,9 @@ type relation struct {
 	path []string
 	typ  types.Type
 	// fk is the foreign key its tag names, if any.
-	fk  string
-	pos token.Position
+	fk           string
+	pos          token.Position
+	table, value string
 }
 
 // matched is what the fields of a model are.
@@ -93,6 +94,9 @@ func (m *matcher) match(st *types.Struct, path []string) {
 		}
 
 		switch t := f.Type(); {
+		case tag.relation != "":
+			m.relations = append(m.relations, relation{path: fpath, typ: t, fk: tag.fk, pos: pos,
+				table: tag.relation, value: tag.value})
 		case f.Embedded() && isModel(t):
 			if written != "" {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is on an embedded struct, whose fields hold the columns`,

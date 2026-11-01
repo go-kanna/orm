@@ -24,7 +24,7 @@ func queryColumns(fset *token.FileSet, row types.Type) ([]column, []diag.Diag) {
 			switch t := f.Type(); {
 			case err != nil:
 				ds = append(ds, diag.Errorf(pos, "%s: %v", strings.Join(p, "."), err))
-			case f.Name() == "_", tag.skip:
+			case f.Name() == "_", tag.skip, tag.relation != "":
 			case !f.Exported():
 				ds = append(ds, diag.Errorf(pos, "%s: the code kanna-orm writes cannot reach an unexported field",
 					strings.Join(p, ".")).WithHints(`export it, or leave it out with orm:"-"`))

@@ -45,6 +45,10 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 		rm.columns = f.columns
 		links, _ := r.l.link(sc, f.columns, f.relations)
 		for _, lk := range links {
+			if lk.scalar != nil {
+				rm.links = append(rm.links, lk)
+				continue
+			}
 			if d, ok := loadable(rm.model, lk); !ok {
 				ds = append(ds, d)
 				continue

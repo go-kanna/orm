@@ -48,6 +48,7 @@ type link struct {
 	// keys are the fields of the model holding the columns the relation joins by, and targetKeys those of the related
 	// model: the foreign key's columns and the ones it references, in the order of the key.
 	keys, targetKeys []column
+	scalar           *column
 }
 
 // way is a way a relation can be read: by a foreign key, and for manyToMany, through a table.
@@ -92,6 +93,9 @@ func (l linker) link(sc scope, columns []column, relations []relation) ([]link, 
 }
 
 func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Diag, bool) {
+	if r.table != "" {
+		return l.scalarLink(sc, columns, r)
+	}
 	field := r.path[len(r.path)-1]
 	errorf := func(format string, args ...any) diag.Diag {
 		label := sc.model.Obj().Name() + "." + strings.Join(r.path, ".")

@@ -27,7 +27,7 @@ type ProductRepository interface {
 	InsertTags(ctx context.Context, tags []model.Tag) error
 }
 
-//kanna:repository
+//kanna:repository errors=translateOrderError
 type OrderRepository interface {
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)

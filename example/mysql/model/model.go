@@ -1,7 +1,12 @@
 // Package model is the domain of the example: customers, the products they order, and their orders.
 package model
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrOrderNotFound = errors.New("order not found")
 
 type (
 	CustomerID  int64
@@ -34,7 +39,7 @@ type Order struct {
 	CustomerID CustomerID
 	Status     OrderStatus
 	PlacedAt   time.Time
-	Memo       *string `orm:"note"`
+	Memo       string `orm:"note,nullzero"`
 
 	Customer *Customer   // belongs to, by customer_id
 	Lines    []OrderLine // has many, by order_lines.order_id

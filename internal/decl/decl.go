@@ -41,7 +41,8 @@ type Repository struct {
 	// Pos is where the directive is.
 	Pos token.Position
 	// Table is the table of the methods that tell none themselves, when table= names one.
-	Table string
+	Table  string
+	Errors string
 }
 
 // Decls is what a file declares for kanna-orm.
@@ -90,11 +91,12 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			d, fds = directive.Find(fset, doc, "repository")
 			ds = append(ds, fds...)
 			if d.Found {
-				table, err := repositoryArgs(d.Args)
+				table, errorFunc, err := repositoryArgs(d.Args)
 				if err != nil {
 					ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:repository table=orders"))
 				} else {
-					decls.Repositories = append(decls.Repositories, Repository{Spec: ts, Pos: d.Pos, Table: table})
+					decls.Repositories = append(decls.Repositories,
+						Repository{Spec: ts, Pos: d.Pos, Table: table, Errors: errorFunc})
 				}
 			}
 		}
@@ -146,19 +148,23 @@ func scopeArgs(args string) (table, fn string, err error) {
 }
 
 // repositoryArgs reads what follows //kanna:repository: the table table= names, if any.
-func repositoryArgs(args string) (table string, err error) {
+func repositoryArgs(args string) (table, errorFunc string, err error) {
 	for field := range strings.FieldsSeq(args) {
 		key, value, _ := strings.Cut(field, "=")
 		switch {
 		case key == "table" && table != "":
-			return "", errors.New("//kanna:repository gives table= twice")
+			return "", "", errors.New("//kanna:repository gives table= twice")
 		case key == "table" && value != "":
 			table = value
+		case key == "errors" && errorFunc != "":
+			return "", "", errors.New("//kanna:repository gives errors= twice")
+		case key == "errors" && token.IsIdentifier(value) && !token.Lookup(value).IsKeyword():
+			errorFunc = value
 		default:
-			return "", fmt.Errorf("//kanna:repository takes table=, not %q", field)
+			return "", "", fmt.Errorf("//kanna:repository takes table= or errors=, not %q", field)
 		}
 	}
-	return table, nil
+	return table, errorFunc, nil
 }
 
 // Implied is a scope type a //kanna:scopes directive implies: one named after the struct it holds, Model, of the

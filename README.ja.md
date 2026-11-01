@@ -240,7 +240,15 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 
 カラムのないフィールド、nil になれないフィールドが保持する NULL になりうるカラム、そして insert されるテーブルで、データベースが値を必須とするのにモデルにフィールドがないカラムは、いずれも生成を止めます。それ以外の場合、モデルにフィールドがないカラムには何もしません。
 
-nullable な文字列の欠落をフィールドのゼロ値で表す場合は `nullzero` を指定できます。`sql.Scanner` を実装した enum などの名前付き文字列型にも対応します。生成コードは `sql.Null[T]` を使うため、NULL を enum 自身の非 NULL 用 Scan へ渡さず、非 NULL の値は引き続きその Scan で検証します。テーブル操作と手書きクエリのモデルの両方に適用されます。後から読み込む通知設定など、行に格納されないフィールドには `orm:"-"` を指定できます。
+nullable な文字列の欠落をフィールドのゼロ値で表す場合は `nullzero` を指定できます。`sql.Scanner` を実装した enum などの名前付き文字列型にも対応します。生成コードは `sql.Null[T]` を使うため、NULL を enum 自身の非 NULL 用 Scan へ渡さず、非 NULL の値は引き続きその Scan で検証します。テーブル操作と手書きクエリのモデルの両方に適用されます。フィールド名の snake case がカラム名と一致する場合、`orm:",nullzero"` とカラム名を省略できます。
+
+[PostgreSQL](example/postgres/model/model.go) と [MySQL](example/mysql/model/model.go) の example では、任意の注文メモに使っています。
+
+```go
+Memo string `orm:"note,nullzero"`
+```
+
+[readMemos](example/postgres/memos.go) では `MemoIsNull()` で検索し、空のメモが SQL NULL として保存され、空文字として読み込まれることと、空でないメモが保持されることを確認します。ここでは `Memo` を `note` カラムに対応させるため明示しています。フィールド名が `Note` なら `orm:",nullzero"` だけで十分です。
 
 フィールドの型は、ドライバがカラムの型を読み込める型でなければなりません。`bigint` には整数型、`text` には string、`timestamptz` や `datetime` には `time.Time`、`bytea` や `blob` には `[]byte`、`uuid` には Go 1.27 の `uuid.UUID` か string、PostgreSQL の配列にはそれらのスライスです（MySQL に配列はありません）。`Scan` メソッドと `Value` メソッドを持つ型は自分で変換するので、どのカラムにも使えます。enum や `json` のように kanna-orm が知らないデータベースの型については、フィールドの型をそのまま信用します。
 
@@ -414,6 +422,23 @@ func (r *category) Upsert(ctx context.Context, c model.Category) error {
 }
 ```
 
+### エラーの変換
+
+[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、注文が見つからないエラーを `model.ErrOrderNotFound` へ変換します。repository に `//kanna:repository errors=translateOrderError` を指定し、実装パッケージの [store/errors.go](example/postgres/store/errors.go) に関数を置きます。
+
+```go
+func translateOrderError(op orderRepositoryOperation, err error) error {
+    if op == orderRepositoryOperationGet && errors.Is(err, orm.ErrNotFound) {
+        return model.ErrOrderNotFound
+    }
+    return err
+}
+```
+
+非公開の文字列型 `orderRepositoryOperation` と、`orderRepositoryOperationGet`、`orderRepositoryOperationInsert` など、エラーを返す生成メソッドごとの型付き定数を生成します。`Bind` は含みません。example の main では、注文 99 の `Get` が `model.ErrOrderNotFound` を返すことを確認します。変換を指定しない repository は引き続き `orm.ErrNotFound` を返します。
+
+関数の存在と `func(orderRepositoryOperation, error) error` という型を生成時に検証します。操作型がまだ存在しない初回生成にも対応します。生成名と手書きの宣言が衝突した場合はエラーです。エラーに文脈を付けた後、nil でない場合に一度だけ変換します。手書き SQL と関連の読み込みで発生したエラーも対象です。生成された private helper は元のインターフェースのメソッドに対応する操作定数を渡します。手書きメソッド本体には自動適用しません。`errors=` がなければ操作型や変換処理は生成しません。変換しないエラーはそのまま返し、エラーチェーンを保持してください。
+
 ### 別のパッケージに実装する
 
 `-destination ../postgres` のように別のパッケージを指定すると、インターフェースと同じ名前の公開構造体、値を返すコンストラクタ、値レシーバーのメソッドを生成します。その構造体に手書きしたメソッドは生成対象から外し、ヘルパーも生成しません。
@@ -506,6 +531,27 @@ type TodoRepository interface {
 - MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` を受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。
 
 [go-kanna/showcase](https://github.com/go-kanna/showcase) は、to-do を `uuid.UUID` をキーにして管理する to-do サービスです。
+
+### スカラーのリレーション
+
+関連する行の 1 カラムを、enum を含むスライスへ直接読み込めます。関連先のテーブルとカラムを指定し、中間のモデルやスコープ型は不要です。
+
+```go
+type Device struct {
+    ID uuid.UUID
+    Topics []Topic `orm:"relation=device_topics,column=topic"`
+}
+```
+
+スナップショットに `device_topics` から `devices` への外部キーが必要です。参照先のカラムは親モデルが保持している必要があります。複数の外部キーがある場合は `orm:"relation=device_topics,column=topic,fk=device_id"` で選択します。カラムの型と NULL の許容をスライスの要素型に照合します。
+
+複合外部キーにも対応します。例えば `order_tags.(tenant_id, order_id)` から `orders.(tenant_id, id)` への関連は、組全体で検索し、親ごとに振り分けます。親モデルは参照先の両カラムを保持する必要があります。組を条件にしてバッチで読み込むため、別テナントで同じ ID があっても混在しません。キーのいずれかのポインタが nil の親は、関連の読み込み対象から外れます。
+
+生成されたスコープには `WithTopics()` が追加されます。通常生成の検索で指定した場合だけ、関連する値をバッチで読み込み、選択したカラムの昇順で格納します。enum の値は Scanner を通ります。読み込んだ関連が 0 件なら空のスライス、指定しなかった関連は nil です。親の INSERT・UPDATE と手書き SQL のモデルマッピングからは除外します。関連の更新処理は別に実装してください。
+
+```go
+device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTopics())
+```
 
 ### 書き込み
 

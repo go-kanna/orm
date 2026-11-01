@@ -45,6 +45,9 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve("DBTX")
 	for _, repo := range repos {
 		f.Reserve(repo.implementation(), repo.constructor())
+		if repo.errors != "" {
+			f.Reserve(repo.operationNames()...)
+		}
 		if repo.publicConstructor {
 			f.Reserve("New" + repo.name)
 		}
@@ -109,6 +112,9 @@ func (e repoEmitter) db() {
 
 // repository writes the implementation of repo: its struct, constructor, and methods.
 func (e repoEmitter) repository(repo repository) {
+	if repo.errors != "" {
+		e.operations(repo)
+	}
 	iface := repo.name
 	if p := repo.iface; p != nil {
 		if pkg := e.f.Import(p.Path(), p.Name()); pkg != "" {
@@ -164,10 +170,11 @@ type signature struct {
 	// interface gives them.
 	ctx, scopes, row string
 	params           map[string]string
+	errorResult      string
 }
 
 // signature writes the parameters and the results of m, naming each parameter in sc.
-func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
+func (e repoEmitter) signature(m repoMethod, sc gofile.Scope, translate bool) signature {
 	sig := m.fn.Signature()
 	s := signature{params: map[string]string{}}
 	params := make([]string, 0, sig.Params().Len())
@@ -216,11 +223,24 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 		params = append(params, local+" "+types.TypeString(p.Type(), e.f.Qualifier))
 	}
 	results := make([]string, 0, sig.Results().Len())
-	for r := range sig.Results().Variables() {
-		results = append(results, types.TypeString(r.Type(), e.f.Qualifier))
+	for i := range sig.Results().Len() {
+		r := sig.Results().At(i)
+		typ := types.TypeString(r.Type(), e.f.Qualifier)
+		if translate {
+			name := "result"
+			if i == sig.Results().Len()-1 {
+				name = "resultErr"
+			}
+			local := sc.Name(name)
+			if i == sig.Results().Len()-1 {
+				s.errorResult = local
+			}
+			typ = local + " " + typ
+		}
+		results = append(results, typ)
 	}
 	s.text = "(" + strings.Join(params, ", ") + ") "
-	if len(results) == 1 {
+	if len(results) == 1 && !translate {
 		s.text += results[0]
 	} else {
 		s.text += "(" + strings.Join(results, ", ") + ")"
@@ -240,7 +260,8 @@ func (e repoEmitter) dialect() string {
 func (e repoEmitter) method(repo repository, m repoMethod) {
 	sc := e.f.Scope()
 	recv := sc.Name("r")
-	sig := e.signature(m, sc)
+	translate := repo.errors != "" && m.bind == nil
+	sig := e.signature(m, sc, translate)
 	if m.query != nil {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
 	}
@@ -249,6 +270,10 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		receiver = "*" + receiver
 	}
 	e.printf("func (%s %s) %s%s {\n", recv, receiver, m.name, sig.text)
+	if translate {
+		e.printf("defer func() {\nif %s != nil {\n%s = %s(%s, %s)\n}\n}()\n",
+			sig.errorResult, sig.errorResult, repo.errors, repo.operationType()+m.fn.Name(), sig.errorResult)
+	}
 	if m.bind != nil {
 		input := sig.ctx
 		if m.bind.accessor {
@@ -825,6 +850,14 @@ func (e repoEmitter) preloadRows(rm readModel) {
 		c = newCompositeNames(sc, rm.links)
 	}
 	for _, lk := range rm.links {
+		if lk.scalar != nil {
+			if composite(lk) {
+				e.preloadScalarComposite(lk, n, c)
+			} else {
+				e.preloadScalar(lk, n)
+			}
+			continue
+		}
 		if composite(lk) {
 			e.preloadComposite(lk, n, c)
 			continue
