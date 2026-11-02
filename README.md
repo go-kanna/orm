@@ -1104,3 +1104,53 @@ results, and how they were taken.
 ## License
 
 [MIT](./LICENSE)
+
+### Correlated selections and per-parent collections
+
+Declare the source of a scalar value on the destination field. For example, an order can read the reviewer of its current revision from approval history:
+
+```go
+type Order struct {
+    ID OrderID
+    Approver *string `orm:"relation=approvals"`
+    Approvals []Approval
+}
+```
+
+When `column` is omitted, the source column is inferred from the field name using the usual snake_case rule (`Approver` → `approver`). Specify `column=approver` when the field has a different name, such as `CurrentApprover`. A missing source column is a generation error.
+
+Declare a scope for the related model, as for other relations. Generation adds typed `<Scope>Columns` descriptors, `EqColumn`/`NeColumn` and ordered column comparisons, and `One`, `First`, and `Many` selectors. A parent descriptor represents a SQL column, not a loaded Go value. Known database columns omitted from the model, such as an order's `revision`, are available in the descriptor too. Mapped columns retain their Go types; otherwise supported database types determine the descriptor type.
+
+```go
+func (s Order) WithCurrentApprover() Order {
+    return s.SelectApprover(func(parent OrderColumns) orm.Single[model.Approval] {
+        return Approvals().RevisionEqColumn(parent.Revision).RevokedAtIsNull().One()
+    })
+}
+
+func (s Order) WithLatestApprover() Order {
+    return s.SelectApprover(func(_ OrderColumns) orm.Single[model.Approval] {
+        return Approvals().RevokedAtIsNull().ApprovedAtDesc().IDDesc().First()
+    })
+}
+
+func (s Order) WithRecentApprovals() Order {
+    return s.PreloadApprovals(func(_ OrderColumns) orm.Many[model.Approval] {
+        return Approvals().ApprovedAtDesc().IDDesc().Limit(3).Many()
+    })
+}
+
+orders, err := repo.List(ctx, scopes.Orders().IDAsc().Limit(20).
+    WithCurrentApprover().WithRecentApprovals())
+```
+
+The foreign key supplies the basic parent/child correlation. The callback adds conditions, including comparisons to parent columns. A column's Go type must match the comparison method; references captured from another callback or used outside their parent query fail when rendered. Values are still passed as bound parameters, and identifiers are quoted separately.
+
+- `One` expects at most one matching row: zero produces SQL NULL and multiple matches produce a database cardinality error. Limits, offsets, and cursors cannot hide extra matches.
+- `First` requires an order and chooses its first row; `Offset` can skip earlier rows. It supplies its own limit. Use a unique ordering, such as a timestamp followed by an ID, for deterministic results.
+- `One().Required()` and `First().Required()` reject a missing or NULL value with `orm.ErrRequiredRelation`. Non-nullable destinations require `Required`. A nullable destination without a selection stays nil.
+- `Many` reads collections in a batch, restricted to the requested parents. `Limit` and `Offset` apply independently to each parent, using `ROW_NUMBER()` when needed. An order is required for per-parent pagination. Empty collections are empty slices. Collection cursors are rejected; paginate parents with cursors and child collections with offsets.
+
+`Select<Field>` adds a scalar subquery to the parent's SELECT, preserving its rows and pagination and reading the value in the same statement. Multiple selected fields have independent predicates and correctly numbered parameters. `Preload<Field>` reads model collections through a separate batched query, supports composite foreign keys and junction tables, and can load the selected children's own relations. A normal repeatable-read transaction provides snapshot consistency across ordinary parent and collection reads; locking and transaction isolation remain explicit caller choices. Existing `With<Field>` preloads retain their behavior.
+
+Scalar selections are read-only: INSERT and UPDATE leave them out. A hand-written repository query can instead select the value under the field's column name, such as `a.approver AS approver`, into the same model. This keeps a route to query-specific optimization without changing the domain model. The PostgreSQL and MySQL examples check current/latest reviewers, per-order history limits and offsets, missing/required/multiple matches, and the custom SQL alternative.

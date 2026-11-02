@@ -1,6 +1,21 @@
 {
   "dialect": "postgresql",
   "tables": {
+    "approvals": {
+      "columns": [
+        {"name": "id", "type": "int8", "not_null": true, "assigned": true},
+        {"name": "order_id", "type": "int8", "not_null": true},
+        {"name": "revision", "type": "int4", "not_null": true},
+        {"name": "approver", "type": "text", "not_null": true},
+        {"name": "approved_at", "type": "timestamptz", "not_null": true},
+        {"name": "revoked_at", "type": "timestamptz"}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]}
+      ]
+    },
     "customers": {
       "columns": [
         {"name": "id", "type": "int8", "not_null": true, "assigned": true},
@@ -43,6 +58,7 @@
     },
     "orders": {
       "columns": [
+        {"name": "revision", "type": "int4", "not_null": true, "default": true},
         {"name": "id", "type": "int8", "not_null": true, "assigned": true},
         {"name": "customer_id", "type": "int8", "not_null": true},
         {"name": "status", "type": "text", "not_null": true},
@@ -94,6 +110,20 @@
         {"name": "at", "type": "timestamptz"}
       ],
       "columns": []
+    },
+    "github.com/go-kanna/orm/example/postgres/store.FindApproval": {
+      "digest": "41f20367490b4373",
+      "params": [
+        {"name": "id", "type": "int8"}
+      ],
+      "columns": [
+        {"name": "id", "type": "int8", "not_null": true},
+        {"name": "customer_id", "type": "int8", "not_null": true},
+        {"name": "status", "type": "text", "not_null": true},
+        {"name": "placed_at", "type": "timestamptz", "not_null": true},
+        {"name": "note", "type": "text", "nullable": true},
+        {"name": "approver", "type": "text", "not_null": true}
+      ]
     },
     "github.com/go-kanna/orm/example/postgres/store.MonthlySales": {
       "digest": "00850c7dd3b181bd",

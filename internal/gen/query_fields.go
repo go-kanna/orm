@@ -24,7 +24,7 @@ func queryColumns(fset *token.FileSet, row types.Type) ([]column, []diag.Diag) {
 			switch t := f.Type(); {
 			case err != nil:
 				ds = append(ds, diag.Errorf(pos, "%s: %v", strings.Join(p, "."), err))
-			case f.Name() == "_", tag.skip, tag.relation != "":
+			case f.Name() == "_", tag.skip:
 			case !f.Exported():
 				ds = append(ds, diag.Errorf(pos, "%s: the code kanna-orm writes cannot reach an unexported field",
 					strings.Join(p, ".")).WithHints(`export it, or leave it out with orm:"-"`))
@@ -40,7 +40,7 @@ func queryColumns(fset *token.FileSet, row types.Type) ([]column, []diag.Diag) {
 					continue
 				}
 				columns = append(columns, column{path: p, typ: t, pos: pos,
-					col: snapshot.Column{Name: name}, nullzero: tag.nullzero})
+					col: snapshot.Column{Name: name}, nullzero: tag.nullzero, relationValue: tag.relation != ""})
 			}
 		}
 	}
@@ -70,6 +70,9 @@ func queryArguments(fset *token.FileSet, params *types.Tuple) (map[string]queryA
 		columns, cds := queryColumns(fset, p.Type())
 		ds = append(ds, cds...)
 		for _, c := range columns {
+			if c.relationValue {
+				continue
+			}
 			for _, name := range []string{c.col.Name, lowerFirst(c.path[len(c.path)-1])} {
 				if prior, ok := args[name]; ok {
 					if prior.field == nil || prior.parameter == p.Name() && fieldPath(*prior.field) == fieldPath(c) {

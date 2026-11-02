@@ -28,6 +28,10 @@ type Of[M any] struct {
 	limit, offset       int
 	hasLimit, hasOffset bool
 	preloads            []preload
+	projections         []projectionField
+	batches             []batchField
+	parent              *parentContext
+	parentPrefix        string
 	seek                seek
 	seeking             bool
 	err                 error
@@ -148,6 +152,10 @@ func Join[M any](qs ...Of[M]) Of[M] {
 		for _, p := range s.preloads {
 			q.preloads = addPreload(q.preloads, p)
 		}
+		q.projections = slices.Concat(q.projections, s.projections)
+		for _, batch := range s.batches {
+			q.batches = addBatch(q.batches, batch)
+		}
 		if s.seeking {
 			q.seek, q.seeking = s.seek, true
 		}
@@ -167,6 +175,8 @@ func (q Of[M]) ConditionsOnly(what string) error {
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope orders the rows", what)
 	case q.hasLimit || q.hasOffset || q.seeking:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope keeps only some of the rows", what)
+	case len(q.projections) > 0 || len(q.batches) > 0:
+		return fmt.Errorf("orm: %s takes conditions alone, but its scope loads relations", what)
 	case len(q.preloads) > 0:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope loads %s", what, q.preloads[0].relation)
 	}

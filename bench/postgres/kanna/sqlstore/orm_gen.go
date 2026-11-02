@@ -184,6 +184,55 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 	if len(rows) == 0 {
 		return nil
 	}
+	if sub, parent, ok := orm.Batched[model.OrderLine](q, "Lines"); ok {
+		type parentKey struct{ k0 int64 }
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].ID}
+			keys = append(keys, key)
+		}
+		flat := []model.OrderLine{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"id", "order_id", "sku", "quantity"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.QueryContext(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Lines: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.OrderLine
+				if err := related.Scan(&key.k0, &row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Lines: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		grouped := map[parentKey][]model.OrderLine{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Lines = []model.OrderLine{}
+			key := parentKey{rows[i].ID}
+			if values, ok := grouped[key]; ok {
+				rows[i].Lines = values
+			}
+		}
+	}
 	if sub, ok := orm.Preloaded[model.OrderLine](q, "Lines"); ok {
 		keys := make([]int64, 0, len(rows))
 		for i := range rows {

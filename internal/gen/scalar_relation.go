@@ -15,9 +15,14 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 		label := sc.model.Obj().Name() + "." + strings.Join(r.path, ".") + ": "
 		return link{}, []diag.Diag{diag.Errorf(r.pos, label+format, args...)}, false
 	}
-	s, ok := r.typ.Underlying().(*types.Slice)
-	if !ok || !holdsColumn(s.Elem()) || holdsModels(r.typ) {
-		return fail("a scalar relation requires a slice of column values")
+	s, many := r.typ.Underlying().(*types.Slice)
+	single := !many
+	valueType := r.typ
+	if many {
+		valueType = s.Elem()
+	}
+	if !holdsColumn(valueType) || holdsModels(valueType) {
+		return fail("a scalar relation requires column values")
 	}
 	table, ok := l.tables[r.table]
 	if !ok {
@@ -28,8 +33,14 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 		return fail("%s has no column %s", r.table, r.value)
 	}
 	c := table.Columns[i]
-	if _, ok := readable(s.Elem(), c.Type); !ok || !c.NotNull && !nilable(s.Elem()) {
-		return fail("%s cannot hold %s.%s (%s), including its nullability", typeName(s.Elem()), r.table, r.value, c.Type)
+	if many && (classOf(c.Type) == classBytes || strings.HasSuffix(c.Type, "[]")) {
+		if _, ok := readable(r.typ, c.Type); ok {
+			single = true
+			valueType = r.typ
+		}
+	}
+	if _, ok := readable(valueType, c.Type); !ok || !single && !c.NotNull && !nilable(valueType) {
+		return fail("%s cannot hold %s.%s (%s), including its nullability", typeName(valueType), r.table, r.value, c.Type)
 	}
 	var ways []snapshot.ForeignKey
 	for _, fk := range table.ForeignKeys {
@@ -65,8 +76,32 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 		}
 		targetKeys = append(targetKeys, column{typ: keys[i].typ, col: table.Columns[j]})
 	}
+	target := indexed{table: r.table}
+	var model *types.Named
+	if single {
+		var ok bool
+		target, model, ok = l.scalarScope(r.table)
+		if !ok {
+			return fail("a single-value relation requires a scope for %s", r.table)
+		}
+	}
 	return link{field: r, way: way{kind: hasMany, fk: fk, table: r.table},
-		target: indexed{table: r.table}, keys: keys,
+		target: target, model: model, single: single, keys: keys,
 		targetKeys: targetKeys,
-		scalar:     &column{typ: s.Elem(), col: c}}, nil, true
+		scalar:     &column{typ: valueType, col: c}}, nil, true
+}
+
+func (l linker) scalarScope(table string) (indexed, *types.Named, bool) {
+	for _, sc := range l.scopes {
+		if sc.table == table {
+			target, ok := l.scopeOf(sc.model)
+			return target, sc.model, ok
+		}
+	}
+	for _, candidate := range slices.Concat(l.loaded, l.idx) {
+		if candidate.table == table {
+			return candidate, nil, true
+		}
+	}
+	return indexed{}, nil, false
 }

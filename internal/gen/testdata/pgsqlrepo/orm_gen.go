@@ -734,6 +734,113 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 	if len(rows) == 0 {
 		return nil
 	}
+	if sub, parent, ok := orm.Batched[model.LineNote](q, "Notes"); ok {
+		type parentKey struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].OrderID, rows[i].LineNo}
+			keys = append(keys, key)
+		}
+		flat := []model.LineNote{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 500) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0, key.k1}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "order_lines", Table: "line_notes", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"order_id", "line_no"}}, parent, []string{"order_id", "line_no", "body"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.QueryContext(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Notes: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.LineNote
+				if err := related.Scan(&key.k0, &key.k1, &row.OrderID, &row.LineNo, &row.Body); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Notes: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		if err := preloadLineNotes(ctx, db, flat, sub); err != nil {
+			return err
+		}
+		grouped := map[parentKey][]model.LineNote{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Notes = []model.LineNote{}
+			key := parentKey{rows[i].OrderID, rows[i].LineNo}
+			if values, ok := grouped[key]; ok {
+				rows[i].Notes = values
+			}
+		}
+	}
+	if sub, parent, ok := orm.Batched[model.Tag](q, "Tags"); ok {
+		type parentKey struct {
+			k0 model.OrderID
+			k1 int
+		}
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].OrderID, rows[i].LineNo}
+			keys = append(keys, key)
+		}
+		flat := []model.Tag{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 500) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0, key.k1}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "order_lines", Table: "tags", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"name"}, Through: "line_tags", ThroughParent: []string{"order_id", "line_no"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.QueryContext(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Tags: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.Tag
+				if err := related.Scan(&key.k0, &key.k1, &row.Name); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Tags: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		grouped := map[parentKey][]model.Tag{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Tags = []model.Tag{}
+			key := parentKey{rows[i].OrderID, rows[i].LineNo}
+			if values, ok := grouped[key]; ok {
+				rows[i].Tags = values
+			}
+		}
+	}
 	if sub, ok := orm.Preloaded[model.Order](q, "Order"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		seen := map[model.OrderID]bool{}
@@ -889,6 +996,107 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
+	}
+	if sub, parent, ok := orm.Batched[model.OrderLine](q, "Lines"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].ID}
+			keys = append(keys, key)
+		}
+		flat := []model.OrderLine{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.QueryContext(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Lines: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.OrderLine
+				if err := related.Scan(&key.k0, &row.OrderID, &row.LineNo, &row.SKU); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Lines: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		if err := preloadOrderLines(ctx, db, flat, sub); err != nil {
+			return err
+		}
+		grouped := map[parentKey][]model.OrderLine{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Lines = []model.OrderLine{}
+			key := parentKey{rows[i].ID}
+			if values, ok := grouped[key]; ok {
+				rows[i].Lines = values
+			}
+		}
+	}
+	if sub, parent, ok := orm.Batched[model.Tag](q, "Tags"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].ID}
+			keys = append(keys, key)
+		}
+		flat := []model.Tag{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.QueryContext(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Tags: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.Tag
+				if err := related.Scan(&key.k0, &row.Name); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Tags: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		grouped := map[parentKey][]model.Tag{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Tags = []model.Tag{}
+			key := parentKey{rows[i].ID}
+			if values, ok := grouped[key]; ok {
+				rows[i].Tags = values
+			}
+		}
 	}
 	if sub, ok := orm.Preloaded[model.Customer](q, "Customer"); ok {
 		keys := make([]int64, 0, len(rows))

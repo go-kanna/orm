@@ -18,12 +18,15 @@ import (
 // column is a field of a model that holds a column of its table.
 type column struct {
 	// path is the field's name, after those of the structs it is embedded in.
-	path          []string
-	typ           types.Type
-	col           snapshot.Column
-	pos           token.Position
-	nullzero      bool
-	insertDefault bool
+	path            []string
+	typ             types.Type
+	col             snapshot.Column
+	pos             token.Position
+	nullzero        bool
+	insertDefault   bool
+	selectedBy      string
+	selectionReturn string
+	relationValue   bool
 }
 
 // relation is a field of a model that holds other models: a relation, once the foreign key it follows is found.
@@ -96,8 +99,12 @@ func (m *matcher) match(st *types.Struct, path []string) {
 
 		switch t := f.Type(); {
 		case tag.relation != "":
+			value := tag.value
+			if value == "" {
+				value = columnName(f.Name())
+			}
 			m.relations = append(m.relations, relation{path: fpath, typ: t, fk: tag.fk, pos: pos,
-				table: tag.relation, value: tag.value})
+				table: tag.relation, value: value})
 		case f.Embedded() && isModel(t):
 			if written != "" {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is on an embedded struct, whose fields hold the columns`,

@@ -21,8 +21,9 @@ const generator = "kanna-orm"
 type scopePlan struct {
 	scope
 
-	columns []column
-	links   []link
+	definition snapshot.Table
+	columns    []column
+	links      []link
 	// primaryKey holds the fields holding the columns of the table's primary key, in its order, or nothing when the
 	// table has none or the model leaves a column of it out: a page continues from a row by it.
 	primaryKey []column
@@ -42,6 +43,13 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
 	for _, sc := range scopes {
+		for _, name := range []string{sc.name + "Columns", lowerFirst(sc.name) + "ColumnsFor"} {
+			if at, ok := declared(pkg, name); ok {
+				ds = append(ds, diag.Errorf(at, "%s is reserved for generated parent columns", name))
+			}
+		}
+	}
+	for _, sc := range scopes {
 		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
 		links, lds := l.link(sc, f.columns, f.relations)
@@ -51,7 +59,8 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 		if missing != "" {
 			key = nil
 		}
-		plans = append(plans, scopePlan{scope: sc, columns: f.columns, links: links, primaryKey: key,
+		plans = append(plans, scopePlan{scope: sc, definition: s.Tables[sc.table], columns: f.columns,
+			links: links, primaryKey: key,
 			unchecked: f.unchecked})
 	}
 	written, wds := sqlScopes(pkg, s, plans, stmts)
@@ -99,7 +108,7 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	f := gofile.New(generator, pkg.PkgPath, pkg.Name)
 	f.Reserve(declared...)
 	for _, p := range plans {
-		f.Reserve(p.name, p.fn)
+		f.Reserve(p.name, p.fn, p.name+"Columns", lowerFirst(p.name)+"ColumnsFor")
 	}
 	for _, p := range plans {
 		e := emitter{f: f, d: d, p: p, orm: f.Import(ormPath, "orm")}
@@ -138,11 +147,21 @@ func (e emitter) scope() {
 	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s.Of[%s] { return %s }\n\n",
 		s, p.name, e.orm, model, e.q(s))
 
+	e.columnReferences()
+	e.selectionMethods()
 	for _, c := range p.columns {
 		e.column(c)
+		e.columnComparison(c)
 	}
 	for _, lk := range p.links {
-		e.with(lk)
+		if !lk.single {
+			e.with(lk)
+		}
+		if lk.single {
+			e.selection(lk)
+		} else if lk.scalar == nil && (lk.way.kind == hasMany || lk.way.kind == manyToMany) {
+			e.collection(lk)
+		}
 	}
 	for _, w := range p.written {
 		e.written(w)
