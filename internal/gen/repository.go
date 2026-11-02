@@ -27,6 +27,7 @@ type verb string
 
 const (
 	verbGet    verb = "Get"
+	verbFind   verb = "Find"
 	verbFirst  verb = "First"
 	verbList   verb = "List"
 	verbPluck  verb = "Pluck"
@@ -38,11 +39,14 @@ const (
 	verbDelete verb = "Delete"
 )
 
-var verbs = []verb{verbGet, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete}
+var verbs = []verb{
+	verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete,
+}
 
 // shapes are the forms a method of each verb is declared in, for a hint.
 var shapes = map[verb]string{
 	verbGet:    "Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)",
+	verbFind:   "Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)",
 	verbFirst:  "First(ctx context.Context, s ...scopes.Order) (model.Order, error)",
 	verbList:   "List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)",
 	verbPluck:  "//kanna:pluck id followed by a method returning ([]model.OrderID, error)",
@@ -112,11 +116,12 @@ type repoMethod struct {
 	keys []key
 	// scoped reports whether the method takes scopes, as its last parameter. row names the parameter of the row it
 	// writes, and many reports whether it is a slice of rows.
-	scoped  bool
-	row     string
-	changes string
-	many    bool
-	result  result
+	scoped   bool
+	row      string
+	changes  string
+	many     bool
+	optional bool
+	result   result
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
 	doNothing      bool
@@ -606,8 +611,10 @@ func (m repoMethod) shaped() bool {
 	writes := m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert
 	var ok bool
 	switch m.verb {
+	case verbFind:
+		ok = m.result == resultRow && m.optional
 	case verbGet, verbFirst:
-		ok = m.result == resultRow
+		ok = m.result == resultRow && !m.optional
 	case verbList, verbPluck:
 		ok = m.result == resultRows
 	case verbCount:
@@ -638,9 +645,9 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		names = append(names, k.col.col.Name)
 	}
 	switch {
-	case m.verb == verbGet && !containsKey(m.table, names):
-		return []diag.Diag{errorf("%s is not a unique key of %s, so Get cannot return one row",
-			strings.Join(names, ", "), m.target.table).WithHints(fmt.Sprintf(
+	case (m.verb == verbGet || m.verb == verbFind) && !containsKey(m.table, names):
+		return []diag.Diag{errorf("%s is not a unique key of %s, so %s cannot return one row",
+			strings.Join(names, ", "), m.target.table, m.verb).WithHints(fmt.Sprintf(
 			"use List, or add a unique index on %s (%s)", m.target.table, strings.Join(names, ", ")))}
 	case m.verb == verbDelete && m.result == resultNone && !containsKey(m.table, names):
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
@@ -947,6 +954,9 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 	case isBasic(t, types.Bool):
 		m.result = resultBool
 	default:
+		if ptr, ok := t.(*types.Pointer); ok && m.verb == verbFind {
+			t, m.optional = ptr.Elem(), true
+		}
 		model, many, ok := r.rowModel(t)
 		if !ok {
 			return nil, false

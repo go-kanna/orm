@@ -576,6 +576,7 @@ the column of its name, which the rows must equal.
 | Verb     | Declared as                                                                                    | Does                                                                                  |
 |----------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
 | `Get`    | `Get(ctx, id model.OrderID, s ...scopes.Order) (model.Order, error)`                           | reads the row whose key the parameters give, or returns `orm.ErrNotFound`             |
+| `Find` | `Find(ctx, id model.OrderID, s ...scopes.Order) (*model.Order, error)` | reads an optional row by a unique key; returns `nil, nil` when absent |
 | `First`  | `First(ctx, s ...scopes.Order) (model.Order, error)`                                           | reads the first row the scopes match, or returns `orm.ErrNotFound`                    |
 | `List`   | `List(ctx, s ...scopes.Order) ([]model.Order, error)`                                          | reads every row the scopes match                                                      |
 | `Count`  | `Count(ctx, s ...scopes.Order) (int64, error)`                                                 | counts the rows the scopes match                                                      |
@@ -584,6 +585,8 @@ the column of its name, which the rows must equal.
 | `Update` | `Update(ctx, o model.Order) error`                                                             | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
 | `Upsert` | `Upsert(ctx, o model.Order) error`                                                             | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
 | `Delete` | `Delete(ctx, id model.OrderID) error`, or `Delete(ctx, s ...scopes.Order) (int64, error)` | deletes the row with the key, or the rows the scopes match                            |
+
+`Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations. `First` selects a row from a potentially larger set instead. Hand-written SQL may implement a `Find...` returning a pointer to a result struct with the same absence contract.
 
 Use `//kanna:pluck customer_id` above a repository method such as `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` to read one column as a typed slice. The method name is yours to choose. Conditions, ordering, limits, offsets, and cursors work as for `List`; relations are not loaded. Duplicate values are preserved and no matching rows returns an empty slice. Generation checks the column and result type. Nullable columns require nullable elements unless the model field uses `nullzero` and the element has that field’s type. A pluck directive cannot be combined with hand-written SQL, `conflict`, or `lock`.
 
@@ -855,7 +858,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 ### Locking rows
 
-`//kanna:lock` has a `Get`, a `First`, or a `List` lock the rows it reads until the transaction ends, so that what was
+`//kanna:lock` has a `Get`, a `Find`, a `First`, or a `List` lock the rows it reads until the transaction ends, so that what was
 read still holds when it is written back:
 
 ```go
@@ -908,7 +911,7 @@ once instead, and `skip-locked` has it pass those rows over.
   what it runs on has a `Commit`, so a `DBTX` of your own wrapping a transaction needs one too.
 - A lock not given, by `nowait`, a timeout, or a deadlock, comes back as the database's error, wrapped, never as
   `orm.ErrNotFound`. Retrying is yours to do.
-- With `skip-locked`, `orm.ErrNotFound` from a `First` says that no free row matches, not that no row does. A `Get`
+- With `skip-locked`, `orm.ErrNotFound` from a `First` says that no free row matches, not that no row does. A `Get` or `Find`
   would say a held row is not there, so `skip-locked` on one stops generation; use `nowait`.
 - The relations a scope loads are read without a lock.
 - Only rows that exist are sure to be locked, so do not count on a lock to keep a row from being inserted.
@@ -917,7 +920,7 @@ once instead, and `skip-locked` has it pass those rows over.
 - `//kanna:lock` anywhere but right above such a method stops generation, rather than leave the method unlocked. So does
   one on a method a [hand-written query](#hand-written-sql) or your own code alone implements: write the lock there.
   A same-package method delegating to a generated helper keeps its lock on that helper.
-- A `Get`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
+- A `Get`, a `Find`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
 
 ## Hand-written SQL
 

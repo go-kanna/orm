@@ -34,7 +34,7 @@ var lockedName = regexp.MustCompile(`For(Update|NoKeyUpdate|Share|KeyShare)($|[A
 // lock reads the //kanna:lock of m into its locking clause. A method that reads rows and whose name tells of a lock
 // but has none is warned about, as it would be generated without one.
 func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
-	reads := m.verb == verbGet || m.verb == verbFirst || m.verb == verbList
+	reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList
 	if !d.Found {
 		if reads && lockedName.MatchString(m.name) {
 			return []diag.Diag{diag.Warningf(m.pos, "%s: its name tells of a lock, but it has no //kanna:lock", m.name).
@@ -47,7 +47,7 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 		return diag.Errorf(d.Pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
 	if !reads {
-		return []diag.Diag{errorf("//kanna:lock is for a Get, a First, or a List")}
+		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, or a List")}
 	}
 	fields := strings.Fields(d.Args)
 	if len(fields) == 0 || len(fields) > 2 {
@@ -71,8 +71,8 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 		if !ok {
 			return []diag.Diag{errorf("//kanna:lock takes nowait or skip-locked after the strength, not %q", fields[1])}
 		}
-		if fields[1] == "skip-locked" && m.verb == verbGet {
-			return []diag.Diag{errorf("skip-locked passes a locked row over, which a Get would report as not found").
+		if fields[1] == "skip-locked" && (m.verb == verbGet || m.verb == verbFind) {
+			return []diag.Diag{errorf("skip-locked passes a locked row over, which a %s would report as not found", m.verb).
 				WithHints("use nowait, which returns an error for a locked row")}
 		}
 		clause += " " + wait
