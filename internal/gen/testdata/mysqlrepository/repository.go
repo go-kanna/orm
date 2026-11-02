@@ -37,6 +37,9 @@ type OrderRepository interface {
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	InsertTags(ctx context.Context, tags []model.Tag) error
 	Update(ctx context.Context, o model.Order) error
+ UpdateFieldsOnly(ctx context.Context, id model.OrderID, c mysql.OrderChangeSet, s ...mysql.Order) error
+ UpdateMany(ctx context.Context, c mysql.OrderChangeSet, s ...mysql.Order) (int64, error)
+
 	UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error)
 	//kanna:conflict order keep=placed_at
 	UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error)

@@ -1101,9 +1101,7 @@ make bench      # run the benchmarks in a container next to the PostgreSQL of db
 [`bench/postgres`](bench/postgres) measures kanna-orm against pgx alone, sqlc, GORM, bun, and ent; its README has the
 results, and how they were taken.
 
-## License
 
-[MIT](./LICENSE)
 
 ### Correlated selections and per-parent collections
 
@@ -1154,3 +1152,36 @@ The foreign key supplies the basic parent/child correlation. The callback adds c
 `Select<Field>` adds a scalar subquery to the parent's SELECT, preserving its rows and pagination and reading the value in the same statement. Multiple selected fields have independent predicates and correctly numbered parameters. `Preload<Field>` reads model collections through a separate batched query, supports composite foreign keys and junction tables, and can load the selected children's own relations. A normal repeatable-read transaction provides snapshot consistency across ordinary parent and collection reads; locking and transaction isolation remain explicit caller choices. Existing `With<Field>` preloads retain their behavior.
 
 Scalar selections are read-only: INSERT and UPDATE leave them out. A hand-written repository query can instead select the value under the field's column name, such as `a.approver AS approver`, into the same model. This keeps a route to query-specific optimization without changing the domain model. The PostgreSQL and MySQL examples check current/latest reviewers, per-order history limits and offsets, missing/required/multiple matches, and the custom SQL alternative.
+
+### Updating selected columns
+
+Each scope generates a typed change set. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
+
+```go
+changes := scopes.CustomerChanges().
+    SetName("Ann Lee").
+    SetPhone(nil)
+```
+
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. Setting the same column again replaces its earlier value. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, and relations have no setters. An empty change set is an error.
+
+Declare the unique key separately from the assigned values and add ordinary condition scopes:
+
+```go
+UpdatePhone(ctx context.Context, id model.CustomerID,
+    c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error)
+
+updated, err := repo.UpdatePhone(ctx, customerID,
+    scopes.CustomerChanges().SetPhone(new("050-1234-5678")),
+    scopes.Customers().PhoneIsNull())
+```
+
+On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. Existing whole-model updates also accept additional condition scopes and may return the updated model. Returned models contain mapped table columns; related values and preloads are not loaded by an update.
+
+For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. The generated method requires at least one WHERE condition and rejects ordering, pagination, and relation-loading scopes. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
+
+The PostgreSQL and MySQL examples update a customer's phone, clear it with `SetPhone(nil)`, verify untouched fields, and reject a failed condition.
+
+## License
+
+[MIT](./LICENSE)

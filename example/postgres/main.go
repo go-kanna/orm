@@ -51,6 +51,7 @@ func run(ctx context.Context, url string, w io.Writer) error {
 	}{
 		{"write the catalog", ex.catalog},
 		{"write the customers", ex.signUp},
+		{"update selected columns", ex.updateSelectedColumns},
 		{"place the orders", ex.placeOrders},
 		{"read correlated approvals", ex.readApprovals},
 		{"read optional memos", ex.readMemos},
@@ -428,5 +429,27 @@ func (ex *example) readApprovals(ctx context.Context) error {
 		return errors.New("multiple approvers were silently accepted")
 	}
 	fmt.Fprintln(ex.w, "current approver: reviewer-1; latest: reviewer-5; three approvals per order")
+	return nil
+}
+
+func (ex *example) updateSelectedColumns(ctx context.Context) error {
+	changes := scopes.CustomerChanges().SetPhone(new("050-1234-5678"))
+	updated, err := ex.customers.UpdatePhone(ctx, ex.ann.ID, changes, scopes.Customers().PhoneIsNotNull())
+	if err != nil {
+		return fmt.Errorf("update customer phone: %w", err)
+	}
+	if updated.Phone == nil || *updated.Phone != "050-1234-5678" || updated.Name != ex.ann.Name ||
+		updated.Email != ex.ann.Email || !updated.CreatedAt.Equal(ex.ann.CreatedAt) {
+		return fmt.Errorf("partial update changed unexpected columns: %+v", updated)
+	}
+	cleared, err := ex.customers.UpdatePhone(ctx, ex.ann.ID, scopes.CustomerChanges().SetPhone(nil))
+	if err != nil {
+		return fmt.Errorf("clear customer phone: %w", err)
+	}
+	_, err = ex.customers.UpdatePhone(ctx, ex.ann.ID, changes, scopes.Customers().PhoneIsNotNull())
+	if cleared.Phone != nil || !errors.Is(err, orm.ErrNotFound) {
+		return fmt.Errorf("conditional update after NULL: %+v, %w", cleared, err)
+	}
+	fmt.Fprintln(ex.w, "updated only phone, cleared it with nil, and rejected a failed condition")
 	return nil
 }

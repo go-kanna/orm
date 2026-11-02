@@ -66,6 +66,42 @@ func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model
 	return rows[0], nil
 }
 
+func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) error {
+	qs := make([]orm.Of[model.Customer], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	q = q.Where(`id = `, id)
+	text, args, err := changes.RenderUpdate(orm.MySQL, "customers", []string{"email", "name", "phone", "created_at"}, q)
+	if err != nil {
+		return err
+	}
+	res, err := r.db.ExecContext(ctx, text, args...)
+	if err != nil {
+		return fmt.Errorf(`update customers: %w`, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf(`update customers: %w`, err)
+	}
+	if n == 0 {
+		rd, err := q.Render(orm.MySQL, 1)
+		if err != nil {
+			return err
+		}
+		var found bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM customers`+rd.Where()+")", rd.Args()...).Scan(&found); err != nil {
+			return fmt.Errorf(`update customers: %w`, err)
+		}
+		if !found {
+			return fmt.Errorf("no row of customers matches: %w", orm.ErrNotFound)
+		}
+	}
+	return nil
+}
+
 // ProductRepository implements repository.ProductRepository on MySQL through database/sql.
 type ProductRepository struct{ db DBTX }
 

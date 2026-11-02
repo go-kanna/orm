@@ -381,6 +381,155 @@ WHERE id = $10`
 	return nil
 }
 
+func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID, c postgres.OrderChangeSet, s ...postgres.Order) error {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	q = q.Where(`id = `, id)
+	text, args, err := changes.RenderUpdate(orm.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return err
+	}
+	tag, err := r.db.Exec(ctx, text, args...)
+	if err != nil {
+		return fmt.Errorf(`update orders: %w`, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
+	}
+	return nil
+}
+
+func (r OrderRepository) UpdateMany(ctx context.Context, c postgres.OrderChangeSet, s ...postgres.Order) (int64, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdate(orm.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return 0, err
+	}
+	tag, err := r.db.Exec(ctx, text, args...)
+	if err != nil {
+		return 0, fmt.Errorf(`update orders: %w`, err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+func (r OrderRepository) UpdateFields(ctx context.Context, id model.OrderID, c postgres.OrderChangeSet, s ...postgres.Order) (model.Order, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	q = q.Where(`id = `, id)
+	text, args, err := changes.RenderUpdate(orm.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return model.Order{}, err
+	}
+	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	var row model.Order
+	err = r.db.QueryRow(ctx, text, args...).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Order{}, fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
+	}
+	if err != nil {
+		return model.Order{}, fmt.Errorf(`update orders: %w`, err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) UpdateManyReturning(ctx context.Context, c postgres.OrderChangeSet, s ...postgres.Order) ([]model.Order, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdate(orm.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return nil, err
+	}
+	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	rows, err := r.db.Query(ctx, text, args...)
+	if err != nil {
+		return nil, fmt.Errorf(`update orders: %w`, err)
+	}
+	defer rows.Close()
+	out := []model.Order{}
+	for rows.Next() {
+		var row model.Order
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+			return nil, fmt.Errorf(`update orders: %w`, err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(`update orders: %w`, err)
+	}
+	return out, nil
+}
+
+func (r OrderRepository) UpdateScoped(ctx context.Context, o model.Order, s ...postgres.Order) (model.Order, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	var changes orm.Changes[model.Order]
+	changes = changes.Set("customer_id", o.CustomerID)
+	changes = changes.Set("status", o.Status)
+	changes = changes.Set("placed_at", o.PlacedAt)
+	changes = changes.Set("note", o.Memo)
+	changes = changes.Set("total", o.Total)
+	changes = changes.Set("paid", o.Paid)
+	changes = changes.Set("contact", o.Contact)
+	changes = changes.Set("receipt", o.Receipt)
+	changes = changes.Set("order", o.Position)
+	q = q.Where(`id = `, o.ID)
+	text, args, err := changes.RenderUpdate(orm.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return model.Order{}, err
+	}
+	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	var row model.Order
+	err = r.db.QueryRow(ctx, text, args...).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Order{}, fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
+	}
+	if err != nil {
+		return model.Order{}, fmt.Errorf(`update orders: %w`, err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) UpdateLineFields(ctx context.Context, orderID model.OrderID, lineNo int, c postgres.OrderLineChangeSet) (model.OrderLine, error) {
+	var q orm.Of[model.OrderLine]
+	changes := c.Of()
+	q = q.Where(`order_id = `, orderID)
+	q = q.Where(`line_no = `, lineNo)
+	text, args, err := changes.RenderUpdate(orm.Postgres, "order_lines", []string{"sku"}, q)
+	if err != nil {
+		return model.OrderLine{}, err
+	}
+	text += ` RETURNING order_id, line_no, sku`
+	var row model.OrderLine
+	err = r.db.QueryRow(ctx, text, args...).Scan(&row.OrderID, &row.LineNo, &row.SKU)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.OrderLine{}, fmt.Errorf("no row of order_lines matches: %w", orm.ErrNotFound)
+	}
+	if err != nil {
+		return model.OrderLine{}, fmt.Errorf(`update order_lines: %w`, err)
+	}
+	return row, nil
+}
+
 func (r OrderRepository) UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error) {
 	const q = `INSERT INTO customers (id, name)
 VALUES ($1, $2)

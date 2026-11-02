@@ -178,6 +178,10 @@ func Methods(pkg *packages.Package, s snapshot.Snapshot) (map[string][]string, e
 		for _, w := range p.written {
 			methods[p.name] = append(methods[p.name], w.name)
 		}
+		for _, m := range changeMethods(p) {
+			methods[p.name+"ChangeSet"] = append(methods[p.name+"ChangeSet"], m.name)
+		}
+		slices.Sort(methods[p.name+"ChangeSet"])
 		slices.Sort(methods[p.name])
 	}
 	return methods, nil

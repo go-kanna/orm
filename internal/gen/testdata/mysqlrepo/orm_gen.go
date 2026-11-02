@@ -364,6 +364,64 @@ func (r OrderRepository) Update(ctx context.Context, o model.Order) error {
 	return nil
 }
 
+func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID, c mysql.OrderChangeSet, s ...mysql.Order) error {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	q = q.Where(`id = `, id)
+	text, args, err := changes.RenderUpdate(orm.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return err
+	}
+	res, err := r.db.ExecContext(ctx, text, args...)
+	if err != nil {
+		return fmt.Errorf(`update orders: %w`, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf(`update orders: %w`, err)
+	}
+	if n == 0 {
+		rd, err := q.Render(orm.MySQL, 1)
+		if err != nil {
+			return err
+		}
+		var found bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+")", rd.Args()...).Scan(&found); err != nil {
+			return fmt.Errorf(`update orders: %w`, err)
+		}
+		if !found {
+			return fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
+		}
+	}
+	return nil
+}
+
+func (r OrderRepository) UpdateMany(ctx context.Context, c mysql.OrderChangeSet, s ...mysql.Order) (int64, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdate(orm.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	if err != nil {
+		return 0, err
+	}
+	res, err := r.db.ExecContext(ctx, text, args...)
+	if err != nil {
+		return 0, fmt.Errorf(`update orders: %w`, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf(`update orders: %w`, err)
+	}
+	return n, nil
+}
+
 func (r OrderRepository) UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error) {
 	const q = `INSERT INTO customers (id, name)
 VALUES (?, ?) AS new

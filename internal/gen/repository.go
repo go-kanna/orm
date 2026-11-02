@@ -49,7 +49,8 @@ var shapes = map[verb]string{
 	verbCount:  "Count(ctx context.Context, s ...scopes.Order) (int64, error)",
 	verbExists: "Exists(ctx context.Context, s ...scopes.Order) (bool, error)",
 	verbInsert: "Insert(ctx context.Context, o model.Order) (model.Order, error), or with error alone",
-	verbUpdate: "Update(ctx context.Context, o model.Order) error",
+	verbUpdate: "Update(ctx context.Context, o model.Order, s ...scopes.Order) error, or " +
+		"Update(ctx context.Context, id model.OrderID, c scopes.OrderChangeSet, s ...scopes.Order) (model.Order, error)",
 	verbUpsert: "Upsert(ctx context.Context, o model.Order) error",
 	verbDelete: "Delete(ctx context.Context, id model.OrderID) error, or DeleteStale(ctx context.Context, " +
 		"s ...scopes.Order) (int64, error)",
@@ -111,10 +112,11 @@ type repoMethod struct {
 	keys []key
 	// scoped reports whether the method takes scopes, as its last parameter. row names the parameter of the row it
 	// writes, and many reports whether it is a slice of rows.
-	scoped bool
-	row    string
-	many   bool
-	result result
+	scoped  bool
+	row     string
+	changes string
+	many    bool
+	result  result
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
 	coalesce       []string
@@ -368,32 +370,11 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 		return m, shapeError()
 	}
 
-	// The model of the rows, as each of the result, the row, and the scopes tells it.
-	var models []*types.Named
-	keyParams := []*types.Var{}
-	for i := 1; i < params.Len(); i++ {
-		p := params.At(i)
-		if sig.Variadic() && i == params.Len()-1 {
-			model, implied, ok := r.scopeParam(p, field, ts)
-			m.impliedScope = implied
-			if !ok {
-				return m, errorf("its last parameter, %s, takes no scope type", p.Name())
-			}
-			m.scoped, models = true, append(models, model)
-			continue
-		}
-		if model, many, ok := r.rowModel(p.Type()); ok {
-			if m.row != "" {
-				return m, errorf("it takes both %s and %s, rows to write", m.row, p.Name())
-			}
-			m.row, m.many, models = p.Name(), many, append(models, model)
-			continue
-		}
-		if p.Name() == "" || p.Name() == "_" {
-			return m, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
-		}
-		keyParams = append(keyParams, p)
+	models, keyParams, parameterDiags := r.methodParameters(&m, sig, field, ts)
+	if parameterDiags != nil {
+		return m, parameterDiags
 	}
+
 	if results.Len() == 2 {
 		var ok bool
 		models, ok = r.resultModels(&m, results.At(0).Type(), models)
@@ -620,7 +601,7 @@ func (m repoMethod) shaped() bool {
 	case verbInsert, verbUpsert:
 		ok = m.result == resultNone || m.result == resultRow && !m.many || m.result == resultRows && m.many
 	case verbUpdate:
-		ok = m.result == resultNone && !m.many
+		return m.updateShaped()
 	case verbDelete:
 		ok = m.result == resultNone && !m.scoped || m.result == resultCount && (m.scoped || len(m.keys) > 0)
 	}
@@ -648,7 +629,13 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
 			strings.Join(names, ", "), m.target.table).WithHints(
 			"return (int64, error) for the number of rows deleted, or take a key of the table")}
-	case m.verb == verbUpdate && len(m.table.PrimaryKey) == 0:
+	case m.verb == verbUpdate && m.changes != "" &&
+		(m.result == resultNone || m.result == resultRow) && !containsKey(m.table, names):
+		return []diag.Diag{errorf("a single-row Update requires a unique key; " +
+			"use (int64, error) or ([]M, error) for multiple rows")}
+	case m.verb == verbUpdate && (m.result == resultRow || m.result == resultRows) && r.s.Dialect == snapshot.MySQL:
+		return []diag.Diag{errorf("MySQL has no UPDATE RETURNING; return error alone or (int64, error)")}
+	case m.verb == verbUpdate && m.changes == "" && len(m.table.PrimaryKey) == 0:
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table)}
 	case m.verb == verbUpsert && len(m.rowKey()) == 0:
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table).WithHints(
@@ -751,18 +738,7 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 			ds = append(ds, errorf("%s holds no column of %s but those the database assigns", model, m.target.table))
 		}
 	}
-	if m.verb != verbInsert {
-		for _, name := range m.rowKey() {
-			i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
-			switch {
-			case !held(name):
-				ds = append(ds, errorf("%s has no field for %s, which it meets its row by", model, name))
-			case m.verb == verbUpsert && (m.table.Columns[i].Assigned || m.field(name).insertDefault):
-				ds = append(ds, errorf("the database assigns %s, so an insert never meets a row by it", name).
-					WithHints(fmt.Sprintf("name another unique key of %s with //kanna:conflict", m.target.table)))
-			}
-		}
-	}
+	ds = append(ds, m.writeKeyRules()...)
 	if m.verb == verbUpdate && len(m.updated()) == 0 {
 		ds = append(ds, errorf("%s holds no column of %s to update but its key", model, m.target.table))
 	}
@@ -846,7 +822,9 @@ func (r repoReader) rowModel(t types.Type) (model *types.Named, many bool, ok bo
 }
 
 // scopeModel tells the model of a scope type t: M, of its one field, an orm.Of[M].
-func scopeModel(t types.Type) (*types.Named, bool) {
+func scopeModel(t types.Type) (*types.Named, bool) { return scopeModelKind(t, "Of") }
+
+func scopeModelKind(t types.Type, kind string) (*types.Named, bool) {
 	n := asNamed(t)
 	if n == nil {
 		return nil, false
@@ -856,7 +834,7 @@ func scopeModel(t types.Type) (*types.Named, bool) {
 		return nil, false
 	}
 	of := asNamed(st.Field(0).Type())
-	if of == nil || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != ormPath || of.Obj().Name() != "Of" {
+	if of == nil || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != ormPath || of.Obj().Name() != kind {
 		return nil, false
 	}
 	model := asNamed(of.TypeArgs().At(0))
@@ -950,4 +928,78 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 		return append(models, model), true
 	}
 	return models, true
+}
+
+func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field *ast.Field, ts *ast.TypeSpec,
+) ([]*types.Named, []*types.Var, []diag.Diag) {
+	params := sig.Params()
+	errorf := func(format string, args ...any) []diag.Diag {
+		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
+	}
+	var models []*types.Named
+	keyParams := []*types.Var{}
+	for i := 1; i < params.Len(); i++ {
+		p := params.At(i)
+		if sig.Variadic() && i == params.Len()-1 {
+			model, implied, ok := r.scopeParam(p, field, ts)
+			m.impliedScope = implied
+			if !ok {
+				return nil, nil, errorf("its last parameter, %s, takes no scope type", p.Name())
+			}
+			m.scoped, models = true, append(models, model)
+			continue
+		}
+		if model, ok := r.changesParam(p, field, ts); ok {
+			if m.verb != verbUpdate || m.changes != "" || m.row != "" {
+				return nil, nil, errorf("a change set is accepted only once, by an Update without a row parameter")
+			}
+			m.changes, models = p.Name(), append(models, model)
+			continue
+		}
+		if model, many, ok := r.rowModel(p.Type()); ok {
+			if m.row != "" || m.changes != "" {
+				return nil, nil, errorf("it takes both %s and %s, rows to write", m.row, p.Name())
+			}
+			m.row, m.many, models = p.Name(), many, append(models, model)
+			continue
+		}
+		if p.Name() == "" || p.Name() == "_" {
+			return nil, nil, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
+		}
+		keyParams = append(keyParams, p)
+	}
+	return models, keyParams, nil
+}
+
+func (m repoMethod) updateShaped() bool {
+	if m.changes != "" {
+		return m.row == "" && (m.result == resultNone || m.result == resultRow ||
+			m.result == resultCount || m.result == resultRows)
+	}
+	return m.row != "" && !m.many && len(m.keys) == 0 &&
+		(m.result == resultNone || m.result == resultRow)
+}
+
+func (m repoMethod) writeKeyRules() []diag.Diag {
+	var ds []diag.Diag
+	model := typeName(m.model)
+	held := func(name string) bool {
+		return slices.ContainsFunc(m.columns, func(c column) bool { return c.col.Name == name })
+	}
+	errorf := func(format string, args ...any) diag.Diag {
+		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
+	}
+	if m.verb != verbInsert && m.changes == "" {
+		for _, name := range m.rowKey() {
+			i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
+			switch {
+			case !held(name):
+				ds = append(ds, errorf("%s has no field for %s, which it meets its row by", model, name))
+			case m.verb == verbUpsert && (m.table.Columns[i].Assigned || m.field(name).insertDefault):
+				ds = append(ds, errorf("the database assigns %s, so an insert never meets a row by it", name).
+					WithHints(fmt.Sprintf("name another unique key of %s with //kanna:conflict", m.target.table)))
+			}
+		}
+	}
+	return ds
 }

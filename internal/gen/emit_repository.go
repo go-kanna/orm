@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-kanna/internal/gofile"
+	"github.com/go-kanna/internal/packages"
 
 	"github.com/go-kanna/orm/internal/snapshot"
 )
@@ -220,7 +221,8 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope, translate bool) si
 			params = append(params, local+" ..."+elem)
 			continue
 		}
-		params = append(params, local+" "+types.TypeString(p.Type(), e.f.Qualifier))
+		typ := e.parameterType(m, p)
+		params = append(params, local+" "+typ)
 	}
 	results := make([]string, 0, sig.Results().Len())
 	for i := range sig.Results().Len() {
@@ -288,7 +290,11 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	case verbInsert, verbUpsert:
 		e.insert(m, sc, recv, sig)
 	case verbUpdate:
-		e.update(m, sc, recv, sig)
+		if m.changes != "" || m.scoped || m.result != resultNone {
+			e.updateChanges(m, sc, recv, sig)
+		} else {
+			e.update(m, sc, recv, sig)
+		}
 	case verbGet, verbFirst, verbList, verbPluck, verbCount, verbExists, verbDelete:
 		e.read(m, sc, recv, sig)
 	}
@@ -1057,4 +1063,15 @@ func (e repoEmitter) pluckRows(m repoMethod, sc gofile.Scope, recv string, sig s
 	}
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	e.printf("return %s, nil\n", out)
+}
+
+func (e repoEmitter) parameterType(m repoMethod, p *types.Var) string {
+	typ := types.TypeString(p.Type(), e.f.Qualifier)
+	if p.Name() == m.changes && m.changes != "" && packages.Invalid(p.Type()) {
+		typ = m.target.name + "ChangeSet"
+		if pkg := e.f.Import(m.target.pkgPath, m.target.pkgName); pkg != "" {
+			typ = pkg + "." + typ
+		}
+	}
+	return typ
 }
