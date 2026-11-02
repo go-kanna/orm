@@ -6,6 +6,7 @@
         {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
         {"name": "email", "type": "varchar(255)", "not_null": true},
         {"name": "name", "type": "varchar(255)", "not_null": true},
+        {"name": "phone", "type": "text"},
         {"name": "created_at", "type": "datetime(6)", "not_null": true}
       ],
       "primary_key": ["id"],
@@ -58,7 +59,8 @@
       "columns": [
         {"name": "sku", "type": "varchar(32)", "not_null": true},
         {"name": "name", "type": "varchar(255)", "not_null": true},
-        {"name": "price", "type": "bigint", "not_null": true}
+        {"name": "price", "type": "bigint", "not_null": true},
+        {"name": "currency", "type": "varchar(3)", "not_null": true, "default": true}
       ],
       "primary_key": ["sku"],
       "unique_keys": [],

@@ -32,10 +32,10 @@ func NewCustomerRepository(db DBTX) CustomerRepository { return CustomerReposito
 var _ repository.CustomerRepository = CustomerRepository{}
 
 func (r CustomerRepository) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
-	const q = `INSERT INTO customers (email, name, created_at)
-VALUES (?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name`
-	res, err := r.db.ExecContext(ctx, q, c.Email, c.Name, c.CreatedAt)
+	const q = `INSERT INTO customers (email, name, phone, created_at)
+VALUES (?, ?, ?, ?) AS new
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
+	res, err := r.db.ExecContext(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
@@ -44,8 +44,8 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name`
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
 	var row model.Customer
-	err = r.db.QueryRowContext(ctx, `SELECT id, email, name, created_at FROM customers WHERE id = ?`, id).
-		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
+	err = r.db.QueryRowContext(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`, id).
+		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
@@ -416,7 +416,7 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], loc
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, email, name, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	rows, err := db.QueryContext(ctx, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
 	}
@@ -424,7 +424,7 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], loc
 	out := []model.Customer{}
 	for rows.Next() {
 		var row model.Customer
-		if err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt); err != nil {
+		if err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
 			return nil, fmt.Errorf("read customers: %w", err)
 		}
 		out = append(out, row)
@@ -666,7 +666,7 @@ func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product], lock 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT sku, name, price FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	rows, err := db.QueryContext(ctx, `SELECT sku, name, price, currency FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read products: %w", err)
 	}
@@ -674,7 +674,7 @@ func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product], lock 
 	out := []model.Product{}
 	for rows.Next() {
 		var row model.Product
-		if err := rows.Scan(&row.SKU, &row.Name, &row.Price); err != nil {
+		if err := rows.Scan(&row.SKU, &row.Name, &row.Price, &row.Currency); err != nil {
 			return nil, fmt.Errorf("read products: %w", err)
 		}
 		out = append(out, row)

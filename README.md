@@ -270,6 +270,7 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 | *(none)*                        | the column named as the field is, in snake case                                 |
 | `orm:"note"`                    | the column `note`                                                               |
 | `orm:"note,nullzero"`           | a nullable string column: read NULL as the zero string and write the zero string as NULL |
+| `orm:",default"`                | omit this column from generated INSERT statements and use its database default |
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
 | `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
 | `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
@@ -652,8 +653,9 @@ type TodoRepository interface {
   table from `table=`, while `Get` tells its own by its result.
 - A uuid has no order to compare by, so its column gets `Eq`, `Ne`, `In`, `NotIn`, `Asc`, and `Desc`, but neither `Lt`
   nor `Between`. A page still continues from a row by it, and a cursor holds it as its text.
-- A column defaulting to `uuidv7()` is not one the database assigns: an insert writes the model's ID, the zero UUID
-  included. Give each row its ID in Go, as with `uuid.NewV7()`.
+- A column defaulting to `uuidv7()` is not automatically treated as assigned. Without `orm:",default"`, an insert
+  writes the model's ID, the zero UUID included. Either give each row its ID in Go with `uuid.NewV7()`, or tag the
+  field with `orm:",default"` to use the database's default.
 - MySQL has no `uuid` type, and kanna-orm does not take `uuid.UUID` for a `binary(16)` or a `char(36)`: hold one in a
   `[]byte`, a string, or a type of your own with `Scan` and `Value` methods.
 
@@ -692,15 +694,53 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 ### Writing
 
-A row is written as the model holds it. Only the columns the database assigns itself, identity, serial, and
-AUTO_INCREMENT columns, are left out and read back. A zero value is written as a zero value, never taken to mean the
-column's default: a `false` for a column defaulting to `true` stays `false`. Set `created_at` and `updated_at` in your
-domain, or leave them out of the model for the database's defaults to fill.
+A row is written as the model holds it. Database-assigned columns, such as identity, serial and AUTO_INCREMENT,
+and fields explicitly tagged `default` are left out of INSERT statements. Otherwise a zero value is written as a
+zero value: a `false` for a column defaulting to `true` stays `false`. Set `created_at` and `updated_at` in your domain,
+or explicitly use their database defaults.
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
 done. MySQL reads it back by `LAST_INSERT_ID()` when the database assigns its primary key, and by its primary key
 otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
 whether the row is there before returning `orm.ErrNotFound`.
+
+### Database defaults
+
+Tag a field with `orm:",default"` to leave its column out of generated INSERT statements. A field with a different
+column name can use `orm:"created_at,default"`. The snapshot must record a database default or database assignment
+for that column; otherwise generation fails. `default` and `nullzero` can be combined.
+
+```go
+type Product struct {
+    SKU      SKU
+    Name     string
+    Price    int64
+    Currency string `orm:",default"`
+}
+```
+
+The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples define `products.currency` with `DEFAULT 'JPY'`.
+Even when the model supplies `Currency: "USD"`, INSERT omits it and the stored value is `JPY`. The example reads it
+back and checks this. The option is explicit and unconditional: an untagged zero value is still written as a zero
+value. It affects generated INSERT statements, including bulk inserts and upserts, but not handwritten SQL.
+
+On PostgreSQL, a method returning the model reads database-generated values with RETURNING. For example,
+`ID uuid.UUID` tagged `orm:",default"` can use a `DEFAULT uuidv7()` primary key without assigning the ID in Go.
+A single row with every column omitted uses DEFAULT VALUES. Bulk writes still require at least one input column.
+
+UPDATE keeps writing the model's values for tagged non-key fields. Upsert conflict updates follow the usual `keep=`
+and `coalesce=` rules: an omitted field's incoming value is its database default, not the value supplied in Go. Use
+`keep=` when an existing value should always remain unchanged.
+
+**MySQL limitation:** this option does not add a RETURNING substitute or a new unique-key discovery mechanism.
+Existing readback through AUTO_INCREMENT, a supplied primary key, or an upsert's explicit conflict key continues to
+work. If `default` omits a key needed by that existing readback, generation fails for a model-returning method.
+An error-only method needs no readback and can still omit the column. MySQL's existing restriction on returning
+models from bulk writes also remains in place.
+
+MySQL's `new` row alias also cannot reference an omitted column. An upsert that would update a `default` field is
+therefore rejected; list that column in `keep=` to preserve its stored value. The examples use
+`//kanna:conflict sku keep=currency` for the product catalog. Ordinary UPDATE statements can still write Currency.
 
 ### Upserting
 
@@ -737,6 +777,27 @@ over any unique key, so a table with unique keys besides the one named gets a wa
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
+```
+
+Use `coalesce=` on an upsert to keep the stored value only when the incoming SQL value is NULL:
+
+```go
+//kanna:conflict email keep=created_at coalesce=phone
+UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
+```
+
+The examples' `CustomerRepository` uses this for `Customer.Phone`: a non-nil phone replaces the old one, while nil
+keeps it. `keep=created_at` always preserves when the customer joined. The two options can appear in either order.
+Only SQL NULL triggers COALESCE; an empty string or numeric zero does not. A string field's `nullzero` option
+explicitly encodes its empty string as NULL. Columns in `coalesce=` must be columns the upsert actually updates; keys, kept columns, and unknown columns
+are rejected during generation.
+
+```sql
+-- PostgreSQL
+phone = COALESCE(EXCLUDED.phone, customers.phone)
+
+-- MySQL
+phone = COALESCE(new.phone, customers.phone)
 ```
 
 ### Writing many rows

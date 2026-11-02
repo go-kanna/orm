@@ -4,13 +4,15 @@ CREATE TABLE customers (
     id         bigint AUTO_INCREMENT PRIMARY KEY,
     email      varchar(255) NOT NULL UNIQUE,
     name       varchar(255) NOT NULL,
+    phone      text,
     created_at datetime(6) NOT NULL
 );
 
 CREATE TABLE products (
     sku   varchar(32) PRIMARY KEY,
     name  varchar(255) NOT NULL,
-    price bigint NOT NULL
+    price bigint NOT NULL,
+    currency varchar(3) NOT NULL DEFAULT 'JPY'
 );
 
 CREATE TABLE orders (

@@ -33,13 +33,13 @@ func NewCustomerRepository(db DBTX) CustomerRepository { return CustomerReposito
 var _ repository.CustomerRepository = CustomerRepository{}
 
 func (r CustomerRepository) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
-	const q = `INSERT INTO customers (email, name, created_at)
-VALUES ($1, $2, $3)
-ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
-RETURNING id, email, name, created_at`
+	const q = `INSERT INTO customers (email, name, phone, created_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, phone = COALESCE(EXCLUDED.phone, customers.phone)
+RETURNING id, email, name, phone, created_at`
 	var row model.Customer
-	err := r.db.QueryRow(ctx, q, c.Email, c.Name, c.CreatedAt).
-		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
+	err := r.db.QueryRow(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt).
+		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
@@ -393,7 +393,7 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], loc
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT id, email, name, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
 	}
@@ -401,7 +401,7 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], loc
 	out := []model.Customer{}
 	for rows.Next() {
 		var row model.Customer
-		if err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt); err != nil {
+		if err := rows.Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
 			return nil, fmt.Errorf("read customers: %w", err)
 		}
 		out = append(out, row)
@@ -629,7 +629,7 @@ func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product], lock 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT sku, name, price FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	rows, err := db.Query(ctx, `SELECT sku, name, price, currency FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read products: %w", err)
 	}
@@ -637,7 +637,7 @@ func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product], lock 
 	out := []model.Product{}
 	for rows.Next() {
 		var row model.Product
-		if err := rows.Scan(&row.SKU, &row.Name, &row.Price); err != nil {
+		if err := rows.Scan(&row.SKU, &row.Name, &row.Price, &row.Currency); err != nil {
 			return nil, fmt.Errorf("read products: %w", err)
 		}
 		out = append(out, row)

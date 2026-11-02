@@ -234,6 +234,7 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 | *（なし）* | フィールド名をスネークケースにした名前のカラム |
 | `orm:"note"` | カラム `note` |
 | `orm:"note,nullzero"` | nullable な文字列カラム。NULL をゼロ値へ読み込み、ゼロ値は NULL として書き込む |
+| `orm:",default"` | 生成する INSERT からカラムを省略し、DB のデフォルト値を使う |
 | `orm:"-"` | カラムではない。kanna-orm はこのフィールドを読み書きしない |
 | `orm:"fk=order_id"` | [リレーション](#リレーション)で、候補が複数あるときにたどる外部キー |
 | `orm:"fk=order_lines.order_id"` | 同上。カラムだけでは特定できない場合のために、テーブルも指定する |
@@ -527,7 +528,7 @@ type TodoRepository interface {
 
 - `uuid.UUID` はモデルと一緒に宣言された型ではないので、これしか受け取らないメソッドからはテーブルが決まりません。`Delete` のテーブルは `table=` から決まり、`Get` のテーブルは戻り値から決まります。
 - uuid には比較できる順序がないので、そのカラムには `Eq`、`Ne`、`In`、`NotIn`、`Asc`、`Desc` は生成されますが、`Lt` も `Between` も生成されません。それでもページは uuid を基準に行の続きから読み込めて、カーソルは uuid をテキストとして保持します。
-- デフォルトが `uuidv7()` のカラムは、データベースが値を割り当てるカラムではありません。insert はモデルの ID を、ゼロの UUID であってもそのまま書き込みます。`uuid.NewV7()` などを使い、Go の側で各行に ID を与えてください。
+- デフォルトが `uuidv7()` のカラムを、自動採番の対象として自動判定はしません。`orm:",default"` がなければ、insert はゼロの UUID もそのまま書き込みます。Go 側で `uuid.NewV7()` を使って ID を与えるか、フィールドに `orm:",default"` を指定して DB のデフォルト値を使ってください。
 - MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` を受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。
 
 [go-kanna/showcase](https://github.com/go-kanna/showcase) は、to-do を `uuid.UUID` をキーにして管理する to-do サービスです。
@@ -555,9 +556,32 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 ### 書き込み
 
-行は、モデルが保持するとおりに書き込まれます。データベースが自分で値を割り当てるカラム（identity、serial、AUTO_INCREMENT のカラム）だけは書き込みから除かれ、読み戻されます。ゼロ値はゼロ値として書き込まれ、カラムのデフォルト値の意味に解釈されることは決してありません。デフォルトが `true` のカラムに対する `false` は `false` のままです。`created_at` と `updated_at` はドメインで設定するか、モデルから外してデータベースのデフォルト値に任せてください。
+行は、モデルが保持するとおりに書き込まれます。データベースが自分で値を割り当てるカラム（identity、serial、AUTO_INCREMENT）と、明示的に `default` を指定したフィールドは INSERT から除外します。それ以外のゼロ値はそのまま書き込み、デフォルトが `true` のカラムに対する `false` も `false` のままです。`created_at` と `updated_at` はドメインで設定するか、明示的に DB のデフォルト値を使ってください。
 
 モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。MySQL では、データベースが主キーを割り当てる場合は `LAST_INSERT_ID()` で、そうでなければ主キーで読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
+
+### DB のデフォルト値
+
+`orm:",default"` を指定したフィールドは、生成する INSERT のカラムから常に省略します。カラム名が異なる場合は `orm:"created_at,default"` のように指定できます。スナップショットに DB の DEFAULT または自動採番の情報がないカラムは生成エラーになります。`default` と `nullzero` は併用できます。
+
+```go
+type Product struct {
+    SKU      SKU
+    Name     string
+    Price    int64
+    Currency string `orm:",default"`
+}
+```
+
+[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、`products.currency` に `DEFAULT 'JPY'` を定義しています。モデルに `Currency: "USD"` を渡しても INSERT では省略され、DB に保存された値が `JPY` であることを読み戻して確認します。タグがないフィールドは従来どおりゼロ値も書き込みます。一括 INSERT と Upsert にも適用し、手書き SQL は変更しません。
+
+PostgreSQL では、モデルを返すメソッドが RETURNING で DB の値を読み戻します。例えば `ID uuid.UUID` に `orm:",default"` を指定すると、Go 側で採番せず `DEFAULT uuidv7()` の主キーを使えます。全カラムを省略する単一行の INSERT は DEFAULT VALUES を使います。一括書き込みには、少なくとも一つ入力カラムが必要です。
+
+UPDATE では、タグを指定した非キーのフィールドもモデルの値を書き込みます。Upsert の競合時の更新は通常の `keep=` と `coalesce=` に従います。省略したフィールドの入力値は Go の値ではなく DB のデフォルト値です。既存値を常に保持する場合は `keep=` を指定してください。
+
+**MySQL の制約:** RETURNING の代替処理や、一意キーを自動で探す処理は追加しません。従来の AUTO_INCREMENT、入力済みの主キー、Upsert に明示した競合キーによる読み戻しを使います。`default` がその読み戻しに必要なキーを省略する場合、モデルを返すメソッドは生成エラーになります。`error` のみを返すメソッドは読み戻しが不要なので省略できます。一括書き込みからモデルを返せない既存の制約も維持します。
+
+MySQL の `new` 行エイリアスからは、省略したカラムも参照できません。そのため、`default` のフィールドを競合時に更新する Upsert は生成エラーにします。`keep=` にそのカラムを指定して既存値を保持してください。example の商品カタログは `//kanna:conflict sku keep=currency` を使っています。通常の UPDATE は Currency に値を書き込めます。
 
 ### Upsert
 
@@ -590,6 +614,23 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
+```
+
+`coalesce=` を指定すると、入力の SQL 値が NULL の場合だけ既存値を保持します。
+
+```go
+//kanna:conflict email keep=created_at coalesce=phone
+UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
+```
+
+example の `CustomerRepository` は `Customer.Phone` に使っています。非 nil の電話番号なら更新し、nil なら既存値を保持します。`keep=created_at` は常に登録日時を保持します。二つのオプションの順序は自由です。COALESCE が扱うのは SQL NULL で、空文字や数値の 0 自体は対象になりません。文字列フィールドに `nullzero` を指定した場合、空文字を SQL NULL として扱います。キー、`keep=` の対象、存在しないカラムなど、実際に更新しないカラムへの `coalesce=` は生成エラーです。
+
+```sql
+-- PostgreSQL
+phone = COALESCE(EXCLUDED.phone, customers.phone)
+
+-- MySQL
+phone = COALESCE(new.phone, customers.phone)
 ```
 
 ### 複数行の書き込み

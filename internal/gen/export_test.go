@@ -251,6 +251,9 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 			if len(m.keep) > 0 {
 				line += " keep=" + strings.Join(m.keep, ",")
 			}
+			if len(m.coalesce) > 0 {
+				line += " coalesce=" + strings.Join(m.coalesce, ",")
+			}
 			if m.lock != "" {
 				line += fmt.Sprintf(" lock=%q", m.lock)
 			}

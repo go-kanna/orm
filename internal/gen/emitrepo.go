@@ -489,8 +489,14 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		query strings.Builder
 		args  []string
 	)
-	fmt.Fprintf(&query, "INSERT INTO %s (%s)\n", sqlName(e.d, m.target.table), e.columnList(inserted))
-	if m.many {
+	fmt.Fprintf(&query, "INSERT INTO %s", sqlName(e.d, m.target.table))
+	if len(inserted) > 0 {
+		fmt.Fprintf(&query, " (%s)\n", e.columnList(inserted))
+	}
+	switch {
+	case len(inserted) == 0:
+		query.WriteString(" DEFAULT VALUES")
+	case m.many:
 		none := "nil"
 		if m.result == resultRows {
 			none = "[]" + model + "{}, nil"
@@ -511,7 +517,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		e.printf("}\n")
 		fmt.Fprintf(&query, "SELECT * FROM unnest(%s)", //nolint:unqueryvet // unnest gives the columns listed
 			strings.Join(casts, ", "))
-	} else {
+	default:
 		params := make([]string, 0, len(inserted))
 		for _, c := range inserted {
 			args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
@@ -533,7 +539,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 			sets = sets[:0]
 			for _, c := range updated {
 				name := sqlName(e.d, c.col.Name)
-				sets = append(sets, name+" = EXCLUDED."+name)
+				sets = append(sets, e.upsertAssignment(m, c, "EXCLUDED."+name, sqlName(e.d, m.target.table)+"."+name))
 			}
 		}
 		fmt.Fprintf(&query, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))
@@ -614,7 +620,10 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	table := sqlName(e.d, m.target.table)
 	inserted := m.inserted()
 	auto, hasAuto := m.autoIncrement()
-	values := "(" + strings.Repeat("?, ", len(inserted)-1) + "?)"
+	values := "()"
+	if len(inserted) > 0 {
+		values = "(" + strings.Repeat("?, ", len(inserted)-1) + "?)"
+	}
 	head := "INSERT INTO " + table + " (" + e.columnList(inserted) + ")\nVALUES " + values
 	what, tail := "insert into "+m.target.table, ""
 	if m.verb == verbUpsert {
@@ -626,7 +635,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		}
 		for _, c := range m.updated() {
 			name := sqlName(e.d, c.col.Name)
-			sets = append(sets, name+" = new."+name)
+			sets = append(sets, e.upsertAssignment(m, c, "new."+name, table+"."+name))
 		}
 		if len(sets) == 0 { // the key set to itself, as an update of nothing
 			name := sqlName(e.d, m.rowKey()[0])

@@ -222,6 +222,89 @@ func (s Customer) NameDesc() Customer {
 	return Customer{s.q.OrderBy(`name`, true)}
 }
 
+// PhoneEq narrows to the rows whose phone is v.
+func (s Customer) PhoneEq(v string) Customer {
+	return Customer{s.q.Where(`phone = `, v)}
+}
+
+// PhoneNe narrows to the rows whose phone is not v.
+func (s Customer) PhoneNe(v string) Customer {
+	return Customer{s.q.Where(`phone <> `, v)}
+}
+
+// PhoneIn narrows to the rows whose phone is one of vs.
+func (s Customer) PhoneIn(vs ...string) Customer {
+	return Customer{s.q.Where(`phone IN (`, orm.List(vs), `)`)}
+}
+
+// PhoneNotIn narrows to the rows whose phone is none of vs.
+func (s Customer) PhoneNotIn(vs ...string) Customer {
+	if len(vs) == 0 {
+		return s
+	}
+	return Customer{s.q.Where(`phone NOT IN (`, orm.List(vs), `)`)}
+}
+
+// PhoneLt narrows to the rows whose phone is less than v.
+func (s Customer) PhoneLt(v string) Customer {
+	return Customer{s.q.Where(`phone < `, v)}
+}
+
+// PhoneLte narrows to the rows whose phone is at most v.
+func (s Customer) PhoneLte(v string) Customer {
+	return Customer{s.q.Where(`phone <= `, v)}
+}
+
+// PhoneGt narrows to the rows whose phone is greater than v.
+func (s Customer) PhoneGt(v string) Customer {
+	return Customer{s.q.Where(`phone > `, v)}
+}
+
+// PhoneGte narrows to the rows whose phone is at least v.
+func (s Customer) PhoneGte(v string) Customer {
+	return Customer{s.q.Where(`phone >= `, v)}
+}
+
+// PhoneBetween narrows to the rows whose phone is between lo and hi, both included.
+func (s Customer) PhoneBetween(lo, hi string) Customer {
+	return Customer{s.q.Where(`phone BETWEEN `, lo, ` AND `, hi)}
+}
+
+// PhoneLike narrows to the rows whose phone matches pattern, as LIKE does.
+func (s Customer) PhoneLike(pattern string) Customer {
+	return Customer{s.q.Where(`phone LIKE `, pattern)}
+}
+
+// PhoneHasPrefix narrows to the rows whose phone starts with prefix.
+func (s Customer) PhoneHasPrefix(prefix string) Customer {
+	return Customer{s.q.Where(`phone LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+}
+
+// PhoneContains narrows to the rows whose phone contains substr.
+func (s Customer) PhoneContains(substr string) Customer {
+	return Customer{s.q.Where(`phone LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+}
+
+// PhoneIsNull narrows to the rows whose phone is NULL.
+func (s Customer) PhoneIsNull() Customer {
+	return Customer{s.q.Where(`phone IS NULL`)}
+}
+
+// PhoneIsNotNull narrows to the rows whose phone is not NULL.
+func (s Customer) PhoneIsNotNull() Customer {
+	return Customer{s.q.Where(`phone IS NOT NULL`)}
+}
+
+// PhoneAsc orders the rows by phone, in ascending order.
+func (s Customer) PhoneAsc() Customer {
+	return Customer{s.q.OrderBy(`phone`, false)}
+}
+
+// PhoneDesc orders the rows by phone, in descending order.
+func (s Customer) PhoneDesc() Customer {
+	return Customer{s.q.OrderBy(`phone`, true)}
+}
+
 // CreatedAtEq narrows to the rows whose created_at is v.
 func (s Customer) CreatedAtEq(v time.Time) Customer {
 	return Customer{s.q.Where(`created_at = `, v)}
@@ -311,6 +394,7 @@ func (Customer) values(row model.Customer) map[string]any {
 		`id`:         row.ID,
 		`email`:      row.Email,
 		`name`:       row.Name,
+		`phone`:      orm.MayBeNull,
 		`created_at`: row.CreatedAt,
 	}
 }
@@ -560,6 +644,79 @@ func (s Product) PriceDesc() Product {
 	return Product{s.q.OrderBy(`price`, true)}
 }
 
+// CurrencyEq narrows to the rows whose currency is v.
+func (s Product) CurrencyEq(v string) Product {
+	return Product{s.q.Where(`currency = `, v)}
+}
+
+// CurrencyNe narrows to the rows whose currency is not v.
+func (s Product) CurrencyNe(v string) Product {
+	return Product{s.q.Where(`currency <> `, v)}
+}
+
+// CurrencyIn narrows to the rows whose currency is one of vs.
+func (s Product) CurrencyIn(vs ...string) Product {
+	return Product{s.q.Where(`currency IN (`, orm.List(vs), `)`)}
+}
+
+// CurrencyNotIn narrows to the rows whose currency is none of vs.
+func (s Product) CurrencyNotIn(vs ...string) Product {
+	if len(vs) == 0 {
+		return s
+	}
+	return Product{s.q.Where(`currency NOT IN (`, orm.List(vs), `)`)}
+}
+
+// CurrencyLt narrows to the rows whose currency is less than v.
+func (s Product) CurrencyLt(v string) Product {
+	return Product{s.q.Where(`currency < `, v)}
+}
+
+// CurrencyLte narrows to the rows whose currency is at most v.
+func (s Product) CurrencyLte(v string) Product {
+	return Product{s.q.Where(`currency <= `, v)}
+}
+
+// CurrencyGt narrows to the rows whose currency is greater than v.
+func (s Product) CurrencyGt(v string) Product {
+	return Product{s.q.Where(`currency > `, v)}
+}
+
+// CurrencyGte narrows to the rows whose currency is at least v.
+func (s Product) CurrencyGte(v string) Product {
+	return Product{s.q.Where(`currency >= `, v)}
+}
+
+// CurrencyBetween narrows to the rows whose currency is between lo and hi, both included.
+func (s Product) CurrencyBetween(lo, hi string) Product {
+	return Product{s.q.Where(`currency BETWEEN `, lo, ` AND `, hi)}
+}
+
+// CurrencyLike narrows to the rows whose currency matches pattern, as LIKE does.
+func (s Product) CurrencyLike(pattern string) Product {
+	return Product{s.q.Where(`currency LIKE `, pattern)}
+}
+
+// CurrencyHasPrefix narrows to the rows whose currency starts with prefix.
+func (s Product) CurrencyHasPrefix(prefix string) Product {
+	return Product{s.q.Where(`currency LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+}
+
+// CurrencyContains narrows to the rows whose currency contains substr.
+func (s Product) CurrencyContains(substr string) Product {
+	return Product{s.q.Where(`currency LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+}
+
+// CurrencyAsc orders the rows by currency, in ascending order.
+func (s Product) CurrencyAsc() Product {
+	return Product{s.q.OrderBy(`currency`, false)}
+}
+
+// CurrencyDesc orders the rows by currency, in descending order.
+func (s Product) CurrencyDesc() Product {
+	return Product{s.q.OrderBy(`currency`, true)}
+}
+
 // Limit keeps the first n rows.
 func (s Product) Limit(n int) Product {
 	return Product{s.q.Limit(n)}
@@ -588,9 +745,10 @@ func (s Product) Not(other Product) Product {
 // holds orm.MayBeNull, since no page continues by it.
 func (Product) values(row model.Product) map[string]any {
 	return map[string]any{
-		`sku`:   row.SKU,
-		`name`:  row.Name,
-		`price`: row.Price,
+		`sku`:      row.SKU,
+		`name`:     row.Name,
+		`price`:    row.Price,
+		`currency`: row.Currency,
 	}
 }
 
@@ -616,9 +774,10 @@ func (s Product) AfterCursor(cursor string) (Product, error) {
 	}
 	var row model.Product
 	if err := s.q.DecodeCursor(cursor, []string{`sku`}, map[string]any{
-		`sku`:   &row.SKU,
-		`name`:  &row.Name,
-		`price`: &row.Price,
+		`sku`:      &row.SKU,
+		`name`:     &row.Name,
+		`price`:    &row.Price,
+		`currency`: &row.Currency,
 	}); err != nil {
 		return Product{}, err
 	}

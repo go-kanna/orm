@@ -18,11 +18,12 @@ import (
 // column is a field of a model that holds a column of its table.
 type column struct {
 	// path is the field's name, after those of the structs it is embedded in.
-	path     []string
-	typ      types.Type
-	col      snapshot.Column
-	pos      token.Position
-	nullzero bool
+	path          []string
+	typ           types.Type
+	col           snapshot.Column
+	pos           token.Position
+	nullzero      bool
+	insertDefault bool
 }
 
 // relation is a field of a model that holds other models: a relation, once the foreign key it follows is found.
@@ -117,7 +118,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 			if name == "" {
 				name = columnName(f.Name())
 			}
-			m.column(label, fpath, f, pos, name, tag.nullzero)
+			m.column(label, fpath, f, pos, name, tag.nullzero, tag.insertDefault)
 		case holdsModels(t):
 			if tag.column != "" {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q names a column, but %s is a relation`,
@@ -134,7 +135,9 @@ func (m *matcher) match(st *types.Struct, path []string) {
 }
 
 // column matches f, at path in the model, to the column of the table named name.
-func (m *matcher) column(label string, path []string, f *types.Var, pos token.Position, name string, nullzero bool) {
+func (m *matcher) column(label string, path []string, f *types.Var, pos token.Position, name string,
+	nullzero, insertDefault bool,
+) {
 	i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
 	if i < 0 {
 		d := diag.Errorf(pos, "%s: %s has no column %s", label, m.sc.table, name)
@@ -151,6 +154,11 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		return
 	}
 	col := m.table.Columns[i]
+	if insertDefault && !col.Default && !col.Assigned {
+		m.ds = append(m.ds, diag.Errorf(pos, "%s: default requires %s.%s to have a database default",
+			label, m.sc.table, name))
+		return
+	}
 
 	if other, ok := m.held[name]; ok {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: %s.%s is held by %s already", label, m.sc.table, name, other).
@@ -178,7 +186,8 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 			"Value methods"))
 		return
 	}
-	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos, nullzero: nullzero})
+	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos,
+		nullzero: nullzero, insertDefault: insertDefault})
 }
 
 // holdsColumn reports whether a field of type t holds a column: t is a type a driver reads a column into, a pointer

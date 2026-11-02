@@ -25,13 +25,15 @@ type Customer struct {
 	ID        CustomerID
 	Email     string
 	Name      string
+	Phone     *string
 	CreatedAt time.Time
 }
 
 type Product struct {
-	SKU   SKU
-	Name  string
-	Price int64
+	SKU      SKU
+	Name     string
+	Price    int64
+	Currency string `orm:",default"`
 }
 
 type Order struct {

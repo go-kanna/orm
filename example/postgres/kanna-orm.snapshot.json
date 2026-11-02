@@ -6,6 +6,7 @@
         {"name": "id", "type": "int8", "not_null": true, "assigned": true},
         {"name": "email", "type": "text", "not_null": true},
         {"name": "name", "type": "text", "not_null": true},
+        {"name": "phone", "type": "text"},
         {"name": "created_at", "type": "timestamptz", "not_null": true}
       ],
       "primary_key": ["id"],
@@ -58,7 +59,8 @@
       "columns": [
         {"name": "sku", "type": "text", "not_null": true},
         {"name": "name", "type": "text", "not_null": true},
-        {"name": "price", "type": "int8", "not_null": true}
+        {"name": "price", "type": "int8", "not_null": true},
+        {"name": "currency", "type": "text", "not_null": true, "default": true}
       ],
       "primary_key": ["sku"],
       "unique_keys": [],

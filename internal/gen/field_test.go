@@ -124,7 +124,7 @@ func TestFields_Mistakes(t *testing.T) {
 		name, fields, decls, want string
 	}{
 		{"a tag it cannot read", "\tMemo *string `orm:\"note,omitempty\"`\n", "",
-			`model.go:8:1: error: Order.Memo: orm:"note,omitempty" is neither a column, -, nor fk=<column>`},
+			`model.go:8:1: error: Order.Memo: unknown or duplicate orm option "omitempty"`},
 		{"an unexported field", "\tmemo *string\n", "",
 			"model.go:8:1: error: Order.memo: the code kanna-orm writes cannot reach an unexported field\n" +
 				`  export it, or leave it out with orm:"-"`},
