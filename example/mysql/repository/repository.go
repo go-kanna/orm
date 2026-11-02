@@ -14,7 +14,7 @@ import (
 //kanna:repository
 type CustomerRepository interface {
 	// UpsertByEmail meets a customer by their email address, keeping when they joined.
-	//kanna:conflict email keep=created_at
+	//kanna:conflict email keep=created_at coalesce=phone
 	UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
 	Get(ctx context.Context, id model.CustomerID) (model.Customer, error)
 }
@@ -22,6 +22,7 @@ type CustomerRepository interface {
 //kanna:repository
 type ProductRepository interface {
 	// UpsertAll writes the catalog in one statement, however many products it has.
+	//kanna:conflict sku keep=currency
 	UpsertAll(ctx context.Context, products []model.Product) error
 	List(ctx context.Context, s ...scopes.Product) ([]model.Product, error)
 	InsertTags(ctx context.Context, tags []model.Tag) error

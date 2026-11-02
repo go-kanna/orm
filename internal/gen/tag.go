@@ -14,10 +14,11 @@ type fieldTag struct {
 	// skip says the field is no column: kanna-orm neither reads nor writes it.
 	skip bool
 	// fk is the foreign key a relation follows, when more than one could serve.
-	fk       string
-	nullzero bool
-	relation string
-	value    string
+	fk            string
+	nullzero      bool
+	relation      string
+	value         string
+	insertDefault bool
 }
 
 // parseTag reads the orm key of a struct tag. A tag that reflect cannot read is an error rather than no tag, since
@@ -62,9 +63,20 @@ func parseTag(tag string) (fieldTag, error) {
 		}
 		return tag, nil
 	}
-	if name, option, ok := strings.Cut(value, ","); ok && option == "nullzero" && name != "-" &&
+	if name, options, ok := strings.Cut(value, ","); ok && name != "-" &&
 		!strings.ContainsAny(name, ",= ") {
-		return fieldTag{column: name, nullzero: true}, nil
+		tag := fieldTag{column: name}
+		for option := range strings.SplitSeq(options, ",") {
+			switch {
+			case option == "nullzero" && !tag.nullzero:
+				tag.nullzero = true
+			case option == "default" && !tag.insertDefault:
+				tag.insertDefault = true
+			default:
+				return fieldTag{}, fmt.Errorf("unknown or duplicate orm option %q", option)
+			}
+		}
+		return tag, nil
 	}
 	switch fk, isFK := strings.CutPrefix(value, "fk="); {
 	case value == "-":

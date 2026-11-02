@@ -4,13 +4,15 @@ CREATE TABLE customers (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     email      text NOT NULL UNIQUE,
     name       text NOT NULL,
+    phone      text,
     created_at timestamptz NOT NULL
 );
 
 CREATE TABLE products (
     sku   text PRIMARY KEY,
     name  text NOT NULL,
-    price bigint NOT NULL
+    price bigint NOT NULL,
+    currency text NOT NULL DEFAULT 'JPY'
 );
 
 CREATE TABLE orders (

@@ -81,7 +81,7 @@ type example struct {
 // catalog writes many rows at once, in one statement: the products, then a price changed.
 func (ex *example) catalog(ctx context.Context) error {
 	catalog := []model.Product{
-		{SKU: "TEA", Name: "Green tea", Price: 800},
+		{SKU: "TEA", Name: "Green tea", Price: 800, Currency: "USD"},
 		{SKU: "CUP", Name: "Tea cup", Price: 1200},
 		{SKU: "POT", Name: "Teapot", Price: 4500},
 	}
@@ -99,7 +99,10 @@ func (ex *example) catalog(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("the cheap products: %w", err)
 	}
-	fmt.Fprintf(ex.w, "under 1000: %s at %d\n", cheap[0].Name, cheap[0].Price)
+	if cheap[0].Currency != "JPY" {
+		return fmt.Errorf("product currency: got %q, want the database default JPY", cheap[0].Currency)
+	}
+	fmt.Fprintf(ex.w, "under 1000: %s at %d %s\n", cheap[0].Name, cheap[0].Price, cheap[0].Currency)
 	return nil
 }
 
@@ -107,7 +110,8 @@ func (ex *example) catalog(ctx context.Context) error {
 func (ex *example) signUp(ctx context.Context) error {
 	joined := time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)
 	for _, c := range []model.Customer{
-		{Email: "ann@example.com", Name: "Ann", CreatedAt: joined},
+		{Email: "ann@example.com", Name: "Ann", Phone: new("03-1234-5678"), CreatedAt: joined},
+		{Email: "ann@example.com", Name: "Ann Lee", Phone: new("090-1234-5678"), CreatedAt: time.Now()},
 		{Email: "ann@example.com", Name: "Ann Lee", CreatedAt: time.Now()},
 		{Email: "bob@example.com", Name: "Bob", CreatedAt: joined},
 	} {
@@ -120,6 +124,9 @@ func (ex *example) signUp(ctx context.Context) error {
 		} else {
 			ex.bob = stored
 		}
+	}
+	if ex.ann.Phone == nil || *ex.ann.Phone != "090-1234-5678" {
+		return errors.New("customer phone was not updated and preserved on NULL input")
 	}
 	fmt.Fprintf(ex.w, "customer %d: %s, joined %s\n", ex.ann.ID, ex.ann.Name,
 		ex.ann.CreatedAt.UTC().Format(time.DateOnly))

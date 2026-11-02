@@ -114,6 +114,7 @@ type repoMethod struct {
 	result result
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
+	coalesce       []string
 	// lock is the locking clause //kanna:lock gives a read, if any.
 	lock string
 	// query is the query written by hand that implements the method, if one does.
@@ -673,19 +674,15 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 		return []diag.Diag{errorf("//kanna:conflict is for an Upsert")}
 	}
 	fields := strings.Fields(d.Args)
-	if len(fields) == 0 || len(fields) > 2 || strings.Contains(fields[0], "=") {
+	if len(fields) == 0 || strings.Contains(fields[0], "=") {
 		return []diag.Diag{errorf("//kanna:conflict names the columns of a key, and keep= those to leave as they were").
 			WithHints("as in //kanna:conflict tenant_id,email keep=created_at")}
 	}
 	m.conflict = strings.Split(fields[0], ",")
-	if len(fields) == 2 {
-		keep, ok := strings.CutPrefix(fields[1], "keep=")
-		if !ok || keep == "" {
-			return []diag.Diag{errorf("//kanna:conflict takes keep= after the columns of the key, not %q", fields[1])}
-		}
-		m.keep = strings.Split(keep, ",")
+	if err := m.conflictOptions(fields[1:]); err != nil {
+		return []diag.Diag{errorf("%v", err)}
 	}
-	for _, c := range slices.Concat(m.conflict, m.keep) {
+	for _, c := range slices.Concat(m.conflict, m.keep, m.coalesce) {
 		if !slices.ContainsFunc(m.table.Columns, func(col snapshot.Column) bool { return col.Name == c }) {
 			return []diag.Diag{errorf("%s has no column %s", m.target.table, c)}
 		}
@@ -693,6 +690,11 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	if !unique(m.table, m.conflict) {
 		return []diag.Diag{errorf("(%s) is neither the primary key of %s nor one of its unique keys",
 			strings.Join(m.conflict, ", "), m.target.table)}
+	}
+	for _, name := range m.coalesce {
+		if !slices.ContainsFunc(m.updated(), func(c column) bool { return c.col.Name == name }) {
+			return []diag.Diag{errorf("coalesce=%s names a column this upsert does not update", name)}
+		}
 	}
 
 	// MySQL updates on a conflict over any unique key, but for one the database assigns every column of.
@@ -738,7 +740,7 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 					model).WithHints(fmt.Sprintf("give %s a field for it, or the column a default", model)))
 			}
 		}
-		if len(m.inserted()) == 0 {
+		if m.missingInsertColumns() {
 			ds = append(ds, errorf("%s holds no column of %s but those the database assigns", model, m.target.table))
 		}
 	}
@@ -748,7 +750,7 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 			switch {
 			case !held(name):
 				ds = append(ds, errorf("%s has no field for %s, which it meets its row by", model, name))
-			case m.verb == verbUpsert && m.table.Columns[i].Assigned:
+			case m.verb == verbUpsert && (m.table.Columns[i].Assigned || m.field(name).insertDefault):
 				ds = append(ds, errorf("the database assigns %s, so an insert never meets a row by it", name).
 					WithHints(fmt.Sprintf("name another unique key of %s with //kanna:conflict", m.target.table)))
 			}
@@ -778,12 +780,12 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 			}
 		}
 	}
-	return ds
+	return append(ds, m.defaultConstraints(r.s.Dialect)...)
 }
 
-// inserted are the columns a write of m inserts: those its model holds but the database does not assign.
+// inserted are the columns a write of m inserts: those not supplied by the database.
 func (m repoMethod) inserted() []column {
-	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool { return c.col.Assigned })
+	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool { return c.col.Assigned || c.insertDefault })
 }
 
 // autoIncrement names the column of the primary key of m's table that the database assigns, which MySQL tells the
@@ -816,7 +818,9 @@ func (m repoMethod) rowKey() []string {
 // key, and those it keeps.
 func (m repoMethod) updated() []column {
 	skip := slices.Concat(m.rowKey(), m.table.PrimaryKey, m.keep)
-	return slices.DeleteFunc(m.inserted(), func(c column) bool { return slices.Contains(skip, c.col.Name) })
+	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool {
+		return c.col.Assigned || slices.Contains(skip, c.col.Name)
+	})
 }
 
 // rowModel tells the model a parameter or a result of type t holds: a model, or a slice of models.
