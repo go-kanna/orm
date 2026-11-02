@@ -473,6 +473,21 @@ func NewOrderRepository(db DBTX) OrderRepository
 | `Upsert` | `Upsert(ctx, o model.Order) error` | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
 | `Delete` | `Delete(ctx, id model.OrderID) error`、または `DeleteStale(ctx, s ...scopes.Order) (int64, error)` | そのキーの行、またはスコープにマッチする行を削除する |
 
+repository のメソッドに `//kanna:pluck customer_id` を付けると、1 カラムだけを型付きスライスで取得します。たとえば `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` と宣言し、メソッド名は自由に選べます。条件・並び順・件数制限・オフセット・カーソルは `List` と同様に使えます。関連は読み込まず、重複値は保持します。該当行がなければ空のスライスを返します。カラムと戻り値の型を生成時に検証します。NULL を許すカラムには nullable な要素型が必要ですが、モデルの `nullzero` フィールドと同じ型ならゼロ値に変換します。手書き SQL・`conflict`・`lock` との併用は生成エラーです。
+
+```go
+//kanna:pluck name
+Names(ctx context.Context, s ...scopes.Product) ([]string, error)
+```
+
+```go
+names, err := products.Names(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+```
+
+両 DB の example では、このメソッドで価格を絞った商品名を取得し、モデル全体を読み込まずに値の一覧を返します。
+
+
+
 ```go
 // customerID is customer_id: the orders of one customer.
 ListByCustomer(ctx context.Context, customerID model.CustomerID, s ...scopes.Order) ([]model.Order, error)
