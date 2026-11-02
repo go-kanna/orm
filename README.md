@@ -757,6 +757,22 @@ MySQL's `new` row alias also cannot reference an omitted column. An upsert that 
 therefore rejected; list that column in `keep=` to preserve its stored value. The examples use
 `//kanna:conflict sku keep=currency` for the product catalog. Ordinary UPDATE statements can still write Currency.
 
+### Ignoring an insert conflict
+
+Use `//kanna:insert` to generate an insert with a domain-specific method name, such as `Use`. The directive takes no arguments and cannot be combined with a hand-written query or `//kanna:pluck`.
+
+On PostgreSQL, add `do=nothing` to `//kanna:conflict` on an Insert. The columns must name a primary or unique key. Only conflicts on that key are ignored; other constraint errors are returned.
+
+```go
+//kanna:insert
+//kanna:conflict token_hash do=nothing
+Use(ctx context.Context, token model.UsedIDToken) (int64, error)
+```
+
+The count is the number of rows inserted: one for a new token, zero for an existing one. An Insert returning only `error` succeeds when the conflict is ignored. One returning a model uses `RETURNING` and returns `orm.ErrNotFound` when the conflict inserts no row. Bulk inserts can return the count or the slice of newly inserted rows; existing rows are omitted.
+
+`do=nothing` cannot be combined with `keep=` or `coalesce=`, or used on an Upsert. MySQL rejects this directive at generation time: `INSERT IGNORE` would also suppress unrelated errors and cannot restrict conflict handling to the declared key. An ordinary Insert may also return `(int64, error)` for its inserted row count.
+
 ### Upserting
 
 `Upsert` meets an existing row by its primary key. To meet it by another unique key, name its columns with

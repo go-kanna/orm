@@ -90,7 +90,7 @@ func (r repoReader) bindMethod(m repoMethod, field *ast.Field, ts *ast.TypeSpec)
 		return errorf("cannot be implemented by a SQL query")
 	}
 	if field != nil {
-		for _, name := range []string{"conflict", "lock"} {
+		for _, name := range []string{"conflict", "lock", "insert"} {
 			d, ds := directive.Find(r.pkg.Fset, field.Doc, name)
 			if len(ds) > 0 {
 				return m, ds
