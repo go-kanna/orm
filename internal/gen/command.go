@@ -102,7 +102,7 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 		return nil, ds
 	}
 	// What another package's run declares, as a scope type //kanna:scopes implies, is no mistake of this run's.
-	rds := slices.DeleteFunc(packages.Recheck(set, changes), set.Pending(impliedNames(idx)))
+	rds := slices.DeleteFunc(packages.Recheck(set, changes), set.Pending(pendingScopeNames(idx)))
 	if len(rds) > 0 {
 		return nil, slices.Concat(ds, rds, set.SetAsideWarnings())
 	}
@@ -162,7 +162,7 @@ func planRun(dir string, cfg config, load []string, dest *destination, l loadedR
 		p.ds = append(p.ds, pds...)
 	}
 	p.pending = generatedNames(p.plans, p.s.Dialect)
-	maps.Copy(p.pending, impliedNames(p.idx))
+	maps.Copy(p.pending, pendingScopeNames(p.idx))
 	if len(p.repoPkgs) > 0 {
 		var queries []sqlfile.Statement
 		if dest != nil {

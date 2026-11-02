@@ -3,6 +3,7 @@
 package scopes
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/go-kanna/orm"
@@ -39,6 +40,29 @@ func customerColumnsFor(parent orm.Parent) CustomerColumns {
 func (s Customer) One() orm.Single[model.Customer]   { return s.q.One() }
 func (s Customer) First() orm.Single[model.Customer] { return s.q.First() }
 func (s Customer) Many() orm.Many[model.Customer]    { return s.q.Many() }
+
+// CustomerChangeSet holds explicitly assigned columns of customers.
+type CustomerChangeSet struct{ changes orm.Changes[model.Customer] }
+
+func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
+
+func (c CustomerChangeSet) Of() orm.Changes[model.Customer] { return c.changes }
+
+func (c CustomerChangeSet) SetEmail(v string) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("email", v)}
+}
+
+func (c CustomerChangeSet) SetName(v string) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("name", v)}
+}
+
+func (c CustomerChangeSet) SetPhone(v *string) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("phone", v)}
+}
+
+func (c CustomerChangeSet) SetCreatedAt(v time.Time) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("created_at", v)}
+}
 
 // IDEq narrows to the rows whose id is v.
 func (s Customer) IDEq(v model.CustomerID) Customer {
@@ -617,6 +641,25 @@ func (s Product) One() orm.Single[model.Product]   { return s.q.One() }
 func (s Product) First() orm.Single[model.Product] { return s.q.First() }
 func (s Product) Many() orm.Many[model.Product]    { return s.q.Many() }
 
+// ProductChangeSet holds explicitly assigned columns of products.
+type ProductChangeSet struct{ changes orm.Changes[model.Product] }
+
+func ProductChanges() ProductChangeSet { return ProductChangeSet{} }
+
+func (c ProductChangeSet) Of() orm.Changes[model.Product] { return c.changes }
+
+func (c ProductChangeSet) SetName(v string) ProductChangeSet {
+	return ProductChangeSet{c.changes.Set("name", v)}
+}
+
+func (c ProductChangeSet) SetPrice(v int64) ProductChangeSet {
+	return ProductChangeSet{c.changes.Set("price", v)}
+}
+
+func (c ProductChangeSet) SetCurrency(v string) ProductChangeSet {
+	return ProductChangeSet{c.changes.Set("currency", v)}
+}
+
 // SKUEq narrows to the rows whose sku is v.
 func (s Product) SKUEq(v model.SKU) Product {
 	return Product{s.q.Where(`sku = `, v)}
@@ -1104,6 +1147,29 @@ func orderColumnsFor(parent orm.Parent) OrderColumns {
 func (s Order) One() orm.Single[model.Order]   { return s.q.One() }
 func (s Order) First() orm.Single[model.Order] { return s.q.First() }
 func (s Order) Many() orm.Many[model.Order]    { return s.q.Many() }
+
+// OrderChangeSet holds explicitly assigned columns of orders.
+type OrderChangeSet struct{ changes orm.Changes[model.Order] }
+
+func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
+
+func (c OrderChangeSet) Of() orm.Changes[model.Order] { return c.changes }
+
+func (c OrderChangeSet) SetCustomerID(v model.CustomerID) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("customer_id", v)}
+}
+
+func (c OrderChangeSet) SetStatus(v model.OrderStatus) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("status", v)}
+}
+
+func (c OrderChangeSet) SetPlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("placed_at", v)}
+}
+
+func (c OrderChangeSet) SetMemo(v string) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("note", sql.Null[string]{V: v, Valid: v != ""})}
+}
 
 // IDEq narrows to the rows whose id is v.
 func (s Order) IDEq(v model.OrderID) Order {
@@ -1733,6 +1799,21 @@ func (s OrderLine) One() orm.Single[model.OrderLine]   { return s.q.One() }
 func (s OrderLine) First() orm.Single[model.OrderLine] { return s.q.First() }
 func (s OrderLine) Many() orm.Many[model.OrderLine]    { return s.q.Many() }
 
+// OrderLineChangeSet holds explicitly assigned columns of order_lines.
+type OrderLineChangeSet struct{ changes orm.Changes[model.OrderLine] }
+
+func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
+
+func (c OrderLineChangeSet) Of() orm.Changes[model.OrderLine] { return c.changes }
+
+func (c OrderLineChangeSet) SetSKU(v model.SKU) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Set("sku", v)}
+}
+
+func (c OrderLineChangeSet) SetQuantity(v int) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Set("quantity", v)}
+}
+
 // OrderIDEq narrows to the rows whose order_id is v.
 func (s OrderLine) OrderIDEq(v model.OrderID) OrderLine {
 	return OrderLine{s.q.Where(`order_id = `, v)}
@@ -2184,6 +2265,21 @@ func (s Shipment) One() orm.Single[model.Shipment]   { return s.q.One() }
 func (s Shipment) First() orm.Single[model.Shipment] { return s.q.First() }
 func (s Shipment) Many() orm.Many[model.Shipment]    { return s.q.Many() }
 
+// ShipmentChangeSet holds explicitly assigned columns of shipments.
+type ShipmentChangeSet struct{ changes orm.Changes[model.Shipment] }
+
+func ShipmentChanges() ShipmentChangeSet { return ShipmentChangeSet{} }
+
+func (c ShipmentChangeSet) Of() orm.Changes[model.Shipment] { return c.changes }
+
+func (c ShipmentChangeSet) SetCarrier(v string) ShipmentChangeSet {
+	return ShipmentChangeSet{c.changes.Set("carrier", v)}
+}
+
+func (c ShipmentChangeSet) SetTracking(v string) ShipmentChangeSet {
+	return ShipmentChangeSet{c.changes.Set("tracking", v)}
+}
+
 // OrderIDEq narrows to the rows whose order_id is v.
 func (s Shipment) OrderIDEq(v model.OrderID) Shipment {
 	return Shipment{s.q.Where(`order_id = `, v)}
@@ -2558,6 +2654,13 @@ func (s Tag) One() orm.Single[model.Tag]   { return s.q.One() }
 func (s Tag) First() orm.Single[model.Tag] { return s.q.First() }
 func (s Tag) Many() orm.Many[model.Tag]    { return s.q.Many() }
 
+// TagChangeSet holds explicitly assigned columns of tags.
+type TagChangeSet struct{ changes orm.Changes[model.Tag] }
+
+func TagChanges() TagChangeSet { return TagChangeSet{} }
+
+func (c TagChangeSet) Of() orm.Changes[model.Tag] { return c.changes }
+
 // NameEq narrows to the rows whose name is v.
 func (s Tag) NameEq(v string) Tag {
 	return Tag{s.q.Where(`name = `, v)}
@@ -2753,6 +2856,33 @@ func approvalColumnsFor(parent orm.Parent) ApprovalColumns {
 func (s Approval) One() orm.Single[model.Approval]   { return s.q.One() }
 func (s Approval) First() orm.Single[model.Approval] { return s.q.First() }
 func (s Approval) Many() orm.Many[model.Approval]    { return s.q.Many() }
+
+// ApprovalChangeSet holds explicitly assigned columns of approvals.
+type ApprovalChangeSet struct{ changes orm.Changes[model.Approval] }
+
+func ApprovalChanges() ApprovalChangeSet { return ApprovalChangeSet{} }
+
+func (c ApprovalChangeSet) Of() orm.Changes[model.Approval] { return c.changes }
+
+func (c ApprovalChangeSet) SetOrderID(v model.OrderID) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Set("order_id", v)}
+}
+
+func (c ApprovalChangeSet) SetRevision(v int32) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Set("revision", v)}
+}
+
+func (c ApprovalChangeSet) SetApprover(v string) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Set("approver", v)}
+}
+
+func (c ApprovalChangeSet) SetApprovedAt(v time.Time) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Set("approved_at", v)}
+}
+
+func (c ApprovalChangeSet) SetRevokedAt(v *time.Time) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Set("revoked_at", v)}
+}
 
 // IDEq narrows to the rows whose id is v.
 func (s Approval) IDEq(v int64) Approval {

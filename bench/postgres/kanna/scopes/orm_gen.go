@@ -38,6 +38,25 @@ func (s Customer) One() orm.Single[model.Customer]   { return s.q.One() }
 func (s Customer) First() orm.Single[model.Customer] { return s.q.First() }
 func (s Customer) Many() orm.Many[model.Customer]    { return s.q.Many() }
 
+// CustomerChangeSet holds explicitly assigned columns of customers.
+type CustomerChangeSet struct{ changes orm.Changes[model.Customer] }
+
+func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
+
+func (c CustomerChangeSet) Of() orm.Changes[model.Customer] { return c.changes }
+
+func (c CustomerChangeSet) SetEmail(v string) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("email", v)}
+}
+
+func (c CustomerChangeSet) SetName(v string) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("name", v)}
+}
+
+func (c CustomerChangeSet) SetCreatedAt(v time.Time) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("created_at", v)}
+}
+
 // IDEq narrows to the rows whose id is v.
 func (s Customer) IDEq(v int64) Customer {
 	return Customer{s.q.Where(`id = `, v)}
@@ -503,6 +522,29 @@ func orderColumnsFor(parent orm.Parent) OrderColumns {
 func (s Order) One() orm.Single[model.Order]   { return s.q.One() }
 func (s Order) First() orm.Single[model.Order] { return s.q.First() }
 func (s Order) Many() orm.Many[model.Order]    { return s.q.Many() }
+
+// OrderChangeSet holds explicitly assigned columns of orders.
+type OrderChangeSet struct{ changes orm.Changes[model.Order] }
+
+func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
+
+func (c OrderChangeSet) Of() orm.Changes[model.Order] { return c.changes }
+
+func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("customer_id", v)}
+}
+
+func (c OrderChangeSet) SetStatus(v string) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("status", v)}
+}
+
+func (c OrderChangeSet) SetPlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("placed_at", v)}
+}
+
+func (c OrderChangeSet) SetNote(v *string) OrderChangeSet {
+	return OrderChangeSet{c.changes.Set("note", v)}
+}
 
 // IDEq narrows to the rows whose id is v.
 func (s Order) IDEq(v int64) Order {
@@ -1074,6 +1116,25 @@ func orderLineColumnsFor(parent orm.Parent) OrderLineColumns {
 func (s OrderLine) One() orm.Single[model.OrderLine]   { return s.q.One() }
 func (s OrderLine) First() orm.Single[model.OrderLine] { return s.q.First() }
 func (s OrderLine) Many() orm.Many[model.OrderLine]    { return s.q.Many() }
+
+// OrderLineChangeSet holds explicitly assigned columns of order_lines.
+type OrderLineChangeSet struct{ changes orm.Changes[model.OrderLine] }
+
+func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
+
+func (c OrderLineChangeSet) Of() orm.Changes[model.OrderLine] { return c.changes }
+
+func (c OrderLineChangeSet) SetOrderID(v int64) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Set("order_id", v)}
+}
+
+func (c OrderLineChangeSet) SetSKU(v string) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Set("sku", v)}
+}
+
+func (c OrderLineChangeSet) SetQuantity(v int32) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Set("quantity", v)}
+}
 
 // IDEq narrows to the rows whose id is v.
 func (s OrderLine) IDEq(v int64) OrderLine {

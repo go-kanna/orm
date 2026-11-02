@@ -17,6 +17,9 @@ type CustomerRepository interface {
 	//kanna:conflict email keep=created_at coalesce=phone
 	UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
 	Get(ctx context.Context, id model.CustomerID) (model.Customer, error)
+	UpdatePhone(
+		ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer,
+	) (model.Customer, error)
 }
 
 //kanna:repository

@@ -158,11 +158,12 @@ func importedPackages(pkgs []*packages.Package) map[string]*types.Package {
 	return byPath
 }
 
-// impliedNames names, as Set.Pending takes them, the scope types //kanna:scopes implies of idx, and the functions
-// returning their empty scopes: what the run of their packages declares.
-func impliedNames(idx []indexed) map[string]bool {
+// pendingScopeNames names declarations that another scope package generates: change sets and implied scopes.
+func pendingScopeNames(idx []indexed) map[string]bool {
 	names := map[string]bool{}
 	for _, e := range idx {
+		names[e.pkgPath+"."+e.name+"Changes"] = true
+		names[e.pkgPath+"."+e.name+"ChangeSet"] = true
 		if e.implied {
 			names[e.pkgPath+"."+e.name] = true
 			if fn, ok := funcName(e.table); ok {

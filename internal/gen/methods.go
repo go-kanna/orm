@@ -88,6 +88,7 @@ func checkNames(pkg *packages.Package, plans []scopePlan, d snapshot.Dialect) []
 	var ds []diag.Diag
 	generatedFiles := packages.GeneratedFiles(pkg)
 	for _, p := range plans {
+		ds = append(ds, checkChangeNames(pkg, p)...)
 		named := map[string]string{}
 		for _, m := range methodsOf(p, d) {
 			named[m.name] = m.why
@@ -121,6 +122,32 @@ func checkNames(pkg *packages.Package, plans []scopePlan, d snapshot.Dialect) []
 			if why, ok := named[m.Name()]; ok {
 				ds = append(ds, diag.Errorf(pos, "%s.%s: kanna-orm writes a method of this name, %s", p.name, m.Name(),
 					why).WithHints("name yours otherwise"))
+			}
+		}
+	}
+	return ds
+}
+
+func checkChangeNames(pkg *packages.Package, p scopePlan) []diag.Diag {
+	name := p.name + "ChangeSet"
+	obj := pkg.Types.Scope().Lookup(name)
+	if obj == nil {
+		return nil
+	}
+	t := asNamed(obj.Type())
+	if t == nil {
+		return nil
+	}
+	generatedFiles := packages.GeneratedFiles(pkg)
+	var ds []diag.Diag
+	for method := range t.Methods() {
+		pos := pkg.Fset.Position(method.Pos())
+		if filepath.Base(pos.Filename) == outputName && generatedFiles[pos.Filename] {
+			continue
+		}
+		for _, generated := range changeMethods(p) {
+			if method.Name() == generated.name {
+				ds = append(ds, diag.Errorf(pos, "%s.%s: kanna-orm writes a method of this name", name, method.Name()))
 			}
 		}
 	}

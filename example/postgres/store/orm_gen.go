@@ -60,6 +60,30 @@ func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model
 	return rows[0], nil
 }
 
+func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error) {
+	qs := make([]orm.Of[model.Customer], len(s))
+	for i, s := range s {
+		qs[i] = s.Of()
+	}
+	q := orm.Join(qs...)
+	changes := c.Of()
+	q = q.Where(`id = `, id)
+	text, args, err := changes.RenderUpdate(orm.Postgres, "customers", []string{"email", "name", "phone", "created_at"}, q)
+	if err != nil {
+		return model.Customer{}, err
+	}
+	text += ` RETURNING id, email, name, phone, created_at`
+	var row model.Customer
+	err = r.db.QueryRow(ctx, text, args...).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Customer{}, fmt.Errorf("no row of customers matches: %w", orm.ErrNotFound)
+	}
+	if err != nil {
+		return model.Customer{}, fmt.Errorf(`update customers: %w`, err)
+	}
+	return row, nil
+}
+
 // ProductRepository implements repository.ProductRepository on PostgreSQL through pgx.
 type ProductRepository struct{ db DBTX }
 

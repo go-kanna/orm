@@ -43,9 +43,10 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
 	for _, sc := range scopes {
-		for _, name := range []string{sc.name + "Columns", lowerFirst(sc.name) + "ColumnsFor"} {
+		for _, name := range []string{sc.name + "Columns", lowerFirst(sc.name) + "ColumnsFor",
+			sc.name + "Changes", sc.name + "ChangeSet"} {
 			if at, ok := declared(pkg, name); ok {
-				ds = append(ds, diag.Errorf(at, "%s is reserved for generated parent columns", name))
+				ds = append(ds, diag.Errorf(at, "%s is reserved for generated scope helpers", name))
 			}
 		}
 	}
@@ -108,7 +109,7 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	f := gofile.New(generator, pkg.PkgPath, pkg.Name)
 	f.Reserve(declared...)
 	for _, p := range plans {
-		f.Reserve(p.name, p.fn, p.name+"Columns", lowerFirst(p.name)+"ColumnsFor")
+		f.Reserve(p.name, p.fn, p.name+"Columns", lowerFirst(p.name)+"ColumnsFor", p.name+"Changes", p.name+"ChangeSet")
 	}
 	for _, p := range plans {
 		e := emitter{f: f, d: d, p: p, orm: f.Import(ormPath, "orm")}
@@ -149,6 +150,7 @@ func (e emitter) scope() {
 
 	e.columnReferences()
 	e.selectionMethods()
+	e.changes()
 	for _, c := range p.columns {
 		e.column(c)
 		e.columnComparison(c)

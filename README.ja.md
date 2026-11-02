@@ -881,9 +881,7 @@ make bench      # run the benchmarks in a container next to the PostgreSQL of db
 
 [`bench/postgres`](bench/postgres) は、kanna-orm を pgx 単体、sqlc、GORM、bun、ent と比較して計測します。結果と計測方法は、その README にあります。
 
-## ライセンス
 
-[MIT](./LICENSE)
 
 ### 親カラムを参照する単一値の取得と、親ごとの関連取得
 
@@ -934,3 +932,36 @@ orders, err := repo.List(ctx, scopes.Orders().IDAsc().Limit(20).
 `Select<Field>` は親と同じ SELECT に単一値のサブクエリを追加し、親の行数・ページングを維持します。複数の値を選択しても条件とプレースホルダーはそれぞれ管理します。`Preload<Field>` は別クエリによる一括読み込みで、複合外部キー・中間テーブル・読み込んだ子の関連取得にも対応します。親と関連の通常の読み取りを同じスナップショットにしたい場合は Repeatable Read のトランザクションを利用します。ロックと分離レベルは呼び出し側で明示します。既存の `With<Field>` の挙動は変えません。
 
 単一値の関連は読み込み専用で、INSERT・UPDATE の対象から除外します。手書き SQL に差し替える場合も、`a.approver AS approver` のようにフィールドのカラム名で返せば同じモデルへ読み込めます。PostgreSQL／MySQL の example では、現在・最新の承認者、親別の件数制限・Offset、一致なし・必須値なし・複数件一致、手書き SQL への差し替えを実行して確認します。
+
+### 指定したカラムだけを更新する
+
+各 scope に型付きの変更セットを生成します。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
+
+```go
+changes := scopes.CustomerChanges().
+    SetName("Ann Lee").
+    SetPhone(nil)
+```
+
+setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込み、同じカラムを再指定した場合は最後の値を使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・関連フィールドには setter を生成しません。空の変更セットはエラーになります。
+
+対象の一意キーを更新値と分けて宣言し、通常の条件スコープを追加します。
+
+```go
+UpdatePhone(ctx context.Context, id model.CustomerID,
+    c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error)
+
+updated, err := repo.UpdatePhone(ctx, customerID,
+    scopes.CustomerChanges().SetPhone(new("050-1234-5678")),
+    scopes.Customers().PhoneIsNull())
+```
+
+PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。従来のモデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値や preload は読み込みません。
+
+複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。WHERE 条件のない更新、並び順、ページング、関連取得のスコープは拒否します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言は生成エラーとし、別 SELECT による読み戻しは行いません。
+
+PostgreSQL／MySQL の example では、電話番号だけの更新、`SetPhone(nil)` による NULL 設定、未指定フィールドの保持、条件不一致時のエラーを実行して確認します。
+
+## ライセンス
+
+[MIT](./LICENSE)
