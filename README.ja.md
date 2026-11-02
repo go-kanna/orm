@@ -598,6 +598,22 @@ UPDATE では、タグを指定した非キーのフィールドもモデルの�
 
 MySQL の `new` 行エイリアスからは、省略したカラムも参照できません。そのため、`default` のフィールドを競合時に更新する Upsert は生成エラーにします。`keep=` にそのカラムを指定して既存値を保持してください。example の商品カタログは `//kanna:conflict sku keep=currency` を使っています。通常の UPDATE は Currency に値を書き込めます。
 
+### INSERT の競合を無視する
+
+`//kanna:insert` を付けると、`Use` のようなドメインに合わせたメソッド名でも INSERT を生成できます。このディレクティブは引数を取らず、手書き SQL や `//kanna:pluck` とは併用できません。
+
+PostgreSQL では、Insert の `//kanna:conflict` に `do=nothing` を指定できます。カラムには主キーまたはユニークキーを指定します。そのキーでの競合だけを無視し、それ以外の制約違反はエラーを返します。
+
+```go
+//kanna:insert
+//kanna:conflict token_hash do=nothing
+Use(ctx context.Context, token model.UsedIDToken) (int64, error)
+```
+
+戻り値は挿入件数で、新しいトークンなら 1、既存のトークンなら 0 です。`error` のみを返すメソッドは、競合を無視した場合も成功します。モデルを返すメソッドは RETURNING を使い、競合で挿入されなければ `orm.ErrNotFound` を返します。一括 INSERT は挿入件数または新しく挿入した行のスライスを返せます。既存の行は結果に含めません。
+
+`do=nothing` は `keep=`・`coalesce=` と併用できず、Upsert にも指定できません。MySQL では生成エラーになります。`INSERT IGNORE` は指定したキーだけに競合処理を限定できず、無関係なエラーも抑制するためです。通常の単一行 Insert も `(int64, error)` で挿入件数を返せます。
+
 ### Upsert
 
 `Upsert` は、主キーで既存の行と突き合わせます。別のユニークキーで突き合わせるには、`//kanna:conflict` でそのカラムを指定し、`keep=` で変更しないカラムを指定します:
