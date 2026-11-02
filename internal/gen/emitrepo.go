@@ -289,7 +289,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		e.insert(m, sc, recv, sig)
 	case verbUpdate:
 		e.update(m, sc, recv, sig)
-	case verbGet, verbFirst, verbList, verbCount, verbExists, verbDelete:
+	case verbGet, verbFirst, verbList, verbPluck, verbCount, verbExists, verbDelete:
 		e.read(m, sc, recv, sig)
 	}
 	e.printf("}\n\n")
@@ -356,6 +356,8 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound)
 	case verbList:
 		e.printf("return select%s(%s, %s.db, %s, %s)\n", e.names[m.target.table], sig.ctx, recv, q, lockClause(m))
+	case verbPluck:
+		e.pluckRows(m, sc, recv, sig, q)
 	case verbCount, verbExists:
 		query, typ, zero := "`SELECT count(*) FROM "+table+"`+"+rd+".Where()", "int64", "0"
 		if m.verb == verbExists {
@@ -1010,4 +1012,28 @@ func ifSet(expr string, pointer bool, do func(v string) string) string {
 		return do(expr)
 	}
 	return "if " + expr + " != nil {\n" + do("*"+expr) + "\n}"
+}
+
+func (e repoEmitter) pluckRows(m repoMethod, sc gofile.Scope, recv string, sig signature, q string) {
+	rd, err := sc.Name("rd"), sc.Name("err")
+	rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
+	column := m.pluck
+	typ := types.TypeString(column.typ, e.f.Qualifier)
+	query := "SELECT " + sqlName(e.d, column.col.Name) + " FROM " + sqlName(e.d, m.target.table)
+	what := fmt.Sprintf("%q", "pluck "+m.target.table+"."+column.col.Name+": %w")
+	wrap := e.fmtPkg() + ".Errorf(" + what + ", " + err + ")"
+	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
+	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit(), "+
+		"%[7]s.Args()...)\n", rows, err, recv, e.query, sig.ctx, goString(query), rd)
+	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
+	if column.nullzero {
+		e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[5]s\n", out, typ, rows, row, e.storageType(*column))
+		e.printf("if %[1]s := %[2]s.Scan(&%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", err, rows, row, wrap)
+		e.printf("%[1]s = append(%[1]s, %[2]s.V)\n}\n", out, row)
+		e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", err, rows, wrap)
+	} else {
+		e.scalarRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ)
+	}
+	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
+	e.printf("return %s, nil\n", out)
 }

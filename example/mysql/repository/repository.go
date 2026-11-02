@@ -25,6 +25,8 @@ type ProductRepository interface {
 	//kanna:conflict sku keep=currency
 	UpsertAll(ctx context.Context, products []model.Product) error
 	List(ctx context.Context, s ...scopes.Product) ([]model.Product, error)
+	//kanna:pluck name
+	Names(ctx context.Context, s ...scopes.Product) ([]string, error)
 	InsertTags(ctx context.Context, tags []model.Tag) error
 }
 

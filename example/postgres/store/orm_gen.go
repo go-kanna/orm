@@ -97,6 +97,38 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 	return selectProducts(ctx, r.db, q, "")
 }
 
+func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]string, error) {
+	qs := make([]orm.Of[model.Product], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	rd2, err2 := q.Render(orm.Postgres, 1)
+	if err2 != nil {
+		return nil, err2
+	}
+	rows, err2 := r.db.Query(ctx, `SELECT name FROM products`+rd2.Where()+rd2.OrderBy()+rd2.Limit(), rd2.Args()...)
+	if err2 != nil {
+		return nil, fmt.Errorf("pluck products.name: %w", err2)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var row string
+		if err2 := rows.Scan(&row); err2 != nil {
+			return nil, fmt.Errorf("pluck products.name: %w", err2)
+		}
+		out = append(out, row)
+	}
+	if err2 := rows.Err(); err2 != nil {
+		return nil, fmt.Errorf("pluck products.name: %w", err2)
+	}
+	if rd2.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
 func (r ProductRepository) InsertTags(ctx context.Context, tags []model.Tag) error {
 	if len(tags) == 0 {
 		return nil

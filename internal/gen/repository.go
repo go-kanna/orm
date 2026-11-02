@@ -29,6 +29,7 @@ const (
 	verbGet    verb = "Get"
 	verbFirst  verb = "First"
 	verbList   verb = "List"
+	verbPluck  verb = "Pluck"
 	verbCount  verb = "Count"
 	verbExists verb = "Exists"
 	verbInsert verb = "Insert"
@@ -44,6 +45,7 @@ var shapes = map[verb]string{
 	verbGet:    "Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)",
 	verbFirst:  "First(ctx context.Context, s ...scopes.Order) (model.Order, error)",
 	verbList:   "List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)",
+	verbPluck:  "//kanna:pluck id followed by a method returning ([]model.OrderID, error)",
 	verbCount:  "Count(ctx context.Context, s ...scopes.Order) (int64, error)",
 	verbExists: "Exists(ctx context.Context, s ...scopes.Order) (bool, error)",
 	verbInsert: "Insert(ctx context.Context, o model.Order) (model.Order, error), or with error alone",
@@ -104,6 +106,7 @@ type repoMethod struct {
 	model   *types.Named
 	table   snapshot.Table
 	columns []column
+	pluck   *column
 	// keys are the parameters naming the columns the rows must equal, in their order.
 	keys []key
 	// scoped reports whether the method takes scopes, as its last parameter. row names the parameter of the row it
@@ -325,8 +328,14 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 	}
 	conflict, cds := directive.Find(r.pkg.Fset, doc, "conflict")
 	lock, lds := directive.Find(r.pkg.Fset, doc, "lock")
+	pluck, pds := directive.Find(r.pkg.Fset, doc, "pluck")
 	cds = append(cds, lds...)
+	cds = append(cds, pds...)
 	if st, ok := r.queries[m.name]; ok {
+		if pluck.Found {
+			d := diag.Errorf(pluck.Pos, "%s: //kanna:pluck cannot be combined with a hand-written query", m.name)
+			return m, append(cds, d)
+		}
 		if conflict.Found {
 			cds = append(cds, diag.Errorf(conflict.Pos, "%s: //kanna:conflict is for an Upsert", m.name))
 		}
@@ -337,6 +346,9 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 	}
 
 	v, ok := verbOf(m.name)
+	if pluck.Found {
+		v, ok = verbPluck, true
+	}
 	if !ok {
 		return m, errorf("its name starts with no verb kanna-orm knows, and no -- query: %s is written for it", m.name)
 	}
@@ -383,20 +395,10 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 		keyParams = append(keyParams, p)
 	}
 	if results.Len() == 2 {
-		switch t := results.At(0).Type(); {
-		case isBasic(t, types.Int64):
-			m.result = resultCount
-		case isBasic(t, types.Bool):
-			m.result = resultBool
-		default:
-			model, many, ok := r.rowModel(t)
-			if !ok {
-				return m, shapeError()
-			}
-			m.result, models = resultRow, append(models, model)
-			if many {
-				m.result = resultRows
-			}
+		var ok bool
+		models, ok = r.resultModels(&m, results.At(0).Type(), models)
+		if !ok {
+			return m, shapeError()
 		}
 	}
 
@@ -408,6 +410,11 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 	}
 	if !m.shaped() {
 		return m, shapeError()
+	}
+	if v == verbPluck {
+		if ds := r.pluckColumn(&m, pluck.Args); ds != nil {
+			return m, ds
+		}
 	}
 	var ds []diag.Diag
 	if conflict.Found {
@@ -604,7 +611,7 @@ func (m repoMethod) shaped() bool {
 	switch m.verb {
 	case verbGet, verbFirst:
 		ok = m.result == resultRow
-	case verbList:
+	case verbList, verbPluck:
 		ok = m.result == resultRows
 	case verbCount:
 		ok = m.result == resultCount
@@ -886,4 +893,61 @@ func lowerFirst(s string) string {
 		runes[0] = unicode.ToLower(runes[0])
 	}
 	return string(runes)
+}
+
+func (r repoReader) pluckColumn(m *repoMethod, name string) []diag.Diag {
+	if len(strings.Fields(name)) != 1 {
+		return []diag.Diag{diag.Errorf(m.pos, "%s: //kanna:pluck takes exactly one column name", m.name)}
+	}
+	name = strings.TrimSpace(name)
+	for _, c := range m.columns {
+		if name != c.col.Name {
+			continue
+		}
+		slice, ok := m.fn.Signature().Results().At(0).Type().Underlying().(*types.Slice)
+		if !ok {
+			return []diag.Diag{diag.Errorf(m.pos, "%s: pluck returns a slice", m.name)}
+		}
+		elem := slice.Elem()
+		if _, ok := readable(elem, c.col.Type); !ok {
+			return []diag.Diag{diag.Errorf(m.pos, "%s: %s cannot hold column %s (%s)",
+				m.name, typeName(elem), c.col.Name, c.col.Type)}
+		}
+		zeroable := c.nullzero && types.Identical(elem, c.typ)
+		if !c.col.NotNull && !nilable(elem) && !zeroable {
+			return []diag.Diag{diag.Errorf(m.pos, "%s: column %s may be NULL; return a slice of a nullable type",
+				m.name, c.col.Name)}
+		}
+		c.typ = elem
+		c.nullzero = c.nullzero && !nilable(elem)
+		m.pluck = &c
+		return nil
+	}
+	return []diag.Diag{diag.Errorf(m.pos, "%s: %s has no mapped column %s to pluck",
+		m.name, typeName(m.model), name).WithHints("name a column of the model in //kanna:pluck")}
+}
+
+func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Named) ([]*types.Named, bool) {
+	switch {
+	case m.verb == verbPluck:
+		if _, ok := t.Underlying().(*types.Slice); !ok {
+			return nil, false
+		}
+		m.result = resultRows
+	case isBasic(t, types.Int64):
+		m.result = resultCount
+	case isBasic(t, types.Bool):
+		m.result = resultBool
+	default:
+		model, many, ok := r.rowModel(t)
+		if !ok {
+			return nil, false
+		}
+		m.result = resultRow
+		if many {
+			m.result = resultRows
+		}
+		return append(models, model), true
+	}
+	return models, true
 }

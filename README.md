@@ -585,6 +585,21 @@ the column of its name, which the rows must equal.
 | `Upsert` | `Upsert(ctx, o model.Order) error`                                                             | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
 | `Delete` | `Delete(ctx, id model.OrderID) error`, or `DeleteStale(ctx, s ...scopes.Order) (int64, error)` | deletes the row with the key, or the rows the scopes match                            |
 
+Use `//kanna:pluck customer_id` above a repository method such as `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` to read one column as a typed slice. The method name is yours to choose. Conditions, ordering, limits, offsets, and cursors work as for `List`; relations are not loaded. Duplicate values are preserved and no matching rows returns an empty slice. Generation checks the column and result type. Nullable columns require nullable elements unless the model field uses `nullzero` and the element has that field’s type. A pluck directive cannot be combined with hand-written SQL, `conflict`, or `lock`.
+
+```go
+//kanna:pluck name
+Names(ctx context.Context, s ...scopes.Product) ([]string, error)
+```
+
+```go
+names, err := products.Names(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+```
+
+Both database examples use this method to read the affordable product names without loading whole products.
+
+
+
 ```go
 // customerID is customer_id: the orders of one customer.
 ListByCustomer(ctx context.Context, customerID model.CustomerID, s ...scopes.Order) ([]model.Order, error)
