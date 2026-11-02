@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS order_tags, tags, shipments, order_lines, orders, products, customers;
+DROP TABLE IF EXISTS approvals, order_tags, tags, shipments, order_lines, orders, products, customers;
 
 CREATE TABLE customers (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -16,6 +16,7 @@ CREATE TABLE products (
 );
 
 CREATE TABLE orders (
+ revision integer NOT NULL DEFAULT 1,
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     customer_id bigint NOT NULL REFERENCES customers,
     status      text NOT NULL,
@@ -44,3 +45,14 @@ CREATE TABLE order_tags (
     tag      text NOT NULL REFERENCES tags,
     PRIMARY KEY (order_id, tag)
 );
+
+CREATE TABLE approvals (
+ id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ order_id bigint NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+ revision integer NOT NULL,
+ approver text NOT NULL,
+ approved_at timestamptz NOT NULL,
+ revoked_at timestamptz
+);
+CREATE INDEX approvals_revision ON approvals (order_id, revision);
+CREATE INDEX approvals_latest ON approvals (order_id, approved_at DESC, id DESC);

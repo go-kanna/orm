@@ -1,6 +1,21 @@
 {
   "dialect": "mysql",
   "tables": {
+    "approvals": {
+      "columns": [
+        {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
+        {"name": "order_id", "type": "bigint", "not_null": true},
+        {"name": "revision", "type": "int", "not_null": true},
+        {"name": "approver", "type": "text", "not_null": true},
+        {"name": "approved_at", "type": "datetime(6)", "not_null": true},
+        {"name": "revoked_at", "type": "datetime(6)"}
+      ],
+      "primary_key": ["id"],
+      "unique_keys": [],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]}
+      ]
+    },
     "customers": {
       "columns": [
         {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
@@ -43,6 +58,7 @@
     },
     "orders": {
       "columns": [
+        {"name": "revision", "type": "int", "not_null": true, "default": true},
         {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
         {"name": "customer_id", "type": "bigint", "not_null": true},
         {"name": "status", "type": "varchar(16)", "not_null": true},
@@ -94,6 +110,20 @@
         {"name": "at"}
       ],
       "columns": []
+    },
+    "github.com/go-kanna/orm/example/mysql/store.FindApproval": {
+      "digest": "41f20367490b4373",
+      "params": [
+        {"name": "id"}
+      ],
+      "columns": [
+        {"name": "id", "type": "bigint", "not_null": true},
+        {"name": "customer_id", "type": "bigint", "not_null": true},
+        {"name": "status", "type": "varchar", "not_null": true},
+        {"name": "placed_at", "type": "datetime", "not_null": true},
+        {"name": "note", "type": "text", "nullable": true},
+        {"name": "approver", "type": "text", "nullable": true}
+      ]
     },
     "github.com/go-kanna/orm/example/mysql/store.MonthlySales": {
       "digest": "95ad8f1311b0e628",

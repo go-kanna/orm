@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -56,7 +57,12 @@ func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
 		}
 		b.WriteString("(" + c.pieces[0])
 		for j, arg := range c.args {
-			if l, ok := arg.(list); ok {
+			if ref, ok := asReference(arg); ok {
+				if q.parent == nil || ref.parent.identity == nil || ref.parent.identity != q.parent.parent.identity {
+					return Rendered{}, fmt.Errorf("orm: column %s belongs to another parent query", ref.name)
+				}
+				b.WriteString(quoted(d, q.parent.alias) + "." + quoted(d, q.parentPrefix+ref.name))
+			} else if l, ok := arg.(list); ok {
 				if len(l) == 0 {
 					b.WriteString("NULL")
 				}

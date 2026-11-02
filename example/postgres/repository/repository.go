@@ -33,10 +33,12 @@ type ProductRepository interface {
 //kanna:repository errors=translateOrderError
 type OrderRepository interface {
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
+	FindApproval(ctx context.Context, id model.OrderID) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
+	InsertApprovals(ctx context.Context, approvals []model.Approval) error
 	DeleteAll(ctx context.Context, s ...scopes.Order) (int64, error)
 
 	Tag(ctx context.Context, orderID model.OrderID, tag string) error

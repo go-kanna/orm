@@ -37,6 +37,8 @@ type Product struct {
 }
 
 type Order struct {
+	Approver   *string `orm:"relation=approvals"`
+	Approvals  []Approval
 	ID         OrderID
 	CustomerID CustomerID
 	Status     OrderStatus
@@ -65,3 +67,13 @@ type Shipment struct {
 }
 
 type Tag struct{ Name string }
+
+// Approval records the reviewer of one revision of an order.
+type Approval struct {
+	ID         int64 `orm:",default"`
+	OrderID    OrderID
+	Revision   int32
+	Approver   string
+	ApprovedAt time.Time
+	RevokedAt  *time.Time
+}

@@ -272,6 +272,9 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 			pos: f.pos, nullzero: f.nullzero})
 	}
 	for _, f := range all {
+		if f.relationValue {
+			continue
+		}
 		if !slices.ContainsFunc(columns, func(c snapshot.Result) bool { return c.Name == f.col.Name }) {
 			ds = append(ds, errorf("the query returns no column %s for %s.%s", f.col.Name, typeName(row),
 				strings.Join(f.path, ".")).WithHints(`select it, or leave the field out with orm:"-"`))

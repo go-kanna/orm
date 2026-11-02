@@ -58,9 +58,6 @@ func parseTag(tag string) (fieldTag, error) {
 				return fieldTag{}, fmt.Errorf("unknown scalar relation option %q", key)
 			}
 		}
-		if tag.value == "" {
-			return fieldTag{}, errors.New("scalar relation requires column=<column>")
-		}
 		return tag, nil
 	}
 	if name, options, ok := strings.Cut(value, ","); ok && name != "-" &&

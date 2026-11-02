@@ -19,18 +19,32 @@ type generated struct {
 // methodsOf names the methods emit writes on the scope type of p, for a database of dialect d, besides the scopes
 // written by hand.
 func methodsOf(p scopePlan, d snapshot.Dialect) []generated {
-	ms := []generated{{"Of", "for every scope type"}}
+	ms := []generated{{"Of", "for every scope type"}, {"One", "to select at most one row"}, {"First",
+		"to select the first row"}, {"Many", "to select multiple rows"}}
 	for _, c := range p.columns {
 		name := c.path[len(c.path)-1]
 		t := c.typ
 		if ptr, ok := t.Underlying().(*types.Pointer); ok {
 			t = ptr.Elem()
 		}
+		for _, op := range []string{"Eq", "Ne", "Lt", "Lte", "Gt", "Gte"} {
+			if op == "Eq" || op == "Ne" || kindOf(t).ordered {
+				ms = append(ms, generated{name + op + "Column", "for column comparisons"})
+			}
+		}
 		for _, suffix := range columnMethods(kindOf(t), !c.col.NotNull, d) {
 			ms = append(ms, generated{name + suffix, "for the column " + c.col.Name})
 		}
 	}
 	for _, lk := range p.links {
+		name := lk.field.path[len(lk.field.path)-1]
+		if lk.single {
+			ms = append(ms, generated{"Select" + name, "for scalar projections"})
+			continue
+		}
+		if lk.scalar == nil && (lk.way.kind == hasMany || lk.way.kind == manyToMany) {
+			ms = append(ms, generated{"Preload" + name, "for per-parent collections"})
+		}
 		ms = append(ms, generated{"With" + lk.field.path[len(lk.field.path)-1], "to load " + strings.Join(
 			lk.field.path, ".")})
 	}

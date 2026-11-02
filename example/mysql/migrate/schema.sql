@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS order_tags, tags, shipments, order_lines, orders, products, customers;
+DROP TABLE IF EXISTS approvals, order_tags, tags, shipments, order_lines, orders, products, customers;
 
 CREATE TABLE customers (
     id         bigint AUTO_INCREMENT PRIMARY KEY,
@@ -16,6 +16,7 @@ CREATE TABLE products (
 );
 
 CREATE TABLE orders (
+ revision integer NOT NULL DEFAULT 1,
     id          bigint AUTO_INCREMENT PRIMARY KEY,
     customer_id bigint NOT NULL,
     status      varchar(16) NOT NULL,
@@ -50,3 +51,15 @@ CREATE TABLE order_tags (
     FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
     FOREIGN KEY (tag) REFERENCES tags (name)
 );
+
+CREATE TABLE approvals (
+ id bigint AUTO_INCREMENT PRIMARY KEY,
+ order_id bigint NOT NULL,
+ FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+ revision integer NOT NULL,
+ approver text NOT NULL,
+ approved_at datetime(6) NOT NULL,
+ revoked_at datetime(6)
+);
+CREATE INDEX approvals_revision ON approvals (order_id, revision);
+CREATE INDEX approvals_latest ON approvals (order_id, approved_at DESC, id DESC);

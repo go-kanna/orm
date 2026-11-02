@@ -441,10 +441,28 @@ func (e repoEmitter) selectRows(rm readModel) {
 		ctx, e.f.Import("context", "context"), db, q, e.ormPkg(), model, lock)
 	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\n"+
 		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
-	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
-		"%[7]s.Args()...)\n", rows, err, db, e.query, ctx, goString(query), rd, lock)
+	if len(rm.projections) > 0 {
+		manifests := make([]string, 0, len(rm.projections))
+		for _, c := range rm.projections {
+			manifests = append(manifests, fmt.Sprintf("{Field:%q,Column:%q,Optional:%t}", fieldPath(c), c.col.Name,
+				nilable(c.typ)))
+		}
+		e.printf("text,args,%s := %s.RenderSelect(%s,%q,%s,[]%s.Projection{%s})\nif %s!=nil{return"+
+			" nil,%s}\n", err, q, e.dialect(), rm.target.table, columnNamesLiteral(rm.columns),
+			e.ormPkg(), strings.Join(manifests, ","), err, err)
+		e.printf("%s,%s := %s.%s(%s,text+%s,args...)\n", rows, err, db, e.query, ctx, lock)
+	} else {
+		e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
+			"%[7]s.Args()...)\n", rows, err, db, e.query, ctx, goString(query), rd, lock)
+	}
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
-	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns, sc)
+	scanColumns := slices.Clone(rm.columns)
+	for _, c := range rm.projections {
+		c.nullzero = true
+		c.selectedBy = q
+		scanColumns = append(scanColumns, c)
+	}
+	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, scanColumns, sc)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	if len(rm.links) > 0 {
 		e.printf("if %[1]s := preload%[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
@@ -859,6 +877,9 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	var c compositeNames
 	if slices.ContainsFunc(rm.links, composite) {
 		c = newCompositeNames(sc, rm.links)
+	}
+	for _, lk := range rm.links {
+		e.preloadCollection(lk, n)
 	}
 	for _, lk := range rm.links {
 		if lk.scalar != nil {

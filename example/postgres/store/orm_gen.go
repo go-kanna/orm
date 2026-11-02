@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -148,10 +149,12 @@ SELECT * FROM unnest($1::text[])`
 type orderRepositoryOperation string
 
 const orderRepositoryOperationGet orderRepositoryOperation = "Get"
+const orderRepositoryOperationFindApproval orderRepositoryOperation = "FindApproval"
 const orderRepositoryOperationList orderRepositoryOperation = "List"
 const orderRepositoryOperationCount orderRepositoryOperation = "Count"
 const orderRepositoryOperationInsert orderRepositoryOperation = "Insert"
 const orderRepositoryOperationInsertLines orderRepositoryOperation = "InsertLines"
+const orderRepositoryOperationInsertApprovals orderRepositoryOperation = "InsertApprovals"
 const orderRepositoryOperationDeleteAll orderRepositoryOperation = "DeleteAll"
 const orderRepositoryOperationTag orderRepositoryOperation = "Tag"
 const orderRepositoryOperationMonthlySales orderRepositoryOperation = "MonthlySales"
@@ -186,6 +189,37 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
 	}
 	return rows[0], nil
+}
+
+// FindApproval runs the query of its name in queries.sql.
+func (r OrderRepository) FindApproval(ctx context.Context, id model.OrderID) (result model.Order, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationFindApproval, resultErr)
+		}
+	}()
+	const q = `SELECT
+    o.id,
+    o.customer_id,
+    o.status,
+    o.placed_at,
+    o.note,
+    a.approver
+FROM orders AS o
+LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
+WHERE o.id = $1`
+	var row model.Order
+	var nullableMemo sql.Null[string]
+	err := r.db.QueryRow(ctx, q, id).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo, &row.Approver)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Order{}, fmt.Errorf("query FindApproval: %w", orm.ErrNotFound)
+	}
+	if err != nil {
+		return model.Order{}, fmt.Errorf("query FindApproval: %w", err)
+	}
+	row.Memo = nullableMemo.V
+	return row, nil
 }
 
 func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []model.Order, resultErr error) {
@@ -270,6 +304,35 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::int4[])`
 	if _, err := r.db.Exec(ctx, q, orderID, lineNo, sku, quantity); err != nil {
 		return fmt.Errorf("insert into order_lines: %w", err)
+	}
+	return nil
+}
+
+func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.Approval) (resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationInsertApprovals, resultErr)
+		}
+	}()
+	if len(approvals) == 0 {
+		return nil
+	}
+	orderID := make([]model.OrderID, len(approvals))
+	revision := make([]int32, len(approvals))
+	approver := make([]string, len(approvals))
+	approvedAt := make([]time.Time, len(approvals))
+	revokedAt := make([]*time.Time, len(approvals))
+	for i := range approvals {
+		orderID[i] = approvals[i].OrderID
+		revision[i] = approvals[i].Revision
+		approver[i] = approvals[i].Approver
+		approvedAt[i] = approvals[i].ApprovedAt
+		revokedAt[i] = approvals[i].RevokedAt
+	}
+	const q = `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
+SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::timestamptz[], $5::timestamptz[])`
+	if _, err := r.db.Exec(ctx, q, orderID, revision, approver, approvedAt, revokedAt); err != nil {
+		return fmt.Errorf("insert into approvals: %w", err)
 	}
 	return nil
 }
@@ -419,6 +482,34 @@ WHERE id = $5`
 	return nil
 }
 
+// selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
+func selectApprovals(ctx context.Context, db DBTX, q orm.Of[model.Approval], lock string) ([]model.Approval, error) {
+	rd, err := q.Render(orm.Postgres, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT id, order_id, revision, approver, approved_at, revoked_at FROM approvals`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read approvals: %w", err)
+	}
+	defer rows.Close()
+	out := []model.Approval{}
+	for rows.Next() {
+		var row model.Approval
+		if err := rows.Scan(&row.ID, &row.OrderID, &row.Revision, &row.Approver, &row.ApprovedAt, &row.RevokedAt); err != nil {
+			return nil, fmt.Errorf("read approvals: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read approvals: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
 func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(orm.Postgres, 1)
@@ -515,7 +606,11 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	text, args, err := q.RenderSelect(orm.Postgres, "orders", []string{"id", "customer_id", "status", "placed_at", "note"}, []orm.Projection{{Field: "Approver", Column: "approver", Optional: true}})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, text+lock, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -524,10 +619,15 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 	for rows.Next() {
 		var row model.Order
 		var nullableMemo sql.Null[string]
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
+		var nullableApprover sql.Null[*string]
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo, &nullableApprover); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
 		row.Memo = nullableMemo.V
+		row.Approver = nullableApprover.V
+		if err := orm.CheckSelection(q, "Approver", !nullableApprover.Valid); err != nil {
+			return nil, err
+		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
@@ -546,6 +646,176 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
+	}
+	if sub, parent, ok := orm.Batched[model.Approval](q, "Approvals"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].ID}
+			keys = append(keys, key)
+		}
+		flat := []model.Approval{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "approvals", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.Query(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Approvals: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.Approval
+				if err := related.Scan(&key.k0, &row.ID, &row.OrderID, &row.Revision, &row.Approver, &row.ApprovedAt, &row.RevokedAt); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Approvals: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		grouped := map[parentKey][]model.Approval{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Approvals = []model.Approval{}
+			key := parentKey{rows[i].ID}
+			if values, ok := grouped[key]; ok {
+				rows[i].Approvals = values
+			}
+		}
+	}
+	if sub, parent, ok := orm.Batched[model.OrderLine](q, "Lines"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].ID}
+			keys = append(keys, key)
+		}
+		flat := []model.OrderLine{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku", "quantity"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.Query(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Lines: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.OrderLine
+				if err := related.Scan(&key.k0, &row.OrderID, &row.LineNo, &row.SKU, &row.Quantity); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Lines: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		if err := preloadOrderLines(ctx, db, flat, sub); err != nil {
+			return err
+		}
+		grouped := map[parentKey][]model.OrderLine{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Lines = []model.OrderLine{}
+			key := parentKey{rows[i].ID}
+			if values, ok := grouped[key]; ok {
+				rows[i].Lines = values
+			}
+		}
+	}
+	if sub, parent, ok := orm.Batched[model.Tag](q, "Tags"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		for i := range rows {
+			key := parentKey{rows[i].ID}
+			keys = append(keys, key)
+		}
+		flat := []model.Tag{}
+		owners := []parentKey{}
+		for chunk := range slices.Chunk(keys, 1000) {
+			inputs := make([][]any, len(chunk))
+			for i, key := range chunk {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			if err != nil {
+				return err
+			}
+			related, err := db.Query(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("preload Tags: %w", err)
+			}
+			for related.Next() {
+				var key parentKey
+				var row model.Tag
+				if err := related.Scan(&key.k0, &row.Name); err != nil {
+					related.Close()
+					return fmt.Errorf("scan Tags: %w", err)
+				}
+				flat = append(flat, row)
+				owners = append(owners, key)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return err
+			}
+		}
+		grouped := map[parentKey][]model.Tag{}
+		for i := range flat {
+			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+		}
+		for i := range rows {
+			rows[i].Tags = []model.Tag{}
+			key := parentKey{rows[i].ID}
+			if values, ok := grouped[key]; ok {
+				rows[i].Tags = values
+			}
+		}
+	}
+	if sub, ok := orm.Preloaded[model.Approval](q, "Approvals"); ok {
+		keys := make([]model.OrderID, 0, len(rows))
+		for i := range rows {
+			keys = append(keys, rows[i].ID)
+		}
+		byKey := map[model.OrderID][]model.Approval{}
+		related, err := selectApprovals(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
+		if err != nil {
+			return err
+		}
+		for j := range related {
+			byKey[related[j].OrderID] = append(byKey[related[j].OrderID], related[j])
+		}
+		for i := range rows {
+			rows[i].Approvals = []model.Approval{}
+			if found, ok := byKey[rows[i].ID]; ok {
+				rows[i].Approvals = found
+			}
+		}
 	}
 	if sub, ok := orm.Preloaded[model.Customer](q, "Customer"); ok {
 		keys := make([]model.CustomerID, 0, len(rows))

@@ -35,10 +35,11 @@ func TestCommand_ScalarRelationDiagnostics(t *testing.T) {
 	}{
 		{name: "missing table", before: "relation=record_states", after: "relation=missing", want: "no table missing"},
 		{name: "missing column", before: "column=state", after: "column=missing", want: "has no column missing"},
-		{name: "missing value option", before: ",column=state", want: "requires column="},
+		{name: "missing inferred column", before: ",column=state", want: "has no column topics"},
 		{name: "unknown option", before: "column=state", after: "column=state,unknown=x",
 			want: "unknown scalar relation option"},
-		{name: "not a slice", before: "[]string", after: "string", want: "requires a slice"},
+		{name: "single value without a scope", before: "[]string", after: "string",
+			want: "single-value relation requires a scope"},
 		{name: "incompatible value", before: "[]string", after: "[]int64", want: "cannot hold record_states.state"},
 		{name: "nullable value", want: "including its nullability", change: func(table *snapshot.Table) {
 			table.Columns[1].NotNull = false
