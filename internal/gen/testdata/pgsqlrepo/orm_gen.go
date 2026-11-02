@@ -151,23 +151,59 @@ func (r OrderRepository) DeleteStale(ctx context.Context, s ...postgres.Order) (
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	if err := q.ConditionsOnly("DeleteStale"); err != nil {
-		return 0, err
+	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	if err2 != nil {
+		return 0, err2
 	}
-	rd, err := q.Render(orm.Postgres, 1)
-	if err != nil {
-		return 0, err
+	res, err2 := r.db.ExecContext(ctx, text, args...)
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from orders: %w`, err2)
 	}
-	if rd.Where() == "" {
-		return 0, fmt.Errorf("orm: DeleteStale would delete every row of orders: give it a condition")
+	n, err2 := res.RowsAffected()
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from orders: %w`, err2)
 	}
-	res, err := r.db.ExecContext(ctx, `DELETE FROM orders`+rd.Where(), rd.Args()...)
-	if err != nil {
-		return 0, fmt.Errorf("delete from orders: %w", err)
+	return n, nil
+}
+
+func (r OrderRepository) DeleteLines(ctx context.Context, s ...postgres.OrderLine) (int64, error) {
+	qs := make([]orm.Of[model.OrderLine], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("delete from orders: %w", err)
+	q := orm.Join(qs...)
+	text, args, err2 := q.RenderDelete(orm.Postgres, "order_lines", []string{"order_id", "line_no"})
+	if err2 != nil {
+		return 0, err2
+	}
+	res, err2 := r.db.ExecContext(ctx, text, args...)
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from order_lines: %w`, err2)
+	}
+	n, err2 := res.RowsAffected()
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from order_lines: %w`, err2)
+	}
+	return n, nil
+}
+
+func (r OrderRepository) DeleteTags(ctx context.Context, s ...postgres.Tag) (int64, error) {
+	qs := make([]orm.Of[model.Tag], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	text, args, err2 := q.RenderDelete(orm.Postgres, "tags", []string{"name"})
+	if err2 != nil {
+		return 0, err2
+	}
+	res, err2 := r.db.ExecContext(ctx, text, args...)
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from tags: %w`, err2)
+	}
+	n, err2 := res.RowsAffected()
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from tags: %w`, err2)
 	}
 	return n, nil
 }

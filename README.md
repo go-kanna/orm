@@ -583,7 +583,7 @@ the column of its name, which the rows must equal.
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`, or with `error` alone                       | writes a row, or [many](#writing-many-rows)                                           |
 | `Update` | `Update(ctx, o model.Order) error`                                                             | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
 | `Upsert` | `Upsert(ctx, o model.Order) error`                                                             | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
-| `Delete` | `Delete(ctx, id model.OrderID) error`, or `DeleteStale(ctx, s ...scopes.Order) (int64, error)` | deletes the row with the key, or the rows the scopes match                            |
+| `Delete` | `Delete(ctx, id model.OrderID) error`, or `Delete(ctx, s ...scopes.Order) (int64, error)` | deletes the row with the key, or the rows the scopes match                            |
 
 Use `//kanna:pluck customer_id` above a repository method such as `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` to read one column as a typed slice. The method name is yours to choose. Conditions, ordering, limits, offsets, and cursors work as for `List`; relations are not loaded. Duplicate values are preserved and no matching rows returns an empty slice. Generation checks the column and result type. Nullable columns require nullable elements unless the model field uses `nullzero` and the element has that field’s type. A pluck directive cannot be combined with hand-written SQL, `conflict`, or `lock`.
 
@@ -615,7 +615,7 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
   an aggregate.
 - Several scopes hold together, as if chained.
 - `Get` stops generation unless its parameters give the primary key or a unique key, every column of it.
-- `Count`, `Exists`, and a `Delete` given scopes use their conditions only; a scope with an order, a limit, or a
+- `Count` and `Exists` use their conditions only; a scope with an order, a limit, or a
   relation to load makes them return an error rather than ignore it.
 - A `Delete` given scopes but no condition returns an error rather than delete every row.
 - A `Delete` returning `error` alone returns `orm.ErrNotFound` when it deletes no row, as `Update` does; one returning
@@ -1181,6 +1181,28 @@ On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the sto
 For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. The generated method requires at least one WHERE condition and rejects ordering, pagination, and relation-loading scopes. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
 
 The PostgreSQL and MySQL examples update a customer's phone, clear it with `SetPhone(nil)`, verify untouched fields, and reject a failed condition.
+
+
+### Selecting rows to delete
+
+A scope-based `Delete` returns the deleted row count. No `All` or `Batch` suffix is required; conditions, ordering, and pagination describe the target rows:
+
+```go
+Delete(ctx context.Context, s ...scopes.Order) (int64, error)
+
+n, err := repo.Delete(ctx, scopes.Orders().
+    Open().
+    PlacedAtLt(before).
+    PlacedAtAsc().
+    IDAsc().
+    Limit(batch))
+```
+
+Without pagination, the method deletes all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and deletes those rows in one statement. Composite primary keys and non-null unique keys are supported, on PostgreSQL and MySQL. A table without either kind of key can still use an ordinary condition-based delete, but cannot use paged deletion.
+
+A WHERE condition is required even when a limit is supplied. Paged deletion requires an explicit order; end it in a unique key, such as `IDAsc()`, to choose consistently among equal sort values. Existing keyset cursor scopes can select targets too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
+
+The existing `Delete(ctx, id) error` form retains its missing-row error behavior. Method shape, rather than an `All` suffix, distinguishes it from the scoped count-returning form. Both database examples use the scoped `Delete` to remove the oldest matching order with a limit.
 
 ## License
 

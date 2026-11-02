@@ -19,6 +19,8 @@ type OrderRepository interface {
 	Exists(ctx context.Context, s ...mysql.Order) (bool, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...mysql.Order) (int64, error)
+	DeleteLines(ctx context.Context, s ...mysql.OrderLine) (int64, error)
+	DeleteTags(ctx context.Context, s ...mysql.Tag) (int64, error)
 	GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error)
 
 	//kanna:lock update
@@ -37,8 +39,8 @@ type OrderRepository interface {
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	InsertTags(ctx context.Context, tags []model.Tag) error
 	Update(ctx context.Context, o model.Order) error
- UpdateFieldsOnly(ctx context.Context, id model.OrderID, c mysql.OrderChangeSet, s ...mysql.Order) error
- UpdateMany(ctx context.Context, c mysql.OrderChangeSet, s ...mysql.Order) (int64, error)
+	UpdateFieldsOnly(ctx context.Context, id model.OrderID, c mysql.OrderChangeSet, s ...mysql.Order) error
+	UpdateMany(ctx context.Context, c mysql.OrderChangeSet, s ...mysql.Order) (int64, error)
 
 	UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error)
 	//kanna:conflict order keep=placed_at
