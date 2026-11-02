@@ -464,6 +464,7 @@ func NewOrderRepository(db DBTX) OrderRepository
 | 動詞 | 宣言 | 動作 |
 |---|---|---|
 | `Get` | `Get(ctx, id model.OrderID, s ...scopes.Order) (model.Order, error)` | パラメータで指定したキーの行を読み込む。なければ `orm.ErrNotFound` を返す |
+| `Find` | `Find(ctx, id model.OrderID, s ...scopes.Order) (*model.Order, error)` | 一意キーで任意の行を読み込む。なければ `nil, nil` を返す |
 | `First` | `First(ctx, s ...scopes.Order) (model.Order, error)` | スコープにマッチする最初の行を読み込む。なければ `orm.ErrNotFound` を返す |
 | `List` | `List(ctx, s ...scopes.Order) ([]model.Order, error)` | スコープにマッチするすべての行を読み込む |
 | `Count` | `Count(ctx, s ...scopes.Order) (int64, error)` | スコープにマッチする行を数える |
@@ -472,6 +473,8 @@ func NewOrderRepository(db DBTX) OrderRepository
 | `Update` | `Update(ctx, o model.Order) error` | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
 | `Upsert` | `Upsert(ctx, o model.Order) error` | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
 | `Delete` | `Delete(ctx, id model.OrderID) error`、または `Delete(ctx, s ...scopes.Order) (int64, error)` | そのキーの行、またはスコープにマッチする行を削除する |
+
+`Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたはユニークキーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。複数行の候補から一つ選ぶ場合は `First` を使います。結果の構造体へのポインタを返す `Find...` は、同じ不在時の契約を保ったまま手書き SQL でも実装できます。
 
 repository のメソッドに `//kanna:pluck customer_id` を付けると、1 カラムだけを型付きスライスで取得します。たとえば `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` と宣言し、メソッド名は自由に選べます。条件・並び順・件数制限・オフセット・カーソルは `List` と同様に使えます。関連は読み込まず、重複値は保持します。該当行がなければ空のスライスを返します。カラムと戻り値の型を生成時に検証します。NULL を許すカラムには nullable な要素型が必要ですが、モデルの `nullzero` フィールドと同じ型ならゼロ値に変換します。手書き SQL・`conflict`・`lock` との併用は生成エラーです。
 
@@ -686,7 +689,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 ### 行ロック
 
-`//kanna:lock` を付けた `Get`、`First`、`List` は、読んだ行をトランザクションが終わるまでロックします。読んだ内容が、書き戻す時点でも変わっていないようにするためです:
+`//kanna:lock` を付けた `Get`、`Find`、`First`、`List` は、読んだ行をトランザクションが終わるまでロックします。読んだ内容が、書き戻す時点でも変わっていないようにするためです:
 
 ```go
 //kanna:repository
@@ -734,12 +737,12 @@ return tx.Commit(ctx)
 - ロックはスコープではなくメソッドに属します。スコープはこれまでどおり行の絞り込み、並べ替え、ページングを行い、呼び出し側がロックを外したり変えたりすることはできません。
 - ロックはトランザクションの間だけ続くので、ロックするメソッドはトランザクション以外の上で実行するとエラーを返します。実行の土台に `Commit` があるかどうかで判定するので、トランザクションを包む独自の `DBTX` にも `Commit` が必要です。
 - `nowait`、タイムアウト、デッドロックなどでロックを取れなかった場合は、データベースのエラーをラップして返し、`orm.ErrNotFound` にはしません。リトライは呼び出し側で行います。
-- `skip-locked` の `First` が返す `orm.ErrNotFound` は、条件に合う空いた行がないことを表し、行そのものがないことは意味しません。`Get` では保持されている行をないものとして報告してしまうので、`skip-locked` を付けると生成を止めます。`nowait` を使ってください。
+- `skip-locked` の `First` が返す `orm.ErrNotFound` は、条件に合う空いた行がないことを表し、行そのものがないことは意味しません。`Get`・`Find` では保持されている行をないものとして報告してしまうので、`skip-locked` を付けると生成を止めます。`nowait` を使ってください。
 - スコープが読み込むリレーションは、ロックせずに読みます。
 - 確実にロックされるのは存在する行だけなので、行の挿入を防げるとは当てにしないでください。
 - PostgreSQL は `Offset` で飛ばした行もロックします。InnoDB は返した行ではなく走査した行をロックするので、条件に使えるインデックスがない読み取りはテーブル全体をロックします。
 - `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や手書きのコードだけで実装するメソッドに付けた場合も同じです。ロックはそちらに書いてください。同一パッケージで生成ヘルパーを呼ぶメソッドでは、そのヘルパーにロックを引き継ぎます。
-- `GetForUpdate` のようにロックしそうな名前の `Get`、`First`、`List` に `//kanna:lock` がないと、警告が出ます。
+- `GetForUpdate` のようにロックしそうな名前の `Get`、`Find`、`First`、`List` に `//kanna:lock` がないと、警告が出ます。
 
 ## 手書きの SQL
 

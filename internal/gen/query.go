@@ -189,6 +189,13 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 			m.result = resultCount
 		default:
 			m.result, q.row = resultRow, t
+			if ptr, ok := t.(*types.Pointer); ok {
+				if v, known := verbOf(m.name); known && v == verbFind {
+					if _, structured := ptr.Elem().Underlying().(*types.Struct); structured && !holdsColumn(ptr.Elem()) {
+						q.row, m.optional = ptr.Elem(), true
+					}
+				}
+			}
 			if s, ok := t.Underlying().(*types.Slice); ok {
 				m.result, q.row = resultRows, s.Elem()
 			}

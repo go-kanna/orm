@@ -28,7 +28,7 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 	var queue []readModel
 	for _, repo := range repos {
 		for _, m := range repo.methods {
-			if m.verb == verbGet || m.verb == verbFirst || m.verb == verbList {
+			if m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList {
 				queue = append(queue, readModel{target: m.target, model: m.model, table: m.table})
 			}
 		}

@@ -183,6 +183,7 @@ SELECT * FROM unnest($1::text[])`
 
 type orderRepositoryOperation string
 
+const orderRepositoryOperationFind orderRepositoryOperation = "Find"
 const orderRepositoryOperationGet orderRepositoryOperation = "Get"
 const orderRepositoryOperationFindApproval orderRepositoryOperation = "FindApproval"
 const orderRepositoryOperationList orderRepositoryOperation = "List"
@@ -203,6 +204,28 @@ type OrderRepository struct{ db DBTX }
 func NewOrderRepository(db DBTX) OrderRepository { return OrderRepository{db: db} }
 
 var _ repository.OrderRepository = OrderRepository{}
+
+func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (result *model.Order, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationFind, resultErr)
+		}
+	}()
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Where(`id = `, id)
+	rows, err := selectOrders(ctx, r.db, q, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
 
 func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (result model.Order, resultErr error) {
 	defer func() {

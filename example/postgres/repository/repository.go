@@ -36,7 +36,8 @@ type ProductRepository interface {
 }
 
 //kanna:repository errors=translateOrderError
-type OrderRepository interface {
+type OrderRepository interface { //nolint:interfacebloat // demonstrates order read and write variants together
+	Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	FindApproval(ctx context.Context, id model.OrderID) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)

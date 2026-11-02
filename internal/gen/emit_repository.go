@@ -295,7 +295,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		} else {
 			e.update(m, sc, recv, sig)
 		}
-	case verbGet, verbFirst, verbList, verbPluck, verbCount, verbExists, verbDelete:
+	case verbGet, verbFind, verbFirst, verbList, verbPluck, verbCount, verbExists, verbDelete:
 		e.read(m, sc, recv, sig)
 	}
 	e.printf("}\n\n")
@@ -351,13 +351,18 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	}
 
 	switch m.verb {
-	case verbGet, verbFirst:
+	case verbGet, verbFind, verbFirst:
 		rows := sc.Name("rows")
 		if m.verb == verbFirst {
 			e.printf("%[1]s = %[1]s.Limit(1)\n", q)
 		}
 		e.printf("%s, %s := select%s(%s, %s.db, %s, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q,
 			lockClause(m))
+		if m.optional {
+			e.printf("if %s != nil { return nil, %s }\n", err, err)
+			e.printf("if len(%s) == 0 { return nil, nil }\nreturn &%s[0], nil\n", rows, rows)
+			return
+		}
 		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\n", err, model)
 		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound)
 	case verbList:
@@ -401,7 +406,7 @@ func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv, model st
 		commit, tx = "Commit("+e.f.Import("context", "context")+".Context) error", "pgx.Tx"
 	}
 	zero := model + "{}"
-	if m.result == resultRows {
+	if m.result == resultRows || m.optional {
 		zero = "nil"
 	}
 	e.printf("if _, %[1]s := %[2]s.db.(interface{ %[3]s }); !%[1]s {\nreturn %[4]s, %[5]s.Errorf(%[6]q)\n}\n",
@@ -822,6 +827,14 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 		if m.query.scalar {
 			zeroValue = sc.Name("zero")
 			zeroDeclaration = "var " + zeroValue + " " + typ + "\n"
+		}
+		if m.optional {
+			e.printf("if %s.Is(%s, %s.ErrNoRows) { return nil, nil }\n",
+				e.f.Import("errors", "errors"), err, e.driverPkg())
+			e.printf("if %s != nil { return nil, %s }\n", err, wrap)
+			e.assignScanned(assignments)
+			e.printf("return &%s, nil\n", row)
+			return
 		}
 		e.printf("if %[1]s.Is(%[2]s, %[3]s.ErrNoRows) {\n%[4]s"+
 			"return %[5]s, %[6]s.Errorf(%[7]s, %[8]s.ErrNotFound)\n}\n",
