@@ -19,6 +19,8 @@ type OrderRepository interface {
 	Exists(ctx context.Context, s ...postgres.Order) (bool, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...postgres.Order) (int64, error)
+	DeleteLines(ctx context.Context, s ...postgres.OrderLine) (int64, error)
+	DeleteTags(ctx context.Context, s ...postgres.Tag) (int64, error)
 	GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error)
 
 	//kanna:lock update
@@ -41,12 +43,12 @@ type OrderRepository interface {
 	InsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error)
 	InsertTags(ctx context.Context, tags []model.Tag) error
 	Update(ctx context.Context, o model.Order) error
- UpdateFieldsOnly(ctx context.Context, id model.OrderID, c postgres.OrderChangeSet, s ...postgres.Order) error
- UpdateMany(ctx context.Context, c postgres.OrderChangeSet, s ...postgres.Order) (int64, error)
- UpdateFields(ctx context.Context, id model.OrderID, c postgres.OrderChangeSet, s ...postgres.Order) (model.Order, error)
- UpdateManyReturning(ctx context.Context, c postgres.OrderChangeSet, s ...postgres.Order) ([]model.Order, error)
- UpdateScoped(ctx context.Context, o model.Order, s ...postgres.Order) (model.Order, error)
- UpdateLineFields(ctx context.Context, orderID model.OrderID, lineNo int, c postgres.OrderLineChangeSet) (model.OrderLine, error)
+	UpdateFieldsOnly(ctx context.Context, id model.OrderID, c postgres.OrderChangeSet, s ...postgres.Order) error
+	UpdateMany(ctx context.Context, c postgres.OrderChangeSet, s ...postgres.Order) (int64, error)
+	UpdateFields(ctx context.Context, id model.OrderID, c postgres.OrderChangeSet, s ...postgres.Order) (model.Order, error)
+	UpdateManyReturning(ctx context.Context, c postgres.OrderChangeSet, s ...postgres.Order) ([]model.Order, error)
+	UpdateScoped(ctx context.Context, o model.Order, s ...postgres.Order) (model.Order, error)
+	UpdateLineFields(ctx context.Context, orderID model.OrderID, lineNo int, c postgres.OrderLineChangeSet) (model.OrderLine, error)
 
 	UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error)
 	//kanna:conflict order keep=placed_at

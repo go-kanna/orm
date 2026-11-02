@@ -197,7 +197,7 @@ const orderRepositoryOperationCount orderRepositoryOperation = "Count"
 const orderRepositoryOperationInsert orderRepositoryOperation = "Insert"
 const orderRepositoryOperationInsertLines orderRepositoryOperation = "InsertLines"
 const orderRepositoryOperationInsertApprovals orderRepositoryOperation = "InsertApprovals"
-const orderRepositoryOperationDeleteAll orderRepositoryOperation = "DeleteAll"
+const orderRepositoryOperationDelete orderRepositoryOperation = "Delete"
 const orderRepositoryOperationTag orderRepositoryOperation = "Tag"
 const orderRepositoryOperationMonthlySales orderRepositoryOperation = "MonthlySales"
 
@@ -376,10 +376,10 @@ VALUES (?, ?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?, ?)`, len(chunk)-1), args.
 	return nil
 }
 
-func (r OrderRepository) DeleteAll(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
+func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
 	defer func() {
 		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationDeleteAll, resultErr)
+			resultErr = translateOrderError(orderRepositoryOperationDelete, resultErr)
 		}
 	}()
 	qs := make([]orm.Of[model.Order], len(s))
@@ -387,23 +387,17 @@ func (r OrderRepository) DeleteAll(ctx context.Context, s ...scopes.Order) (resu
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	if err := q.ConditionsOnly("DeleteAll"); err != nil {
-		return 0, err
+	text, args, err2 := q.RenderDelete(orm.MySQL, "orders", []string{"id"})
+	if err2 != nil {
+		return 0, err2
 	}
-	rd, err := q.Render(orm.MySQL, 1)
-	if err != nil {
-		return 0, err
+	res, err2 := r.db.ExecContext(ctx, text, args...)
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from orders: %w`, err2)
 	}
-	if rd.Where() == "" {
-		return 0, fmt.Errorf("orm: DeleteAll would delete every row of orders: give it a condition")
-	}
-	res, err := r.db.ExecContext(ctx, `DELETE FROM orders`+rd.Where(), rd.Args()...)
-	if err != nil {
-		return 0, fmt.Errorf("delete from orders: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("delete from orders: %w", err)
+	n, err2 := res.RowsAffected()
+	if err2 != nil {
+		return 0, fmt.Errorf(`delete from orders: %w`, err2)
 	}
 	return n, nil
 }

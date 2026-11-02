@@ -378,26 +378,17 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("return %s, %s.Errorf(%q, %s)\n}\nreturn %s, nil\n", zero, e.fmtPkg(),
 			strings.ToLower(string(m.verb))+" "+m.target.table+": %w", err, n)
 	case verbDelete:
-		zero := ""
 		if m.result == resultCount {
-			zero = "0, "
-			conditionsOnly(zero)
+			e.deleteSelected(m, sc, recv, sig, q)
+			return
 		}
-		render(zero)
-		if m.result == resultCount {
-			e.printf("if %s.Where() == \"\" {\nreturn 0, %s.Errorf(%q)\n}\n", rd, e.fmtPkg(),
-				"orm: "+m.name+" would delete every row of "+m.target.table+": give it a condition")
-		}
+		render("")
 		res := e.execResult(sc)
 		wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " + err + ")"
 		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, `DELETE FROM %[6]s`+%[7]s.Where(), %[7]s.Args()...)\n"+
-			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, zero, wrap)
-		affected := e.rowsAffected(sc, res, err, zero, wrap)
-		if m.result == resultCount {
-			e.printf("return %s, nil\n", affected)
-		} else {
-			e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
-		}
+			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, "", wrap)
+		affected := e.rowsAffected(sc, res, err, "", wrap)
+		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
 	case verbInsert, verbUpdate, verbUpsert: // method writes them
 	}
 }

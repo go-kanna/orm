@@ -165,8 +165,8 @@ func Join[M any](qs ...Of[M]) Of[M] {
 }
 
 // ConditionsOnly reports why q, given to what, holds more than conditions: an order, a limit, an offset, a row to
-// continue from, or a relation to load, which what would otherwise pass over. A repository's Count, Exists, and Delete
-// read the conditions alone.
+// continue from, or a relation to load, which what would otherwise pass over.
+// A repository's Count and Exists read the conditions alone.
 func (q Of[M]) ConditionsOnly(what string) error {
 	switch {
 	case q.err != nil:

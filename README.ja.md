@@ -471,7 +471,7 @@ func NewOrderRepository(db DBTX) OrderRepository
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`、または `error` のみを返す形 | 行を 1 つ、または[複数](#複数行の書き込み)書き込む |
 | `Update` | `Update(ctx, o model.Order) error` | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
 | `Upsert` | `Upsert(ctx, o model.Order) error` | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
-| `Delete` | `Delete(ctx, id model.OrderID) error`、または `DeleteStale(ctx, s ...scopes.Order) (int64, error)` | そのキーの行、またはスコープにマッチする行を削除する |
+| `Delete` | `Delete(ctx, id model.OrderID) error`、または `Delete(ctx, s ...scopes.Order) (int64, error)` | そのキーの行、またはスコープにマッチする行を削除する |
 
 repository のメソッドに `//kanna:pluck customer_id` を付けると、1 カラムだけを型付きスライスで取得します。たとえば `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` と宣言し、メソッド名は自由に選べます。条件・並び順・件数制限・オフセット・カーソルは `List` と同様に使えます。関連は読み込まず、重複値は保持します。該当行がなければ空のスライスを返します。カラムと戻り値の型を生成時に検証します。NULL を許すカラムには nullable な要素型が必要ですが、モデルの `nullzero` フィールドと同じ型ならゼロ値に変換します。手書き SQL・`conflict`・`lock` との併用は生成エラーです。
 
@@ -502,7 +502,7 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - 対象のテーブルは、スコープ型がメソッドのモデルを保持するテーブルです。そのため、1 つのインターフェースで集約のすべてのテーブルを読み書きできます。
 - 複数のスコープは、チェーンした場合と同じくすべてが同時に適用されます。
 - `Get` は、パラメータが主キーかユニークキーのカラムをすべて与えていない限り、生成を止めます。
-- `Count`、`Exists`、スコープを渡す `Delete` は、スコープの条件だけを使います。並び順、limit、読み込むリレーションを持つスコープを渡すと、それらを無視せずにエラーを返します。
+- `Count` と `Exists` は、スコープの条件だけを使います。並び順、limit、読み込むリレーションを持つスコープを渡すと、それらを無視せずにエラーを返します。
 - スコープを渡しても条件がない `Delete` は、すべての行を削除せずにエラーを返します。
 - `error` だけを返す `Delete` は、`Update` と同じく、1 行も削除しなかったときに `orm.ErrNotFound` を返します。`(int64, error)` を返す `Delete` は削除した行数を返します。0 行の場合も同じです。
 - メソッドと同じ名前の[手書きのクエリ](#手書きの-sql)があれば、動詞の代わりにそれが使われます。動詞も手書きのクエリもないメソッドは生成を止めます。
@@ -961,6 +961,28 @@ PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し
 複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。WHERE 条件のない更新、並び順、ページング、関連取得のスコープは拒否します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言は生成エラーとし、別 SELECT による読み戻しは行いません。
 
 PostgreSQL／MySQL の example では、電話番号だけの更新、`SetPhone(nil)` による NULL 設定、未指定フィールドの保持、条件不一致時のエラーを実行して確認します。
+
+
+### スコープで削除対象を選ぶ
+
+スコープを受け取る `Delete` は削除件数を返します。`All` や `Batch` という接尾辞は不要で、条件・並び順・ページングで対象を指定します。
+
+```go
+Delete(ctx context.Context, s ...scopes.Order) (int64, error)
+
+n, err := repo.Delete(ctx, scopes.Orders().
+    Open().
+    PlacedAtLt(before).
+    PlacedAtAsc().
+    IDAsc().
+    Limit(batch))
+```
+
+ページングがなければ条件に一致する全行を削除します。Limit・Offset がある場合はサブクエリで対象のキーを選び、1つの文でその行を削除します。PostgreSQL／MySQL の両方で、複合主キーと NULL を許さない一意キーに対応します。どちらのキーもないテーブルでは通常の条件付き削除は利用できますが、ページングによる削除は利用できません。
+
+Limit があっても WHERE 条件は必須です。ページングには明示した並び順が必要で、同じ値の行を安定して選ぶには `IDAsc()` のように一意キーで順序を確定させます。既存のキーセットカーソルでも対象を選べます。Limit・Offset・カーソルのない並び順や、関連取得のスコープは無視せずエラーにします。`Limit(0)` や該当行なしは `orm.ErrNotFound` ではなく削除件数 0 を返します。
+
+従来の `Delete(ctx, id) error` は、該当行なしをエラーにする挙動を維持します。単一行の削除とスコープによる削除の区別は `All` という接尾辞ではなくメソッドの型で行います。両 DB の example では、条件に合う注文を古い順に件数を制限して削除します。
 
 ## ライセンス
 
