@@ -809,7 +809,7 @@ return tx.Commit(ctx)
 ```go
 logQuery := func(ctx context.Context, e hook.Execution) {
     fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
-    // ctx からリクエスト情報を取り出し、e.Args を出すかはここで決める。
+    // Use ctx for request metadata; choose whether to log e.Args.
 }
 repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
@@ -842,7 +842,7 @@ type ProductSummary struct {
     Price int64
 }
 
-// //kanna:repository の interface 内に宣言
+// Inside a //kanna:repository interface:
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
@@ -857,7 +857,7 @@ scope で JOIN 先を指定すると、専用の返却型へ関連テーブル�
 type MembershipSummary struct {
     UserID      uuid.UUID
     Role        Role
-    DisplayName string // 元モデルに対応列がなければ users.display_name から推論
+    DisplayName string // inferred from users.display_name when it has no base-model match
 }
 
 GetSummary(ctx context.Context, userID uuid.UUID, s ...scopes.Membership) (MembershipSummary, error)
