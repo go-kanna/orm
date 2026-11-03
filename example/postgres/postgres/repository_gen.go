@@ -248,7 +248,7 @@ type orderRepositoryOperation string
 
 const orderRepositoryOperationFind orderRepositoryOperation = "Find"
 const orderRepositoryOperationGet orderRepositoryOperation = "Get"
-const orderRepositoryOperationFindApproval orderRepositoryOperation = "FindApproval"
+const orderRepositoryOperationGetApprover orderRepositoryOperation = "GetApprover"
 const orderRepositoryOperationList orderRepositoryOperation = "List"
 const orderRepositoryOperationListSummaries orderRepositoryOperation = "ListSummaries"
 const orderRepositoryOperationCount orderRepositoryOperation = "Count"
@@ -325,34 +325,28 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	return rows[0], nil
 }
 
-// FindApproval runs the query of its name in queries.sql.
-func (r OrderRepository) FindApproval(ctx context.Context, id model.OrderID) (result model.Order, resultErr error) {
+// GetApprover runs the query of its name in queries.sql.
+func (r OrderRepository) GetApprover(ctx context.Context, id model.OrderID) (result repository.OrderApprover, resultErr error) {
 	defer func() {
 		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationFindApproval, resultErr)
+			resultErr = translateOrderError(orderRepositoryOperationGetApprover, resultErr)
 		}
 	}()
 	const q = `SELECT
-    o.id,
-    o.customer_id,
-    o.status,
-    o.placed_at,
-    o.note,
+    o.id AS order_id,
     a.approver
 FROM orders AS o
 LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
 WHERE o.id = $1`
-	var row model.Order
-	var nullableMemo sql.Null[string]
+	var row repository.OrderApprover
 	err := r.executor.QueryRow(ctx, q, id).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo, &row.Approver)
+		Scan(&row.OrderID, &row.Approver)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return model.Order{}, fmt.Errorf("query FindApproval: %w", orm.ErrNotFound)
+		return repository.OrderApprover{}, fmt.Errorf("query GetApprover: %w", orm.ErrNotFound)
 	}
 	if err != nil {
-		return model.Order{}, fmt.Errorf("query FindApproval: %w", err)
+		return repository.OrderApprover{}, fmt.Errorf("query GetApprover: %w", err)
 	}
-	row.Memo = nullableMemo.V
 	return row, nil
 }
 
@@ -816,11 +810,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 	if err != nil {
 		return nil, err
 	}
-	text, args, err := q.RenderSelect(impl.Postgres, "orders", []string{"id", "customer_id", "status", "placed_at", "note"}, []impl.Projection{{Field: "Approver", Column: "approver", Optional: true}}, []string{`id`})
-	if err != nil {
-		return nil, err
-	}
-	rows, err := db.Query(ctx, text+lock, args...)
+	rows, err := db.Query(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -829,15 +819,10 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 	for rows.Next() {
 		var row model.Order
 		var nullableMemo sql.Null[string]
-		var nullableApprover sql.Null[*string]
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo, &nullableApprover); err != nil {
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
 		row.Memo = nullableMemo.V
-		row.Approver = nullableApprover.V
-		if err := impl.CheckSelection(q, "Approver", !nullableApprover.Valid); err != nil {
-			return nil, err
-		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
@@ -857,7 +842,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.Approval](q, "Approvals"); ok {
+	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -871,27 +856,27 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "approvals", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Approvals: %w", err)
 			}
 			related, err := db.Query(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Approvals: %w", err)
+				return fmt.Errorf("load Approvals: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.Approval
 				if err := related.Scan(&key.k0, &row.ID, &row.OrderID, &row.Revision, &row.Approver, &row.ApprovedAt, &row.RevokedAt); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Approvals: %w", err)
+					return fmt.Errorf("load Approvals: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Approvals: %w", err)
 			}
 		}
 		grouped := map[parentKey][]model.Approval{}
@@ -906,7 +891,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -920,27 +905,27 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku", "quantity"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Lines: %w", err)
 			}
 			related, err := db.Query(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Lines: %w", err)
+				return fmt.Errorf("load Lines: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.OrderLine
 				if err := related.Scan(&key.k0, &row.OrderID, &row.LineNo, &row.SKU, &row.Quantity); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Lines: %w", err)
+					return fmt.Errorf("load Lines: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
 		if err := preloadOrderLines(ctx, db, flat, sub); err != nil {
@@ -958,7 +943,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -972,27 +957,27 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, []string{`name`}, []string{"name"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Tags: %w", err)
 			}
 			related, err := db.Query(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Tags: %w", err)
+				return fmt.Errorf("load Tags: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.Tag
 				if err := related.Scan(&key.k0, &row.Name); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Tags: %w", err)
+					return fmt.Errorf("load Tags: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Tags: %w", err)
 			}
 		}
 		grouped := map[parentKey][]model.Tag{}
@@ -1007,7 +992,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok {
+	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1050,7 +1035,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1089,7 +1074,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)

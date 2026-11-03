@@ -231,7 +231,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 int64 }
 		keys := []parentKey{}
 		for i := range rows {
@@ -245,27 +245,27 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"id", "order_id", "sku", "quantity"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`id`}, []string{"id", "order_id", "sku", "quantity"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Lines: %w", err)
 			}
 			related, err := db.QueryContext(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Lines: %w", err)
+				return fmt.Errorf("load Lines: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.OrderLine
 				if err := related.Scan(&key.k0, &row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Lines: %w", err)
+					return fmt.Errorf("load Lines: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
 		grouped := map[parentKey][]model.OrderLine{}
@@ -280,7 +280,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
 		keys := make([]int64, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
