@@ -19,6 +19,8 @@ var ColumnName = columnName
 
 var CastType = castType
 
+var OuterOrderWithoutLimit = outerOrderWithoutLimit
+
 // Readable is readable, for a Go type named by its basic kind.
 func Readable(kind types.BasicKind, dbType string) (string, bool) {
 	return readable(types.Typ[kind], dbType)

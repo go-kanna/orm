@@ -379,7 +379,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		if lock.Found {
 			cds = append(cds, hasNoGeneratedSQL(lock, "lock", m.name, "-- query: "+m.name))
 		}
-		return m, append(cds, r.query(&m, fn, st)...)
+		return m, append(cds, r.query(&m, fn, st, field, ts)...)
 	}
 
 	sig := fn.Signature()

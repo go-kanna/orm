@@ -316,6 +316,17 @@ func TestEmitRepositories(t *testing.T) {
 		"MonthCounts": {{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8"}},
 		"TotalOf":     {{Name: "customer", Type: "text", NotNull: true}, {Name: "total", Type: "int8"}},
 		"CustomersOf": {{Name: "customer_id", Type: "int8", NotNull: true}},
+		"ListWithCustomers": {{Name: "id", Type: "int8", NotNull: true}, {Name: "customer_id", Type: "int8", NotNull: true},
+			{Name: "status", Type: "text", NotNull: true}, {Name: "placed_at", Type: "timestamptz", NotNull: true},
+			{Name: "note", Type: "text", Nullable: true}, {Name: "total", Type: "int8", NotNull: true},
+			{Name: "paid", Type: "bool", NotNull: true}, {Name: "contact", Type: "text", Nullable: true},
+			{Name: "receipt", Type: "bytea", Nullable: true}, {Name: "order", Type: "int4", NotNull: true},
+			{Name: "customer_name", Type: "text", NotNull: true}},
+		"FirstPlacedSince": {{Name: "id", Type: "int8", NotNull: true}, {Name: "customer_id", Type: "int8", NotNull: true},
+			{Name: "status", Type: "text", NotNull: true}, {Name: "placed_at", Type: "timestamptz", NotNull: true},
+			{Name: "note", Type: "text", Nullable: true}, {Name: "total", Type: "int8", NotNull: true},
+			{Name: "paid", Type: "bool", NotNull: true}, {Name: "contact", Type: "text", Nullable: true},
+			{Name: "receipt", Type: "bytea", Nullable: true}, {Name: "order", Type: "int4", NotNull: true}},
 	}
 	for _, tt := range []struct {
 		scopes, repo string

@@ -58,10 +58,18 @@ type OrderRepository interface {
 	UpsertTag(ctx context.Context, tag model.Tag) (model.Tag, error)
 
 	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
+	ListWithCustomers(ctx context.Context, s ...scopes.Order) ([]OrderWithCustomer, error)
+	FirstPlacedSince(ctx context.Context, since time.Time, s ...scopes.Order) (model.Order, error)
 	TotalOf(ctx context.Context, customerID int64) (CustomerTotal, error)
 	CloseOld(ctx context.Context, before time.Time) (int64, error)
 	Reopen(ctx context.Context, id model.OrderID) error
 	CustomersOf(ctx context.Context, ids []model.OrderID) ([]int64, error)
+}
+
+// OrderWithCustomer is an order with the name of its customer, which a query adds to it.
+type OrderWithCustomer struct {
+	model.Order
+	CustomerName string
 }
 
 type MonthCount struct {

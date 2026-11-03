@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/go-kanna/internal/cli"
+
+	"github.com/go-kanna/orm/internal/gen"
 )
 
 func TestCommand_HandWrittenVerbs(t *testing.T) {
@@ -33,26 +35,86 @@ func TestCommand_HandWrittenVerbs(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			old, _, _ := strings.Cut(tt.method, "(")
-			name, _, _ := strings.Cut(tt.declared, "(")
-			archive := strings.Replace(typedQueryShop, tt.method, tt.declared, 1)
-			archive = strings.Replace(archive, "-- query: "+old+"\n", "-- query: "+name+"\n", 1)
-			dir := writeModule(t, archive)
-			writeTypedQuerySnapshot(t, dir)
-			path := filepath.Join(dir, "kanna-orm.snapshot.json")
-			data, err := os.ReadFile(path) //nolint:gosec // snapshot written in this test's module
-			if err != nil {
-				t.Fatal(err)
-			}
-			data = []byte(strings.ReplaceAll(string(data), "impl."+old+`"`, "impl."+name+`"`))
-			if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // test module snapshot
-				t.Fatal(err)
-			}
-			code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl")
-			if tt.want == "" && code != cli.ExitOK || tt.want != "" && (code == cli.ExitOK ||
-				!strings.Contains(errOut, tt.want)) {
+			if code, errOut := generateRenamedQuery(t, typedQueryShop, tt.method, tt.declared); tt.want == "" &&
+				code != cli.ExitOK || tt.want != "" && (code == cli.ExitOK || !strings.Contains(errOut, tt.want)) {
 				t.Fatalf("generate = %d, want %q\n%s", code, tt.want, errOut)
 			}
 		})
+	}
+}
+
+// generateRenamedQuery generates the repositories of archive, a module of typedQueryShop's, with method, one of its
+// methods a query implements, declared as declared, the query renamed after it, and reports what the run returned.
+func generateRenamedQuery(t *testing.T, archive, method, declared string) (int, string) {
+	t.Helper()
+	old, _, _ := strings.Cut(method, "(")
+	name, _, _ := strings.Cut(declared, "(")
+	archive = strings.Replace(archive, method, declared, 1)
+	archive = strings.Replace(archive, "-- query: "+old+"\n", "-- query: "+name+"\n", 1)
+	dir := writeModule(t, archive)
+	writeTypedQuerySnapshot(t, dir)
+	path := filepath.Join(dir, "kanna-orm.snapshot.json")
+	data, err := os.ReadFile(path) //nolint:gosec // snapshot written in this test's module
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.ReplaceAll(string(data), "impl."+old+`"`, "impl."+name+`"`))
+	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // test module snapshot
+		t.Fatal(err)
+	}
+	code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl")
+	return code, errOut
+}
+
+func TestCommand_ScopedQueries(t *testing.T) {
+	t.Parallel()
+	const lookup, states = "Lookup(ctx context.Context, id int64) (model.Record, error)",
+		"States(ctx context.Context) ([]model.State, error)"
+	extra := strings.Replace(typedQueryShop, "//kanna:repository", `type Shadowed struct {
+	model.Record
+	Other string `+"`orm:\"note\"`"+`
+}
+//kanna:repository`, 1)
+	for _, tt := range []struct {
+		name, archive, method, declared, want string
+	}{
+		{"a Get of the model", typedQueryShop, lookup,
+			"GetRecord(ctx context.Context, id int64, s ...scopes.Record) (model.Record, error)", ""},
+		{"a Count", typedQueryShop, lookup,
+			"CountRecords(ctx context.Context, id int64, s ...scopes.Record) (model.Record, error)",
+			"CountRecords: a query written by hand takes scopes as a Get, a Find, a First, or a List"},
+		{"values of a column", typedQueryShop, states,
+			"ListStates(ctx context.Context, s ...scopes.Record) ([]model.State, error)",
+			"ListStates: with scopes of model.Record, it reads rows of model.Record, or of a struct embedding it"},
+		{"a column held twice", extra, lookup,
+			"GetShadowed(ctx context.Context, id int64, s ...scopes.Record) (Shadowed, error)",
+			"Shadowed.Record.Note and repository.Shadowed.Other both hold the column note"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if code, errOut := generateRenamedQuery(t, tt.archive, tt.method, tt.declared); tt.want == "" &&
+				code != cli.ExitOK || tt.want != "" && (code == cli.ExitOK || !strings.Contains(errOut, tt.want)) {
+				t.Fatalf("generate = %d, want %q\n%s", code, tt.want, errOut)
+			}
+		})
+	}
+}
+
+func TestOuterOrderWithoutLimit(t *testing.T) {
+	t.Parallel()
+	for sql, want := range map[string]bool{
+		"SELECT id FROM orders":                                     false,
+		"SELECT id FROM orders ORDER BY id":                         true,
+		"SELECT id FROM orders ORDER BY id LIMIT 5":                 false,
+		"SELECT id FROM orders ORDER BY id FETCH FIRST 5 ROWS ONLY": false,
+		"SELECT id FROM (SELECT id FROM orders ORDER BY id) AS o":   false,
+		"SELECT id FROM orders WHERE note = 'ORDER BY'":             false,
+		"SELECT id FROM orders -- ORDER BY id\nWHERE id > 0":        false,
+		"SELECT max(id) OVER (ORDER BY placed_at) FROM orders":      false,
+		"SELECT id FROM orders ORDER BY (SELECT 1 LIMIT 1)":         true,
+	} {
+		if got := gen.OuterOrderWithoutLimit(sql); got != want {
+			t.Errorf("OuterOrderWithoutLimit(%q) = %t, want %t", sql, got, want)
+		}
 	}
 }

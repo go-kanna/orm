@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"cmp"
 	"fmt"
 	"go/types"
 	"maps"
@@ -516,20 +517,22 @@ func (e repoEmitter) columnList(columns []column) string {
 	return strings.Join(names, ", ")
 }
 
-// scanNames are the names in a loop reading rows: rows into out, each into row, and on an error err, wrapped by wrap.
+// scanNames are the names in a loop reading rows: rows into out, each into row, and on an error err, wrapped by wrap,
+// returned with zero, nil unless it is said.
 type scanNames struct {
-	rows, out, row, err, wrap string
+	rows, out, row, err, wrap, zero string
 }
 
 // scanRows writes the loop reading the rows of model, each column into the field holding it.
 func (e repoEmitter) scanRows(n scanNames, model string, columns []column, sc gofile.Scope) {
+	zero := cmp.Or(n.zero, "nil")
 	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", n.out, model, n.rows, n.row)
 	dests, assignments := e.scanTargets(sc, n.row, columns)
-	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", n.err, n.rows,
-		strings.Join(dests, ", "), n.wrap)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn %[5]s, %[4]s\n}\n", n.err, n.rows,
+		strings.Join(dests, ", "), n.wrap, zero)
 	e.assignScanned(assignments)
 	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", n.out, n.row)
-	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", n.err, n.rows, n.wrap)
+	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn %[4]s, %[3]s\n}\n", n.err, n.rows, n.wrap, zero)
 }
 
 // insert writes the body of m, an Insert or an Upsert: its rows written in one statement, and read back when m
@@ -812,6 +815,10 @@ func (e repoEmitter) placeholder(n int) string {
 // handWritten writes the body of m, which a query written by hand implements: the rows of its result read into its
 // fields, in their order, or the number of rows it affects.
 func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	if m.scoped {
+		e.scopedQuery(m, sc, recv, sig)
+		return
+	}
 	q, err := sc.Name("q"), sc.Name("err")
 	args := make([]string, 0, 2+len(m.query.args))
 	args = append(args, sig.ctx, q)

@@ -3,6 +3,7 @@ package gen
 import (
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/token"
 	"go/types"
 	"maps"
@@ -30,6 +31,8 @@ type query struct {
 	// pieces are the SQL around the parameters, when an argument stands for a list of values the statement is written
 	// with at run time, as IN (:ids) takes it on MySQL.
 	pieces []string
+	// cte names the query in the statement applying the scopes of a method that takes them to its result.
+	cte string
 	// row is T, of a result of T or []T, and fields its fields holding the columns of the result, in their order.
 	row    types.Type
 	scalar bool
@@ -107,7 +110,8 @@ func readQueries(stmts []sqlfile.Statement) (map[string]sqlfile.Statement, []dia
 }
 
 // query reads the method m, fn, which the query st implements, against what describe recorded of st.
-func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) []diag.Diag {
+func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement, field *ast.Field, ts *ast.TypeSpec,
+) []diag.Diag {
 	errorf := func(pos token.Position, format string, args ...any) []diag.Diag {
 		return []diag.Diag{diag.Errorf(pos, "%s: %s", m.name, fmt.Sprintf(format, args...))}
 	}
@@ -131,6 +135,13 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	if results.Len() == 0 || results.Len() > 2 ||
 		!types.Identical(results.At(results.Len()-1).Type(), types.Universe.Lookup("error").Type()) {
 		return shape
+	}
+
+	if sig.Variadic() {
+		var ds []diag.Diag
+		if params, ds = r.queryScopeParam(m, params, field, ts); ds != nil {
+			return ds
+		}
 	}
 
 	sql, names, err := placeholder.Rewrite(st.Text, r.s.Dialect)
@@ -191,6 +202,13 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	}
 	if vds := verbContract(m, q); vds != nil {
 		return append(ds, vds...)
+	}
+	if m.scoped {
+		sds := r.scopedResult(m, &q, st)
+		if diag.HasErrors(sds) {
+			return append(ds, sds...)
+		}
+		ds = append(ds, sds...)
 	}
 	m.query = &q
 	return ds
@@ -270,8 +288,15 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Output
 	}
 
 	names := make([]string, 0, len(all))
+	held := map[string]column{}
 	for _, f := range all {
 		names = append(names, f.col.Name)
+		if prior, ok := held[f.col.Name]; ok && !f.relationValue {
+			ds = append(ds, errorf("%s.%s and %s.%s both hold the column %s", typeName(row),
+				strings.Join(prior.path, "."), typeName(row), strings.Join(f.path, "."), f.col.Name).
+				WithHints("name the column of the one the query adds otherwise"))
+		}
+		held[f.col.Name] = f
 	}
 	var matched []column
 	for _, c := range columns {
