@@ -23,7 +23,7 @@ func TestCorrelatedSelect(t *testing.T) {
 			q := impl.Select(impl.Of[projectionParent]{}.Where("id = ", int64(7)), "Value", "children", "value", p,
 				[]string{"id"}, []string{"parent_id"}, sub.One())
 			sql, args, err := q.RenderSelect(d, "parents", []string{"id"}, []impl.Projection{{Field: "Value", Column: "value",
-				Optional: true}})
+				Optional: true}}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -60,13 +60,13 @@ func TestCorrelatedValidation(t *testing.T) {
 			q := impl.Select(impl.Of[projectionParent]{}, "Value", "children", "value", p, []string{"id"},
 				[]string{"parent_id"}, sub)
 			if _, _, err := q.RenderSelect(impl.Postgres, "parents", []string{"id"}, []impl.Projection{{Field: "Value",
-				Column: "value", Optional: true}}); err == nil {
+				Column: "value", Optional: true}}, nil); err == nil {
 				t.Fatal("invalid selection accepted")
 			}
 		})
 	}
 	q := impl.CompareColumn(impl.Of[projectionChild]{}, "cycle", "=", impl.NewColumn[int32](p, "cycle"))
-	if _, err := q.Render(impl.Postgres, 1); err == nil {
+	if _, err := q.Render(impl.Postgres, 1, nil); err == nil {
 		t.Fatal("escaped parent reference accepted")
 	}
 	required := impl.Select(impl.Of[projectionParent]{}, "Value", "children", "value", p, []string{"id"},
@@ -77,7 +77,7 @@ func TestCorrelatedValidation(t *testing.T) {
 	optional := impl.Select(impl.Of[projectionParent]{}, "Value", "children", "value", p, []string{"id"},
 		[]string{"parent_id"}, impl.Of[projectionChild]{}.One())
 	if _, _, err := optional.RenderSelect(impl.Postgres, "parents", []string{"id"}, []impl.Projection{{Field: "Value",
-		Column: "value"}}); err == nil {
+		Column: "value"}}, nil); err == nil {
 		t.Fatal("non-nullable destination accepted without Required")
 	}
 	if err := optional.ConditionsOnly("Count"); err == nil {
@@ -92,7 +92,7 @@ func TestCorrelatedFirstAndBatch(t *testing.T) {
 		first := impl.Select(impl.Of[projectionParent]{}, "Value", "children", "value", p, []string{"id"},
 			[]string{"parent_id"}, impl.Of[projectionChild]{}.OrderBy("id", true).First())
 		sql, _, err := first.RenderSelect(d, "parents", []string{"id"}, []impl.Projection{{Field: "Value", Column: "value",
-			Optional: true}})
+			Optional: true}}, nil)
 		if err != nil || !strings.Contains(sql, "ORDER BY id DESC LIMIT 1") {
 			t.Fatalf("First: %s, %v", sql, err)
 		}
@@ -120,11 +120,11 @@ func TestCombineDuplicateCollection(t *testing.T) {
 	t.Parallel()
 	parent := impl.NewParent()
 	q := impl.PreloadMany(impl.Of[projectionParent]{}, "Children", parent, impl.Of[projectionChild]{}.Many())
-	if _, err := impl.Combine(q, q).Render(impl.Postgres, 1); err == nil || !strings.Contains(err.Error(),
+	if _, err := impl.Combine(q, q).Render(impl.Postgres, 1, nil); err == nil || !strings.Contains(err.Error(),
 		"Children is preloaded twice") {
 		t.Fatalf("duplicate collection: %v", err)
 	}
-	if _, err := q.Render(impl.Postgres, 1); err != nil {
+	if _, err := q.Render(impl.Postgres, 1, nil); err != nil {
 		t.Fatalf("original scope changed: %v", err)
 	}
 }
@@ -148,7 +148,7 @@ func TestPreloadManyChecksAtOnce(t *testing.T) {
 			// The parent's own scope fails, before any rows of Children are read: there may be no parent row to read
 			// them for.
 			q := impl.PreloadMany(impl.Of[projectionParent]{}, "Children", impl.NewParent(), tt.m)
-			if _, err := q.Render(impl.Postgres, 1); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := q.Render(impl.Postgres, 1, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Render = %v, want %q", err, tt.want)
 			}
 		})
@@ -165,14 +165,14 @@ func TestWithAndPreloadOfOneField(t *testing.T) {
 		"Preload then With": impl.Preload(preload, "Children", children),
 		"combined":          impl.Combine(with, preload),
 	} {
-		_, err := q.Render(impl.Postgres, 1)
+		_, err := q.Render(impl.Postgres, 1, nil)
 		if want := "Children is loaded by both WithChildren and PreloadChildren"; err == nil ||
 			!strings.Contains(err.Error(), want) {
 			t.Errorf("%s: Render = %v, want %q", name, err, want)
 		}
 	}
 	for name, q := range map[string]impl.Of[projectionParent]{"With": with, "Preload": preload} {
-		if _, err := q.Render(impl.Postgres, 1); err != nil {
+		if _, err := q.Render(impl.Postgres, 1, nil); err != nil {
 			t.Errorf("%s alone: %v", name, err)
 		}
 	}

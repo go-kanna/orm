@@ -53,7 +53,7 @@ func (c Changes[M]) RenderUpdate(d Dialect, table string, allowed []string, q Of
 		}
 		sets = append(sets, quoted(d, a.column)+" = "+placeholder)
 	}
-	rd, err := q.Render(d, len(args)+1)
+	rd, err := q.Render(d, len(args)+1, nil)
 	if err != nil {
 		return "", nil, err
 	}

@@ -110,7 +110,7 @@ func (e repoEmitter) updateReturning(m repoMethod, sc gofile.Scope, recv string,
 func (e repoEmitter) updateMatched(sc gofile.Scope, recv, ctx, q, affected, err, wrap, notFound, table string) {
 	rd, found := sc.Name("rd"), sc.Name("found")
 	e.printf("if %s == 0 {\n", affected)
-	e.printf("%s, %s := %s.Render(%s, 1)\nif %s != nil { return %s }\n",
+	e.printf("%s, %s := %s.Render(%s, 1, nil)\nif %s != nil { return %s }\n",
 		rd, err, q, e.dialect(), err, err)
 	e.printf("var %s bool\n", found)
 	e.printf("if %s := %s.executor.%s(%s, %s+%s.Where()+\")\", %s.Args()...).Scan(&%s); %s != nil { return %s }\n",

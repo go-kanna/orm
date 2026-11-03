@@ -101,7 +101,7 @@ func (q Of[M]) RenderBatch(d Dialect, b Batch, parent Parent, columns []string, 
 	args = append(args, keyArgs...)
 	q.parent = &parentContext{parent, "orm_parent"}
 	q.parentPrefix = "orm_p_"
-	rd, err := q.Render(d, len(args)+1)
+	rd, err := q.Render(d, len(args)+1, nil)
 	if err != nil {
 		return "", nil, err
 	}

@@ -21,7 +21,7 @@ func sub[C any](t *testing.T, q impl.Of[order], relation string) (string, []any)
 	if !ok {
 		t.Fatalf("%s is not preloaded", relation)
 	}
-	r, err := s.Render(impl.Postgres, 2)
+	r, err := s.Render(impl.Postgres, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestPreload_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := tt.q.Render(impl.Postgres, 1); err == nil || err.Error() != tt.want {
+			if _, err := tt.q.Render(impl.Postgres, 1, nil); err == nil || err.Error() != tt.want {
 				t.Errorf("Render error = %v, want %q", err, tt.want)
 			}
 		})

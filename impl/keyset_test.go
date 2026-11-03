@@ -60,6 +60,52 @@ func TestAfter(t *testing.T) {
 	}
 }
 
+func TestRender_EndsAnOrderInTheKey(t *testing.T) {
+	t.Parallel()
+
+	var q impl.Of[order]
+	tests := []struct {
+		name string
+		q    impl.Of[order]
+		key  []string
+		want string
+	}{
+		{"an order", q.OrderBy("placed_at", true).Limit(20), key, " ORDER BY placed_at DESC, id DESC"},
+		{"an order holding the key already", q.OrderBy("id", true).OrderBy("placed_at", false), key,
+			" ORDER BY id DESC, placed_at"},
+		{"no order", q.Limit(20), key, ""},
+		{"a table without a primary key", q.OrderBy("placed_at", true), nil, " ORDER BY placed_at DESC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := tt.q.Render(impl.Postgres, 1, tt.key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.OrderBy() != tt.want {
+				t.Errorf("OrderBy = %q, want %q", r.OrderBy(), tt.want)
+			}
+		})
+	}
+
+	// The first page comes in the order the page after it continues in, so that rows equal in placed_at at the end
+	// of the first are neither skipped nor repeated.
+	first := q.OrderBy("placed_at", true).Limit(20)
+	r, err := first.Render(impl.MySQL, 1, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := first.After(key, row).Render(impl.MySQL, 1, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.OrderBy() != next.OrderBy() {
+		t.Errorf("the first page in %q, the next in %q", r.OrderBy(), next.OrderBy())
+	}
+}
+
 func TestBefore_Reversed(t *testing.T) {
 	t.Parallel()
 
@@ -72,7 +118,7 @@ func TestBefore_Reversed(t *testing.T) {
 		{q.OrderBy("placed_at", false).After(key, row), false},
 		{q.OrderBy("placed_at", false).Before(key, row), true},
 	} {
-		r, err := tt.q.Render(impl.Postgres, 1)
+		r, err := tt.q.Render(impl.Postgres, 1, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,7 +150,7 @@ func TestAfter_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := tt.q.Render(impl.Postgres, 1); err == nil || err.Error() != tt.want {
+			if _, err := tt.q.Render(impl.Postgres, 1, nil); err == nil || err.Error() != tt.want {
 				t.Errorf("Render error = %v, want %q", err, tt.want)
 			}
 		})

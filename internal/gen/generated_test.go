@@ -20,7 +20,7 @@ type rendered struct {
 func render(t *testing.T, q impl.Of[model.Order], d impl.Dialect) rendered {
 	t.Helper()
 
-	r, err := q.Render(d, 1)
+	r, err := q.Render(d, 1, []string{"id"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestGenerated_With(t *testing.T) {
 	if !ok {
 		t.Fatal("WithLines does not preload Lines")
 	}
-	r, err := lines.Render(impl.Postgres, 1)
+	r, err := lines.Render(impl.Postgres, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestGenerated_Paging(t *testing.T) {
 		}
 	}
 
-	r, err := pscopes.OrderLines().After(line).Of().Render(impl.Postgres, 1)
+	r, err := pscopes.OrderLines().After(line).Of().Render(impl.Postgres, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestGenerated_Paging(t *testing.T) {
 		t.Errorf("After by a primary key of two columns: %s", got)
 	}
 
-	if _, err := pscopes.Orders().MemoAsc().After(row).Of().Render(impl.Postgres, 1); err == nil {
+	if _, err := pscopes.Orders().MemoAsc().After(row).Of().Render(impl.Postgres, 1, nil); err == nil {
 		t.Error("After in the order of a column that may be NULL renders")
 	}
 }

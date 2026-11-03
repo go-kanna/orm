@@ -41,9 +41,9 @@ type TableJoin struct {
 }
 
 // RenderProjection renders a projection and its explicit joins. plain is the generated
-// SELECT used when no joins are requested, preserving ordinary scope rendering.
+// SELECT used when no joins are requested, preserving ordinary scope rendering. key is as Render takes it.
 func (q Of[M]) RenderProjection(d Dialect, table string, columns []SelectColumn, joins []TableJoin,
-	baseColumns []string, plain string,
+	baseColumns []string, plain string, key []string,
 ) (string, []any, bool, error) {
 	if err := q.ProjectionOnly("projection"); err != nil {
 		return "", nil, false, err
@@ -54,7 +54,7 @@ func (q Of[M]) RenderProjection(d Dialect, table string, columns []SelectColumn,
 	}
 	base := q
 	base.joins = nil
-	rd, err := base.Render(d, 1)
+	rd, err := base.Render(d, 1, key)
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -82,8 +82,11 @@ func (q Of[M]) RenderProjection(d Dialect, table string, columns []SelectColumn,
 		}
 	}
 	orders := q.orders
-	if q.seeking {
+	switch {
+	case q.seeking:
 		orders = q.ordersWith(q.seek.key)
+	case len(orders) > 0:
+		orders = q.ordersWith(key)
 	}
 	ordering := make([]string, 0, len(orders))
 	for _, order := range orders {

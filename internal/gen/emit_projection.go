@@ -26,9 +26,9 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 	}
 	rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 	query := "SELECT " + e.columnList(m.projection.columns) + " FROM " + sqlName(e.d, m.target.table)
-	e.printf("%s, %s, %s, %s := %s.RenderProjection(%s, %q, %s, %s, %s, %s)\n",
+	e.printf("%s, %s, %s, %s := %s.RenderProjection(%s, %q, %s, %s, %s, %s, %s)\n",
 		text, args, reversed, err, q, e.dialect(), m.target.table, e.projectionSources(m), e.projectionJoins(m),
-		namesLiteral(tableColumnNames(m)), goString(query))
+		namesLiteral(tableColumnNames(m)), goString(query), e.orderKey(m.table))
 	e.printf("if %s != nil { return %s, %s }\n", err, zero, err)
 	e.printf("%s, %s := %s.executor.%s(%s, %s+%s, %s...)\n",
 		rows, err, recv, e.query, sig.ctx, text, lockClause(m), args)
