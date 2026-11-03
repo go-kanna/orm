@@ -112,7 +112,7 @@ func (ex *example) catalog(ctx context.Context) error {
 		return fmt.Errorf("product currency: got %q, want the database default JPY", cheap[0].Currency)
 	}
 	fmt.Fprintf(ex.w, "under 1000: %s at %d %s\n", cheap[0].Name, cheap[0].Price, cheap[0].Currency)
-	names, err := ex.products.Names(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+	names, err := ex.products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
 	if err != nil {
 		return fmt.Errorf("the affordable product names: %w", err)
 	}

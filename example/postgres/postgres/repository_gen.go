@@ -206,7 +206,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	return out, nil
 }
 
-func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]string, error) {
+func (r ProductRepository) ListNames(ctx context.Context, s ...scopes.Product) ([]string, error) {
 	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()

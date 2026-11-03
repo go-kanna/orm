@@ -15,7 +15,6 @@ import (
 var methodDirectives = []struct{ key, instead string }{
 	{"conflict", "handle the conflict"},
 	{"lock", "lock"},
-	{"pluck", "read the column"},
 }
 
 // hasNoGeneratedSQL is the error for a method directive d of key on a method named name, whose SQL is written by hand

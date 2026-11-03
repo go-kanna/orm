@@ -21,8 +21,8 @@ func TestRepositories_StrayDirectives(t *testing.T) {
 	for _, tt := range []struct{ name, methods, want string }{
 		{"a conflict parted from the method by a blank line", "\t//kanna:conflict id\n\n" + list,
 			at + "error: //kanna:conflict" + stray},
-		{"a pluck at the end of the line", strings.TrimSuffix(list, "\n") + " //kanna:pluck id\n",
-			"repository.go:24:70: error: //kanna:pluck" + stray},
+		{"a conflict at the end of the line", strings.TrimSuffix(list, "\n") + " //kanna:conflict id\n",
+			"repository.go:24:70: error: //kanna:conflict" + stray},
 		{"a lock after the last method", list + "\t//kanna:lock update\n",
 			"repository.go:25:2: error: //kanna:lock" + stray},
 	} {
@@ -54,7 +54,6 @@ func TestCommand_DirectivesOnAMethodWrittenByHand(t *testing.T) {
 
 	for _, tt := range []struct{ directive, instead string }{
 		{"//kanna:conflict id", "handle the conflict"},
-		{"//kanna:pluck id", "read the column"},
 		{"//kanna:lock update", "lock"},
 	} {
 		t.Run(tt.directive, func(t *testing.T) {
