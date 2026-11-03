@@ -9,7 +9,7 @@ import (
 // RenderDelete selects the rows to delete using the scope's conditions and pagination.
 // key names a non-null unique key, needed only when a page of rows is selected.
 func (q Of[M]) RenderDelete(d Dialect, table string, key []string) (string, []any, error) {
-	if len(q.preloads) > 0 || len(q.projections) > 0 || len(q.batches) > 0 {
+	if len(q.preloads) > 0 {
 		return "", nil, errors.New("orm: Delete cannot load relations")
 	}
 	rd, err := q.Render(d, 1, nil)

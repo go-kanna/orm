@@ -1261,7 +1261,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.LineNote](q, "Notes"); ok {
+	if sub, ok := impl.Preloaded[model.LineNote](q, "Notes"); ok && sub.PagesEach() {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -1278,27 +1278,27 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0, key.k1}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "order_lines", Table: "line_notes", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"order_id", "line_no"}}, parent, []string{"order_id", "line_no", "body"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "line_notes", ChildKeys: []string{"order_id", "line_no"}}, nil, []string{"order_id", "line_no", "body"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Notes: %w", err)
 			}
 			related, err := db.QueryContext(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Notes: %w", err)
+				return fmt.Errorf("load Notes: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.LineNote
 				if err := related.Scan(&key.k0, &key.k1, &row.OrderID, &row.LineNo, &row.Body); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Notes: %w", err)
+					return fmt.Errorf("load Notes: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Notes: %w", err)
 			}
 		}
 		if err := preloadLineNotes(ctx, db, flat, sub); err != nil {
@@ -1316,7 +1316,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -1333,27 +1333,27 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0, key.k1}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "order_lines", Table: "tags", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"name"}, Through: "line_tags", ThroughParent: []string{"order_id", "line_no"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "line_tags", ThroughParent: []string{"order_id", "line_no"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, nil, []string{"name"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Tags: %w", err)
 			}
 			related, err := db.QueryContext(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Tags: %w", err)
+				return fmt.Errorf("load Tags: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.Tag
 				if err := related.Scan(&key.k0, &key.k1, &row.Name); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Tags: %w", err)
+					return fmt.Errorf("load Tags: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Tags: %w", err)
 			}
 		}
 		grouped := map[parentKey][]model.Tag{}
@@ -1391,7 +1391,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.LineNote](q, "Notes"); ok {
+	if sub, ok := impl.Preloaded[model.LineNote](q, "Notes"); ok && !sub.PagesEach() {
 		type key struct {
 			k0 model.OrderID
 			k1 int
@@ -1424,7 +1424,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
 		type key struct {
 			k0 model.OrderID
 			k1 int
@@ -1524,7 +1524,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -1538,27 +1538,27 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Lines: %w", err)
 			}
 			related, err := db.QueryContext(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Lines: %w", err)
+				return fmt.Errorf("load Lines: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.OrderLine
 				if err := related.Scan(&key.k0, &row.OrderID, &row.LineNo, &row.SKU); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Lines: %w", err)
+					return fmt.Errorf("load Lines: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
 		if err := preloadOrderLines(ctx, db, flat, sub); err != nil {
@@ -1576,7 +1576,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, parent, ok := impl.PreloadedMany[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -1590,27 +1590,27 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, nil, []string{"name"}, inputs)
 			if err != nil {
-				return err
+				return fmt.Errorf("load Tags: %w", err)
 			}
 			related, err := db.QueryContext(ctx, text, args...)
 			if err != nil {
-				return fmt.Errorf("preload Tags: %w", err)
+				return fmt.Errorf("load Tags: %w", err)
 			}
 			for related.Next() {
 				var key parentKey
 				var row model.Tag
 				if err := related.Scan(&key.k0, &row.Name); err != nil {
 					related.Close()
-					return fmt.Errorf("scan Tags: %w", err)
+					return fmt.Errorf("load Tags: %w", err)
 				}
 				flat = append(flat, row)
 				owners = append(owners, key)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
-				return err
+				return fmt.Errorf("load Tags: %w", err)
 			}
 		}
 		grouped := map[parentKey][]model.Tag{}
@@ -1648,7 +1648,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1668,7 +1668,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)

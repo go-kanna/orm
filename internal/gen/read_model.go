@@ -13,12 +13,11 @@ import (
 // readModel is a model whose whole rows the repositories read: one a method reads, or one a relation of another
 // reaches. Each has a function reading its rows, and one loading its relations.
 type readModel struct {
-	target      indexed
-	model       *types.Named
-	table       snapshot.Table
-	columns     []column
-	projections []column
-	links       []link
+	target  indexed
+	model   *types.Named
+	table   snapshot.Table
+	columns []column
+	links   []link
 }
 
 // readModels finds the models repos read whole rows of, and those their relations reach, by table. It reports a
@@ -50,11 +49,6 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 		links, _ := r.l.link(sc, f.columns, f.relations)
 		for _, lk := range links {
 			if lk.scalar != nil {
-				if lk.single {
-					rm.projections = append(rm.projections, column{path: lk.field.path, typ: lk.field.typ,
-						col: snapshot.Column{Name: columnName(lk.field.path[len(lk.field.path)-1])}})
-					continue
-				}
 				rm.links = append(rm.links, lk)
 				continue
 			}

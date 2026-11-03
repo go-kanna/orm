@@ -25,13 +25,26 @@ func (q Of[M]) combine(other subscope) subscope {
 	return Combine(q, o)
 }
 
-// Preload has the rows of relation loaded along with those of q, read by sub. Preloading a relation again combines
-// the two scopes as Combine does. A limit or an offset in sub would count the related rows of every row together, not
-// those of each, so it is an error.
+// Preload has the row of relation, one for each row, loaded along with the rows of q, read by sub. Loading a relation
+// again combines the two scopes as Combine does. A limit or an offset in sub would keep only some of the rows of every
+// row together, so it is an error.
 func Preload[M, C any](q Of[M], relation string, sub Of[C]) Of[M] {
 	if sub.hasLimit || sub.hasOffset || sub.seeking {
 		q.err = cmp.Or(q.err, fmt.Errorf(
 			"orm: %s keeps only some of the rows it loads, which would count those of every row together", relation))
+	}
+	q.err = cmp.Or(q.err, sub.err)
+	q.preloads = addPreload(q.preloads, preload{relation, sub})
+	return q
+}
+
+// PreloadEach has the rows of relation, many for each row, loaded along with the rows of q, read by sub. A limit and
+// an offset in sub keep a page of the related rows of each row, as SQL keeps a page of a LATERAL subquery's rows.
+// Loading a relation again combines the two scopes as Combine does.
+func PreloadEach[M, C any](q Of[M], relation string, sub Of[C]) Of[M] {
+	if sub.seeking {
+		q.err = cmp.Or(q.err, fmt.Errorf("orm: %s continues a page of the rows of each row by Offset, not by a row",
+			relation))
 	}
 	q.err = cmp.Or(q.err, sub.err)
 	q.preloads = addPreload(q.preloads, preload{relation, sub})

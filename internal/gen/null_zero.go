@@ -35,15 +35,6 @@ func (e repoEmitter) scanTargets(sc gofile.Scope, row string, columns []column) 
 		e.printf("var %s %s\n", local, e.storageType(c))
 		targets = append(targets, "&"+local)
 		assignments = append(assignments, field+" = "+local+".V")
-		if c.selectedBy != "" {
-			result := c.selectionReturn
-			if result == "" {
-				result = "return nil,err"
-			}
-			assignments = append(assignments,
-				fmt.Sprintf("if err := %s(%s, %q, !%s.Valid); err != nil { %s }", e.ref("CheckSelection"),
-					c.selectedBy, fieldPath(c), local, result))
-		}
 	}
 	return targets, assignments
 }

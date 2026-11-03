@@ -258,7 +258,6 @@ func TestDefaultOrder(t *testing.T) {
 func TestProjectionOnly(t *testing.T) {
 	t.Parallel()
 	var q impl.Of[order]
-	parent := impl.NewParent()
 	for _, tt := range []struct {
 		name      string
 		q         impl.Of[order]
@@ -266,9 +265,7 @@ func TestProjectionOnly(t *testing.T) {
 	}{
 		{"filters and pagination", q.Where("id > ", 1).OrderBy("id", false).Limit(2).Offset(1), false},
 		{"preload", impl.Preload(q, "Customer", q), true},
-		{"scalar", impl.Select(q, "Name", "customers", "name", parent,
-			[]string{"customer_id"}, []string{"id"}, q.One()), true},
-		{"batch", impl.PreloadMany(q, "Lines", parent, q.Many()), true},
+		{"a page of the related rows of each", impl.PreloadEach(q, "Lines", q.Limit(2)), true},
 		{"invalid scope", q.Limit(-1), true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

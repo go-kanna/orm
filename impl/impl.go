@@ -25,11 +25,7 @@ type Of[M any] struct {
 	limit, offset       int
 	hasLimit, hasOffset bool
 	preloads            []preload
-	projections         []projectionField
-	batches             []batchField
 	joins               []tableJoin
-	parent              *parentContext
-	parentPrefix        string
 	seek                seek
 	seeking             bool
 	err                 error
@@ -150,12 +146,8 @@ func Combine[M any](qs ...Of[M]) Of[M] {
 		for _, p := range s.preloads {
 			q.preloads = addPreload(q.preloads, p)
 		}
-		q.projections = slices.Concat(q.projections, s.projections)
 		for _, join := range s.joins {
 			q = q.JoinTable(join.table, join.on...)
-		}
-		for _, batch := range s.batches {
-			q = q.addBatch(batch)
 		}
 		if s.seeking {
 			q.seek, q.seeking = s.seek, true
@@ -178,8 +170,6 @@ func (q Of[M]) ConditionsOnly(what string) error {
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope orders the rows", what)
 	case q.hasLimit || q.hasOffset || q.seeking:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope keeps only some of the rows", what)
-	case len(q.projections) > 0 || len(q.batches) > 0:
-		return fmt.Errorf("orm: %s takes conditions alone, but its scope loads relations", what)
 	case len(q.preloads) > 0:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope loads %s", what, q.preloads[0].relation)
 	}
@@ -254,7 +244,7 @@ func (q Of[M]) ProjectionOnly(what string) error {
 	if q.err != nil {
 		return q.err
 	}
-	if len(q.preloads) > 0 || len(q.projections) > 0 || len(q.batches) > 0 {
+	if len(q.preloads) > 0 {
 		return fmt.Errorf("orm: %s is a projection, but its scope loads relations", what)
 	}
 	return nil

@@ -313,8 +313,12 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 		if plain, err := repo.Get(ctx, 1); err != nil || plain.Lines != nil || plain.Customer != nil {
 			t.Errorf("Get without With = %+v, %v; want no relation loaded", plain, err)
 		}
-		if _, err := repo.List(ctx, pscopes.Orders().WithLines(pscopes.OrderLines().Limit(1))); err == nil {
-			t.Error("List loads lines by a scope with a limit")
+		paged, err := repo.List(ctx, pscopes.Orders().IDAsc().WithLines(pscopes.OrderLines().Offset(1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(paged) != 3 || len(paged[0].Lines) != 1 || paged[0].Lines[0].LineNo != 2 || paged[1].Lines == nil {
+			t.Errorf("List with the lines of each order after the first, by their key = %+v", paged)
 		}
 	})
 }

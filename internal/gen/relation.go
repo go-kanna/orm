@@ -49,7 +49,6 @@ type link struct {
 	// model: the foreign key's columns and the ones it references, in the order of the key.
 	keys, targetKeys []column
 	scalar           *column
-	single           bool
 }
 
 // way is a way a relation can be read: by a foreign key, and for manyToMany, through a table.
