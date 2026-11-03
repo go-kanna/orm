@@ -208,27 +208,30 @@ func (r ProductRepository) ListNames(ctx context.Context, s ...scopes.Product) (
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	rd2, err2 := q.Render(impl.Postgres, 1, []string{`sku`})
-	if err2 != nil {
-		return nil, err2
+	if err := q.ProjectionOnly("ListNames"); err != nil {
+		return nil, err
 	}
-	rows, err2 := r.db.Query(ctx, `SELECT name FROM products`+rd2.Where()+rd2.OrderBy()+rd2.Limit(), rd2.Args()...)
-	if err2 != nil {
-		return nil, fmt.Errorf("pluck products.name: %w", err2)
+	rd, err := q.Render(impl.Postgres, 1, []string{`sku`})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, `SELECT name FROM products`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read products.name: %w", err)
 	}
 	defer rows.Close()
 	out := []string{}
 	for rows.Next() {
 		var row string
-		if err2 := rows.Scan(&row); err2 != nil {
-			return nil, fmt.Errorf("pluck products.name: %w", err2)
+		if err := rows.Scan(&row); err != nil {
+			return nil, fmt.Errorf("read products.name: %w", err)
 		}
 		out = append(out, row)
 	}
-	if err2 := rows.Err(); err2 != nil {
-		return nil, fmt.Errorf("pluck products.name: %w", err2)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read products.name: %w", err)
 	}
-	if rd2.Reversed() {
+	if rd.Reversed() {
 		slices.Reverse(out)
 	}
 	return out, nil
