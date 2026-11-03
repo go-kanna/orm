@@ -240,7 +240,8 @@ func TestRepositories_FindOfANullableColumn(t *testing.T) {
 	t.Parallel()
 
 	const want = "queries.sql:1:1: error: FindNote: a Find returns nil for no row, so it cannot read column note, " +
-		"which may be NULL\n  name it Get, whose (*string, error) returns nil for NULL and orm.ErrNotFound for no row"
+		"which may be NULL\n  name it Get, whose (*string, error) returns nil for NULL and orm.ErrNotFound for no row, " +
+		"or return (**string, error) to tell the two apart"
 	_, ds := repositories(t, snapshot.PostgreSQL,
 		"\tFindNote(ctx context.Context, id model.OrderID) (*string, error)\n",
 		"-- query: FindNote\nSELECT note FROM orders WHERE id = :id;\n",

@@ -96,6 +96,31 @@ func TestCommand_PluckMistakes(t *testing.T) {
 	}
 }
 
+// A Find of the values of a column that may be NULL is told so as one written by hand is, and (**T, error) tells no
+// row and NULL apart.
+func TestCommand_PluckFindOfNull(t *testing.T) {
+	t.Parallel()
+	for result, want := range map[string]string{
+		"*string": "FindNote: a Find returns nil for no row, so it cannot read column note, which may be NULL\n" +
+			"  name it Get, whose (*string, error) returns nil for NULL and orm.ErrNotFound for no row, or return " +
+			"(**string, error) to tell the two apart",
+		"**string": "",
+	} {
+		t.Run(result, func(t *testing.T) {
+			t.Parallel()
+			archive := strings.Replace(typedQueryShop, "Note string `orm:\"note,nullzero\"`", "Note *string", 1)
+			archive = strings.Replace(archive, "type Records interface {", "type Records interface {\n"+
+				"FindNote(ctx context.Context, id int64, s ...scopes.Record) ("+result+", error)\n", 1)
+			dir := writeModule(t, archive)
+			writeTypedQuerySnapshot(t, dir)
+			code, _, stderr := run(t, filepath.Join(dir, "repository"), "-destination", "../impl")
+			if want == "" && code != cli.ExitOK || want != "" && !strings.Contains(stderr, want) {
+				t.Fatalf("generate: %d\n%s\nwant %q", code, stderr, want)
+			}
+		})
+	}
+}
+
 const pluckRuntime = `package impl
 import (
 	"context"

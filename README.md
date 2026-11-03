@@ -396,8 +396,10 @@ limit, or a relation to load makes the query return an error. When every alterna
 
 ### Relations
 
-A field holding another model, a pointer to one, or a slice of them is a relation. kanna-orm tells its kind from the
-snapshot's foreign keys, so nothing more is written for it:
+A field holding a pointer to another model, or a slice of models or of pointers to them, is a relation. kanna-orm
+tells its kind from the snapshot's foreign keys, so nothing more is written for it. A relation of one row is a
+pointer, nil when its row is not loaded or not there; a model held by value stops generation, as it could not tell
+either:
 
 | Field                | Foreign key                                                    | Kind         |
 |----------------------|----------------------------------------------------------------|--------------|
