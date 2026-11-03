@@ -987,7 +987,12 @@ Base-table scopes still supply filters, ordering, and cursor pagination. Predica
 ## Hand-written SQL
 
 What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
-where that method is implemented, in the package `-destination` names. With `-destination .`, queries sit next to the
+where that method is implemented, in the package `-destination` names. A method whose name starts with a verb returns
+what a generated one of the verb does, so that the verb says the same wherever it is read: a `Get` or a `First` one row
+and `orm.ErrNotFound` for none, a `Find` a pointer and nil for none, a `List` a slice, a `Count` an `int64` and an
+`Exists` a `bool` of the one column of its result, and an `Insert`, an `Update`, an `Upsert`, or a `Delete` error
+alone, `(int64, error)` for the rows it affects, or the rows its `RETURNING` gives. Another stops generation; a name
+that starts with no verb, as `MonthCounts`, returns what it likes. With `-destination .`, queries sit next to the
 repository interface. A scope becomes a method of the scope type it names, and is written next to it. A `.sql` file with
 neither a `-- query:` nor a `-- scope:` line, such as a migration, is none of kanna-orm's.
 
