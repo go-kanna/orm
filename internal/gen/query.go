@@ -189,6 +189,9 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	if diag.HasErrors(rds) {
 		return append(ds, rds...)
 	}
+	if vds := verbContract(m, q); vds != nil {
+		return append(ds, vds...)
+	}
 	m.query = &q
 	return ds
 }
@@ -337,4 +340,52 @@ func expands(t types.Type) bool {
 	obj, _, _ := types.LookupFieldOrMethod(t, true, nil, "Value")
 	_, valuer := obj.(*types.Func)
 	return !valuer
+}
+
+// verbContract reports m, a method a query written by hand implements, unless it returns what a generated method of
+// the verb its name starts with does: a name starting with none returns what it likes.
+func verbContract(m *repoMethod, q query) []diag.Diag {
+	v, ok := verbOf(m.name)
+	if !ok {
+		return nil
+	}
+	var contract string
+	switch v {
+	case verbGet, verbFirst:
+		if m.returns != returnsRow && m.returns != returnsScalar {
+			contract = "one row, as (T, error), and orm.ErrNotFound for none"
+		}
+	case verbFind:
+		if !m.optional {
+			contract = "one row, as (*T, error), and nil for none"
+		}
+	case verbList:
+		if m.returns != returnsRows {
+			contract = "every row, as ([]T, error)"
+		}
+	case verbCount:
+		if m.returns != returnsScalar || !isBasic(q.row, types.Int64) {
+			contract = "the one column of its result, as (int64, error)"
+		}
+	case verbExists:
+		if m.returns != returnsScalar || !isBasic(q.row, types.Bool) {
+			contract = "the one column of its result, as (bool, error)"
+		}
+	case verbInsert, verbUpdate, verbUpsert, verbDelete:
+		if m.returns == returnsScalar && isBasic(q.row, types.Int64) || m.optional {
+			contract = "error alone, (int64, error) for the number of rows it affects, or (T, error) or ([]T, error) " +
+				"for those it returns"
+		}
+	case verbPluck: // no name starts with it
+	}
+	if contract == "" {
+		return nil
+	}
+	an := "a"
+	if strings.ContainsAny(string(v)[:1], "AEIOU") { // an Update, though a uuid
+		an = "an"
+	}
+	return []diag.Diag{diag.Errorf(m.pos, "%s: %s %s returns %s, written by hand as generated", m.name, an, v,
+		contract).
+		WithHints("name it after no verb to return anything else")}
 }
