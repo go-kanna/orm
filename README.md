@@ -21,9 +21,19 @@ through pgx or database/sql, or MySQL 8.4 or later through database/sql.
 go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 ```
 
-The generated code imports packages of `github.com/go-kanna/orm`, which the line above already requires: a scope type
-holds a `scope.Of`, and a row that is not there is `orm.ErrNotFound`. It depends on nothing outside the standard library; the
-driver is yours.
+The generated code imports packages of `github.com/go-kanna/orm`, which the line above already requires. They depend on
+nothing outside the standard library; the driver is yours. Code written by hand uses these:
+
+| Package        | What for                                                                                                  |
+|----------------|-----------------------------------------------------------------------------------------------------------|
+| `orm`          | `ErrNotFound` and `ErrRequiredRelation`, the errors a repository returns                                  |
+| `orm/scope`    | `Of`, the one field of a scope type declared by hand                                                      |
+| `orm/relation` | `Single`, `Many`, and `Column`, what the closures of `Select<Field>` and `Preload<Field>` return and read |
+| `orm/join`     | `On`, an explicit condition of a joined projection                                                        |
+| `orm/option`   | `WithBefore` and `WithAfter`, the options a repository's constructor takes                                |
+| `orm/hook`     | `Before`, `After`, `Query`, and `Execution`, the functions those options take and what they receive       |
+
+`orm/impl` is what the generated code runs on, and only the generated code imports it.
 
 ## Use
 

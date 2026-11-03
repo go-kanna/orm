@@ -17,7 +17,18 @@ kanna-orm は、リポジトリのインターフェースの裏側で動くデ�
 go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 ```
 
-スコープ型は `scope.Of` を保持し、存在しない行は `orm.ErrNotFound` になるので、生成コードは `github.com/go-kanna/orm` のパッケージをインポートします。これは上のコマンドで依存に追加されます。このパッケージは標準ライブラリ以外には依存しません。ドライバは自分で用意します。
+生成コードは `github.com/go-kanna/orm` のパッケージをインポートします。これは上のコマンドで依存に追加されます。これらのパッケージは標準ライブラリ以外には依存しません。ドライバは自分で用意します。手書きのコードが使うのは次のパッケージです。
+
+| パッケージ     | 用途                                                                                            |
+|----------------|-------------------------------------------------------------------------------------------------|
+| `orm`          | repository が返すエラー `ErrNotFound` と `ErrRequiredRelation`                                  |
+| `orm/scope`    | 手書きで宣言するスコープ型のフィールド `Of`                                                     |
+| `orm/relation` | `Select<Field>` と `Preload<Field>` に渡すクロージャが返す・受け取る `Single`、`Many`、`Column` |
+| `orm/join`     | 結合した projection の明示的な条件 `On`                                                         |
+| `orm/option`   | repository の constructor に渡す option `WithBefore` と `WithAfter`                             |
+| `orm/hook`     | それらの option に渡す関数と、その関数が受け取る値 `Before`、`After`、`Query`、`Execution`      |
+
+`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
 
 ## 使い方
 
