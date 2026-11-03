@@ -107,11 +107,12 @@ type repoMethod struct {
 	verb verb
 	// target is the scope type holding model, the model of the rows the method reads or writes; table is its table,
 	// and columns the fields of model holding its columns.
-	target  indexed
-	model   *types.Named
-	table   snapshot.Table
-	columns []column
-	pluck   *column
+	target     indexed
+	model      *types.Named
+	table      snapshot.Table
+	columns    []column
+	pluck      *column
+	projection *readProjection
 	// keys are the parameters naming the columns the rows must equal, in their order.
 	keys []key
 	// scoped reports whether the method takes scopes, as its last parameter. row names the parameter of the row it
@@ -463,6 +464,9 @@ func (r repoReader) target(m *repoMethod, models []*types.Named, keyParams []*ty
 	m.target, m.table = target, table
 	f, _ := fields(r.pkg.Fset, scope{name: target.name, model: m.model, table: target.table}, table)
 	m.columns = f.columns
+	if m.projection != nil {
+		return r.projectionFields(m)
+	}
 	return nil
 }
 
@@ -956,6 +960,25 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 	default:
 		if ptr, ok := t.(*types.Pointer); ok && m.verb == verbFind {
 			t, m.optional = ptr.Elem(), true
+		}
+		reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList
+		if reads && m.scoped && len(models) == 1 {
+			row, many := t, false
+			if slice, ok := t.Underlying().(*types.Slice); ok {
+				row, many = slice.Elem(), true
+			}
+			model := asNamed(row)
+			if model != nil && isModel(model) && !holdsColumn(model) && !types.Identical(model, models[0]) {
+				if _, registered := r.l.scopeOf(model); registered {
+					return append(models, model), true
+				}
+				m.result = resultRow
+				if many {
+					m.result = resultRows
+				}
+				m.projection = &readProjection{model: model}
+				return models, true
+			}
 		}
 		model, many, ok := r.rowModel(t)
 		if !ok {

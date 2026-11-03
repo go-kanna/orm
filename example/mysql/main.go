@@ -114,6 +114,15 @@ func (ex *example) catalog(ctx context.Context) error {
 		return fmt.Errorf("affordable product names: got %v", names)
 	}
 	fmt.Fprintf(ex.w, "names under 2000: %s\n", strings.Join(names, ", "))
+	summaries, err := ex.products.ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000).Limit(2))
+	if err != nil {
+		return fmt.Errorf("product summaries: %w", err)
+	}
+	if len(summaries) != 2 || summaries[0].Name != "Tea cup" || summaries[0].Price != 1200 ||
+		summaries[1].Name != "Green tea" || summaries[1].Price != 900 {
+		return fmt.Errorf("unexpected product summaries: %+v", summaries)
+	}
+	fmt.Fprintln(ex.w, "read product summaries with name and price, ordered by the omitted SKU")
 	return nil
 }
 

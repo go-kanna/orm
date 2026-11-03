@@ -124,7 +124,7 @@ func TestCommand_Repositories(t *testing.T) {
 
 	// go generate ./... runs repository before scopes, whose methods are not written yet.
 	code, out, errOut := run(t, repository, append([]string{"-v"}, args...)...)
-	if code != cli.ExitOK || out != "wrote ../postgres/orm_gen.go\n" || errOut != "" {
+	if code != cli.ExitOK || out != "wrote ../postgres/repository_gen.go\n" || errOut != "" {
 		t.Fatalf("kanna-orm -v %s = %d\n%s%s", strings.Join(args, " "), code, out, errOut)
 	}
 	if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
@@ -137,12 +137,12 @@ func TestCommand_Repositories(t *testing.T) {
 	if len(set.Diags) > 0 {
 		t.Fatalf("the module does not compile once generated: %v", set.Diags)
 	}
-	src, err := os.ReadFile(filepath.Join(dir, "postgres", "orm_gen.go")) //nolint:gosec // the file written above
+	src, err := os.ReadFile(filepath.Join(dir, "postgres", "repository_gen.go")) //nolint:gosec // the file written above
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(src), ") Archive(") {
-		t.Errorf("orm_gen.go declares Archive, which the destination declares by hand:\n%s", src)
+		t.Errorf("repository_gen.go declares Archive, which the destination declares by hand:\n%s", src)
 	}
 	if code, _, errOut := run(t, repository, append([]string{"-check"}, args...)...); code != cli.ExitOK {
 		t.Errorf("kanna-orm -check right after generating = %d\n%s", code, errOut)
@@ -352,7 +352,7 @@ func TestCommand_RepositoriesRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, errOut = run(t, repository, append([]string{"-v"}, args...)...)
-	if code != cli.ExitOK || out != "removed ../postgres/orm_gen.go\n" {
+	if code != cli.ExitOK || out != "removed ../postgres/repository_gen.go\n" {
 		t.Errorf("kanna-orm -v = %d\n%s%s", code, out, errOut)
 	}
 }
@@ -447,7 +447,7 @@ func TestCommand_RepositoryMistakes(t *testing.T) {
 		{"the destination the scope types are in", snapshot.PostgreSQL, "repository",
 			[]string{"-destination", "../scopes"}, "",
 			"error: -destination ../scopes holds the //kanna:scope types of example.com/shop/scopes, whose methods " +
-				"go into its orm_gen.go\n  name a directory of the implementations' own\n"},
+				"go into its scopes_gen.go\n  name a directory of the implementations' own\n"},
 		{"repositories in two packages", snapshot.PostgreSQL, ".", []string{"-destination", "postgres", "./..."},
 			"-- other/other.go --\npackage other\n\n//kanna:repository\ntype Other interface{}\n",
 			"error: example.com/shop/other and example.com/shop/repository both declare //kanna:repository " +

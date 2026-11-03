@@ -102,7 +102,7 @@ func sameNames(sc scope, columns []column, links []link) []diag.Diag {
 	return ds
 }
 
-// emit writes orm_gen.go for pkg: the methods of the scope types plans has, for a database of dialect d. declared names
+// emit writes scopes_gen.go for pkg: the methods of the scope types plans has, for dialect d. declared names
 // what pkg declares at its top level besides. It returns the file, and what it imports from outside the standard
 // library.
 func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared []string) ([]byte, []string, error) {

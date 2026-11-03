@@ -103,7 +103,7 @@ func TestCommand_RepositoriesOfUUIDs(t *testing.T) {
 		t.Fatalf("the module does not compile once generated: %v", set.Diags)
 	}
 
-	src, err := os.ReadFile(filepath.Join(dir, "scopes", "orm_gen.go")) //nolint:gosec // the file written above
+	src, err := os.ReadFile(filepath.Join(dir, "scopes", "scopes_gen.go")) //nolint:gosec // the file written above
 	if err != nil {
 		t.Fatal(err)
 	}

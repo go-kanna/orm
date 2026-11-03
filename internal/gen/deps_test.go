@@ -35,7 +35,7 @@ func TestDeps(t *testing.T) {
 	if len(r.Inputs) != 1 || filepath.Base(r.Inputs[0]) != snapshot.Name {
 		t.Errorf("Inputs = %q", r.Inputs)
 	}
-	if len(r.Writes) != 1 || !strings.HasSuffix(r.Writes[0], filepath.Join("scopes", "orm_gen.go")) {
+	if len(r.Writes) != 1 || !strings.HasSuffix(r.Writes[0], filepath.Join("scopes", "scopes_gen.go")) {
 		t.Errorf("Writes = %q", r.Writes)
 	}
 	want := []deps.Ref{{Package: "example.com/shop/model", Via: "the scope type Order"}}
@@ -88,7 +88,7 @@ func TestDeps_Repositories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(r.Writes) != 1 || !strings.HasSuffix(r.Writes[0], filepath.Join("postgres", "orm_gen.go")) {
+	if len(r.Writes) != 1 || !strings.HasSuffix(r.Writes[0], filepath.Join("postgres", "repository_gen.go")) {
 		t.Errorf("Writes = %q", r.Writes)
 	}
 	if !slices.Contains(r.Declares, "example.com/shop/postgres.DBTX") {

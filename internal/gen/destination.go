@@ -31,7 +31,7 @@ func destinationAt(dir string) (destination, error) {
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
-	name, err := output.PackageName(dir, outputName, "")
+	name, err := output.PackageName(dir, repositoryOutputName, "")
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
@@ -43,11 +43,12 @@ func (d *destination) holds(pkg *packages.Package) bool {
 	return d != nil && len(pkg.GoFiles) > 0 && output.SameDir(d.dir, filepath.Dir(pkg.GoFiles[0]))
 }
 
-// check keeps scope methods and repository implementations from writing the same file.
+// check keeps scope types and repository implementations in separate packages.
 func (d *destination) check(flag string, scopePkgs []*packages.Package) *diag.Diag {
 	if i := slices.IndexFunc(scopePkgs, d.holds); i >= 0 {
 		e := diag.Errorf(token.Position{}, "-destination %s holds the //kanna:scope types of %s, whose methods go "+
-			"into its %s", flag, scopePkgs[i].PkgPath, outputName).WithHints("name a directory of the implementations' own")
+			"into its %s", flag, scopePkgs[i].PkgPath, scopesOutputName).
+			WithHints("name a directory of the implementations' own")
 		return &e
 	}
 	return nil
@@ -57,7 +58,7 @@ func (d *destination) check(flag string, scopePkgs []*packages.Package) *diag.Di
 func hasCode(dir string) bool {
 	names, _ := filepath.Glob(filepath.Join(dir, "*.go"))
 	return slices.ContainsFunc(names, func(name string) bool {
-		return filepath.Base(name) != outputName && !strings.HasSuffix(name, "_test.go")
+		return filepath.Base(name) != repositoryOutputName && !strings.HasSuffix(name, "_test.go")
 	})
 }
 
@@ -74,7 +75,7 @@ func (d destination) handWritten() map[string]map[string]bool {
 	methods := map[string]map[string]bool{}
 	fset := token.NewFileSet()
 	for _, name := range names {
-		if filepath.Base(name) == outputName || strings.HasSuffix(name, "_test.go") {
+		if filepath.Base(name) == repositoryOutputName || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
@@ -115,7 +116,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
 		imported: importedPackages(pkgs), local: dest.holds(pkg),
 		driver: drv, constructorDB: constructorDB,
-		declared: output.DeclaredNames(dest.dir, outputName, dest.name),
+		declared: output.DeclaredNames(dest.dir, repositoryOutputName, dest.name),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
 			loaded: loadedScopes(others, s, idx),
@@ -182,7 +183,7 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 
 // removal removes the implementations an earlier run left in d, when they are all gone.
 func (d destination) removal() []output.Change {
-	if path := filepath.Join(d.dir, outputName); generatedFile(path) {
+	if path := filepath.Join(d.dir, repositoryOutputName); generatedFile(path) {
 		return []output.Change{{Path: path, Remove: true}}
 	}
 	return nil

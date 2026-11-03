@@ -206,7 +206,9 @@ func loadRun(dir string, cfg config, load []string, dest *destination, extra []s
 		}
 		load = append(slices.Clone(load), extra...)
 	}
-	set, err := packages.Load(load, packages.Config{Dir: dir, Tags: cfg.tags, Regenerated: []string{outputName}})
+	set, err := packages.Load(load, packages.Config{
+		Dir: dir, Tags: cfg.tags, Regenerated: []string{scopesOutputName, repositoryOutputName},
+	})
 	if err != nil {
 		d := diag.Errorf(token.Position{}, "%v", err)
 		return loadedRun{}, &d
@@ -288,7 +290,7 @@ func readDestination(dir string, cfg config) (*destination, *diag.Diag) {
 	return &dest, nil
 }
 
-// outputs writes orm_gen.go for each of roots that plans has scope types of, and removes it from the others; and
+// outputs writes scopes_gen.go for each of roots that plans has scope types of, and removes it from the others; and
 // writes the implementations of repo into dest, or, when no package of the run declares repositories, removes
 // those an earlier run left there.
 func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan, d snapshot.Dialect, repo repoPlan,
@@ -298,7 +300,7 @@ func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan,
 		changes []output.Change
 		ds      []diag.Diag
 	)
-	write := func(dir, pkgName string, emit func(declared []string) ([]byte, []string, error)) bool {
+	write := func(dir, pkgName, outputName string, emit func(declared []string) ([]byte, []string, error)) bool {
 		path := filepath.Join(dir, outputName)
 		src, imports, err := emit(slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkgName))))
 		if err != nil {
@@ -314,7 +316,8 @@ func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan,
 			changes = append(changes, removals([]*packages.Package{pkg})...)
 			continue
 		}
-		if !write(filepath.Dir(pkg.GoFiles[0]), pkg.Name, func(declared []string) ([]byte, []string, error) {
+		dir := filepath.Dir(pkg.GoFiles[0])
+		if !write(dir, pkg.Name, scopesOutputName, func(declared []string) ([]byte, []string, error) {
 			return emit(pkg, d, plans[pkg], declared)
 		}) {
 			return nil, ds
@@ -322,7 +325,7 @@ func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan,
 	}
 	switch {
 	case len(repo.repos) > 0:
-		if !write(dest.dir, dest.name, func(declared []string) ([]byte, []string, error) {
+		if !write(dest.dir, dest.name, repositoryOutputName, func(declared []string) ([]byte, []string, error) {
 			return emitRepositories(dest.pkgPath, dest.name, d, repo.driver, repo.repos, repo.models, declared)
 		}) {
 			return nil, ds
@@ -428,7 +431,7 @@ func removals(pkgs []*packages.Package) []output.Change {
 		if len(pkg.GoFiles) == 0 {
 			continue
 		}
-		if path := filepath.Join(filepath.Dir(pkg.GoFiles[0]), outputName); packages.GeneratedFiles(pkg)[path] {
+		if path := filepath.Join(filepath.Dir(pkg.GoFiles[0]), scopesOutputName); packages.GeneratedFiles(pkg)[path] {
 			changes = append(changes, output.Change{Path: path, Remove: true})
 		}
 	}
