@@ -33,10 +33,11 @@ type ProductRepository interface {
 }
 
 //kanna:repository errors=translateOrderError
-type OrderRepository interface {
+type OrderRepository interface { //nolint:interfacebloat // demonstrates order reads and writes together
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	FindApproval(ctx context.Context, id model.OrderID) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+	ListSummaries(ctx context.Context, s ...scopes.Order) ([]OrderSummary, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
@@ -72,4 +73,10 @@ type MonthSales struct {
 type ProductSummary struct {
 	Name  string
 	Price int64
+}
+
+type OrderSummary struct {
+	ID           model.OrderID `orm:"orders.id"`
+	CustomerName string        `orm:"customers.name"`
+	Status       model.OrderStatus
 }

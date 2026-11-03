@@ -34,6 +34,18 @@ type Customer struct {
 	Name string
 }
 
+type OrderTagSummary struct {
+	ID      OrderID
+	TagName string `orm:"tags.name"`
+}
+
+type OrderSummary struct {
+	ID    OrderID `orm:"orders.id"`
+	Name  string
+	Total int64
+	Memo  *string
+}
+
 type OrderLine struct {
 	OrderID OrderID
 	LineNo  int

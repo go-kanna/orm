@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
+	"github.com/go-kanna/orm/join"
 )
 
 // Customer is the scope of customers, whose rows are read into model.Customer, as //kanna:scopes implies it.
@@ -433,6 +434,11 @@ func (s Customer) Limit(n int) Customer {
 // Offset skips the first n rows.
 func (s Customer) Offset(n int) Customer {
 	return Customer{s.q.Offset(n)}
+}
+
+// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
+func (s Customer) Join(table string, on ...join.Condition) Customer {
+	return Customer{s.q.JoinTable(table, on...)}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
@@ -1030,6 +1036,16 @@ func (s Order) Offset(n int) Order {
 	return Order{s.q.Offset(n)}
 }
 
+// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
+func (s Order) Join(table string, on ...join.Condition) Order {
+	return Order{s.q.JoinTable(table, on...)}
+}
+
+// JoinCustomers joins customers through its foreign key for a read projection.
+func (s Order) JoinCustomers() Order {
+	return Order{s.q.JoinTable("customers")}
+}
+
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
 	qs := make([]orm.Of[model.Order], len(alternatives))
@@ -1492,6 +1508,16 @@ func (s OrderLine) Limit(n int) OrderLine {
 // Offset skips the first n rows.
 func (s OrderLine) Offset(n int) OrderLine {
 	return OrderLine{s.q.Offset(n)}
+}
+
+// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
+func (s OrderLine) Join(table string, on ...join.Condition) OrderLine {
+	return OrderLine{s.q.JoinTable(table, on...)}
+}
+
+// JoinOrders joins orders through its foreign key for a read projection.
+func (s OrderLine) JoinOrders() OrderLine {
+	return OrderLine{s.q.JoinTable("orders")}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.

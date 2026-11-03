@@ -60,6 +60,7 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 		{"read correlated approvals", ex.readApprovals},
 		{"read optional memos", ex.readMemos},
 		{"read the open orders", ex.openOrders},
+		{"read joined projections", ex.joinedSummaries},
 		{"page through the orders", ex.page},
 		{"report", ex.report},
 		{"cancel an order", ex.cancel},
@@ -470,5 +471,16 @@ func (ex *example) updateSelectedColumns(ctx context.Context) error {
 		return fmt.Errorf("conditional update after NULL: %+v, %w", cleared, err)
 	}
 	fmt.Fprintln(ex.w, "updated only phone, cleared it with nil, and rejected a failed condition")
+	return nil
+}
+
+func (ex *example) joinedSummaries(ctx context.Context) error {
+	rows, err := ex.orders.ListSummaries(ctx, scopes.Orders().JoinCustomers().IDAsc().Limit(2))
+	if err != nil {
+		return fmt.Errorf("read order summaries: %w", err)
+	}
+	for _, row := range rows {
+		fmt.Fprintf(ex.w, "order %d: customer %s, status %s\n", row.ID, row.CustomerName, row.Status)
+	}
 	return nil
 }

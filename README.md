@@ -952,7 +952,30 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. Fields match the original model's field names or mapped column names; column tags and `nullzero` handling are inherited. A projection field can use an `orm` column tag to choose a source column under another Go name. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates, expressions, and joins can still use hand-written SQL returning a DTO.
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. Fields match the original model's field names or mapped column names; column tags and `nullzero` handling are inherited. A projection field can use an `orm` column tag to choose a source column under another Go name. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates and expressions can still use hand-written SQL returning a DTO.
+
+
+### Joining a projection
+
+A projection can select columns from tables explicitly joined by its scope. No relation field is needed on the original model:
+
+```go
+type MembershipSummary struct {
+    UserID      uuid.UUID
+    Role        Role
+    DisplayName string // inferred from users.display_name when it has no base-model match
+}
+
+GetSummary(ctx context.Context, userID uuid.UUID, s ...scopes.Membership) (MembershipSummary, error)
+
+summary, err := repo.GetSummary(ctx, userID, scopes.Memberships().JoinUsers())
+```
+
+Typed `Join<Table>()` methods are generated for unambiguous direct foreign keys, including composite keys. `JoinUsers()` generates an INNER JOIN using the base table's foreign key to `users`. String joins remain available: `Join("users")` uses the same foreign key, while `Join("users", join.On("user_id", "id"))` specifies equality conditions explicitly without requiring a foreign key. Import `github.com/go-kanna/orm/join`; `join.On` takes the base-table column first and the joined-table column second. Pass multiple conditions for a composite join. Table and column names are checked against the snapshot before executing SQL. Explicit conditions also resolve multiple foreign keys or allow reverse joins. For tables without a direct foreign key, qualify projection tags, for example `orm:"users.display_name"`. Self-joins, aliases, and arbitrary ON expressions require hand-written SQL. Joins work only with dedicated read projections; normal model reads, relation-loading scopes, writes, Count, and Exists reject them.
+
+Base-model fields keep their existing mapping and type requirements. Additional fields are inferred from a uniquely matching column of a referenced table, checked against the database column's type and nullability. To select another column explicitly, use a qualified column tag such as `orm:"users.display_name"`. If a requested join introduces a same-named column, qualify the projection field (for example `orm:"memberships.id"`) rather than relying on column order. Missing joins and ambiguous selected columns are errors before execution; unknown or ambiguous field sources are generation errors. Nullable joined columns require a nullable result field or explicit `nullzero` for a string.
+
+Base-table scopes still supply filters, ordering, and cursor pagination. Predicates are evaluated in the base table's namespace, while ordering and limits apply after joining; joined-query ordering must name base-table columns. The renderer may place the filtered base rows in a derived table, selecting the columns needed by the result, join, and ordering. There is one SQL statement, and no separate preload. Both database examples demonstrate a customer name projected into an order summary.
 
 ## Hand-written SQL
 
@@ -1082,7 +1105,7 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 - Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
 - Track changes, keep an identity map, or load lazily.
 - Create or apply migrations. Use goose or any other tool, and describe the result.
-- Join, group, or nest a query in a scope. Write those queries by hand.
+- Generate arbitrary joins, grouping, or nested query shapes from scopes. INNER JOINs through foreign keys or explicit column equalities are supported for read projections; other query shapes can use hand-written SQL.
 - Set `created_at` and `updated_at`, or take a zero value for the column's default.
 - Page by a column that may be NULL.
 - COPY many rows through pgx.

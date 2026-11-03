@@ -48,8 +48,11 @@ func methodsOf(p scopePlan, d snapshot.Dialect) []generated {
 		ms = append(ms, generated{"With" + lk.field.path[len(lk.field.path)-1], "to load " + strings.Join(
 			lk.field.path, ".")})
 	}
-	for _, name := range []string{"Limit", "Offset", "Or", "Not"} {
+	for _, name := range []string{"Limit", "Offset", "Or", "Not", "Join"} {
 		ms = append(ms, generated{name, "for every scope type"})
+	}
+	for _, join := range joinMethods(p) {
+		ms = append(ms, generated{join.name, "to join " + join.table + " in a projection"})
 	}
 	if len(p.primaryKey) > 0 {
 		for _, name := range []string{"values", "After", "Before", "Cursor", "AfterCursor"} {
@@ -57,6 +60,25 @@ func methodsOf(p scopePlan, d snapshot.Dialect) []generated {
 		}
 	}
 	return ms
+}
+
+type generatedJoin struct{ name, table string }
+
+func joinMethods(p scopePlan) []generatedJoin {
+	counts := map[string]int{}
+	for _, fk := range p.definition.ForeignKeys {
+		if name, ok := funcName(fk.References); ok && fk.References != p.table {
+			counts[name]++
+		}
+	}
+	joins := make([]generatedJoin, 0, len(p.definition.ForeignKeys))
+	for _, fk := range p.definition.ForeignKeys {
+		name, ok := funcName(fk.References)
+		if ok && fk.References != p.table && counts[name] == 1 {
+			joins = append(joins, generatedJoin{"Join" + name, fk.References})
+		}
+	}
+	return joins
 }
 
 // columnMethods names the methods of a column of kind k, after the name of its field.
