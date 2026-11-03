@@ -6,13 +6,14 @@ import (
 	"strings"
 )
 
-// RenderDelete selects the rows to delete using the scope's conditions and pagination.
-// key names a non-null unique key, needed only when a page of rows is selected.
+// RenderDelete selects the rows to delete using the scope's conditions and pagination, as a read of the scope would
+// select them. key names a non-null unique key: an order is made to end in it, as a read's is in the primary key, and
+// a page of rows is selected by it.
 func (q Of[M]) RenderDelete(d Dialect, table string, key []string) (string, []any, error) {
 	if len(q.preloads) > 0 {
 		return "", nil, errors.New("orm: Delete cannot load relations")
 	}
-	rd, err := q.Render(d, 1, nil)
+	rd, err := q.Render(d, 1, key)
 	if err != nil {
 		return "", nil, err
 	}
@@ -28,9 +29,6 @@ func (q Of[M]) RenderDelete(d Dialect, table string, key []string) (string, []an
 	}
 	if len(key) == 0 {
 		return "", nil, errors.New("orm: paged Delete requires a primary or non-null unique key")
-	}
-	if len(q.orders) == 0 && !q.seeking {
-		return "", nil, errors.New("orm: paged Delete requires an order")
 	}
 	columns := make([]string, len(key))
 	for i, name := range key {
