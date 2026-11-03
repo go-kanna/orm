@@ -7,21 +7,21 @@ import (
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
-	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
-	pgrepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
-	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
+	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
+	prepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
+	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 )
 
 func TestDeleteReturning_Postgres(t *testing.T) {
 	t.Parallel()
-	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
-		targets := pgscopes.Orders().IDIn(2, 3).TotalAsc().IDAsc()
+		targets := pscopes.Orders().IDIn(2, 3).TotalAsc().IDAsc()
 		if rows, err := repo.DeleteSummaries(ctx, targets.Limit(0)); err != nil || rows == nil || len(rows) != 0 {
 			t.Fatalf("zero limit: %+v, %v", rows, err)
 		}
-		for _, scope := range []pgscopes.Order{pgscopes.Orders(), targets.Limit(1).WithTags()} {
+		for _, scope := range []pscopes.Order{pscopes.Orders(), targets.Limit(1).WithTags()} {
 			if _, err := repo.DeleteSummaries(ctx, scope); err == nil {
 				t.Fatal("unsafe or relation-loading deletion accepted")
 			}
@@ -42,7 +42,7 @@ func TestDeleteReturning_Postgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		summaries, err := repo.DeleteByCustomer(ctx, before.CustomerID, targets.Limit(1))
-		want := []pgrepository.DeletedOrder{{ID: before.ID, Memo: before.Memo}}
+		want := []prepository.DeletedOrder{{ID: before.ID, Memo: before.Memo}}
 		if err != nil || !reflect.DeepEqual(summaries, want) {
 			t.Fatalf("projected deleted row: %+v, %v; want %+v", summaries, err, want)
 		}
@@ -54,9 +54,9 @@ func TestDeleteReturning_Postgres(t *testing.T) {
 
 func TestDeletePage_Postgres(t *testing.T) {
 	t.Parallel()
-	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
-		targets := pgscopes.Orders().IDIn(2, 3).TotalAsc().IDAsc()
+		targets := pscopes.Orders().IDIn(2, 3).TotalAsc().IDAsc()
 		if n, err := repo.DeleteStale(ctx, targets.Limit(0)); err != nil || n != 0 {
 			t.Fatalf("zero limit: %d, %v", n, err)
 		}
@@ -85,7 +85,7 @@ func TestDeletePage_Postgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n, err := repo.DeleteLines(ctx, pgscopes.OrderLines().OrderIDEq(1).LineNoGte(3).
+		if n, err := repo.DeleteLines(ctx, pscopes.OrderLines().OrderIDEq(1).LineNoGte(3).
 			LineNoAsc().Limit(1)); err != nil || n != 1 {
 			t.Fatalf("composite key: %d, %v", n, err)
 		}
@@ -98,10 +98,10 @@ func TestDeletePage_Postgres(t *testing.T) {
 		if err := repo.InsertTags(ctx, []model.Tag{{Name: "alpha"}, {Name: "beta"}}); err != nil {
 			t.Fatal(err)
 		}
-		if n, err := repo.DeleteTags(ctx, pgscopes.Tags().NameIn("alpha", "beta").NameDesc().Limit(1)); err != nil || n != 1 {
+		if n, err := repo.DeleteTags(ctx, pscopes.Tags().NameIn("alpha", "beta").NameDesc().Limit(1)); err != nil || n != 1 {
 			t.Fatalf("unique key without a primary key: %d, %v", n, err)
 		}
-		if n, err := repo.DeleteTags(ctx, pgscopes.Tags().NameEq("beta")); err != nil || n != 0 {
+		if n, err := repo.DeleteTags(ctx, pscopes.Tags().NameEq("beta")); err != nil || n != 0 {
 			t.Fatalf("descending order: %d, %v", n, err)
 		}
 	})
@@ -109,9 +109,9 @@ func TestDeletePage_Postgres(t *testing.T) {
 
 func TestDeletePage_MySQL(t *testing.T) {
 	t.Parallel()
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t))
+	repo := mstdlib.NewOrderRepository(mysqlDB(t))
 	ctx := t.Context()
-	targets := mysqlscopes.Orders().IDIn(2, 3).TotalAsc().IDAsc()
+	targets := mscopes.Orders().IDIn(2, 3).TotalAsc().IDAsc()
 	if n, err := repo.DeleteStale(ctx, targets.Limit(0)); err != nil || n != 0 {
 		t.Fatalf("zero limit: %d, %v", n, err)
 	}
@@ -135,7 +135,7 @@ func TestDeletePage_MySQL(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := repo.DeleteLines(ctx, mysqlscopes.OrderLines().OrderIDEq(1).LineNoGte(3).
+	if n, err := repo.DeleteLines(ctx, mscopes.OrderLines().OrderIDEq(1).LineNoGte(3).
 		LineNoAsc().Limit(1)); err != nil || n != 1 {
 		t.Fatalf("composite key: %d, %v", n, err)
 	}
@@ -148,19 +148,19 @@ func TestDeletePage_MySQL(t *testing.T) {
 	if err := repo.InsertTags(ctx, []model.Tag{{Name: "alpha"}, {Name: "beta"}}); err != nil {
 		t.Fatal(err)
 	}
-	tags := mysqlscopes.Tags().NameIn("alpha", "beta").NameDesc().Limit(1)
+	tags := mscopes.Tags().NameIn("alpha", "beta").NameDesc().Limit(1)
 	if n, err := repo.DeleteTags(ctx, tags); err != nil || n != 1 {
 		t.Fatalf("unique key without a primary key: %d, %v", n, err)
 	}
-	if n, err := repo.DeleteTags(ctx, mysqlscopes.Tags().NameEq("beta")); err != nil || n != 0 {
+	if n, err := repo.DeleteTags(ctx, mscopes.Tags().NameEq("beta")); err != nil || n != 0 {
 		t.Fatalf("descending order: %d, %v", n, err)
 	}
 }
 
 func TestDeleteCursor_Postgres(t *testing.T) {
 	t.Parallel()
-	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
-		n, err := repo.DeleteStale(t.Context(), pgscopes.Orders().IDIn(2, 3).TotalAsc().
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		n, err := repo.DeleteStale(t.Context(), pscopes.Orders().IDIn(2, 3).TotalAsc().
 			After(model.Order{ID: 2, Total: 200}).Limit(1))
 		if err != nil || n != 1 {
 			t.Fatalf("cursor delete: %d, %v", n, err)
@@ -176,8 +176,8 @@ func TestDeleteCursor_Postgres(t *testing.T) {
 
 func TestDeleteCursor_MySQL(t *testing.T) {
 	t.Parallel()
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t))
-	n, err := repo.DeleteStale(t.Context(), mysqlscopes.Orders().IDIn(2, 3).TotalAsc().
+	repo := mstdlib.NewOrderRepository(mysqlDB(t))
+	n, err := repo.DeleteStale(t.Context(), mscopes.Orders().IDIn(2, 3).TotalAsc().
 		After(model.Order{ID: 2, Total: 200}).Limit(1))
 	if err != nil || n != 1 {
 		t.Fatalf("cursor delete: %d, %v", n, err)

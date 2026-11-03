@@ -1,4 +1,4 @@
-// Package repository declares the repositories of the tests on MySQL, which kanna-orm implements in sqlstore.
+// Package repository declares the repositories of the tests on MySQL, which kanna-orm implements in stdlib.
 package repository
 
 import (

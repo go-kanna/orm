@@ -16,15 +16,15 @@ import (
 
 	"github.com/go-kanna/orm/bench/postgres/bun"
 	"github.com/go-kanna/orm/bench/postgres/ent"
-	entdb "github.com/go-kanna/orm/bench/postgres/ent/db"
+	edb "github.com/go-kanna/orm/bench/postgres/ent/db"
 	"github.com/go-kanna/orm/bench/postgres/gorm"
 	"github.com/go-kanna/orm/bench/postgres/kanna"
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
-	"github.com/go-kanna/orm/bench/postgres/kanna/pgxstore"
-	"github.com/go-kanna/orm/bench/postgres/kanna/sqlstore"
+	kpgx "github.com/go-kanna/orm/bench/postgres/kanna/pgx"
+	kstdlib "github.com/go-kanna/orm/bench/postgres/kanna/stdlib"
 	"github.com/go-kanna/orm/bench/postgres/pgx"
 	"github.com/go-kanna/orm/bench/postgres/sqlc"
-	sqlcdb "github.com/go-kanna/orm/bench/postgres/sqlc/db"
+	sdb "github.com/go-kanna/orm/bench/postgres/sqlc/db"
 )
 
 // What the benchmarks read and write, among the rows migrate fills the tables with.
@@ -342,13 +342,13 @@ func pgxOrder(o pgx.Order) order {
 		mapSlice(o.Lines, func(l pgx.OrderLine) line { return line(l) })}
 }
 
-func sqlcOrder(o sqlcdb.Order) order {
+func sqlcOrder(o sdb.Order) order {
 	return order{o.ID, o.CustomerID, o.Status, o.PlacedAt.UTC(), o.Note, nil}
 }
 
 func sqlcOrderWithLines(o sqlc.OrderWithLines) order {
 	r := sqlcOrder(o.Order)
-	r.Lines = mapSlice(o.Lines, func(l sqlcdb.OrderLine) line { return line{l.ID, l.OrderID, l.Sku, l.Quantity} })
+	r.Lines = mapSlice(o.Lines, func(l sdb.OrderLine) line { return line{l.ID, l.OrderID, l.Sku, l.Quantity} })
 	return r
 }
 
@@ -367,9 +367,9 @@ func bunOrder(o bun.Order) order {
 		mapSlice(o.Lines, func(l bun.OrderLine) line { return line{l.ID, l.OrderID, l.SKU, l.Quantity} })}
 }
 
-func entOrder(o *entdb.Order) order {
+func entOrder(o *edb.Order) order {
 	return order{o.ID, o.CustomerID, o.Status, o.PlacedAt.UTC(), o.Note,
-		mapSlice(o.Edges.Lines, func(l *entdb.OrderLine) line { return line{l.ID, l.OrderID, l.Sku, l.Quantity} })}
+		mapSlice(o.Edges.Lines, func(l *edb.OrderLine) line { return line{l.ID, l.OrderID, l.Sku, l.Quantity} })}
 }
 
 // env is what the benchmarks and the tests run on: the subjects, the pool they check the tables through, and the
@@ -398,9 +398,9 @@ var connect = sync.OnceValues(func() (env, error) {
 		newSubject("pgx", pgx.New(pool), pgxOrder, pgxOrder),
 		newSubject("sqlc", sqlc.New(pool), sqlcOrder, sqlcOrderWithLines),
 		newSubject("kanna(pgx)",
-			kanna.New(pgxstore.NewCustomerRepository(pool), pgxstore.NewOrderRepository(pool)), kannaOrder, kannaOrder),
+			kanna.New(kpgx.NewCustomerRepository(pool), kpgx.NewOrderRepository(pool)), kannaOrder, kannaOrder),
 		newSubject("kanna(sql.DB)",
-			kanna.New(sqlstore.NewCustomerRepository(db), sqlstore.NewOrderRepository(db)), kannaOrder, kannaOrder),
+			kanna.New(kstdlib.NewCustomerRepository(db), kstdlib.NewOrderRepository(db)), kannaOrder, kannaOrder),
 		newSubject("gorm", g, gormOrder, gormOrder),
 		newSubject("bun", bun.New(config), bunOrder, bunOrder),
 		newSubject("ent", ent.New(db), entOrder, entOrder),

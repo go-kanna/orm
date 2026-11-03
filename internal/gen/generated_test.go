@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
-	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
+	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 )
 
 // rendered is a scope as SQL: its clauses, and the arguments of their placeholders.
@@ -34,44 +34,44 @@ func TestGenerated_Postgres(t *testing.T) {
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name  string
-		scope pgscopes.Order
+		scope pscopes.Order
 		want  rendered
 	}{
-		{"every row", pgscopes.Orders(), rendered{}},
-		{"Eq", pgscopes.Orders().StatusEq("open"), rendered{" WHERE (status = $1)", []any{model.OrderStatus("open")}}},
-		{"Eq of a column that may be NULL", pgscopes.Orders().MemoEq("gift"),
+		{"every row", pscopes.Orders(), rendered{}},
+		{"Eq", pscopes.Orders().StatusEq("open"), rendered{" WHERE (status = $1)", []any{model.OrderStatus("open")}}},
+		{"Eq of a column that may be NULL", pscopes.Orders().MemoEq("gift"),
 			rendered{" WHERE (note = $1)", []any{"gift"}}},
-		{"Eq of a value type", pgscopes.Orders().ContactEq(email), rendered{" WHERE (contact = $1)", []any{email}}},
-		{"Eq of a reserved word", pgscopes.Orders().PositionEq(1), rendered{` WHERE ("order" = $1)`, []any{1}}},
-		{"In", pgscopes.Orders().IDIn(1, 2),
+		{"Eq of a value type", pscopes.Orders().ContactEq(email), rendered{" WHERE (contact = $1)", []any{email}}},
+		{"Eq of a reserved word", pscopes.Orders().PositionEq(1), rendered{` WHERE ("order" = $1)`, []any{1}}},
+		{"In", pscopes.Orders().IDIn(1, 2),
 			rendered{" WHERE (id = ANY($1))", []any{[]model.OrderID{1, 2}}}},
-		{"NotIn", pgscopes.Orders().IDNotIn(1, 2),
+		{"NotIn", pscopes.Orders().IDNotIn(1, 2),
 			rendered{" WHERE (id <> ALL($1))", []any{[]model.OrderID{1, 2}}}},
-		{"NotIn none", pgscopes.Orders().IDNotIn(), rendered{}},
-		{"Between", pgscopes.Orders().PlacedAtBetween(day, day.AddDate(0, 1, 0)),
+		{"NotIn none", pscopes.Orders().IDNotIn(), rendered{}},
+		{"Between", pscopes.Orders().PlacedAtBetween(day, day.AddDate(0, 1, 0)),
 			rendered{" WHERE (placed_at BETWEEN $1 AND $2)", []any{day, day.AddDate(0, 1, 0)}}},
-		{"ILike", pgscopes.Orders().MemoILike("gift%"), rendered{" WHERE (note ILIKE $1)", []any{"gift%"}}},
-		{"HasPrefix", pgscopes.Orders().MemoHasPrefix("50%_off!"),
+		{"ILike", pscopes.Orders().MemoILike("gift%"), rendered{" WHERE (note ILIKE $1)", []any{"gift%"}}},
+		{"HasPrefix", pscopes.Orders().MemoHasPrefix("50%_off!"),
 			rendered{" WHERE (note LIKE $1 ESCAPE '!')", []any{"50!%!_off!!%"}}},
-		{"Contains", pgscopes.Orders().ContactContains("@example"),
+		{"Contains", pscopes.Orders().ContactContains("@example"),
 			rendered{" WHERE (contact LIKE $1 ESCAPE '!')", []any{"%@example%"}}},
-		{"IsNull", pgscopes.Orders().MemoIsNull().ContactIsNotNull(),
+		{"IsNull", pscopes.Orders().MemoIsNull().ContactIsNotNull(),
 			rendered{" WHERE (note IS NULL) AND (contact IS NOT NULL)", nil}},
-		{"order", pgscopes.Orders().PlacedAtDesc().IDAsc(), rendered{" ORDER BY placed_at DESC, id", nil}},
-		{"Limit and Offset", pgscopes.Orders().Limit(20).Offset(40), rendered{" LIMIT 20 OFFSET 40", nil}},
-		{"Or", pgscopes.Orders().Or(pgscopes.Orders().StatusEq("open"), pgscopes.Orders().TotalGt(100)),
+		{"order", pscopes.Orders().PlacedAtDesc().IDAsc(), rendered{" ORDER BY placed_at DESC, id", nil}},
+		{"Limit and Offset", pscopes.Orders().Limit(20).Offset(40), rendered{" LIMIT 20 OFFSET 40", nil}},
+		{"Or", pscopes.Orders().Or(pscopes.Orders().StatusEq("open"), pscopes.Orders().TotalGt(100)),
 			rendered{" WHERE ((status = $1) OR (total > $2))", []any{model.OrderStatus("open"), int64(100)}}},
-		{"Not", pgscopes.Orders().Not(pgscopes.Orders().PaidEq(true)),
+		{"Not", pscopes.Orders().Not(pscopes.Orders().PaidEq(true)),
 			rendered{" WHERE (NOT (paid = $1))", []any{true}}},
-		{"a scope written by hand", pgscopes.Orders().PlacedInMonth(day),
+		{"a scope written by hand", pscopes.Orders().PlacedInMonth(day),
 			rendered{" WHERE (date_trunc('month', placed_at) = date_trunc('month', $1))", []any{day}}},
-		{"a scope written by hand without parameters", pgscopes.Orders().Open(),
+		{"a scope written by hand without parameters", pscopes.Orders().Open(),
 			rendered{" WHERE (status <> 'closed')", nil}},
-		{"a scope written by hand with parameters used out of order", pgscopes.Orders().Busy(day, 3), rendered{
+		{"a scope written by hand with parameters used out of order", pscopes.Orders().Busy(day, 3), rendered{
 			" WHERE (placed_at >= $1\n  AND id IN (SELECT order_id FROM order_lines GROUP BY order_id HAVING count(*) >= $2))",
 			[]any{day, int64(3)},
 		}},
-		{"a scope written by hand with a variadic parameter", pgscopes.Orders().Tagged("gift", "rush"), rendered{
+		{"a scope written by hand with a variadic parameter", pscopes.Orders().Tagged("gift", "rush"), rendered{
 			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag = ANY($1)))", []any{[]string{"gift", "rush"}},
 		}},
 	}
@@ -87,15 +87,15 @@ func TestGenerated_MySQL(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		scope mysqlscopes.Order
+		scope mscopes.Order
 		want  rendered
 	}{
-		{"Eq of a reserved word", mysqlscopes.Orders().PositionEq(1), rendered{" WHERE (`order` = ?)", []any{1}}},
-		{"In", mysqlscopes.Orders().IDIn(1, 2), rendered{" WHERE (id IN (?, ?))", []any{model.OrderID(1), model.OrderID(2)}}},
-		{"In none", mysqlscopes.Orders().IDIn(), rendered{" WHERE (id IN (NULL))", nil}},
-		{"NotIn", mysqlscopes.Orders().StatusNotIn("open"),
+		{"Eq of a reserved word", mscopes.Orders().PositionEq(1), rendered{" WHERE (`order` = ?)", []any{1}}},
+		{"In", mscopes.Orders().IDIn(1, 2), rendered{" WHERE (id IN (?, ?))", []any{model.OrderID(1), model.OrderID(2)}}},
+		{"In none", mscopes.Orders().IDIn(), rendered{" WHERE (id IN (NULL))", nil}},
+		{"NotIn", mscopes.Orders().StatusNotIn("open"),
 			rendered{" WHERE (status NOT IN (?))", []any{model.OrderStatus("open")}}},
-		{"HasPrefix", mysqlscopes.Orders().MemoHasPrefix("a_b"), rendered{" WHERE (note LIKE ? ESCAPE '!')", []any{"a!_b%"}}},
+		{"HasPrefix", mscopes.Orders().MemoHasPrefix("a_b"), rendered{" WHERE (note LIKE ? ESCAPE '!')", []any{"a!_b%"}}},
 	}
 	for _, tt := range tests {
 		if got := render(t, tt.scope.Of(), impl.MySQL); !reflect.DeepEqual(got, tt.want) {
@@ -107,7 +107,7 @@ func TestGenerated_MySQL(t *testing.T) {
 func TestGenerated_With(t *testing.T) {
 	t.Parallel()
 
-	s := pgscopes.Orders().WithCustomer().WithLines(pgscopes.OrderLines().SKUAsc()).WithTags()
+	s := pscopes.Orders().WithCustomer().WithLines(pscopes.OrderLines().SKUAsc()).WithTags()
 	lines, ok := impl.Preloaded[model.OrderLine](s.Of(), "Lines")
 	if !ok {
 		t.Fatal("WithLines does not preload Lines")
@@ -133,7 +133,7 @@ func TestGenerated_Paging(t *testing.T) {
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	row := model.Order{ID: 7, PlacedAt: day}
 	line := model.OrderLine{OrderID: 7, LineNo: 2}
-	page := pgscopes.Orders().PlacedAtDesc()
+	page := pscopes.Orders().PlacedAtDesc()
 	tests := []struct {
 		name  string
 		scope impl.Of[model.Order]
@@ -146,7 +146,7 @@ func TestGenerated_Paging(t *testing.T) {
 		{"Before", page.Before(row).Of(), impl.Postgres, rendered{
 			" WHERE ((placed_at, id) > ($1, $2)) ORDER BY placed_at, id", []any{day, model.OrderID(7)},
 		}},
-		{"After on MySQL", mysqlscopes.Orders().PlacedAtDesc().After(row).Of(), impl.MySQL, rendered{
+		{"After on MySQL", mscopes.Orders().PlacedAtDesc().After(row).Of(), impl.MySQL, rendered{
 			" WHERE ((placed_at < ?) OR (placed_at = ? AND id < ?)) ORDER BY placed_at DESC, id DESC",
 			[]any{day, day, model.OrderID(7)},
 		}},
@@ -157,7 +157,7 @@ func TestGenerated_Paging(t *testing.T) {
 		}
 	}
 
-	r, err := pgscopes.OrderLines().After(line).Of().Render(impl.Postgres, 1)
+	r, err := pscopes.OrderLines().After(line).Of().Render(impl.Postgres, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestGenerated_Paging(t *testing.T) {
 		t.Errorf("After by a primary key of two columns: %s", got)
 	}
 
-	if _, err := pgscopes.Orders().MemoAsc().After(row).Of().Render(impl.Postgres, 1); err == nil {
+	if _, err := pscopes.Orders().MemoAsc().After(row).Of().Render(impl.Postgres, 1); err == nil {
 		t.Error("After in the order of a column that may be NULL renders")
 	}
 }
@@ -174,7 +174,7 @@ func TestGenerated_Cursor(t *testing.T) {
 	t.Parallel()
 
 	row := model.Order{ID: 7, PlacedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Position: 3}
-	page := pgscopes.Orders().PositionAsc().PlacedAtDesc()
+	page := pscopes.Orders().PositionAsc().PlacedAtDesc()
 	cursor, err := page.Cursor(row)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestGenerated_Cursor(t *testing.T) {
 		render(t, page.Of(), impl.Postgres)) {
 		t.Errorf("AfterCursor of no cursor = %+v, %v; want the scope itself", start, err)
 	}
-	if _, err := pgscopes.Orders().PlacedAtAsc().AfterCursor(cursor); err == nil {
+	if _, err := pscopes.Orders().PlacedAtAsc().AfterCursor(cursor); err == nil {
 		t.Error("AfterCursor takes a cursor made in another order")
 	}
 }

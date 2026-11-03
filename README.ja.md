@@ -436,7 +436,7 @@ func (r *category) Upsert(ctx context.Context, c model.Category) error {
 
 ### エラーの変換
 
-[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、注文が見つからないエラーを `model.ErrOrderNotFound` へ変換します。repository に `//kanna:repository errors=translateOrderError` を指定し、実装パッケージの [store/errors.go](example/postgres/store/errors.go) に関数を置きます。
+[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、注文が見つからないエラーを `model.ErrOrderNotFound` へ変換します。repository に `//kanna:repository errors=translateOrderError` を指定し、実装パッケージの [postgres/errors.go](example/postgres/postgres/errors.go) に関数を置きます。
 
 ```go
 func translateOrderError(op orderRepositoryOperation, err error) error {
@@ -719,7 +719,7 @@ if err != nil {
 }
 defer tx.Rollback(ctx)
 
-orders := store.NewOrderRepository(tx)
+orders := postgres.NewOrderRepository(tx)
 o, err := orders.GetForUpdate(ctx, id)
 if err != nil {
 	return err
@@ -762,7 +762,7 @@ logQuery := func(ctx context.Context, e hook.Execution) {
     fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
     // ctx からリクエスト情報を取り出し、e.Args を出すかはここで決める。
 }
-repo := store.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
+repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
 Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。エラー変換前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。

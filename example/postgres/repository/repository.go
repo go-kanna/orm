@@ -9,7 +9,7 @@ import (
 	"github.com/go-kanna/orm/example/postgres/scopes"
 )
 
-//go:generate go tool kanna-orm -destination ../store
+//go:generate go tool kanna-orm -destination ../postgres
 
 //kanna:repository
 type CustomerRepository interface {

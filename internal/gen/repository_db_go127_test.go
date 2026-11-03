@@ -8,13 +8,13 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	pgrepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
-	pgsqlstore "github.com/go-kanna/orm/internal/gen/testdata/postgres/sqlstore"
+	prepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
+	pstdlib "github.com/go-kanna/orm/internal/gen/testdata/postgres/stdlib"
 )
 
 // pgsqlRepository opens OrderRepository through database/sql on the database at url, closed when the test ends.
 // database/sql reads an array into a slice through pgx/stdlib from Go 1.27 on, where the driver scans each column.
-var pgsqlRepository = func(t *testing.T, url string) pgrepository.OrderRepository {
+var pgsqlRepository = func(t *testing.T, url string) prepository.OrderRepository {
 	t.Helper()
 
 	db, err := sql.Open("pgx", url)
@@ -26,5 +26,5 @@ var pgsqlRepository = func(t *testing.T, url string) pgrepository.OrderRepositor
 			t.Error(err)
 		}
 	})
-	return pgsqlstore.NewOrderRepository(db)
+	return pstdlib.NewOrderRepository(db)
 }
