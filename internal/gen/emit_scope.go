@@ -25,8 +25,10 @@ type scopePlan struct {
 	columns    []column
 	links      []link
 	// primaryKey holds the fields holding the columns of the table's primary key, in its order, or nothing when the
-	// table has none or the model leaves a column of it out: a page continues from a row by it.
+	// table has none or the model leaves a column of it out, keyless naming that column: a page continues from a row by
+	// it.
 	primaryKey []column
+	keyless    string
 	// written are the scopes written by hand in the .sql files of the package.
 	written []sqlScope
 	// unchecked names the fields of the model whose types do not type-check, which the run generates nothing for yet.
@@ -60,7 +62,7 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 			key = nil
 		}
 		plans = append(plans, scopePlan{scope: sc, definition: s.Tables[sc.table], columns: f.columns,
-			links: links, primaryKey: key,
+			links: links, primaryKey: key, keyless: missing,
 			unchecked: f.unchecked})
 	}
 	written, wds := sqlScopes(pkg, s, plans, stmts)
@@ -138,12 +140,13 @@ func (e emitter) printf(format string, args ...any) {
 func (e emitter) scope() {
 	p := e.p
 	model := types.TypeString(p.model, e.f.Qualifier)
+	unpaged := e.unpaged()
 	if p.implied {
-		e.printf("// %[1]s is the scope of %[2]s, whose rows are read into %[3]s, as //kanna:scopes implies it.\n"+
-			"type %[1]s struct{ q %[4]s[%[3]s] }\n\n", p.name, p.table, model, e.ref("Of"))
+		e.printf("// %[1]s is the scope of %[2]s, whose rows are read into %[3]s, as //kanna:scopes implies it.\n%[5]s"+
+			"type %[1]s struct{ q %[4]s[%[3]s] }\n\n", p.name, p.table, model, e.ref("Of"), unpaged)
 	}
-	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\nfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
-		p.fn, p.table, p.name)
+	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\n%[4]sfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
+		p.fn, p.table, p.name, unpaged)
 	s := e.f.Scope().Name("s")
 	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s[%s] { return %s }\n\n",
 		s, p.name, e.ref("Of"), model, e.q(s))
@@ -188,6 +191,24 @@ func (e emitter) scope() {
 	if len(p.primaryKey) > 0 {
 		e.paging(model)
 	}
+}
+
+// unpaged is the doc telling why the scope type has no After, Before, Cursor, or AfterCursor, if it has none: they
+// continue a page from a row by the primary key, which the table or the model may not have.
+func (e emitter) unpaged() string {
+	p := e.p
+	var why string
+	switch {
+	case len(p.primaryKey) > 0:
+		return ""
+	case p.keyless == "":
+		why = p.table + " has no primary key"
+	default:
+		why = types.TypeString(p.model, e.f.Qualifier) + " holds no field of " + p.keyless + ", of the primary key of " +
+			p.table
+	}
+	return "//\n// It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary " +
+		"key:\n// " + why + ".\n"
 }
 
 // with writes the method loading the relation lk, which takes scopes of the related rows.

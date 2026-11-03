@@ -461,7 +461,9 @@ in a query of its own: the rows related to one row come in one query, in the ord
 ### Paging
 
 `Limit` and `Offset` page as SQL does. For pages that stay put while rows come and go, give `After` the last row of a
-page, and it continues from there in the scope's order:
+page, and it continues from there in the scope's order. `After`, `Before`, `Cursor`, and `AfterCursor` continue by the
+primary key, so a scope type of a table without one, or of a model holding no field of it, has none of them, and the
+doc of its function returning the empty scope says why:
 
 ```go
 s := scopes.Orders().Open().PlacedAtDesc().Limit(20)
@@ -536,8 +538,8 @@ binding wrapper of your own.
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
 other than `Bind`, is yours to write there; generation stops while it is missing. When you implement a method with a recognized verb or SQL query,
 kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can check its row
-before calling `r.upsert`. kanna-orm writes the helper only when the package calls it, so a method running SQL of
-its own needs none. This helper behavior applies only to same-package generation. The helper has the same
+before calling `r.upsert`. kanna-orm writes the helper only when a method written on the type calls it on its
+receiver, as `r.upsert`, so a method running SQL of its own needs none. This helper behavior applies only to same-package generation. The helper has the same
 signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
 already be declared. Queries belong in the destination's
 `.sql` files, including when the destination also declares the interface.
@@ -1024,7 +1026,7 @@ Hooks can be given more than once, and those given first enclose the others: eac
 
 ### Reading the values of a column
 
-A `Get`, a `First`, a `Find`, or a `List` returning the values of a column rather than rows reads that column: the one of the field its name says after the verb, as `GetName` reads `Name`, or, of a `List`, the plural of, as `ListNames` reads `Name` and `ListCustomerIDs` reads `CustomerID`. It returns a value of the field's type, a pointer to one of a `Find`, or a slice of them of a `List`, as a projection does. The name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering, limits, offsets, cursors, and `//kanna:lock` work as for rows; a scope loading a relation is an error, as there is no row to load it into. Duplicate values are preserved and no matching rows returns an empty slice.
+A `Get`, a `First`, a `Find`, or a `List` returning the values of a column rather than rows reads that column: the one of the field its name says after the verb, as `GetName` reads `Name`, or, of a `List`, its plural, made as that of a table's name, as `ListNames` reads `Name` and `ListCategories` reads `Category`, or, of a field ending in an acronym, with an s, as `ListCustomerIDs` reads `CustomerID`. It returns a value of the field's type, a pointer to one of a `Find`, or a slice of them of a `List`, as a projection does. The name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering, limits, offsets, cursors, and `//kanna:lock` work as for rows; a scope loading a relation is an error, as there is no row to load it into. Duplicate values are preserved and no matching rows returns an empty slice.
 
 ```go
 ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)

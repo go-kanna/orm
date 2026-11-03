@@ -280,3 +280,37 @@ var _ scope.Of[model.Order]
 		})
 	}
 }
+
+// A scope type whose model holds no field of the primary key has no paging methods, and its doc says why.
+func TestEmit_ScopeOfAModelWithoutItsKey(t *testing.T) {
+	t.Parallel()
+
+	pkg := module(t, `
+-- model/model.go --
+package model
+
+type Order struct{ Status string }
+-- scopes/scopes.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scope table=orders
+type Order struct{ q scope.Of[model.Order] }
+`)
+	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
+		"orders": {Columns: columns("id", "status"), PrimaryKey: []string{"id"}},
+	}}
+	src, ds, err := gen.Emit(pkg, s)
+	if err != nil || len(ds) > 0 {
+		t.Fatalf("Emit: %v\n%s", err, report(ds))
+	}
+	const why = "// It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary " +
+		"key:\n// model.Order holds no field of id, of the primary key of orders.\nfunc Orders() Order"
+	if !strings.Contains(string(src), why) || strings.Contains(string(src), ") After(") {
+		t.Errorf("Emit wrote\n%s\nwant no After, and the doc\n%s", src, why)
+	}
+}
