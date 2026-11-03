@@ -26,11 +26,11 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	q, changes := sc.Name("q"), sc.Name("changes")
 	if m.scoped {
 		qs := sc.Name("qs")
-		e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.ormPkg(), model, sig.scopes)
+		e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, sig.scopes)
 		e.printf("for i, s := range %s { %s[i] = s.Of() }\n", sig.scopes, qs)
-		e.printf("%s := %s.Combine(%s...)\n", q, e.ormPkg(), qs)
+		e.printf("%s := %s(%s...)\n", q, e.ref("Combine"), qs)
 	} else {
-		e.printf("var %s %s.Of[%s]\n", q, e.ormPkg(), model)
+		e.printf("var %s %s[%s]\n", q, e.ref("Of"), model)
 	}
 	if m.changes != "" {
 		e.printf("%s := %s.Of()\n", changes, sig.params[m.changes])
@@ -39,7 +39,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 				goString(sqlName(e.d, k.col.col.Name)+" = "), sig.params[k.param])
 		}
 	} else {
-		e.printf("var %s %s.Changes[%s]\n", changes, e.ormPkg(), model)
+		e.printf("var %s %s[%s]\n", changes, e.ref("Changes"), model)
 		for _, c := range m.updated() {
 			e.printf("%s = %s.Set(%q, %s)\n", changes, changes, c.col.Name,
 				e.storageValue(c, sig.row+"."+fieldPath(c)))

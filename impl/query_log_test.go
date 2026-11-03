@@ -1,16 +1,16 @@
-package orm_test
+package impl_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"
 )
 
 func TestQueryTrace_Disabled(t *testing.T) {
 	t.Parallel()
-	trace := orm.NewOptions().StartQuery(t.Context(), "SELECT 1", nil)
+	trace := impl.NewOptions().StartQuery(t.Context(), "SELECT 1", nil)
 	if trace != nil {
 		t.Fatal("disabled logger started a trace")
 	}
@@ -23,9 +23,9 @@ func TestQueryTrace_Completion(t *testing.T) {
 	for _, how := range []string{"exhausted", "closed", "scan error", "iteration error", "query error", "single row"} {
 		t.Run(how, func(t *testing.T) {
 			t.Parallel()
-			var logs []orm.QueryLog
+			var logs []impl.QueryLog
 			ctx := t.Context()
-			o := orm.NewOptions(orm.WithQueryLogger(func(got context.Context, q orm.QueryLog) {
+			o := impl.NewOptions(impl.WithQueryLogger(func(got context.Context, q impl.QueryLog) {
 				if got != ctx {
 					t.Error("query context was not preserved")
 				}

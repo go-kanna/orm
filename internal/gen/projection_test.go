@@ -32,8 +32,10 @@ type Record struct {`, 1)
 	archive = strings.Replace(archive, "type Record struct { q orm.Of[model.Record] }",
 		`type Record struct { q orm.Of[model.Record] }
 func (s Record) WithUnusedRelation() Record {
- return Record{orm.Preload(s.q, "Unused", orm.Of[model.Record]{})}
+ return Record{impl.Preload(s.q, "Unused", impl.Of[model.Record]{})}
 }`, 1)
+	archive = strings.Replace(archive, `"github.com/go-kanna/orm"`, `"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"`, 1)
 	return strings.Replace(archive, "type Records interface {", "type Records interface {\n"+projectionMethods, 1)
 }
 

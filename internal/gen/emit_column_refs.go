@@ -10,12 +10,12 @@ import (
 func (e emitter) columnReferences() {
 	e.printf("type %sColumns struct {\n", e.p.name)
 	for _, c := range e.referenceColumns() {
-		e.printf("%s %s.Column[%s]\n", c.name, e.orm, c.typ)
+		e.printf("%s %s[%s]\n", c.name, e.ref("Column"), c.typ)
 	}
-	e.printf("}\n\nfunc %sColumnsFor(parent %s.Parent) %sColumns {\nreturn %sColumns{\n", lowerFirst(e.p.name),
-		e.orm, e.p.name, e.p.name)
+	e.printf("}\n\nfunc %sColumnsFor(parent %s) %sColumns {\nreturn %sColumns{\n", lowerFirst(e.p.name),
+		e.ref("Parent"), e.p.name, e.p.name)
 	for _, c := range e.referenceColumns() {
-		e.printf("%s: %s.NewColumn[%s](parent, %q),\n", c.name, e.orm, c.typ, c.column)
+		e.printf("%s: %s[%s](parent, %q),\n", c.name, e.ref("NewColumn"), c.typ, c.column)
 	}
 	e.printf("}\n}\n\n")
 }
@@ -79,7 +79,7 @@ func (e emitter) columnComparison(c column) {
 		if m.name != "Eq" && m.name != "Ne" && !kindOf(elemOf(c.typ)).ordered {
 			continue
 		}
-		e.fn("s", name+m.name+"Column", "v "+e.orm+".Column["+typ+"]", e.orm+".CompareColumn("+e.q("s")+", "+
+		e.fn("s", name+m.name+"Column", "v "+e.ref("Column")+"["+typ+"]", e.ref("CompareColumn")+"("+e.q("s")+", "+
 			goString(sqlName(e.d, c.col.Name))+", "+strconv.Quote(m.op)+", v)")
 	}
 }

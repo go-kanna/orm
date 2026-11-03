@@ -878,7 +878,7 @@ func scopeModelKind(t types.Type, kind string) (*types.Named, bool) {
 		return nil, false
 	}
 	of := asNamed(st.Field(0).Type())
-	if of == nil || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != ormPath || of.Obj().Name() != kind {
+	if of == nil || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != implPath || of.Obj().Name() != kind {
 		return nil, false
 	}
 	model := asNamed(of.TypeArgs().At(0))

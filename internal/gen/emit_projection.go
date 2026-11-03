@@ -55,7 +55,7 @@ func (e repoEmitter) projectionSources(m repoMethod) string {
 	for _, s := range m.projection.sources {
 		parts = append(parts, fmt.Sprintf("{Table:%q,Column:%q,Name:%q}", s.table, s.column.col.Name, s.name))
 	}
-	return "[]" + e.ormPkg() + ".SelectColumn{" + strings.Join(parts, ",") + "}"
+	return "[]" + e.ref("SelectColumn") + "{" + strings.Join(parts, ",") + "}"
 }
 
 func (e repoEmitter) projectionJoins(m repoMethod) string {
@@ -81,7 +81,7 @@ func (e repoEmitter) projectionJoins(m repoMethod) string {
 			parts = append(parts, fmt.Sprintf("{Table:%q,Fields:%s}", name, namesLiteral(fields)))
 		}
 	}
-	return "[]" + e.ormPkg() + ".TableJoin{" + strings.Join(parts, ",") + "}"
+	return "[]" + e.ref("TableJoin") + "{" + strings.Join(parts, ",") + "}"
 }
 
 func tableColumnNames(m repoMethod) []string {

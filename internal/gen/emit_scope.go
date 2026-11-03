@@ -112,7 +112,7 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 		f.Reserve(p.name, p.fn, p.name+"Columns", lowerFirst(p.name)+"ColumnsFor", p.name+"Changes", p.name+"ChangeSet")
 	}
 	for _, p := range plans {
-		e := emitter{f: f, d: d, p: p, orm: f.Import(ormPath, "orm")}
+		e := emitter{f: f, d: d, p: p}
 		e.scope()
 	}
 	src, err := f.Bytes()
@@ -126,9 +126,10 @@ type emitter struct {
 	f *gofile.File
 	d snapshot.Dialect
 	p scopePlan
-	// orm is the name the file imports the runtime by.
-	orm string
 }
+
+// ref names name of the runtime.
+func (e emitter) ref(name string) string { return runtimeRef(e.f, name) }
 
 // printf writes to the file, a method or a function at a time.
 func (e emitter) printf(format string, args ...any) {
@@ -140,13 +141,13 @@ func (e emitter) scope() {
 	model := types.TypeString(p.model, e.f.Qualifier)
 	if p.implied {
 		e.printf("// %[1]s is the scope of %[2]s, whose rows are read into %[3]s, as //kanna:scopes implies it.\n"+
-			"type %[1]s struct{ q %[4]s.Of[%[3]s] }\n\n", p.name, p.table, model, e.orm)
+			"type %[1]s struct{ q %[4]s[%[3]s] }\n\n", p.name, p.table, model, e.ref("Of"))
 	}
 	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\nfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
 		p.fn, p.table, p.name)
 	s := e.f.Scope().Name("s")
-	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s.Of[%s] { return %s }\n\n",
-		s, p.name, e.orm, model, e.q(s))
+	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s[%s] { return %s }\n\n",
+		s, p.name, e.ref("Of"), model, e.q(s))
 
 	e.columnReferences()
 	e.selectionMethods()
@@ -186,7 +187,7 @@ func (e emitter) scope() {
 	s, alternatives, qs, i, a := sc.Name("s"), sc.Name("alternatives"), sc.Name("qs"), sc.Name("i"), sc.Name("a")
 	e.printf("// Or narrows to the rows any of %s matches, each holding conditions alone.\n", alternatives)
 	e.printf("func (%[1]s %[2]s) Or(%[3]s ...%[2]s) %[2]s {\n", s, p.name, alternatives)
-	e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.orm, model, alternatives)
+	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, alternatives)
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s\n}\n", i, a, alternatives, qs, e.q(a))
 	e.printf("return %s{%s.Or(%s...)}\n}\n\n", p.name, e.q(s), qs)
 
@@ -205,8 +206,8 @@ func (e emitter) with(lk link) {
 	if lk.scalar != nil {
 		name := lk.field.path[len(lk.field.path)-1]
 		e.printf("func (s %s) With%s() %s {\n", e.p.name, name, e.p.name)
-		e.printf("return %s{%s.Preload(%s, %q, %s.Of[%s]{})}\n}\n\n", e.p.name, e.orm, e.q("s"),
-			strings.Join(lk.field.path, "."), e.orm, types.TypeString(lk.scalar.typ, e.f.Qualifier))
+		e.printf("return %s{%s(%s, %q, %s[%s]{})}\n}\n\n", e.p.name, e.ref("Preload"), e.q("s"),
+			strings.Join(lk.field.path, "."), e.ref("Of"), types.TypeString(lk.scalar.typ, e.f.Qualifier))
 		return
 	}
 	name := lk.field.path[len(lk.field.path)-1]
@@ -223,10 +224,10 @@ func (e emitter) with(lk link) {
 	s, sub, qs, i, x := sc.Name("s"), sc.Name("sub"), sc.Name("qs"), sc.Name("i"), sc.Name("x")
 	e.printf("// With%s loads %s, from %s %s.\n", name, name, lk.target.table, by)
 	e.printf("func (%[1]s %[2]s) With%[3]s(%[4]s ...%[5]s) %[2]s {\n", s, e.p.name, name, sub, target)
-	e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.orm, types.TypeString(lk.model, e.f.Qualifier), sub)
+	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), types.TypeString(lk.model, e.f.Qualifier), sub)
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sub, qs)
-	e.printf("return %[1]s{%[2]s.Preload(%[3]s, %[4]s, %[2]s.Combine(%[5]s...))}\n}\n\n", e.p.name, e.orm, e.q(s),
-		strconv.Quote(strings.Join(lk.field.path, ".")), qs)
+	e.printf("return %s{%s(%s, %s, %s(%s...))}\n}\n\n", e.p.name, e.ref("Preload"), e.q(s),
+		strconv.Quote(strings.Join(lk.field.path, ".")), e.ref("Combine"), qs)
 }
 
 // written writes the method of w, a scope written by hand, which narrows the scope by its condition.
@@ -274,12 +275,12 @@ func (e emitter) paging(model string) {
 
 	row := e.f.Scope().Name("row")
 	e.printf("// values holds the value of each column of %s, for After, Before, and Cursor. One that may be NULL\n"+
-		"// holds %s.MayBeNull, since no page continues by it.\n", row, e.orm)
+		"// holds %s, since no page continues by it.\n", row, e.ref("MayBeNull"))
 	e.printf("func (%s) values(%s %s) map[string]any {\nreturn map[string]any{\n", p.name, row, model)
 	for _, c := range p.columns {
 		v := row + "." + strings.Join(c.path, ".")
 		if !c.col.NotNull {
-			v = e.orm + ".MayBeNull"
+			v = e.ref("MayBeNull")
 		}
 		e.printf("%s: %s,\n", goString(sqlName(e.d, c.col.Name)), v)
 	}
@@ -358,7 +359,7 @@ func (e emitter) column(c column) {
 		in, notIn := e.where(s, goString(sql+" = ANY("), vs, goString(")")),
 			e.where(s, goString(sql+" <> ALL("), vs, goString(")"))
 		if e.d == snapshot.MySQL {
-			list := e.orm + ".List(" + vs + ")"
+			list := e.ref("List") + "(" + vs + ")"
 			in, notIn = e.where(s, goString(sql+" IN ("), list, goString(")")),
 				e.where(s, goString(sql+" NOT IN ("), list, goString(")"))
 		}
@@ -396,11 +397,11 @@ func (e emitter) column(c column) {
 		sc = e.f.Scope()
 		s, prefix := sc.Name("s"), sc.Name("prefix")
 		e.method(fmt.Sprintf("narrows to the rows whose %s starts with %s.", col, prefix), s, name+"HasPrefix",
-			prefix+" string", e.where(s, goString(sql+" LIKE "), e.orm+".EscapeLike("+prefix+`)+"%"`, escape))
+			prefix+" string", e.where(s, goString(sql+" LIKE "), e.ref("EscapeLike")+"("+prefix+`)+"%"`, escape))
 		sc = e.f.Scope()
 		s, substr := sc.Name("s"), sc.Name("substr")
 		e.method(fmt.Sprintf("narrows to the rows whose %s contains %s.", col, substr), s, name+"Contains",
-			substr+" string", e.where(s, goString(sql+" LIKE "), `"%"+`+e.orm+".EscapeLike("+substr+`)+"%"`, escape))
+			substr+" string", e.where(s, goString(sql+" LIKE "), `"%"+`+e.ref("EscapeLike")+"("+substr+`)+"%"`, escape))
 	}
 
 	sc = e.f.Scope()

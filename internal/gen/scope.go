@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	// ormPath is the import path of the package the generated code runs on.
-	ormPath = "github.com/go-kanna/orm"
 	// Output files are named for the declarations they implement.
 	scopesOutputName     = "scopes_gen.go"
 	repositoryOutputName = "repository_gen.go"
@@ -192,7 +190,7 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 		return "", nil, []diag.Diag{packages.NotTypeChecked(pos)}
 	}
 	of, ok := types.Unalias(f.Type()).(*types.Named)
-	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != ormPath || of.Obj().Name() != "Of" {
+	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != implPath || of.Obj().Name() != "Of" {
 		return "", nil, []diag.Diag{shape}
 	}
 

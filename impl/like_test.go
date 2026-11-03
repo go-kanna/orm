@@ -1,9 +1,9 @@
-package orm_test
+package impl_test
 
 import (
 	"testing"
 
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"
 )
 
 func TestEscapeLike(t *testing.T) {
@@ -18,7 +18,7 @@ func TestEscapeLike(t *testing.T) {
 		`C:\dir`:    `C:\dir`,
 		"!%_ mixed": "!!!%!_ mixed",
 	} {
-		if got := orm.EscapeLike(s); got != want {
+		if got := impl.EscapeLike(s); got != want {
 			t.Errorf("EscapeLike(%q) = %q, want %q", s, got, want)
 		}
 	}

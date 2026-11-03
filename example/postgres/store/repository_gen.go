@@ -14,6 +14,7 @@ import (
 	"github.com/go-kanna/orm/example/postgres/model"
 	"github.com/go-kanna/orm/example/postgres/repository"
 	"github.com/go-kanna/orm/example/postgres/scopes"
+	"github.com/go-kanna/orm/impl"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -27,7 +28,7 @@ type DBTX interface {
 
 type ormDatabase struct {
 	db      DBTX
-	options orm.Options
+	options impl.Options
 }
 
 func (d ormDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
@@ -37,13 +38,13 @@ func (d ormDatabase) Exec(ctx context.Context, query string, args ...any) (pgcon
 	return result, err
 }
 
-func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (orm.Rows, error) {
+func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (impl.Rows, error) {
 	trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.db.Query(ctx, query, args...)
 	return trace.Rows(rows, err)
 }
 
-func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) orm.Row {
+func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) impl.Row {
 	trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.db.QueryRow(ctx, query, args...))
 }
@@ -56,7 +57,7 @@ type CustomerRepository struct {
 
 // NewCustomerRepository returns a CustomerRepository running on db.
 func NewCustomerRepository(db DBTX, opts ...orm.Option) CustomerRepository {
-	return CustomerRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+	return CustomerRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.CustomerRepository = CustomerRepository{}
@@ -93,10 +94,10 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	changes := c.Of()
 	q = q.Where(`id = `, id)
-	text, args, err := changes.RenderUpdate(orm.Postgres, "customers", []string{"email", "name", "phone", "created_at"}, q)
+	text, args, err := changes.RenderUpdate(impl.Postgres, "customers", []string{"email", "name", "phone", "created_at"}, q)
 	if err != nil {
 		return model.Customer{}, err
 	}
@@ -120,7 +121,7 @@ type ProductRepository struct {
 
 // NewProductRepository returns a ProductRepository running on db.
 func NewProductRepository(db DBTX, opts ...orm.Option) ProductRepository {
-	return ProductRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+	return ProductRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.ProductRepository = ProductRepository{}
@@ -162,7 +163,7 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	return selectProducts(ctx, r.executor, q, "")
 }
 
@@ -171,11 +172,11 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(orm.Postgres, "products", []orm.SelectColumn{{Table: "products", Column: "name", Name: "name"}, {Table: "products", Column: "price", Name: "price"}}, []orm.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`)
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "products", []impl.SelectColumn{{Table: "products", Column: "name", Name: "name"}, {Table: "products", Column: "price", Name: "price"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`)
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +207,8 @@ func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]st
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
-	rd2, err2 := q.Render(orm.Postgres, 1)
+	q := impl.Combine(qs...)
+	rd2, err2 := q.Render(impl.Postgres, 1)
 	if err2 != nil {
 		return nil, err2
 	}
@@ -275,7 +276,7 @@ type OrderRepository struct {
 
 // NewOrderRepository returns an OrderRepository running on db.
 func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
-	return OrderRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+	return OrderRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.OrderRepository = OrderRepository{}
@@ -290,7 +291,7 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -312,7 +313,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -365,7 +366,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, "")
 }
 
@@ -379,11 +380,11 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(orm.Postgres, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: ""}, {Table: "orders", Column: "status", Name: "status"}}, []orm.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`)
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: ""}, {Table: "orders", Column: "status", Name: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`)
 	if err != nil {
 		return nil, err
 	}
@@ -419,11 +420,11 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result i
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
 		return 0, err
 	}
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return 0, err
 	}
@@ -520,8 +521,8 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
-	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	q := impl.Combine(qs...)
+	text, args, err2 := q.RenderDelete(impl.Postgres, "orders", []string{"id"})
 	if err2 != nil {
 		return 0, err2
 	}
@@ -542,8 +543,8 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
-	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	q := impl.Combine(qs...)
+	text, args, err2 := q.RenderDelete(impl.Postgres, "orders", []string{"id"})
 	if err2 != nil {
 		return nil, err2
 	}
@@ -624,7 +625,7 @@ type FulfillmentRepository struct {
 
 // NewFulfillmentRepository returns a FulfillmentRepository running on db.
 func NewFulfillmentRepository(db DBTX, opts ...orm.Option) FulfillmentRepository {
-	return FulfillmentRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+	return FulfillmentRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.FulfillmentRepository = FulfillmentRepository{}
@@ -653,7 +654,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
@@ -690,7 +691,7 @@ WHERE id = $5`
 
 // selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
 func selectApprovals(ctx context.Context, db ormDatabase, q orm.Of[model.Approval], lock string) ([]model.Approval, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -718,7 +719,7 @@ func selectApprovals(ctx context.Context, db ormDatabase, q orm.Of[model.Approva
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
 func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -746,7 +747,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Custome
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -780,7 +781,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, ok := orm.Preloaded[model.Product](q, "Product"); ok {
+	if sub, ok := impl.Preloaded[model.Product](q, "Product"); ok {
 		keys := make([]model.SKU, 0, len(rows))
 		seen := map[model.SKU]bool{}
 		for i := range rows {
@@ -808,11 +809,11 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lock string) ([]model.Order, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
-	text, args, err := q.RenderSelect(orm.Postgres, "orders", []string{"id", "customer_id", "status", "placed_at", "note"}, []orm.Projection{{Field: "Approver", Column: "approver", Optional: true}})
+	text, args, err := q.RenderSelect(impl.Postgres, "orders", []string{"id", "customer_id", "status", "placed_at", "note"}, []impl.Projection{{Field: "Approver", Column: "approver", Optional: true}})
 	if err != nil {
 		return nil, err
 	}
@@ -831,7 +832,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lo
 		}
 		row.Memo = nullableMemo.V
 		row.Approver = nullableApprover.V
-		if err := orm.CheckSelection(q, "Approver", !nullableApprover.Valid); err != nil {
+		if err := impl.CheckSelection(q, "Approver", !nullableApprover.Valid); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -853,7 +854,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.Approval](q, "Approvals"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.Approval](q, "Approvals"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -867,7 +868,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "approvals", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs)
+			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "approvals", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -902,7 +903,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.OrderLine](q, "Lines"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -916,7 +917,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku", "quantity"}, inputs)
+			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku", "quantity"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -954,7 +955,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.Tag](q, "Tags"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.Tag](q, "Tags"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -968,7 +969,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(orm.Postgres, orm.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			text, args, err := sub.RenderBatch(impl.Postgres, impl.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -1003,7 +1004,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Approval](q, "Approvals"); ok {
+	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1023,7 +1024,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Customer](q, "Customer"); ok {
+	if sub, ok := impl.Preloaded[model.Customer](q, "Customer"); ok {
 		keys := make([]model.CustomerID, 0, len(rows))
 		seen := map[model.CustomerID]bool{}
 		for i := range rows {
@@ -1046,7 +1047,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1066,7 +1067,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Shipment](q, "Shipment"); ok {
+	if sub, ok := impl.Preloaded[model.Shipment](q, "Shipment"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1085,7 +1086,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1133,7 +1134,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 
 // selectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
 func selectProducts(ctx context.Context, db ormDatabase, q orm.Of[model.Product], lock string) ([]model.Product, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,7 +1162,7 @@ func selectProducts(ctx context.Context, db ormDatabase, q orm.Of[model.Product]
 
 // selectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
 func selectShipments(ctx context.Context, db ormDatabase, q orm.Of[model.Shipment], lock string) ([]model.Shipment, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -1189,7 +1190,7 @@ func selectShipments(ctx context.Context, db ormDatabase, q orm.Of[model.Shipmen
 
 // selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
 func selectTags(ctx context.Context, db ormDatabase, q orm.Of[model.Tag], lock string) ([]model.Tag, error) {
-	rd, err := q.Render(orm.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
 	}

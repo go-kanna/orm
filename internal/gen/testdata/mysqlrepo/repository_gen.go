@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
 	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepository"
@@ -26,7 +27,7 @@ type DBTX interface {
 
 type ormDatabase struct {
 	db      DBTX
-	options orm.Options
+	options impl.Options
 }
 
 func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
@@ -36,7 +37,7 @@ func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any)
 	return result, err
 }
 
-func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (orm.Rows, error) {
+func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (impl.Rows, error) {
 	trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -50,7 +51,7 @@ type ormSQLRows struct{ *sql.Rows }
 
 func (r ormSQLRows) Close() { _ = r.Rows.Close() }
 
-func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) orm.Row {
+func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) impl.Row {
 	trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.db.QueryRowContext(ctx, query, args...))
 }
@@ -63,7 +64,7 @@ type OrderRepository struct {
 
 // NewOrderRepository returns an OrderRepository running on db.
 func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
-	return OrderRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+	return OrderRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ mysqlrepository.OrderRepository = OrderRepository{}
@@ -73,7 +74,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...mysql.O
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -90,7 +91,7 @@ func (r OrderRepository) First(ctx context.Context, s ...mysql.Order) (model.Ord
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -107,7 +108,7 @@ func (r OrderRepository) List(ctx context.Context, s ...mysql.Order) ([]model.Or
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, "")
 }
 
@@ -116,13 +117,13 @@ func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s 
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderTagSummary, error) {
 		if err := q.ProjectionOnly("GetTagSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(orm.MySQL, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: "id"}, {Table: "tags", Column: "name", Name: ""}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`)
+		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id", Name: "id"}, {Table: "tags", Column: "name", Name: ""}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`)
 		if err != nil {
 			return nil, err
 		}
@@ -162,13 +163,13 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderSummary, error) {
 		if err := q.ProjectionOnly("GetSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(orm.MySQL, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
+		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
 		if err != nil {
 			return nil, err
 		}
@@ -208,13 +209,13 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderSummary, error) {
 		if err := q.ProjectionOnly("FindSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(orm.MySQL, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
+		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
 		if err != nil {
 			return nil, err
 		}
@@ -254,11 +255,11 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...mysql.Order) ([
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(orm.MySQL, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
+	text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +290,7 @@ func (r OrderRepository) ListByCustomer(ctx context.Context, customerID int64, s
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`customer_id = `, customerID)
 	return selectOrders(ctx, r.executor, q, "")
 }
@@ -299,11 +300,11 @@ func (r OrderRepository) Count(ctx context.Context, s ...mysql.Order) (int64, er
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
 		return 0, err
 	}
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return 0, err
 	}
@@ -319,11 +320,11 @@ func (r OrderRepository) Exists(ctx context.Context, s ...mysql.Order) (bool, er
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	if err := q.ConditionsOnly("Exists"); err != nil {
 		return false, err
 	}
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return false, err
 	}
@@ -337,7 +338,7 @@ func (r OrderRepository) Exists(ctx context.Context, s ...mysql.Order) (bool, er
 func (r OrderRepository) Delete(ctx context.Context, id model.OrderID) error {
 	var q orm.Of[model.Order]
 	q = q.Where(`id = `, id)
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return err
 	}
@@ -360,8 +361,8 @@ func (r OrderRepository) DeleteStale(ctx context.Context, s ...mysql.Order) (int
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
-	text, args, err2 := q.RenderDelete(orm.MySQL, "orders", []string{"id"})
+	q := impl.Combine(qs...)
+	text, args, err2 := q.RenderDelete(impl.MySQL, "orders", []string{"id"})
 	if err2 != nil {
 		return 0, err2
 	}
@@ -381,8 +382,8 @@ func (r OrderRepository) DeleteLines(ctx context.Context, s ...mysql.OrderLine) 
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
-	text, args, err2 := q.RenderDelete(orm.MySQL, "order_lines", []string{"order_id", "line_no"})
+	q := impl.Combine(qs...)
+	text, args, err2 := q.RenderDelete(impl.MySQL, "order_lines", []string{"order_id", "line_no"})
 	if err2 != nil {
 		return 0, err2
 	}
@@ -402,8 +403,8 @@ func (r OrderRepository) DeleteTags(ctx context.Context, s ...mysql.Tag) (int64,
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
-	text, args, err2 := q.RenderDelete(orm.MySQL, "tags", []string{"name"})
+	q := impl.Combine(qs...)
+	text, args, err2 := q.RenderDelete(impl.MySQL, "tags", []string{"name"})
 	if err2 != nil {
 		return 0, err2
 	}
@@ -472,7 +473,7 @@ func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...m
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE NOWAIT`)
 	if err != nil {
@@ -492,7 +493,7 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...mysql.Order) (m
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	q = q.Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
@@ -512,7 +513,7 @@ func (r OrderRepository) ListUnlocked(ctx context.Context, s ...mysql.Order) ([]
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 }
 
@@ -614,10 +615,10 @@ func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID,
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	changes := c.Of()
 	q = q.Where(`id = `, id)
-	text, args, err := changes.RenderUpdate(orm.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	text, args, err := changes.RenderUpdate(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
 	if err != nil {
 		return err
 	}
@@ -630,7 +631,7 @@ func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID,
 		return fmt.Errorf(`update orders: %w`, err)
 	}
 	if n == 0 {
-		rd, err := q.Render(orm.MySQL, 1)
+		rd, err := q.Render(impl.MySQL, 1)
 		if err != nil {
 			return err
 		}
@@ -650,9 +651,9 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c mysql.OrderChangeSet,
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
-	q := orm.Combine(qs...)
+	q := impl.Combine(qs...)
 	changes := c.Of()
-	text, args, err := changes.RenderUpdate(orm.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	text, args, err := changes.RenderUpdate(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
 	if err != nil {
 		return 0, err
 	}
@@ -807,7 +808,7 @@ func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
 func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -835,7 +836,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Custome
 
 // selectLineNotes reads the rows of line_notes that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectLineNotes(ctx context.Context, db ormDatabase, q orm.Of[model.LineNote], lock string) ([]model.LineNote, error) {
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -869,7 +870,7 @@ func preloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineNote
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, ok := orm.Preloaded[model.OrderLine](q, "Line"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Line"); ok {
 		type key struct {
 			k0 model.OrderID
 			k1 int
@@ -913,7 +914,7 @@ func preloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineNote
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -947,7 +948,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.LineNote](q, "Notes"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.LineNote](q, "Notes"); ok {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -964,7 +965,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0, key.k1}
 			}
-			text, args, err := sub.RenderBatch(orm.MySQL, orm.Batch{ParentTable: "order_lines", Table: "line_notes", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"order_id", "line_no"}}, parent, []string{"order_id", "line_no", "body"}, inputs)
+			text, args, err := sub.RenderBatch(impl.MySQL, impl.Batch{ParentTable: "order_lines", Table: "line_notes", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"order_id", "line_no"}}, parent, []string{"order_id", "line_no", "body"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -1002,7 +1003,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.Tag](q, "Tags"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.Tag](q, "Tags"); ok {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -1019,7 +1020,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0, key.k1}
 			}
-			text, args, err := sub.RenderBatch(orm.MySQL, orm.Batch{ParentTable: "order_lines", Table: "tags", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"name"}, Through: "line_tags", ThroughParent: []string{"order_id", "line_no"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			text, args, err := sub.RenderBatch(impl.MySQL, impl.Batch{ParentTable: "order_lines", Table: "tags", ParentKeys: []string{"order_id", "line_no"}, ChildKeys: []string{"name"}, Through: "line_tags", ThroughParent: []string{"order_id", "line_no"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -1054,7 +1055,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Order](q, "Order"); ok {
+	if sub, ok := impl.Preloaded[model.Order](q, "Order"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		seen := map[model.OrderID]bool{}
 		for i := range rows {
@@ -1065,7 +1066,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 		}
 		byKey := map[model.OrderID]model.Order{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectOrders(ctx, db, sub.Where(`id IN (`, orm.List(chunk), `)`), "")
+			related, err := selectOrders(ctx, db, sub.Where(`id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1079,7 +1080,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.LineNote](q, "Notes"); ok {
+	if sub, ok := impl.Preloaded[model.LineNote](q, "Notes"); ok {
 		type key struct {
 			k0 model.OrderID
 			k1 int
@@ -1115,7 +1116,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
 		type key struct {
 			k0 model.OrderID
 			k1 int
@@ -1186,7 +1187,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lock string) ([]model.Order, error) {
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -1220,7 +1221,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.OrderLine](q, "Lines"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -1234,7 +1235,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(orm.MySQL, orm.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku"}, inputs)
+			text, args, err := sub.RenderBatch(impl.MySQL, impl.Batch{ParentTable: "orders", Table: "order_lines", ParentKeys: []string{"id"}, ChildKeys: []string{"order_id"}}, parent, []string{"order_id", "line_no", "sku"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -1272,7 +1273,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, parent, ok := orm.PreloadedMany[model.Tag](q, "Tags"); ok {
+	if sub, parent, ok := impl.PreloadedMany[model.Tag](q, "Tags"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -1286,7 +1287,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderBatch(orm.MySQL, orm.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
+			text, args, err := sub.RenderBatch(impl.MySQL, impl.Batch{ParentTable: "orders", Table: "tags", ParentKeys: []string{"id"}, ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, parent, []string{"name"}, inputs)
 			if err != nil {
 				return err
 			}
@@ -1321,7 +1322,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Customer](q, "Customer"); ok {
+	if sub, ok := impl.Preloaded[model.Customer](q, "Customer"); ok {
 		keys := make([]int64, 0, len(rows))
 		seen := map[int64]bool{}
 		for i := range rows {
@@ -1332,7 +1333,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 		}
 		byKey := map[int64]model.Customer{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectCustomers(ctx, db, sub.Where(`id IN (`, orm.List(chunk), `)`), "")
+			related, err := selectCustomers(ctx, db, sub.Where(`id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1346,14 +1347,14 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.OrderLine](q, "Lines"); ok {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[model.OrderID][]model.OrderLine{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectOrderLines(ctx, db, sub.Where(`order_id IN (`, orm.List(chunk), `)`), "")
+			related, err := selectOrderLines(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1368,7 +1369,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, ok := orm.Preloaded[model.Tag](q, "Tags"); ok {
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
 		for i := range rows {
 			keys = append(keys, rows[i].ID)
@@ -1400,7 +1401,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			if err := pairs.Err(); err != nil {
 				return fmt.Errorf("read order_tags: %w", err)
 			}
-			related, err := selectTags(ctx, db, sub.Where(`name IN (`, orm.List(targetKeys), `)`), "")
+			related, err := selectTags(ctx, db, sub.Where(`name IN (`, impl.List(targetKeys), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1422,7 +1423,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 
 // selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
 func selectTags(ctx context.Context, db ormDatabase, q orm.Of[model.Tag], lock string) ([]model.Tag, error) {
-	rd, err := q.Render(orm.MySQL, 1)
+	rd, err := q.Render(impl.MySQL, 1)
 	if err != nil {
 		return nil, err
 	}

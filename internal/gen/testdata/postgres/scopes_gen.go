@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/join"
 )
@@ -29,18 +30,18 @@ type OrderColumns struct {
 	Position   orm.Column[int]
 }
 
-func orderColumnsFor(parent orm.Parent) OrderColumns {
+func orderColumnsFor(parent impl.Parent) OrderColumns {
 	return OrderColumns{
-		ID:         orm.NewColumn[model.OrderID](parent, "id"),
-		CustomerID: orm.NewColumn[int64](parent, "customer_id"),
-		Status:     orm.NewColumn[model.OrderStatus](parent, "status"),
-		PlacedAt:   orm.NewColumn[time.Time](parent, "placed_at"),
-		Memo:       orm.NewColumn[string](parent, "note"),
-		Total:      orm.NewColumn[int64](parent, "total"),
-		Paid:       orm.NewColumn[bool](parent, "paid"),
-		Contact:    orm.NewColumn[model.Email](parent, "contact"),
-		Receipt:    orm.NewColumn[[]byte](parent, "receipt"),
-		Position:   orm.NewColumn[int](parent, "order"),
+		ID:         impl.NewColumn[model.OrderID](parent, "id"),
+		CustomerID: impl.NewColumn[int64](parent, "customer_id"),
+		Status:     impl.NewColumn[model.OrderStatus](parent, "status"),
+		PlacedAt:   impl.NewColumn[time.Time](parent, "placed_at"),
+		Memo:       impl.NewColumn[string](parent, "note"),
+		Total:      impl.NewColumn[int64](parent, "total"),
+		Paid:       impl.NewColumn[bool](parent, "paid"),
+		Contact:    impl.NewColumn[model.Email](parent, "contact"),
+		Receipt:    impl.NewColumn[[]byte](parent, "receipt"),
+		Position:   impl.NewColumn[int](parent, "order"),
 	}
 }
 
@@ -49,11 +50,11 @@ func (s Order) First() orm.Single[model.Order] { return s.q.First() }
 func (s Order) Many() orm.Many[model.Order]    { return s.q.Many() }
 
 // OrderChangeSet holds explicitly assigned columns of orders.
-type OrderChangeSet struct{ changes orm.Changes[model.Order] }
+type OrderChangeSet struct{ changes impl.Changes[model.Order] }
 
 func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
 
-func (c OrderChangeSet) Of() orm.Changes[model.Order] { return c.changes }
+func (c OrderChangeSet) Of() impl.Changes[model.Order] { return c.changes }
 
 func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
@@ -150,27 +151,27 @@ func (s Order) IDDesc() Order {
 }
 
 func (s Order) IDEqColumn(v orm.Column[model.OrderID]) Order {
-	return Order{orm.CompareColumn(s.q, `id`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `id`, "=", v)}
 }
 
 func (s Order) IDNeColumn(v orm.Column[model.OrderID]) Order {
-	return Order{orm.CompareColumn(s.q, `id`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `id`, "<>", v)}
 }
 
 func (s Order) IDLtColumn(v orm.Column[model.OrderID]) Order {
-	return Order{orm.CompareColumn(s.q, `id`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `id`, "<", v)}
 }
 
 func (s Order) IDLteColumn(v orm.Column[model.OrderID]) Order {
-	return Order{orm.CompareColumn(s.q, `id`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `id`, "<=", v)}
 }
 
 func (s Order) IDGtColumn(v orm.Column[model.OrderID]) Order {
-	return Order{orm.CompareColumn(s.q, `id`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `id`, ">", v)}
 }
 
 func (s Order) IDGteColumn(v orm.Column[model.OrderID]) Order {
-	return Order{orm.CompareColumn(s.q, `id`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `id`, ">=", v)}
 }
 
 // CustomerIDEq narrows to the rows whose customer_id is v.
@@ -232,27 +233,27 @@ func (s Order) CustomerIDDesc() Order {
 }
 
 func (s Order) CustomerIDEqColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `customer_id`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `customer_id`, "=", v)}
 }
 
 func (s Order) CustomerIDNeColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `customer_id`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `customer_id`, "<>", v)}
 }
 
 func (s Order) CustomerIDLtColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `customer_id`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `customer_id`, "<", v)}
 }
 
 func (s Order) CustomerIDLteColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `customer_id`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `customer_id`, "<=", v)}
 }
 
 func (s Order) CustomerIDGtColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `customer_id`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `customer_id`, ">", v)}
 }
 
 func (s Order) CustomerIDGteColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `customer_id`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `customer_id`, ">=", v)}
 }
 
 // StatusEq narrows to the rows whose status is v.
@@ -315,12 +316,12 @@ func (s Order) StatusILike(pattern string) Order {
 
 // StatusHasPrefix narrows to the rows whose status starts with prefix.
 func (s Order) StatusHasPrefix(prefix string) Order {
-	return Order{s.q.Where(`status LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return Order{s.q.Where(`status LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // StatusContains narrows to the rows whose status contains substr.
 func (s Order) StatusContains(substr string) Order {
-	return Order{s.q.Where(`status LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return Order{s.q.Where(`status LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // StatusAsc orders the rows by status, in ascending order.
@@ -334,27 +335,27 @@ func (s Order) StatusDesc() Order {
 }
 
 func (s Order) StatusEqColumn(v orm.Column[model.OrderStatus]) Order {
-	return Order{orm.CompareColumn(s.q, `status`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `status`, "=", v)}
 }
 
 func (s Order) StatusNeColumn(v orm.Column[model.OrderStatus]) Order {
-	return Order{orm.CompareColumn(s.q, `status`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `status`, "<>", v)}
 }
 
 func (s Order) StatusLtColumn(v orm.Column[model.OrderStatus]) Order {
-	return Order{orm.CompareColumn(s.q, `status`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `status`, "<", v)}
 }
 
 func (s Order) StatusLteColumn(v orm.Column[model.OrderStatus]) Order {
-	return Order{orm.CompareColumn(s.q, `status`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `status`, "<=", v)}
 }
 
 func (s Order) StatusGtColumn(v orm.Column[model.OrderStatus]) Order {
-	return Order{orm.CompareColumn(s.q, `status`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `status`, ">", v)}
 }
 
 func (s Order) StatusGteColumn(v orm.Column[model.OrderStatus]) Order {
-	return Order{orm.CompareColumn(s.q, `status`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `status`, ">=", v)}
 }
 
 // PlacedAtEq narrows to the rows whose placed_at is v.
@@ -416,27 +417,27 @@ func (s Order) PlacedAtDesc() Order {
 }
 
 func (s Order) PlacedAtEqColumn(v orm.Column[time.Time]) Order {
-	return Order{orm.CompareColumn(s.q, `placed_at`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `placed_at`, "=", v)}
 }
 
 func (s Order) PlacedAtNeColumn(v orm.Column[time.Time]) Order {
-	return Order{orm.CompareColumn(s.q, `placed_at`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `placed_at`, "<>", v)}
 }
 
 func (s Order) PlacedAtLtColumn(v orm.Column[time.Time]) Order {
-	return Order{orm.CompareColumn(s.q, `placed_at`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `placed_at`, "<", v)}
 }
 
 func (s Order) PlacedAtLteColumn(v orm.Column[time.Time]) Order {
-	return Order{orm.CompareColumn(s.q, `placed_at`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `placed_at`, "<=", v)}
 }
 
 func (s Order) PlacedAtGtColumn(v orm.Column[time.Time]) Order {
-	return Order{orm.CompareColumn(s.q, `placed_at`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `placed_at`, ">", v)}
 }
 
 func (s Order) PlacedAtGteColumn(v orm.Column[time.Time]) Order {
-	return Order{orm.CompareColumn(s.q, `placed_at`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `placed_at`, ">=", v)}
 }
 
 // MemoEq narrows to the rows whose note is v.
@@ -499,12 +500,12 @@ func (s Order) MemoILike(pattern string) Order {
 
 // MemoHasPrefix narrows to the rows whose note starts with prefix.
 func (s Order) MemoHasPrefix(prefix string) Order {
-	return Order{s.q.Where(`note LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return Order{s.q.Where(`note LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // MemoContains narrows to the rows whose note contains substr.
 func (s Order) MemoContains(substr string) Order {
-	return Order{s.q.Where(`note LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return Order{s.q.Where(`note LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // MemoIsNull narrows to the rows whose note is NULL.
@@ -528,27 +529,27 @@ func (s Order) MemoDesc() Order {
 }
 
 func (s Order) MemoEqColumn(v orm.Column[string]) Order {
-	return Order{orm.CompareColumn(s.q, `note`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `note`, "=", v)}
 }
 
 func (s Order) MemoNeColumn(v orm.Column[string]) Order {
-	return Order{orm.CompareColumn(s.q, `note`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `note`, "<>", v)}
 }
 
 func (s Order) MemoLtColumn(v orm.Column[string]) Order {
-	return Order{orm.CompareColumn(s.q, `note`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `note`, "<", v)}
 }
 
 func (s Order) MemoLteColumn(v orm.Column[string]) Order {
-	return Order{orm.CompareColumn(s.q, `note`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `note`, "<=", v)}
 }
 
 func (s Order) MemoGtColumn(v orm.Column[string]) Order {
-	return Order{orm.CompareColumn(s.q, `note`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `note`, ">", v)}
 }
 
 func (s Order) MemoGteColumn(v orm.Column[string]) Order {
-	return Order{orm.CompareColumn(s.q, `note`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `note`, ">=", v)}
 }
 
 // TotalEq narrows to the rows whose total is v.
@@ -610,27 +611,27 @@ func (s Order) TotalDesc() Order {
 }
 
 func (s Order) TotalEqColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `total`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `total`, "=", v)}
 }
 
 func (s Order) TotalNeColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `total`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `total`, "<>", v)}
 }
 
 func (s Order) TotalLtColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `total`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `total`, "<", v)}
 }
 
 func (s Order) TotalLteColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `total`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `total`, "<=", v)}
 }
 
 func (s Order) TotalGtColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `total`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `total`, ">", v)}
 }
 
 func (s Order) TotalGteColumn(v orm.Column[int64]) Order {
-	return Order{orm.CompareColumn(s.q, `total`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `total`, ">=", v)}
 }
 
 // PaidEq narrows to the rows whose paid is v.
@@ -667,11 +668,11 @@ func (s Order) PaidDesc() Order {
 }
 
 func (s Order) PaidEqColumn(v orm.Column[bool]) Order {
-	return Order{orm.CompareColumn(s.q, `paid`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `paid`, "=", v)}
 }
 
 func (s Order) PaidNeColumn(v orm.Column[bool]) Order {
-	return Order{orm.CompareColumn(s.q, `paid`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `paid`, "<>", v)}
 }
 
 // ContactEq narrows to the rows whose contact is v.
@@ -734,12 +735,12 @@ func (s Order) ContactILike(pattern string) Order {
 
 // ContactHasPrefix narrows to the rows whose contact starts with prefix.
 func (s Order) ContactHasPrefix(prefix string) Order {
-	return Order{s.q.Where(`contact LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return Order{s.q.Where(`contact LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // ContactContains narrows to the rows whose contact contains substr.
 func (s Order) ContactContains(substr string) Order {
-	return Order{s.q.Where(`contact LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return Order{s.q.Where(`contact LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // ContactIsNull narrows to the rows whose contact is NULL.
@@ -763,27 +764,27 @@ func (s Order) ContactDesc() Order {
 }
 
 func (s Order) ContactEqColumn(v orm.Column[model.Email]) Order {
-	return Order{orm.CompareColumn(s.q, `contact`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `contact`, "=", v)}
 }
 
 func (s Order) ContactNeColumn(v orm.Column[model.Email]) Order {
-	return Order{orm.CompareColumn(s.q, `contact`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `contact`, "<>", v)}
 }
 
 func (s Order) ContactLtColumn(v orm.Column[model.Email]) Order {
-	return Order{orm.CompareColumn(s.q, `contact`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `contact`, "<", v)}
 }
 
 func (s Order) ContactLteColumn(v orm.Column[model.Email]) Order {
-	return Order{orm.CompareColumn(s.q, `contact`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `contact`, "<=", v)}
 }
 
 func (s Order) ContactGtColumn(v orm.Column[model.Email]) Order {
-	return Order{orm.CompareColumn(s.q, `contact`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `contact`, ">", v)}
 }
 
 func (s Order) ContactGteColumn(v orm.Column[model.Email]) Order {
-	return Order{orm.CompareColumn(s.q, `contact`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `contact`, ">=", v)}
 }
 
 // ReceiptEq narrows to the rows whose receipt is v.
@@ -830,11 +831,11 @@ func (s Order) ReceiptDesc() Order {
 }
 
 func (s Order) ReceiptEqColumn(v orm.Column[[]byte]) Order {
-	return Order{orm.CompareColumn(s.q, `receipt`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `receipt`, "=", v)}
 }
 
 func (s Order) ReceiptNeColumn(v orm.Column[[]byte]) Order {
-	return Order{orm.CompareColumn(s.q, `receipt`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `receipt`, "<>", v)}
 }
 
 // PositionEq narrows to the rows whose order is v.
@@ -896,27 +897,27 @@ func (s Order) PositionDesc() Order {
 }
 
 func (s Order) PositionEqColumn(v orm.Column[int]) Order {
-	return Order{orm.CompareColumn(s.q, `"order"`, "=", v)}
+	return Order{impl.CompareColumn(s.q, `"order"`, "=", v)}
 }
 
 func (s Order) PositionNeColumn(v orm.Column[int]) Order {
-	return Order{orm.CompareColumn(s.q, `"order"`, "<>", v)}
+	return Order{impl.CompareColumn(s.q, `"order"`, "<>", v)}
 }
 
 func (s Order) PositionLtColumn(v orm.Column[int]) Order {
-	return Order{orm.CompareColumn(s.q, `"order"`, "<", v)}
+	return Order{impl.CompareColumn(s.q, `"order"`, "<", v)}
 }
 
 func (s Order) PositionLteColumn(v orm.Column[int]) Order {
-	return Order{orm.CompareColumn(s.q, `"order"`, "<=", v)}
+	return Order{impl.CompareColumn(s.q, `"order"`, "<=", v)}
 }
 
 func (s Order) PositionGtColumn(v orm.Column[int]) Order {
-	return Order{orm.CompareColumn(s.q, `"order"`, ">", v)}
+	return Order{impl.CompareColumn(s.q, `"order"`, ">", v)}
 }
 
 func (s Order) PositionGteColumn(v orm.Column[int]) Order {
-	return Order{orm.CompareColumn(s.q, `"order"`, ">=", v)}
+	return Order{impl.CompareColumn(s.q, `"order"`, ">=", v)}
 }
 
 // WithCustomer loads Customer, from customers by customer_id.
@@ -925,7 +926,7 @@ func (s Order) WithCustomer(sub ...Customer) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Customer", orm.Combine(qs...))}
+	return Order{impl.Preload(s.q, "Customer", impl.Combine(qs...))}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -934,12 +935,12 @@ func (s Order) WithLines(sub ...OrderLine) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Lines", orm.Combine(qs...))}
+	return Order{impl.Preload(s.q, "Lines", impl.Combine(qs...))}
 }
 
 func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) Order {
-	parent := orm.NewParent()
-	return Order{orm.PreloadMany(s.q, "Lines", parent, build(orderColumnsFor(parent)))}
+	parent := impl.NewParent()
+	return Order{impl.PreloadMany(s.q, "Lines", parent, build(orderColumnsFor(parent)))}
 }
 
 // WithTags loads Tags, from tags through order_tags.
@@ -948,12 +949,12 @@ func (s Order) WithTags(sub ...Tag) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Tags", orm.Combine(qs...))}
+	return Order{impl.Preload(s.q, "Tags", impl.Combine(qs...))}
 }
 
 func (s Order) PreloadTags(build func(OrderColumns) orm.Many[model.Tag]) Order {
-	parent := orm.NewParent()
-	return Order{orm.PreloadMany(s.q, "Tags", parent, build(orderColumnsFor(parent)))}
+	parent := impl.NewParent()
+	return Order{impl.PreloadMany(s.q, "Tags", parent, build(orderColumnsFor(parent)))}
 }
 
 // PlacedInMonth narrows to the orders placed in the month of at,
@@ -1013,18 +1014,18 @@ func (s Order) Not(other Order) Order {
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
-// holds orm.MayBeNull, since no page continues by it.
+// holds impl.MayBeNull, since no page continues by it.
 func (Order) values(row model.Order) map[string]any {
 	return map[string]any{
 		`id`:          row.ID,
 		`customer_id`: row.CustomerID,
 		`status`:      row.Status,
 		`placed_at`:   row.PlacedAt,
-		`note`:        orm.MayBeNull,
+		`note`:        impl.MayBeNull,
 		`total`:       row.Total,
 		`paid`:        row.Paid,
-		`contact`:     orm.MayBeNull,
-		`receipt`:     orm.MayBeNull,
+		`contact`:     impl.MayBeNull,
+		`receipt`:     impl.MayBeNull,
 		`"order"`:     row.Position,
 	}
 }
@@ -1075,10 +1076,10 @@ type CustomerColumns struct {
 	Name orm.Column[string]
 }
 
-func customerColumnsFor(parent orm.Parent) CustomerColumns {
+func customerColumnsFor(parent impl.Parent) CustomerColumns {
 	return CustomerColumns{
-		ID:   orm.NewColumn[int64](parent, "id"),
-		Name: orm.NewColumn[string](parent, "name"),
+		ID:   impl.NewColumn[int64](parent, "id"),
+		Name: impl.NewColumn[string](parent, "name"),
 	}
 }
 
@@ -1087,11 +1088,11 @@ func (s Customer) First() orm.Single[model.Customer] { return s.q.First() }
 func (s Customer) Many() orm.Many[model.Customer]    { return s.q.Many() }
 
 // CustomerChangeSet holds explicitly assigned columns of customers.
-type CustomerChangeSet struct{ changes orm.Changes[model.Customer] }
+type CustomerChangeSet struct{ changes impl.Changes[model.Customer] }
 
 func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
 
-func (c CustomerChangeSet) Of() orm.Changes[model.Customer] { return c.changes }
+func (c CustomerChangeSet) Of() impl.Changes[model.Customer] { return c.changes }
 
 func (c CustomerChangeSet) SetName(v string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("name", v)}
@@ -1156,27 +1157,27 @@ func (s Customer) IDDesc() Customer {
 }
 
 func (s Customer) IDEqColumn(v orm.Column[int64]) Customer {
-	return Customer{orm.CompareColumn(s.q, `id`, "=", v)}
+	return Customer{impl.CompareColumn(s.q, `id`, "=", v)}
 }
 
 func (s Customer) IDNeColumn(v orm.Column[int64]) Customer {
-	return Customer{orm.CompareColumn(s.q, `id`, "<>", v)}
+	return Customer{impl.CompareColumn(s.q, `id`, "<>", v)}
 }
 
 func (s Customer) IDLtColumn(v orm.Column[int64]) Customer {
-	return Customer{orm.CompareColumn(s.q, `id`, "<", v)}
+	return Customer{impl.CompareColumn(s.q, `id`, "<", v)}
 }
 
 func (s Customer) IDLteColumn(v orm.Column[int64]) Customer {
-	return Customer{orm.CompareColumn(s.q, `id`, "<=", v)}
+	return Customer{impl.CompareColumn(s.q, `id`, "<=", v)}
 }
 
 func (s Customer) IDGtColumn(v orm.Column[int64]) Customer {
-	return Customer{orm.CompareColumn(s.q, `id`, ">", v)}
+	return Customer{impl.CompareColumn(s.q, `id`, ">", v)}
 }
 
 func (s Customer) IDGteColumn(v orm.Column[int64]) Customer {
-	return Customer{orm.CompareColumn(s.q, `id`, ">=", v)}
+	return Customer{impl.CompareColumn(s.q, `id`, ">=", v)}
 }
 
 // NameEq narrows to the rows whose name is v.
@@ -1239,12 +1240,12 @@ func (s Customer) NameILike(pattern string) Customer {
 
 // NameHasPrefix narrows to the rows whose name starts with prefix.
 func (s Customer) NameHasPrefix(prefix string) Customer {
-	return Customer{s.q.Where(`name LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return Customer{s.q.Where(`name LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // NameContains narrows to the rows whose name contains substr.
 func (s Customer) NameContains(substr string) Customer {
-	return Customer{s.q.Where(`name LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return Customer{s.q.Where(`name LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // NameAsc orders the rows by name, in ascending order.
@@ -1258,27 +1259,27 @@ func (s Customer) NameDesc() Customer {
 }
 
 func (s Customer) NameEqColumn(v orm.Column[string]) Customer {
-	return Customer{orm.CompareColumn(s.q, `name`, "=", v)}
+	return Customer{impl.CompareColumn(s.q, `name`, "=", v)}
 }
 
 func (s Customer) NameNeColumn(v orm.Column[string]) Customer {
-	return Customer{orm.CompareColumn(s.q, `name`, "<>", v)}
+	return Customer{impl.CompareColumn(s.q, `name`, "<>", v)}
 }
 
 func (s Customer) NameLtColumn(v orm.Column[string]) Customer {
-	return Customer{orm.CompareColumn(s.q, `name`, "<", v)}
+	return Customer{impl.CompareColumn(s.q, `name`, "<", v)}
 }
 
 func (s Customer) NameLteColumn(v orm.Column[string]) Customer {
-	return Customer{orm.CompareColumn(s.q, `name`, "<=", v)}
+	return Customer{impl.CompareColumn(s.q, `name`, "<=", v)}
 }
 
 func (s Customer) NameGtColumn(v orm.Column[string]) Customer {
-	return Customer{orm.CompareColumn(s.q, `name`, ">", v)}
+	return Customer{impl.CompareColumn(s.q, `name`, ">", v)}
 }
 
 func (s Customer) NameGteColumn(v orm.Column[string]) Customer {
-	return Customer{orm.CompareColumn(s.q, `name`, ">=", v)}
+	return Customer{impl.CompareColumn(s.q, `name`, ">=", v)}
 }
 
 // Limit keeps the first n rows.
@@ -1311,7 +1312,7 @@ func (s Customer) Not(other Customer) Customer {
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
-// holds orm.MayBeNull, since no page continues by it.
+// holds impl.MayBeNull, since no page continues by it.
 func (Customer) values(row model.Customer) map[string]any {
 	return map[string]any{
 		`id`:   row.ID,
@@ -1361,11 +1362,11 @@ type OrderLineColumns struct {
 	SKU     orm.Column[string]
 }
 
-func orderLineColumnsFor(parent orm.Parent) OrderLineColumns {
+func orderLineColumnsFor(parent impl.Parent) OrderLineColumns {
 	return OrderLineColumns{
-		OrderID: orm.NewColumn[model.OrderID](parent, "order_id"),
-		LineNo:  orm.NewColumn[int](parent, "line_no"),
-		SKU:     orm.NewColumn[string](parent, "sku"),
+		OrderID: impl.NewColumn[model.OrderID](parent, "order_id"),
+		LineNo:  impl.NewColumn[int](parent, "line_no"),
+		SKU:     impl.NewColumn[string](parent, "sku"),
 	}
 }
 
@@ -1374,11 +1375,11 @@ func (s OrderLine) First() orm.Single[model.OrderLine] { return s.q.First() }
 func (s OrderLine) Many() orm.Many[model.OrderLine]    { return s.q.Many() }
 
 // OrderLineChangeSet holds explicitly assigned columns of order_lines.
-type OrderLineChangeSet struct{ changes orm.Changes[model.OrderLine] }
+type OrderLineChangeSet struct{ changes impl.Changes[model.OrderLine] }
 
 func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
 
-func (c OrderLineChangeSet) Of() orm.Changes[model.OrderLine] { return c.changes }
+func (c OrderLineChangeSet) Of() impl.Changes[model.OrderLine] { return c.changes }
 
 func (c OrderLineChangeSet) SetSKU(v string) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("sku", v)}
@@ -1443,27 +1444,27 @@ func (s OrderLine) OrderIDDesc() OrderLine {
 }
 
 func (s OrderLine) OrderIDEqColumn(v orm.Column[model.OrderID]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `order_id`, "=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `order_id`, "=", v)}
 }
 
 func (s OrderLine) OrderIDNeColumn(v orm.Column[model.OrderID]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `order_id`, "<>", v)}
+	return OrderLine{impl.CompareColumn(s.q, `order_id`, "<>", v)}
 }
 
 func (s OrderLine) OrderIDLtColumn(v orm.Column[model.OrderID]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `order_id`, "<", v)}
+	return OrderLine{impl.CompareColumn(s.q, `order_id`, "<", v)}
 }
 
 func (s OrderLine) OrderIDLteColumn(v orm.Column[model.OrderID]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `order_id`, "<=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `order_id`, "<=", v)}
 }
 
 func (s OrderLine) OrderIDGtColumn(v orm.Column[model.OrderID]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `order_id`, ">", v)}
+	return OrderLine{impl.CompareColumn(s.q, `order_id`, ">", v)}
 }
 
 func (s OrderLine) OrderIDGteColumn(v orm.Column[model.OrderID]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `order_id`, ">=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `order_id`, ">=", v)}
 }
 
 // LineNoEq narrows to the rows whose line_no is v.
@@ -1525,27 +1526,27 @@ func (s OrderLine) LineNoDesc() OrderLine {
 }
 
 func (s OrderLine) LineNoEqColumn(v orm.Column[int]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `line_no`, "=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `line_no`, "=", v)}
 }
 
 func (s OrderLine) LineNoNeColumn(v orm.Column[int]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `line_no`, "<>", v)}
+	return OrderLine{impl.CompareColumn(s.q, `line_no`, "<>", v)}
 }
 
 func (s OrderLine) LineNoLtColumn(v orm.Column[int]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `line_no`, "<", v)}
+	return OrderLine{impl.CompareColumn(s.q, `line_no`, "<", v)}
 }
 
 func (s OrderLine) LineNoLteColumn(v orm.Column[int]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `line_no`, "<=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `line_no`, "<=", v)}
 }
 
 func (s OrderLine) LineNoGtColumn(v orm.Column[int]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `line_no`, ">", v)}
+	return OrderLine{impl.CompareColumn(s.q, `line_no`, ">", v)}
 }
 
 func (s OrderLine) LineNoGteColumn(v orm.Column[int]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `line_no`, ">=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `line_no`, ">=", v)}
 }
 
 // SKUEq narrows to the rows whose sku is v.
@@ -1608,12 +1609,12 @@ func (s OrderLine) SKUILike(pattern string) OrderLine {
 
 // SKUHasPrefix narrows to the rows whose sku starts with prefix.
 func (s OrderLine) SKUHasPrefix(prefix string) OrderLine {
-	return OrderLine{s.q.Where(`sku LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return OrderLine{s.q.Where(`sku LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // SKUContains narrows to the rows whose sku contains substr.
 func (s OrderLine) SKUContains(substr string) OrderLine {
-	return OrderLine{s.q.Where(`sku LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return OrderLine{s.q.Where(`sku LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // SKUAsc orders the rows by sku, in ascending order.
@@ -1627,27 +1628,27 @@ func (s OrderLine) SKUDesc() OrderLine {
 }
 
 func (s OrderLine) SKUEqColumn(v orm.Column[string]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `sku`, "=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `sku`, "=", v)}
 }
 
 func (s OrderLine) SKUNeColumn(v orm.Column[string]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `sku`, "<>", v)}
+	return OrderLine{impl.CompareColumn(s.q, `sku`, "<>", v)}
 }
 
 func (s OrderLine) SKULtColumn(v orm.Column[string]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `sku`, "<", v)}
+	return OrderLine{impl.CompareColumn(s.q, `sku`, "<", v)}
 }
 
 func (s OrderLine) SKULteColumn(v orm.Column[string]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `sku`, "<=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `sku`, "<=", v)}
 }
 
 func (s OrderLine) SKUGtColumn(v orm.Column[string]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `sku`, ">", v)}
+	return OrderLine{impl.CompareColumn(s.q, `sku`, ">", v)}
 }
 
 func (s OrderLine) SKUGteColumn(v orm.Column[string]) OrderLine {
-	return OrderLine{orm.CompareColumn(s.q, `sku`, ">=", v)}
+	return OrderLine{impl.CompareColumn(s.q, `sku`, ">=", v)}
 }
 
 // WithOrder loads Order, from orders by order_id.
@@ -1656,7 +1657,7 @@ func (s OrderLine) WithOrder(sub ...Order) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Order", orm.Combine(qs...))}
+	return OrderLine{impl.Preload(s.q, "Order", impl.Combine(qs...))}
 }
 
 // WithNotes loads Notes, from line_notes by order_id and line_no.
@@ -1665,12 +1666,12 @@ func (s OrderLine) WithNotes(sub ...LineNote) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Notes", orm.Combine(qs...))}
+	return OrderLine{impl.Preload(s.q, "Notes", impl.Combine(qs...))}
 }
 
 func (s OrderLine) PreloadNotes(build func(OrderLineColumns) orm.Many[model.LineNote]) OrderLine {
-	parent := orm.NewParent()
-	return OrderLine{orm.PreloadMany(s.q, "Notes", parent, build(orderLineColumnsFor(parent)))}
+	parent := impl.NewParent()
+	return OrderLine{impl.PreloadMany(s.q, "Notes", parent, build(orderLineColumnsFor(parent)))}
 }
 
 // WithTags loads Tags, from tags through line_tags.
@@ -1679,12 +1680,12 @@ func (s OrderLine) WithTags(sub ...Tag) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Tags", orm.Combine(qs...))}
+	return OrderLine{impl.Preload(s.q, "Tags", impl.Combine(qs...))}
 }
 
 func (s OrderLine) PreloadTags(build func(OrderLineColumns) orm.Many[model.Tag]) OrderLine {
-	parent := orm.NewParent()
-	return OrderLine{orm.PreloadMany(s.q, "Tags", parent, build(orderLineColumnsFor(parent)))}
+	parent := impl.NewParent()
+	return OrderLine{impl.PreloadMany(s.q, "Tags", parent, build(orderLineColumnsFor(parent)))}
 }
 
 // Limit keeps the first n rows.
@@ -1722,7 +1723,7 @@ func (s OrderLine) Not(other OrderLine) OrderLine {
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
-// holds orm.MayBeNull, since no page continues by it.
+// holds impl.MayBeNull, since no page continues by it.
 func (OrderLine) values(row model.OrderLine) map[string]any {
 	return map[string]any{
 		`order_id`: row.OrderID,
@@ -1772,9 +1773,9 @@ type TagColumns struct {
 	Name orm.Column[string]
 }
 
-func tagColumnsFor(parent orm.Parent) TagColumns {
+func tagColumnsFor(parent impl.Parent) TagColumns {
 	return TagColumns{
-		Name: orm.NewColumn[string](parent, "name"),
+		Name: impl.NewColumn[string](parent, "name"),
 	}
 }
 
@@ -1783,11 +1784,11 @@ func (s Tag) First() orm.Single[model.Tag] { return s.q.First() }
 func (s Tag) Many() orm.Many[model.Tag]    { return s.q.Many() }
 
 // TagChangeSet holds explicitly assigned columns of tags.
-type TagChangeSet struct{ changes orm.Changes[model.Tag] }
+type TagChangeSet struct{ changes impl.Changes[model.Tag] }
 
 func TagChanges() TagChangeSet { return TagChangeSet{} }
 
-func (c TagChangeSet) Of() orm.Changes[model.Tag] { return c.changes }
+func (c TagChangeSet) Of() impl.Changes[model.Tag] { return c.changes }
 
 func (c TagChangeSet) SetName(v string) TagChangeSet {
 	return TagChangeSet{c.changes.Set("name", v)}
@@ -1853,12 +1854,12 @@ func (s Tag) NameILike(pattern string) Tag {
 
 // NameHasPrefix narrows to the rows whose name starts with prefix.
 func (s Tag) NameHasPrefix(prefix string) Tag {
-	return Tag{s.q.Where(`name LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return Tag{s.q.Where(`name LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // NameContains narrows to the rows whose name contains substr.
 func (s Tag) NameContains(substr string) Tag {
-	return Tag{s.q.Where(`name LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return Tag{s.q.Where(`name LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // NameAsc orders the rows by name, in ascending order.
@@ -1872,27 +1873,27 @@ func (s Tag) NameDesc() Tag {
 }
 
 func (s Tag) NameEqColumn(v orm.Column[string]) Tag {
-	return Tag{orm.CompareColumn(s.q, `name`, "=", v)}
+	return Tag{impl.CompareColumn(s.q, `name`, "=", v)}
 }
 
 func (s Tag) NameNeColumn(v orm.Column[string]) Tag {
-	return Tag{orm.CompareColumn(s.q, `name`, "<>", v)}
+	return Tag{impl.CompareColumn(s.q, `name`, "<>", v)}
 }
 
 func (s Tag) NameLtColumn(v orm.Column[string]) Tag {
-	return Tag{orm.CompareColumn(s.q, `name`, "<", v)}
+	return Tag{impl.CompareColumn(s.q, `name`, "<", v)}
 }
 
 func (s Tag) NameLteColumn(v orm.Column[string]) Tag {
-	return Tag{orm.CompareColumn(s.q, `name`, "<=", v)}
+	return Tag{impl.CompareColumn(s.q, `name`, "<=", v)}
 }
 
 func (s Tag) NameGtColumn(v orm.Column[string]) Tag {
-	return Tag{orm.CompareColumn(s.q, `name`, ">", v)}
+	return Tag{impl.CompareColumn(s.q, `name`, ">", v)}
 }
 
 func (s Tag) NameGteColumn(v orm.Column[string]) Tag {
-	return Tag{orm.CompareColumn(s.q, `name`, ">=", v)}
+	return Tag{impl.CompareColumn(s.q, `name`, ">=", v)}
 }
 
 // Limit keeps the first n rows.
@@ -1936,11 +1937,11 @@ type LineNoteColumns struct {
 	Body    orm.Column[string]
 }
 
-func lineNoteColumnsFor(parent orm.Parent) LineNoteColumns {
+func lineNoteColumnsFor(parent impl.Parent) LineNoteColumns {
 	return LineNoteColumns{
-		OrderID: orm.NewColumn[model.OrderID](parent, "order_id"),
-		LineNo:  orm.NewColumn[int](parent, "line_no"),
-		Body:    orm.NewColumn[string](parent, "body"),
+		OrderID: impl.NewColumn[model.OrderID](parent, "order_id"),
+		LineNo:  impl.NewColumn[int](parent, "line_no"),
+		Body:    impl.NewColumn[string](parent, "body"),
 	}
 }
 
@@ -1949,11 +1950,11 @@ func (s LineNote) First() orm.Single[model.LineNote] { return s.q.First() }
 func (s LineNote) Many() orm.Many[model.LineNote]    { return s.q.Many() }
 
 // LineNoteChangeSet holds explicitly assigned columns of line_notes.
-type LineNoteChangeSet struct{ changes orm.Changes[model.LineNote] }
+type LineNoteChangeSet struct{ changes impl.Changes[model.LineNote] }
 
 func LineNoteChanges() LineNoteChangeSet { return LineNoteChangeSet{} }
 
-func (c LineNoteChangeSet) Of() orm.Changes[model.LineNote] { return c.changes }
+func (c LineNoteChangeSet) Of() impl.Changes[model.LineNote] { return c.changes }
 
 func (c LineNoteChangeSet) SetOrderID(v model.OrderID) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Set("order_id", v)}
@@ -2026,27 +2027,27 @@ func (s LineNote) OrderIDDesc() LineNote {
 }
 
 func (s LineNote) OrderIDEqColumn(v orm.Column[model.OrderID]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `order_id`, "=", v)}
+	return LineNote{impl.CompareColumn(s.q, `order_id`, "=", v)}
 }
 
 func (s LineNote) OrderIDNeColumn(v orm.Column[model.OrderID]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `order_id`, "<>", v)}
+	return LineNote{impl.CompareColumn(s.q, `order_id`, "<>", v)}
 }
 
 func (s LineNote) OrderIDLtColumn(v orm.Column[model.OrderID]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `order_id`, "<", v)}
+	return LineNote{impl.CompareColumn(s.q, `order_id`, "<", v)}
 }
 
 func (s LineNote) OrderIDLteColumn(v orm.Column[model.OrderID]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `order_id`, "<=", v)}
+	return LineNote{impl.CompareColumn(s.q, `order_id`, "<=", v)}
 }
 
 func (s LineNote) OrderIDGtColumn(v orm.Column[model.OrderID]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `order_id`, ">", v)}
+	return LineNote{impl.CompareColumn(s.q, `order_id`, ">", v)}
 }
 
 func (s LineNote) OrderIDGteColumn(v orm.Column[model.OrderID]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `order_id`, ">=", v)}
+	return LineNote{impl.CompareColumn(s.q, `order_id`, ">=", v)}
 }
 
 // LineNoEq narrows to the rows whose line_no is v.
@@ -2108,27 +2109,27 @@ func (s LineNote) LineNoDesc() LineNote {
 }
 
 func (s LineNote) LineNoEqColumn(v orm.Column[int]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `line_no`, "=", v)}
+	return LineNote{impl.CompareColumn(s.q, `line_no`, "=", v)}
 }
 
 func (s LineNote) LineNoNeColumn(v orm.Column[int]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `line_no`, "<>", v)}
+	return LineNote{impl.CompareColumn(s.q, `line_no`, "<>", v)}
 }
 
 func (s LineNote) LineNoLtColumn(v orm.Column[int]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `line_no`, "<", v)}
+	return LineNote{impl.CompareColumn(s.q, `line_no`, "<", v)}
 }
 
 func (s LineNote) LineNoLteColumn(v orm.Column[int]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `line_no`, "<=", v)}
+	return LineNote{impl.CompareColumn(s.q, `line_no`, "<=", v)}
 }
 
 func (s LineNote) LineNoGtColumn(v orm.Column[int]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `line_no`, ">", v)}
+	return LineNote{impl.CompareColumn(s.q, `line_no`, ">", v)}
 }
 
 func (s LineNote) LineNoGteColumn(v orm.Column[int]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `line_no`, ">=", v)}
+	return LineNote{impl.CompareColumn(s.q, `line_no`, ">=", v)}
 }
 
 // BodyEq narrows to the rows whose body is v.
@@ -2191,12 +2192,12 @@ func (s LineNote) BodyILike(pattern string) LineNote {
 
 // BodyHasPrefix narrows to the rows whose body starts with prefix.
 func (s LineNote) BodyHasPrefix(prefix string) LineNote {
-	return LineNote{s.q.Where(`body LIKE `, orm.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
+	return LineNote{s.q.Where(`body LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`)}
 }
 
 // BodyContains narrows to the rows whose body contains substr.
 func (s LineNote) BodyContains(substr string) LineNote {
-	return LineNote{s.q.Where(`body LIKE `, "%"+orm.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
+	return LineNote{s.q.Where(`body LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`)}
 }
 
 // BodyAsc orders the rows by body, in ascending order.
@@ -2210,27 +2211,27 @@ func (s LineNote) BodyDesc() LineNote {
 }
 
 func (s LineNote) BodyEqColumn(v orm.Column[string]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `body`, "=", v)}
+	return LineNote{impl.CompareColumn(s.q, `body`, "=", v)}
 }
 
 func (s LineNote) BodyNeColumn(v orm.Column[string]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `body`, "<>", v)}
+	return LineNote{impl.CompareColumn(s.q, `body`, "<>", v)}
 }
 
 func (s LineNote) BodyLtColumn(v orm.Column[string]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `body`, "<", v)}
+	return LineNote{impl.CompareColumn(s.q, `body`, "<", v)}
 }
 
 func (s LineNote) BodyLteColumn(v orm.Column[string]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `body`, "<=", v)}
+	return LineNote{impl.CompareColumn(s.q, `body`, "<=", v)}
 }
 
 func (s LineNote) BodyGtColumn(v orm.Column[string]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `body`, ">", v)}
+	return LineNote{impl.CompareColumn(s.q, `body`, ">", v)}
 }
 
 func (s LineNote) BodyGteColumn(v orm.Column[string]) LineNote {
-	return LineNote{orm.CompareColumn(s.q, `body`, ">=", v)}
+	return LineNote{impl.CompareColumn(s.q, `body`, ">=", v)}
 }
 
 // WithLine loads Line, from order_lines by order_id and line_no.
@@ -2239,7 +2240,7 @@ func (s LineNote) WithLine(sub ...OrderLine) LineNote {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return LineNote{orm.Preload(s.q, "Line", orm.Combine(qs...))}
+	return LineNote{impl.Preload(s.q, "Line", impl.Combine(qs...))}
 }
 
 // Limit keeps the first n rows.
@@ -2287,10 +2288,10 @@ type LabelColumns struct {
 	Names   orm.Column[[]string]
 }
 
-func labelColumnsFor(parent orm.Parent) LabelColumns {
+func labelColumnsFor(parent impl.Parent) LabelColumns {
 	return LabelColumns{
-		OrderID: orm.NewColumn[model.OrderID](parent, "order_id"),
-		Names:   orm.NewColumn[[]string](parent, "names"),
+		OrderID: impl.NewColumn[model.OrderID](parent, "order_id"),
+		Names:   impl.NewColumn[[]string](parent, "names"),
 	}
 }
 
@@ -2299,11 +2300,11 @@ func (s Label) First() orm.Single[model.Label] { return s.q.First() }
 func (s Label) Many() orm.Many[model.Label]    { return s.q.Many() }
 
 // LabelChangeSet holds explicitly assigned columns of labels.
-type LabelChangeSet struct{ changes orm.Changes[model.Label] }
+type LabelChangeSet struct{ changes impl.Changes[model.Label] }
 
 func LabelChanges() LabelChangeSet { return LabelChangeSet{} }
 
-func (c LabelChangeSet) Of() orm.Changes[model.Label] { return c.changes }
+func (c LabelChangeSet) Of() impl.Changes[model.Label] { return c.changes }
 
 func (c LabelChangeSet) SetNames(v []string) LabelChangeSet {
 	return LabelChangeSet{c.changes.Set("names", v)}
@@ -2368,27 +2369,27 @@ func (s Label) OrderIDDesc() Label {
 }
 
 func (s Label) OrderIDEqColumn(v orm.Column[model.OrderID]) Label {
-	return Label{orm.CompareColumn(s.q, `order_id`, "=", v)}
+	return Label{impl.CompareColumn(s.q, `order_id`, "=", v)}
 }
 
 func (s Label) OrderIDNeColumn(v orm.Column[model.OrderID]) Label {
-	return Label{orm.CompareColumn(s.q, `order_id`, "<>", v)}
+	return Label{impl.CompareColumn(s.q, `order_id`, "<>", v)}
 }
 
 func (s Label) OrderIDLtColumn(v orm.Column[model.OrderID]) Label {
-	return Label{orm.CompareColumn(s.q, `order_id`, "<", v)}
+	return Label{impl.CompareColumn(s.q, `order_id`, "<", v)}
 }
 
 func (s Label) OrderIDLteColumn(v orm.Column[model.OrderID]) Label {
-	return Label{orm.CompareColumn(s.q, `order_id`, "<=", v)}
+	return Label{impl.CompareColumn(s.q, `order_id`, "<=", v)}
 }
 
 func (s Label) OrderIDGtColumn(v orm.Column[model.OrderID]) Label {
-	return Label{orm.CompareColumn(s.q, `order_id`, ">", v)}
+	return Label{impl.CompareColumn(s.q, `order_id`, ">", v)}
 }
 
 func (s Label) OrderIDGteColumn(v orm.Column[model.OrderID]) Label {
-	return Label{orm.CompareColumn(s.q, `order_id`, ">=", v)}
+	return Label{impl.CompareColumn(s.q, `order_id`, ">=", v)}
 }
 
 // NamesEq narrows to the rows whose names is v.
@@ -2422,11 +2423,11 @@ func (s Label) NamesDesc() Label {
 }
 
 func (s Label) NamesEqColumn(v orm.Column[[]string]) Label {
-	return Label{orm.CompareColumn(s.q, `names`, "=", v)}
+	return Label{impl.CompareColumn(s.q, `names`, "=", v)}
 }
 
 func (s Label) NamesNeColumn(v orm.Column[[]string]) Label {
-	return Label{orm.CompareColumn(s.q, `names`, "<>", v)}
+	return Label{impl.CompareColumn(s.q, `names`, "<>", v)}
 }
 
 // Limit keeps the first n rows.
@@ -2459,11 +2460,11 @@ func (s Label) Not(other Label) Label {
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
-// holds orm.MayBeNull, since no page continues by it.
+// holds impl.MayBeNull, since no page continues by it.
 func (Label) values(row model.Label) map[string]any {
 	return map[string]any{
 		`order_id`: row.OrderID,
-		`names`:    orm.MayBeNull,
+		`names`:    impl.MayBeNull,
 	}
 }
 

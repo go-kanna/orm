@@ -1,17 +1,17 @@
-package orm_test
+package impl_test
 
 import (
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"
 )
 
 func TestRenderDelete(t *testing.T) {
 	t.Parallel()
-	for _, d := range []orm.Dialect{orm.Postgres, orm.MySQL} {
-		base := orm.Of[int]{}.Where("status = ", "old")
+	for _, d := range []impl.Dialect{impl.Postgres, impl.MySQL} {
+		base := impl.Of[int]{}.Where("status = ", "old")
 		q := base.OrderBy("expires_at", false).OrderBy("id", false).Limit(2).Offset(1)
 		sql, args, err := q.RenderDelete(d, "records", []string{"tenant_id", "id"})
 		if err != nil || !reflect.DeepEqual(args, []any{"old"}) {
@@ -20,14 +20,14 @@ func TestRenderDelete(t *testing.T) {
 		if !strings.Contains(sql, "ORDER BY expires_at, id LIMIT 2 OFFSET 1") || strings.Contains(sql, "'old'") {
 			t.Fatalf("target selection: %s", sql)
 		}
-		if d == orm.MySQL && !strings.Contains(sql, "orm_delete_targets") {
+		if d == impl.MySQL && !strings.Contains(sql, "orm_delete_targets") {
 			t.Fatalf("MySQL derived target table: %s", sql)
 		}
 		plain, _, err := base.RenderDelete(d, "records", nil)
 		if err != nil || strings.Contains(plain, " IN (") || strings.Contains(plain, "LIMIT") {
 			t.Fatalf("plain delete or mutated original: %s, %v", plain, err)
 		}
-		for _, invalid := range []orm.Of[int]{
+		for _, invalid := range []impl.Of[int]{
 			{}, base.Limit(1), base.OrderBy("id", false), base.Limit(-1), base.Offset(-1),
 		} {
 			if _, _, err := invalid.RenderDelete(d, "records", []string{"id"}); err == nil {
