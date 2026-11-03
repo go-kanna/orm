@@ -15,3 +15,20 @@ type DBTX interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
+
+// InTransaction reports whether db is a transaction, which has a Commit, or wraps one, as an Unwrap returning the DBTX
+// it wraps tells, however many wrappers deep: what a lock needs to last beyond its statement.
+func InTransaction(db DBTX) bool {
+	for {
+		if _, ok := db.(interface {
+			Commit(ctx context.Context) error
+		}); ok {
+			return true
+		}
+		u, ok := db.(interface{ Unwrap() DBTX })
+		if !ok {
+			return false
+		}
+		db = u.Unwrap()
+	}
+}
