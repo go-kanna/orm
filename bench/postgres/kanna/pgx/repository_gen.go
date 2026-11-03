@@ -159,7 +159,7 @@ RETURNING id, order_id, sku, quantity`
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
 func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.Orde
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], lock string) ([]model.Order, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}

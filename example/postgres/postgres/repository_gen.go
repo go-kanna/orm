@@ -167,7 +167,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "products", []impl.SelectColumn{{Table: "products", Column: "name"}, {Table: "products", Column: "price"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`)
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "products", []impl.SelectColumn{{Table: "products", Column: "name"}, {Table: "products", Column: "price"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`, []string{`sku`})
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]st
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	rd2, err2 := q.Render(impl.Postgres, 1)
+	rd2, err2 := q.Render(impl.Postgres, 1, []string{`sku`})
 	if err2 != nil {
 		return nil, err2
 	}
@@ -375,7 +375,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`)
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +415,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result i
 	if err := q.ConditionsOnly("Count"); err != nil {
 		return 0, err
 	}
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -682,7 +682,7 @@ WHERE id = $5`
 
 // selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
 func selectApprovals(ctx context.Context, db ormDatabase, q scope.Of[model.Approval], lock string) ([]model.Approval, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
@@ -710,7 +710,7 @@ func selectApprovals(ctx context.Context, db ormDatabase, q scope.Of[model.Appro
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
 func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Customer], lock string) ([]model.Customer, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
@@ -738,7 +738,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Custo
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`order_id`, `line_no`})
 	if err != nil {
 		return nil, err
 	}
@@ -800,11 +800,11 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], lock string) ([]model.Order, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	text, args, err := q.RenderSelect(impl.Postgres, "orders", []string{"id", "customer_id", "status", "placed_at", "note"}, []impl.Projection{{Field: "Approver", Column: "approver", Optional: true}})
+	text, args, err := q.RenderSelect(impl.Postgres, "orders", []string{"id", "customer_id", "status", "placed_at", "note"}, []impl.Projection{{Field: "Approver", Column: "approver", Optional: true}}, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
@@ -1125,7 +1125,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 
 // selectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
 func selectProducts(ctx context.Context, db ormDatabase, q scope.Of[model.Product], lock string) ([]model.Product, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`sku`})
 	if err != nil {
 		return nil, err
 	}
@@ -1153,7 +1153,7 @@ func selectProducts(ctx context.Context, db ormDatabase, q scope.Of[model.Produc
 
 // selectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
 func selectShipments(ctx context.Context, db ormDatabase, q scope.Of[model.Shipment], lock string) ([]model.Shipment, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`order_id`})
 	if err != nil {
 		return nil, err
 	}
@@ -1181,7 +1181,7 @@ func selectShipments(ctx context.Context, db ormDatabase, q scope.Of[model.Shipm
 
 // selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
 func selectTags(ctx context.Context, db ormDatabase, q scope.Of[model.Tag], lock string) ([]model.Tag, error) {
-	rd, err := q.Render(impl.Postgres, 1)
+	rd, err := q.Render(impl.Postgres, 1, []string{`name`})
 	if err != nil {
 		return nil, err
 	}
