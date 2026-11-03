@@ -2,8 +2,6 @@ package gen
 
 import (
 	"fmt"
-	"go/ast"
-	"go/token"
 	"maps"
 	"regexp"
 	"slices"
@@ -13,7 +11,6 @@ import (
 	"github.com/go-kanna/internal/directive"
 	"github.com/go-kanna/internal/suggest"
 
-	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -79,41 +76,4 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	}
 	m.lock = clause
 	return nil
-}
-
-// hasNoGeneratedSQL is the error for a //kanna:lock on a method named name, whose SQL is written by hand in where.
-func hasNoGeneratedSQL(d directive.Directive, name, where string) diag.Diag {
-	return diag.Errorf(d.Pos, "%s: //kanna:lock is for a method kanna-orm writes the SQL of", name).
-		WithHints("lock in " + where)
-}
-
-// strayLocks reports the //kanna:lock directives of file on no method of repos, such as one at the end of a line or
-// parted from a method by a blank line. Nothing reads them, so the method would go unlocked without a word.
-func strayLocks(fset *token.FileSet, file *ast.File, repos []decl.Repository) []diag.Diag {
-	docs := map[*ast.CommentGroup]bool{}
-	for _, repo := range repos {
-		it, ok := repo.Spec.Type.(*ast.InterfaceType)
-		if !ok {
-			continue
-		}
-		for _, f := range it.Methods.List {
-			if len(f.Names) > 0 {
-				docs[f.Doc] = true
-			}
-		}
-	}
-
-	var ds []diag.Diag
-	for _, cg := range file.Comments {
-		if docs[cg] {
-			continue
-		}
-		d, fds := directive.Find(fset, cg, "lock")
-		ds = append(ds, fds...)
-		if d.Found {
-			ds = append(ds, diag.Errorf(d.Pos, "//kanna:lock marks no method of a //kanna:repository").
-				WithHints("write it right above the method"))
-		}
-	}
-	return ds
 }

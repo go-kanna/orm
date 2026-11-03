@@ -241,7 +241,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 				repos = append(repos, repo)
 			}
 		}
-		ds = append(ds, strayLocks(r.pkg.Fset, file, decls.Repositories)...)
+		ds = append(ds, strayDirectives(r.pkg.Fset, file, decls.Repositories)...)
 	}
 	return repos, append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
 }
@@ -291,8 +291,10 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		_, query := r.queries[fn.Name()]
 		if overridden && (!r.local || (!generated && !query)) {
 			if f := docs[fn.Name()]; f != nil {
-				if d, _ := directive.Find(r.pkg.Fset, f.Doc, "lock"); d.Found {
-					ds = append(ds, hasNoGeneratedSQL(d, fn.Name(), "the method the destination declares"))
+				for _, md := range methodDirectives {
+					if d, _ := directive.Find(r.pkg.Fset, f.Doc, md.key); d.Found {
+						ds = append(ds, hasNoGeneratedSQL(d, md.key, fn.Name(), "the method the destination declares"))
+					}
 				}
 			}
 			continue
@@ -358,10 +360,10 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 			return m, append(cds, d)
 		}
 		if conflict.Found {
-			cds = append(cds, diag.Errorf(conflict.Pos, "%s: //kanna:conflict is for an Upsert", m.name))
+			cds = append(cds, hasNoGeneratedSQL(conflict, "conflict", m.name, "-- query: "+m.name))
 		}
 		if lock.Found {
-			cds = append(cds, hasNoGeneratedSQL(lock, m.name, "-- query: "+m.name))
+			cds = append(cds, hasNoGeneratedSQL(lock, "lock", m.name, "-- query: "+m.name))
 		}
 		return m, append(cds, r.query(&m, fn, st)...)
 	}
