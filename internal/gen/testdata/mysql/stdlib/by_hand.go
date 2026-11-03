@@ -1,14 +1,10 @@
 package stdlib
 
-import (
-	"context"
-	"database/sql"
-)
+import "context"
 
 // OrderIDsByHand reads the ids of the orders and counts them, by statements written by hand on the rows of
 // database/sql.
 func (r OrderRepository) OrderIDsByHand(ctx context.Context) ([]int64, int64, error) {
-	var rows *sql.Rows
 	rows, err := r.db.QueryContext(ctx, "SELECT id FROM orders ORDER BY id")
 	if err != nil {
 		return nil, 0, err
@@ -22,12 +18,11 @@ func (r OrderRepository) OrderIDsByHand(ctx context.Context) ([]int64, int64, er
 		}
 		ids = append(ids, id)
 	}
-	if err := rows.Close(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-	var row *sql.Row = r.db.QueryRowContext(ctx, "SELECT count(*) FROM orders")
 	var n int64
-	if err := row.Scan(&n); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT count(*) FROM orders").Scan(&n); err != nil {
 		return nil, 0, err
 	}
 	return ids, n, nil
