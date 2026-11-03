@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -285,11 +286,17 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 
 	var ds []diag.Diag
 	implementation := repo.implementation()
+	var called map[string]bool
+	if r.local {
+		called = r.selected()
+	}
 	for _, fn := range methods {
 		overridden := r.skip[implementation][fn.Name()]
 		_, generated := verbOf(fn.Name())
 		_, query := r.queries[fn.Name()]
-		if overridden && (!r.local || (!generated && !query)) {
+		// A method written by hand gets a helper, its name made unexported, only if the package calls the helper: one
+		// that runs SQL of its own needs none, and kanna-orm may not be able to write one for it.
+		if overridden && (!r.local || (!generated && !query) || !called[lowerFirst(fn.Name())]) {
 			if f := docs[fn.Name()]; f != nil {
 				for _, md := range methodDirectives {
 					if d, _ := directive.Find(r.pkg.Fset, f.Doc, md.key); d.Found {
@@ -322,6 +329,23 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		ds = append(ds, r.validateTranslation(repo)...)
 	}
 	return repo, ds
+}
+
+// selected names what the files of the package written by hand select, as r.upsert selects upsert.
+func (r repoReader) selected() map[string]bool {
+	names := map[string]bool{}
+	for _, f := range r.pkg.Syntax {
+		if filepath.Base(r.pkg.Fset.Position(f.Pos()).Filename) == repositoryOutputName {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if s, ok := n.(*ast.SelectorExpr); ok {
+				names[s.Sel.Name] = true
+			}
+			return true
+		})
+	}
+	return names
 }
 
 // method reads fn, a method of the repository ts declares, as field, its syntax, declares it. tableModel is the model

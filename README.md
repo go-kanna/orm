@@ -511,7 +511,8 @@ binding wrapper of your own.
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
 other than `Bind` is left to your implementation. When you implement a method with a recognized verb or SQL query,
 kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can call `r.upsert`
-before translating its error. This helper behavior applies only to same-package generation. The helper has the same
+before translating its error. kanna-orm writes the helper only when the package calls it, so a method running SQL of
+its own needs none. This helper behavior applies only to same-package generation. The helper has the same
 signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
 already be declared. Queries belong in the destination's
 `.sql` files, including when the destination also declares the interface.
@@ -636,7 +637,8 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - A [hand-written query](#hand-written-sql) of the method's name takes the place of its verb; a method with neither
   stops generation.
 - A method you write yourself on the generated struct stays in your file. For [same-package implementations](#same-package-implementations),
-  a recognized verb or named query also generates a private helper. Separate-package implementations skip the method.
+  a recognized verb or named query also generates a private helper when the package calls it. Separate-package
+  implementations skip the method.
 
 A method tells its model by its result, its row, or its scopes, or else by a key of a type declared with the models, as
 `model.OrderID` is. One that takes nothing but keys of another type, such as `uuid.UUID` or `int64`, tells none, and
