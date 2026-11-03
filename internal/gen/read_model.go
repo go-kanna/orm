@@ -30,7 +30,8 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 			if m.projection != nil {
 				continue
 			}
-			if m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList {
+			if m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList ||
+				m.query != nil && m.scoped {
 				queue = append(queue, readModel{target: m.target, model: m.model, table: m.table})
 			}
 		}

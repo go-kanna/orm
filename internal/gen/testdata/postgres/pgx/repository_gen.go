@@ -1085,6 +1085,99 @@ ORDER BY 1`
 	return out, nil
 }
 
+// ListWithCustomers runs the query of its name in queries.sql.
+func (r OrderRepository) ListWithCustomers(ctx context.Context, s ...scopes.Order) ([]repository.OrderWithCustomer, error) {
+	qs := make([]scope.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := impl.Combine(qs...)
+	const text = `WITH list_with_customers AS (SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order", c.name AS customer_name
+FROM orders o
+JOIN customers c ON c.id = o.customer_id)
+SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.note, orders.total, orders.paid, orders.contact, orders.receipt, orders."order", orders.customer_name FROM list_with_customers AS orders`
+	args := []any{}
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	rows, err := r.db.Query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListWithCustomers: %w", err))
+	}
+	defer rows.Close()
+	out := []repository.OrderWithCustomer{}
+	for rows.Next() {
+		var row repository.OrderWithCustomer
+		if err := rows.Scan(&row.Order.ID, &row.Order.CustomerID, &row.Order.Status, &row.Order.PlacedAt, &row.Order.Memo, &row.Order.Total, &row.Order.Paid, &row.Order.Contact, &row.Order.Receipt, &row.Order.Position, &row.CustomerName); err != nil {
+			return nil, r.mapError(fmt.Errorf("query ListWithCustomers: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListWithCustomers: %w", err))
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	orders := make([]model.Order, len(out))
+	for i := range out {
+		orders[i] = out[i].Order
+	}
+	if err := preloadOrders(ctx, r.db, orders, q); err != nil {
+		return nil, r.mapError(err)
+	}
+	for i := range out {
+		out[i].Order = orders[i]
+	}
+	return out, nil
+}
+
+// FirstPlacedSince runs the query of its name in queries.sql.
+func (r OrderRepository) FirstPlacedSince(ctx context.Context, since time.Time, s ...scopes.Order) (model.Order, error) {
+	qs := make([]scope.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := impl.Combine(qs...)
+	q = q.DefaultOrder([]string{`id`}).Limit(1)
+	const text = `WITH first_placed_since AS (SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
+FROM orders o
+WHERE o.placed_at >= $1)
+SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.note, orders.total, orders.paid, orders.contact, orders.receipt, orders."order" FROM first_placed_since AS orders`
+	args := []any{since}
+	rd, err := q.Render(impl.Postgres, 2, []string{`id`})
+	if err != nil {
+		return model.Order{}, r.mapError(err)
+	}
+	rows, err := r.db.Query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	if err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf("query FirstPlacedSince: %w", err))
+	}
+	defer rows.Close()
+	out := []model.Order{}
+	for rows.Next() {
+		var row model.Order
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("query FirstPlacedSince: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf("query FirstPlacedSince: %w", err))
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := preloadOrders(ctx, r.db, out, q); err != nil {
+		return model.Order{}, r.mapError(err)
+	}
+	if len(out) == 0 {
+		return model.Order{}, r.mapError(fmt.Errorf("query FirstPlacedSince: %w", orm.ErrNotFound))
+	}
+	return out[0], nil
+}
+
 // TotalOf runs the query of its name in queries.sql.
 func (r OrderRepository) TotalOf(ctx context.Context, customerID int64) (repository.CustomerTotal, error) {
 	const q = `SELECT c.name AS customer, sum(o.total)::bigint AS total

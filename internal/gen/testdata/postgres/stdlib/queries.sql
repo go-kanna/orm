@@ -17,3 +17,13 @@ UPDATE orders SET status = 'closed' WHERE placed_at < :before AND status <> 'clo
 
 -- query: Reopen
 UPDATE orders SET status = 'open' WHERE id = :id;
+
+-- query: ListWithCustomers
+SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order", c.name AS customer_name
+FROM orders o
+JOIN customers c ON c.id = o.customer_id;
+
+-- query: FirstPlacedSince
+SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
+FROM orders o
+WHERE o.placed_at >= :since;
