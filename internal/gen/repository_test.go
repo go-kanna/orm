@@ -305,11 +305,6 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"\tDeleteByStatus(ctx context.Context, status model.OrderStatus) error\n",
 			at + "error: DeleteByStatus: (status) is no key of orders, so Delete would delete more than the one row\n" +
 				"  return (int64, error) for the number of rows deleted, or take a key of the table"},
-		{"nothing telling the table", snapshot.PostgreSQL, "\tDeleteByID(ctx context.Context, id int64) error\n",
-			at + "error: DeleteByID: nothing tells the table it reads or writes\n" +
-				"  give it the scopes of the table, as in Delete(ctx context.Context, id model.OrderID) error, or " +
-				"DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error) or ([]model.Order, error)\n" +
-				"  or name the table of the methods that tell none: //kanna:repository table=<table>"},
 		{"an Update of a table without a primary key", snapshot.PostgreSQL,
 			"\tUpdateLog(ctx context.Context, l model.Log) error\n",
 			at + "error: UpdateLog: logs has no primary key to tell its rows by"},
@@ -381,16 +376,15 @@ func TestRepositories_Table(t *testing.T) {
 	got, ds := repositoriesMarked(t, snapshot.PostgreSQL, "//kanna:repository table=users", `
 	DeleteUser(ctx context.Context, id int64) error
 	Get(ctx context.Context, id model.OrderID) (model.Order, error)
-	DeleteLine(ctx context.Context, orderID model.OrderID, lineNo int) error
 `, "", nil)
 	if ds != "" {
 		t.Fatalf("Repositories:\n%s", ds)
 	}
-	// table= is the table of the method that tells none; the others tell theirs by their result and their keys.
+	// table= is the table of the method that tells none, over orders, which OrderRepository is named after; Get tells
+	// its own by its result.
 	want := []string{
 		"OrderRepository.DeleteUser Delete users keys=id=id error",
 		"OrderRepository.Get Get orders keys=id=id row",
-		"OrderRepository.DeleteLine Delete order_lines keys=orderID=order_id,lineNo=line_no error",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Repositories =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -417,6 +411,51 @@ func TestRepositories_TableMistakes(t *testing.T) {
 			methods := "\tDeleteUser(ctx context.Context, id int64) error\n"
 			if _, ds := repositoriesMarked(t, snapshot.PostgreSQL, tt.directive, methods, "", nil); ds != tt.want {
 				t.Errorf("Repositories reports\n%s\nwant\n%s", ds, tt.want)
+			}
+		})
+	}
+}
+
+func TestRepositories_TableOfItsName(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct{ name, repository, want string }{
+		{"a name of no table", "CheckoutRepository", "repository.go:9:2: error: Delete: nothing tells the table it " +
+			"reads or writes\n  give it the scopes of the table, as in Delete(ctx context.Context, id model.OrderID) " +
+			"error, or DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error) or ([]model.Order, error)\n" +
+			"  or name the repository after the model of the table, as OrderRepository is after Order of orders\n" +
+			"  or name the table of the methods that tell none: //kanna:repository table=<table>"},
+		{"a table of no scope type", "AuditRepository", "repository.go:7:1: error: AuditRepository: no scope type is " +
+			"declared for audits, which AuditRepository is named after\n  declare one where audits are queried: " +
+			"//kanna:scope table=audits"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, repositoryModule+`
+-- repository/repository.go --
+package repository
+
+import "context"
+
+var _ context.Context
+
+//kanna:repository
+type `+tt.repository+` interface {
+	Delete(ctx context.Context, id int64) error
+}
+`)
+			set, err := packages.Load([]string{"./repository"}, packages.Config{Dir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, ds, err := gen.Repositories(set.Packages[0], repositoryTables(snapshot.PostgreSQL),
+				filepath.Join(dir, "postgres"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := report(ds); got != tt.want {
+				t.Errorf("Repositories reports\n%s\nwant\n%s", got, tt.want)
 			}
 		})
 	}
