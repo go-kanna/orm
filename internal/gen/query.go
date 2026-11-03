@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -354,6 +355,20 @@ func unusedQueries(queries map[string]sqlfile.Statement, pkgPath string, methods
 		ds = append(ds, d)
 	}
 	return ds
+}
+
+var (
+	inOpen  = regexp.MustCompile(`(?i)\bIN\s*\(\s*$`)
+	inClose = regexp.MustCompile(`^\s*\)`)
+)
+
+// listOf names what of the runtime an argument that expands is written through, before and after being the SQL around
+// it: InList right between the parentheses of IN (...), where no values are the empty set, and List elsewhere.
+func listOf(before, after string) string {
+	if inOpen.MatchString(before) && inClose.MatchString(after) {
+		return "InList"
+	}
+	return "List"
 }
 
 // expands reports whether an argument of type t stands for a list of values, as IN (:ids) takes it on MySQL: a slice

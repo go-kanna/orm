@@ -100,7 +100,7 @@ func TestGenerated_MySQL(t *testing.T) {
 			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (?, ?)))", []any{"gift", "rush"},
 		}},
 		{"a scope written by hand with a variadic parameter of none", mscopes.Orders().Tagged(), rendered{
-			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (NULL)))", nil,
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (SELECT NULL FROM DUAL WHERE FALSE)))", nil,
 		}},
 	}
 	for _, tt := range tests {

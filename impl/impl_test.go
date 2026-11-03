@@ -55,6 +55,8 @@ func TestRender(t *testing.T) {
 			"SELECT id FROM orders WHERE (status IN ($1, $2))", []any{"open", "paid"}},
 		{"an empty list", q.Where("status IN (", impl.List([]string(nil)), ")"), impl.MySQL, 1,
 			"SELECT id FROM orders WHERE (status IN (NULL))", nil},
+		{"an empty list of IN", q.Where("status NOT IN (", impl.InList([]string(nil)), ")"), impl.MySQL, 1,
+			"SELECT id FROM orders WHERE (status NOT IN (SELECT NULL FROM DUAL WHERE FALSE))", nil},
 		{"an offset without a limit", q.Offset(10), impl.Postgres, 1, "SELECT id FROM orders OFFSET 10", nil},
 		{"an offset without a limit on MySQL", q.Offset(10), impl.MySQL, 1,
 			"SELECT id FROM orders LIMIT 18446744073709551615 OFFSET 10", nil},
@@ -289,6 +291,9 @@ func TestExpand(t *testing.T) {
 		{"values", []any{1, 2}, "SELECT a WHERE b = ? AND c = ?", []any{1, 2}},
 		{"a list", []any{1, impl.List([]int{3, 4})}, "SELECT a WHERE b = ? AND c = ?, ?", []any{1, 3, 4}},
 		{"an empty list", []any{1, impl.List([]int(nil))}, "SELECT a WHERE b = ? AND c = NULL", []any{1}},
+		{"a list of IN", []any{1, impl.InList([]int{3, 4})}, "SELECT a WHERE b = ? AND c = ?, ?", []any{1, 3, 4}},
+		{"an empty list of IN", []any{1, impl.InList([]int(nil))},
+			"SELECT a WHERE b = ? AND c = SELECT NULL FROM DUAL WHERE FALSE", []any{1}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

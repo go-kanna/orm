@@ -65,10 +65,10 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 		b.WriteString("(" + c.pieces[0])
 		for j, arg := range c.args {
 			if l, ok := arg.(list); ok {
-				if len(l) == 0 {
-					b.WriteString("NULL")
+				if len(l.values) == 0 {
+					b.WriteString(l.none)
 				}
-				for k, v := range l {
+				for k, v := range l.values {
 					if k > 0 {
 						b.WriteString(", ")
 					}

@@ -36,13 +36,13 @@ func (e repoEmitter) scopedQuery(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 
 	values := make([]string, 0, len(m.query.args))
-	for _, a := range m.query.args {
+	for i, a := range m.query.args {
 		value := sig.params[a.parameter]
 		if a.field != nil {
 			value = e.storageValue(*a.field, value+"."+fieldPath(*a.field))
 		}
 		if m.query.pieces != nil && expands(a.typ) {
-			value = e.ref("List") + "(" + value + ")"
+			value = e.ref(listOf(m.query.pieces[i], m.query.pieces[i+1])) + "(" + value + ")"
 		}
 		values = append(values, value)
 	}

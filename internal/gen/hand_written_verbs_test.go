@@ -118,3 +118,20 @@ func TestOuterOrderWithoutLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestListOf(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ before, after, want string }{
+		{"WHERE id IN (", ")", "InList"},
+		{"WHERE id NOT IN (", ") ORDER BY id", "InList"},
+		{"WHERE id in\n  ( ", " )", "InList"},
+		{"ORDER BY FIELD(id, ", ")", "List"},
+		{"WHERE id IN (", ", 0)", "List"},
+		{"WHERE id IN (0, ", ")", "List"},
+		{"FROM a JOIN (", ")", "List"},
+	} {
+		if got := gen.ListOf(tt.before, tt.after); got != tt.want {
+			t.Errorf("ListOf(%q, %q) = %s, want %s", tt.before, tt.after, got, tt.want)
+		}
+	}
+}
