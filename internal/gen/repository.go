@@ -731,7 +731,18 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	}
 	for _, name := range m.coalesce {
 		if !slices.ContainsFunc(m.updated(), func(c column) bool { return c.col.Name == name }) {
-			return []diag.Diag{errorf("coalesce=%s names a column this upsert does not update", name)}
+			unupdated := errorf("coalesce=%s names a column this upsert does not update", name)
+			if m.insertDefault(name) {
+				unupdated = unupdated.WithHints("an upsert keeps a column default leaves out of INSERT")
+			}
+			return []diag.Diag{unupdated}
+		}
+	}
+	var ds []diag.Diag
+	for _, name := range m.keep {
+		if m.insertDefault(name) {
+			ds = append(ds, diag.Warningf(d.Pos, "%s: keep=%s changes nothing: an upsert keeps a column default leaves "+
+				"out of INSERT", m.name, name).WithHints("leave "+name+" out of keep="))
 		}
 	}
 
@@ -747,11 +758,16 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 		}
 	}
 	if r.s.Dialect == snapshot.MySQL && len(others) > 0 {
-		return []diag.Diag{diag.Warningf(m.pos, "%s: on MySQL, a conflict on %s also updates the row", m.name,
+		ds = append(ds, diag.Warningf(m.pos, "%s: on MySQL, a conflict on %s also updates the row", m.name,
 			strings.Join(others, " or ")).WithHints(fmt.Sprintf("%s has unique keys other than (%s)", m.target.table,
-			strings.Join(m.conflict, ", ")))}
+			strings.Join(m.conflict, ", "))))
 	}
-	return nil
+	return ds
+}
+
+// insertDefault tells whether default leaves the column name out of the INSERT of m.
+func (m repoMethod) insertDefault(name string) bool {
+	return slices.ContainsFunc(m.columns, func(c column) bool { return c.insertDefault && c.col.Name == name })
 }
 
 func sameColumns(a, b []string) bool {
@@ -842,11 +858,12 @@ func (m repoMethod) rowKey() []string {
 }
 
 // updated are the columns an update or an upsert of m writes over its row: those it inserts but its key, the primary
-// key, and those it keeps.
+// key, and those it keeps. An upsert keeps a column default leaves out of INSERT, too, rather than reset it to its
+// database default on a conflict.
 func (m repoMethod) updated() []column {
 	skip := slices.Concat(m.rowKey(), m.table.PrimaryKey, m.keep)
 	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool {
-		return c.col.Assigned || slices.Contains(skip, c.col.Name)
+		return c.col.Assigned || slices.Contains(skip, c.col.Name) || m.verb == verbUpsert && c.insertDefault
 	})
 }
 

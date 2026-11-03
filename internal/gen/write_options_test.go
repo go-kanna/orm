@@ -37,9 +37,9 @@ import (
 //kanna:repository
 type Records interface {
  Insert(ctx context.Context, record model.Record) error
- //kanna:conflict record_key keep=stamp coalesce=owner_id,note
+ //kanna:conflict record_key coalesce=owner_id,note
  Upsert(ctx context.Context, record model.Record) (model.Record,error)
- //kanna:conflict record_key coalesce=owner_id,note keep=stamp
+ //kanna:conflict record_key coalesce=note keep=owner_id
  UpsertAll(ctx context.Context, records []model.Record) error
  Update(ctx context.Context, record model.Record) error
  Get(ctx context.Context, id int64) (model.Record,error)

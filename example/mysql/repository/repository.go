@@ -23,7 +23,7 @@ type CustomerRepository interface {
 //kanna:repository
 type ProductRepository interface {
 	// UpsertAll writes the catalog in one statement, however many products it has.
-	//kanna:conflict sku keep=currency
+	//kanna:conflict sku
 	UpsertAll(ctx context.Context, products []model.Product) error
 	List(ctx context.Context, s ...scopes.Product) ([]model.Product, error)
 	ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)

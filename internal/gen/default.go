@@ -20,14 +20,6 @@ func (m repoMethod) defaultConstraints(d snapshot.Dialect) []diag.Diag {
 	if d != snapshot.MySQL {
 		return nil
 	}
-	if m.verb == verbUpsert {
-		for _, c := range m.updated() {
-			if c.insertDefault {
-				return []diag.Diag{diag.Errorf(m.pos, "%s: MySQL cannot update default column %s through the new-row alias",
-					m.name, c.col.Name).WithHints("use keep=" + c.col.Name + " to preserve its stored value on conflict")}
-			}
-		}
-	}
 	if m.result != resultRow || m.verb != verbInsert && m.verb != verbUpsert {
 		return nil
 	}

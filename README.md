@@ -756,19 +756,15 @@ On PostgreSQL, a method returning the model reads database-generated values with
 `ID uuid.UUID` tagged `orm:",default"` can use a `DEFAULT uuidv7()` primary key without assigning the ID in Go.
 A single row with every column omitted uses DEFAULT VALUES. Bulk writes still require at least one input column.
 
-UPDATE keeps writing the model's values for tagged non-key fields. Upsert conflict updates follow the usual `keep=`
-and `coalesce=` rules: an omitted field's incoming value is its database default, not the value supplied in Go. Use
-`keep=` when an existing value should always remain unchanged.
+UPDATE keeps writing the model's values for tagged non-key fields. An upsert keeps a tagged column's stored value on a
+conflict rather than reset it to its database default, with no `keep=` needed. It does not refresh a column such as
+`updated_at` on a conflict either: let a trigger assign one.
 
 **MySQL limitation:** this option does not add a RETURNING substitute or a new unique-key discovery mechanism.
 Existing readback through AUTO_INCREMENT, a supplied primary key, or an upsert's explicit conflict key continues to
 work. If `default` omits a key needed by that existing readback, generation fails for a model-returning method.
 An error-only method needs no readback and can still omit the column. MySQL's existing restriction on returning
 models from bulk writes also remains in place.
-
-MySQL's `new` row alias also cannot reference an omitted column. An upsert that would update a `default` field is
-therefore rejected; list that column in `keep=` to preserve its stored value. The examples use
-`//kanna:conflict sku keep=currency` for the product catalog. Ordinary UPDATE statements can still write Currency.
 
 ### Ignoring an insert conflict
 
