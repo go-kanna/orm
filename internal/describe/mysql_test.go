@@ -109,7 +109,7 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
   "tables": {
     "customers": {
       "columns": [
-        {"name": "id", "type": "bigint", "not_null": true, "assigned": true},
+        {"name": "id", "type": "bigint", "not_null": true, "assigned": true, "writable": true},
         {"name": "tenant_id", "type": "int", "not_null": true},
         {"name": "email", "type": "varchar(255)", "not_null": true}
       ],
@@ -133,7 +133,7 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
     },
     "orders": {
       "columns": [
-        {"name": "id", "type": "bigint unsigned", "not_null": true, "assigned": true},
+        {"name": "id", "type": "bigint unsigned", "not_null": true, "assigned": true, "writable": true},
         {"name": "customer_id", "type": "bigint", "not_null": true},
         {"name": "number", "type": "varchar(32)", "not_null": true},
         {"name": "status", "type": "enum('open','closed')", "not_null": true, "default": true},

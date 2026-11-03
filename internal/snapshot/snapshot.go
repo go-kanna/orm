@@ -72,8 +72,12 @@ type Column struct {
 	// Default reports whether the column has a default of its own, which an insert leaving it out gets.
 	Default bool `json:"default,omitzero"`
 	// Assigned reports whether the database gives the column its value itself, as it does an identity, serial,
-	// AUTO_INCREMENT, or generated column. kanna-orm never writes such a column.
+	// AUTO_INCREMENT, or generated column.
 	Assigned bool `json:"assigned,omitzero"`
+	// Writable reports, of an assigned column, whether an insert may give its value instead, as it may that of a
+	// serial, an identity BY DEFAULT, or an AUTO_INCREMENT column, but not that of an identity ALWAYS or a generated
+	// column.
+	Writable bool `json:"writable,omitzero"`
 }
 
 // ForeignKey is a foreign key, its columns paired in order with the ones it references.
@@ -221,6 +225,9 @@ func column(c Column) string {
 	}
 	if c.Assigned {
 		s += `, "assigned": true`
+	}
+	if c.Writable {
+		s += `, "writable": true`
 	}
 	return s + "}"
 }
