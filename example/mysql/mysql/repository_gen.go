@@ -70,21 +70,33 @@ func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
 var _ repository.CustomerRepository = CustomerRepository{}
 
 func (r CustomerRepository) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
-	const q = `INSERT INTO customers (email, name, phone, created_at)
+	const withoutID = `INSERT INTO customers (email, name, phone, created_at)
 VALUES (?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
-	res, err := r.db.ExecContext(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt)
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
+	const withID = `INSERT INTO customers (email, name, phone, created_at, id)
+VALUES (?, ?, ?, ?, ?) AS new
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
+	q, args := withoutID, []any{c.Email, c.Name, c.Phone, c.CreatedAt}
+	if c.ID != 0 {
+		q, args = withID, append(args, c.ID)
+	}
+	res, err := r.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
+	if c.ID == 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
+		}
+		var row model.Customer
+		if err := r.db.QueryRowContext(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
+			return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
+		}
+		return row, nil
 	}
 	var row model.Customer
-	err = r.db.QueryRowContext(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`, id).
-		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
-	if err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE email = ?`, c.Email).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
 	return row, nil
@@ -388,21 +400,34 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, e
 }
 
 func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
+	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note)
 VALUES (?, ?, ?, ?)`
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""})
+	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, id)
+VALUES (?, ?, ?, ?, ?)`
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
+	res, err := r.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+	if o.ID == 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+		}
+		var row model.Order
+		var nullableMemo sql.Null[string]
+		if err := r.db.QueryRowContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+		}
+		row.Memo = nullableMemo.V
+		return row, nil
 	}
 	var row model.Order
 	var nullableMemo sql.Null[string]
-	err = r.db.QueryRowContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
-	if err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 	}
 	row.Memo = nullableMemo.V
