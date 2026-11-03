@@ -34,7 +34,7 @@ type Email struct{ s string }
 -- scopes/scopes.go --
 package scopes
 
-//kanna:scopes ../model
+//kanna:scopes model-package=../model
 
 // Open narrows to the orders that are not closed.
 func (s Order) Open() Order {
@@ -135,13 +135,13 @@ func TestCommand_ImpliedScopesMistakes(t *testing.T) {
 	tests := []struct {
 		name, scopes, want string
 	}{
-		{"a package of another module", "//kanna:scopes example.com/elsewhere/model\n",
+		{"a package of another module", "//kanna:scopes model-package=example.com/elsewhere/model\n",
 			"./scopes.go:3:1: error: //kanna:scopes takes the packages of example.com/shop, not " +
 				"example.com/elsewhere/model\n  declare a scope type of each table of its models with //kanna:scope\n"},
-		{"a package with no struct named after a table", "//kanna:scopes example.com/shop/repository\n",
-			"./scopes.go:3:1: warning: //kanna:scopes example.com/shop/repository implies no scope type: no struct of " +
-				"it is named after a table of the snapshot\n  as order_lines is after OrderLine\n"},
-		{"a name declared already", "//kanna:scopes example.com/shop/model\n\nfunc Orders() {}\n",
+		{"a package with no struct named after a table", "//kanna:scopes model-package=example.com/shop/repository\n",
+			"./scopes.go:3:1: warning: //kanna:scopes model-package=example.com/shop/repository implies no scope type: " +
+				"no struct of it is named after a table of the snapshot\n  as order_lines is after OrderLine\n"},
+		{"a name declared already", "//kanna:scopes model-package=example.com/shop/model\n\nfunc Orders() {}\n",
 			"./scopes.go:3:1: error: Order: Orders, which the scope type //kanna:scopes implies of orders needs, is " +
 				"declared already\n  it is declared at scopes.go:5\n  declare the scope type yourself: " +
 				"//kanna:scope table=orders\n"},
