@@ -56,13 +56,13 @@ func TestWiring(t *testing.T) {
 	reader := &db.Reader{}
 	after := func(context.Context, hook.Execution) {}
 first := NewOrders(reader, option.WithHook(hook.Hook{After: after}))
-	if first.(*orders).db != reader { t.Fatal("constructor did not use reader") }
+	if first.(*orders).db.dbtx != reader { t.Fatal("constructor did not use reader") }
 	tx := db.Tx{}
 	bound := first.Bind(%s)
-	if len(bound.(*orders).executor.options.Hooks) != 1 { t.Fatal("Bind dropped the hooks") }
+	if len(bound.(*orders).db.options.Hooks) != 1 { t.Fatal("Bind dropped the hooks") }
 if bound == first { t.Fatal("Bind reused the original repository") }
-	if bound.(*orders).db != tx.DBTX() { t.Fatal("Bind did not use the transaction") }
-	if first.(*orders).db != reader { t.Fatal("Bind changed the original repository") }
+	if bound.(*orders).db.dbtx != tx.DBTX() { t.Fatal("Bind did not use the transaction") }
+	if first.(*orders).db.dbtx != reader { t.Fatal("Bind changed the original repository") }
 }
 `
 

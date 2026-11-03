@@ -39,7 +39,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 		text, args, reversed, err, q, e.dialect(), m.target.table, e.projectionSources(m), e.projectionJoins(m),
 		namesLiteral(tableColumnNames(m)), goString(query), e.orderKey(m.table))
 	e.printf("if %s != nil { return %s, %s }\n", err, zero, mapped(err))
-	e.printf("%s, %s := %s.executor.%s(%s, %s+%s, %s...)\n",
+	e.printf("%s, %s := %s.db.%s(%s, %s+%s, %s...)\n",
 		rows, err, recv, e.query, sig.ctx, text, lockClause(m), args)
 	wrap := mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "project "+m.target.table+": %w") + ", " + err + ")")
 	e.printf("if %s != nil { return %s, %s }\ndefer %s.Close()\n", err, zero, wrap, rows)
