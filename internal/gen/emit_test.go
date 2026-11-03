@@ -21,7 +21,8 @@ import (
 var tables = map[string]snapshot.Table{
 	"orders": {
 		Columns: []snapshot.Column{
-			{Name: "id", Type: "int8", NotNull: true, Assigned: true, Writable: true},
+			{Name: "id", Type: "int8", NotNull: true, Assigned: true, Writable: true,
+				AssignedBy: "nextval('orders_id_seq'::regclass)"},
 			{Name: "customer_id", Type: "int8", NotNull: true},
 			{Name: "status", Type: "text", NotNull: true},
 			{Name: "placed_at", Type: "timestamptz", NotNull: true},

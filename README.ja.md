@@ -584,7 +584,7 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 行は、モデルが保持するとおりに書き込まれます。値を与えなければデータベースが割り当てるカラム（serial、identity の `BY DEFAULT`、AUTO_INCREMENT）は、gorm や Rails と同じく、モデルの値がゼロなら INSERT から外してデータベースに任せ、ゼロでなければ書き込みます。採番の値に 0 は使われないので、0 を「値なし」と読めます。そのため、fixture は ID を与えられ、そのようなキーで行を突き合わせる `Upsert` も書けます（ID のない行は挿入し、ID のある行はその行を更新します）。値を書き込んでもシーケンスは進まないので、後からデータベースが割り当てる行が同じ値を取ることがあります。シーケンスが届かない値を与えるか、後でシーケンスを進めてください。identity の `ALWAYS` や生成カラムのように、データベースがいつも割り当てるカラムは、`default` を指定したフィールドと同じく、いつも INSERT から除外します。それ以外のゼロ値はそのまま書き込み、デフォルトが `true` のカラムに対する `false` も `false` のままです。`created_at` と `updated_at` はドメインで設定するか、明示的に DB のデフォルト値を使ってください。
 
-モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。1 行は、値に応じてカラムのある文とない文の 2 つの定数のどちらかで書き込み、複数行の Insert はカラムのある行の文とない行の文で書き込んで、渡した順に読み戻します。両方が混ざると 2 つの文になり、トランザクションの外では、2 つ目が失敗しても 1 つ目は書き込まれたまま残ります。MySQL では、データベースが主キーを割り当てた行は `LAST_INSERT_ID()` で、そうでなければ主キー（Upsert では衝突キー）で読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
+モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。1 行は、値に応じてカラムのある文とない文の 2 つの定数のどちらかで書き込みます。複数行の Insert は、カラムを渡す行と渡さない行が混ざっていても 1 つの文で書き込みます。PostgreSQL では、値がゼロの行には、`describe` が記録した、データベースがそのカラムを割り当てる式（`nextval('orders_id_seq'::regclass)` など）の値を書きます。MySQL では `NULL` を渡し、AUTO_INCREMENT に割り当てさせます。MySQL では、データベースが主キーを割り当てた行は `LAST_INSERT_ID()` で、そうでなければ主キー（Upsert では衝突キー）で読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
 
 ### DB のデフォルト値
 
@@ -671,7 +671,7 @@ INSERT INTO order_lines (order_id, sku, quantity)
 SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 ```
 
-- PostgreSQL では、戻り値が `([]model.OrderLine, error)` なら `RETURNING` で行を読み戻します。
+- PostgreSQL では、戻り値が `([]model.OrderLine, error)` なら `RETURNING` で行を読み戻します。複数行の `Update` や `Delete` と同じく、行の順は保証しません。どの行がどれかを知るには、自分で持っているキーで突き合わせるか、行を 1 つずつ Insert してください。
 - MySQL では、行を `VALUES (?, ?, ?), (?, ?, ?), ...` で送り、1 つの文に入るプレースホルダの数を超える場合は複数の文に分割します。すべて成功するかすべて失敗するかにしたい場合は、コンストラクタにトランザクションを渡してください。
 - MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
@@ -1013,7 +1013,7 @@ approvers, err := repo.ListApprovers(ctx, ids)
 | キーのリスト | `= ANY($1)` | `IN (?, ...)`（長い場合は分割） |
 | 書き込みの読み戻し | `RETURNING` | `LAST_INSERT_ID()` とキーによる `SELECT` |
 | Upsert | 指定したキーに対する `ON CONFLICT (...)` | 任意のユニークキーに対する `ON DUPLICATE KEY UPDATE` |
-| 複数行 | `unnest`（1 つの文。[2 つ](#書き込み)のことも） | `VALUES`（長い場合は分割） |
+| 複数行 | `unnest`（1 つの文） | `VALUES`（長い場合は分割） |
 | キーによるページング | 行の比較（順序の方向が混在する場合を除く） | 展開して書く |
 
 値オブジェクトは `Value` メソッドと `Scan` メソッドを通してデータベースとやり取りし、他の型はドライバが変換するとおりにやり取りします。NULL になりうるカラムはポインタで保持します。database/sql 経由の場合、PostgreSQL の配列をスライスに読み込めるのは Go 1.27 以降で、そこでは pgx/stdlib が各カラムを自分でスキャンします。

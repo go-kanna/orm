@@ -657,33 +657,18 @@ func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order
 }
 
 func (r OrderRepository) InsertOrders(ctx context.Context, orders []model.Order) error {
-	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 	if len(orders) == 0 {
 		return nil
 	}
-	// The rows whose id is zero, which the database assigns, and those which give it.
-	var assigned, given []int
-	for i := range orders {
-		if orders[i].ID == 0 {
-			assigned = append(assigned, i)
-		} else {
-			given = append(given, i)
-		}
-	}
-	for chunk := range slices.Chunk(assigned, 7281) {
-		args := make([]any, 0, len(chunk)*9)
-		for _, k := range chunk {
-			args = append(args, orders[k].CustomerID, orders[k].Status, orders[k].PlacedAt, orders[k].Memo, orders[k].Total, orders[k].Paid, orders[k].Contact, orders[k].Receipt, orders[k].Position)
-		}
-		if _, err := r.db.ExecContext(ctx, withoutID+strings.Repeat(`, (?, ?, ?, ?, ?, ?, ?, ?, ?)`, len(chunk)-1), args...); err != nil {
-			return r.mapError(fmt.Errorf("insert into orders: %w", err))
-		}
-	}
-	for chunk := range slices.Chunk(given, 6553) {
+	for chunk := range slices.Chunk(orders, 6553) {
 		args := make([]any, 0, len(chunk)*10)
-		for _, k := range chunk {
-			args = append(args, orders[k].CustomerID, orders[k].Status, orders[k].PlacedAt, orders[k].Memo, orders[k].Total, orders[k].Paid, orders[k].Contact, orders[k].Receipt, orders[k].Position, orders[k].ID)
+		for _, row := range chunk {
+			var id any
+			if row.ID != 0 {
+				id = row.ID
+			}
+			args = append(args, row.CustomerID, row.Status, row.PlacedAt, row.Memo, row.Total, row.Paid, row.Contact, row.Receipt, row.Position, id)
 		}
 		if _, err := r.db.ExecContext(ctx, withID+strings.Repeat(`, (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, len(chunk)-1), args...); err != nil {
 			return r.mapError(fmt.Errorf("insert into orders: %w", err))

@@ -799,6 +799,10 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 		}
 	}
 	ds = append(ds, m.writeKeyRules()...)
+	if given, ok := m.given(); ok && m.many && r.s.Dialect == snapshot.PostgreSQL && given.col.AssignedBy == "" {
+		ds = append(ds, errorf("the snapshot does not tell how the database assigns %s.%s, which the rows giving "+
+			"none get", m.target.table, given.col.Name).WithHints("describe the database again with go tool kanna-orm describe"))
+	}
 	if m.verb == verbUpdate && len(m.updated()) == 0 {
 		ds = append(ds, errorf("%s holds no column of %s to update but its key", model, m.target.table))
 	}

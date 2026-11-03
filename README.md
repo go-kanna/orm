@@ -746,9 +746,10 @@ field tagged `default`. Otherwise a zero value is written as a zero value: a `fa
 stays `false`. Set `created_at` and `updated_at` in your domain, or explicitly use their database defaults.
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
-done. A row goes by one of two constant statements, with the column and without, as its value says, and the rows of a
-bulk insert by a statement for those with the column and one for those without, read back in the order given: when
-they mix the two, that is two statements, and without a transaction the first stays written if the second fails. MySQL reads a row back by `LAST_INSERT_ID()` when the
+done. A row goes by one of two constant statements, with the column and without, as its value says. The rows of a
+bulk insert go by one statement, whether they give the column or not: on PostgreSQL, a row whose value is zero gets
+what the database assigns the column by, which `describe` records, as `nextval('orders_id_seq'::regclass)`; on
+MySQL, it gives `NULL`, which AUTO_INCREMENT assigns. MySQL reads a row back by `LAST_INSERT_ID()` when the
 database assigned its primary key, and by its primary key, or an upsert's conflict key, otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
 whether the row is there before returning `orm.ErrNotFound`.
 
@@ -857,7 +858,9 @@ INSERT INTO order_lines (order_id, sku, quantity)
 SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 ```
 
-- On PostgreSQL, a result of `([]model.OrderLine, error)` reads the rows back with `RETURNING`.
+- On PostgreSQL, a result of `([]model.OrderLine, error)` reads the rows back with `RETURNING`, in no guaranteed
+  order, as those of an `Update` or a `Delete` of many rows: to tell which row is which, match them by a key you hold,
+  or insert the rows one by one.
 - On MySQL, the rows go in `VALUES (?, ?, ?), (?, ?, ?), ...`, split into several statements when they need more
   placeholders than one can take. Give the constructor a transaction to have them stand or fall together.
 - MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
@@ -1251,7 +1254,7 @@ the difference is settled when the code is generated.
 | A list of keys       | `= ANY($1)`                                         | `IN (?, ...)`, split when long               |
 | Reading a write back | `RETURNING`                                         | `LAST_INSERT_ID()` and a `SELECT` by the key |
 | Upsert               | `ON CONFLICT (...)` on the key named                | `ON DUPLICATE KEY UPDATE` on any unique key  |
-| Many rows            | `unnest`, in one statement, or [two](#writing)      | `VALUES`, split when long                    |
+| Many rows            | `unnest`, in one statement                          | `VALUES`, split when long                    |
 | Paging by key        | a row comparison, unless the order mixes directions | spelled out                                  |
 
 A value type goes to and from the database through its `Value` and `Scan` methods; any other type, as the driver

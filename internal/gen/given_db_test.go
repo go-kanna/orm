@@ -1,6 +1,7 @@
 package gen_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -26,10 +27,17 @@ func TestGivenID_Postgres(t *testing.T) {
 			t.Errorf("Insert of id 500 = %+v, %v", o, err)
 		}
 		rows, err := repo.InsertOrders(ctx, []model.Order{givenOrder(600, 103), givenOrder(0, 104), givenOrder(601, 105)})
-		if err != nil || len(rows) != 3 || rows[0].ID != 600 || rows[1].ID == 0 || rows[1].Position != 104 ||
-			rows[2].ID != 601 {
-			t.Errorf("InsertOrders of ids 600, none, and 601 = %+v, %v; want them in the order given", rows, err)
+		ids := map[int]model.OrderID{}
+		for _, o := range rows {
+			ids[o.Position] = o.ID
 		}
+		if err != nil || len(rows) != 3 || ids[103] != 600 || ids[104] == 0 || ids[104] == 600 || ids[105] != 601 {
+			t.Errorf("InsertOrders of ids 600, none, and 601 = %+v, %v", rows, err)
+		}
+		checkOneStatement(t, repo.Count, func() bool {
+			_, err := repo.InsertOrders(ctx, []model.Order{givenOrder(0, 107), givenOrder(600, 108)})
+			return err != nil
+		})
 		closed := givenOrder(500, 102)
 		closed.Status = "closed"
 		if o, err := repo.UpsertOrder(ctx, closed); err != nil || o.ID != 500 || o.Status != "closed" {
@@ -57,6 +65,9 @@ func TestGivenID_MySQL(t *testing.T) {
 	if o, err := repo.Get(ctx, 600); err != nil || o.Position != 103 {
 		t.Errorf("Get of order 600 = %+v, %v", o, err)
 	}
+	checkOneStatement(t, repo.Count, func() bool {
+		return repo.InsertOrders(ctx, []model.Order{givenOrder(0, 107), givenOrder(600, 108)}) != nil
+	})
 	closed := givenOrder(500, 102)
 	closed.Status = "closed"
 	if o, err := repo.UpsertOrder(ctx, closed); err != nil || o.ID != 500 || o.Status != "closed" {
@@ -64,5 +75,21 @@ func TestGivenID_MySQL(t *testing.T) {
 	}
 	if o, err := repo.UpsertOrder(ctx, givenOrder(0, 106)); err != nil || o.ID == 0 || o.Position != 106 {
 		t.Errorf("UpsertOrder of no id = %+v, %v; want one inserted", o, err)
+	}
+}
+
+// checkOneStatement checks that insert, writing a row the database assigns the id of and one of an id taken, fails,
+// reporting so, as one statement does, leaving the rows as they were.
+func checkOneStatement[S any](t *testing.T, count func(context.Context, ...S) (int64, error), insert func() bool) {
+	t.Helper()
+	before, err := count(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !insert() {
+		t.Fatal("InsertOrders of an id taken succeeded")
+	}
+	if after, err := count(t.Context()); err != nil || after != before {
+		t.Errorf("InsertOrders of an id taken left %d orders, %v; want the %d before", after, err, before)
 	}
 }
