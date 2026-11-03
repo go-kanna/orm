@@ -732,11 +732,26 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		if tail != "" {
 			query += "+" + goString(tail)
 		}
-		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
+		zero, total := "", ""
+		if m.returns == returnsCount {
+			zero, total = "0, ", sc.Name("total")
+		}
+		e.printf("if len(%s) == 0 {\nreturn %snil\n}\n", sig.row, zero)
+		if total != "" {
+			e.printf("var %s int64\n", total)
+		}
 		e.printf("// As many rows to a statement as its 65,535 placeholders take.\n")
 		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, %[6]s)\n"+
 			"for %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.f.Import("slices", "slices"), sig.row,
 			65535/len(inserted), args, capacity, i, strings.Join(fields, ", "))
+		if total != "" {
+			// MySQL counts the rows each statement writes, which add up to those of the call.
+			res := e.execResult(sc)
+			e.printf("%[1]s, %[2]s := %[3]s.executor.%[4]s(%[5]s, %[6]s, %[7]s...)\nif %[2]s != nil {\nreturn 0, %[8]s\n}\n",
+				res, err, recv, e.exec, sig.ctx, query, args, wrap)
+			e.printf("%s += %s\n}\nreturn %s, nil\n", total, e.rowsAffected(sc, res, err, "0, ", wrap), total)
+			return
+		}
 		e.printf("if _, %[1]s := %[2]s.executor.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n"+
 			"return nil\n", err, recv, e.exec, sig.ctx, query, args, wrap)
 		return

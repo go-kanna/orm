@@ -700,6 +700,14 @@ func (m *repoMethod) changeSetRows(names []string) (diag.Diag, bool) {
 	return diag.Diag{}, true
 }
 
+// withoutReadback tells what a write of many rows of v can return without reading them back.
+func (v verb) withoutReadback() string {
+	if v == verbInsert {
+		return "return error alone, or (int64, error) for the number of rows written"
+	}
+	return "return error alone"
+}
+
 // verbRules reports what else a method of its verb asks of its table.
 func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
@@ -734,9 +742,9 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table).WithHints(
 			"name a unique key of " + m.target.table + " with //kanna:conflict")}
 	case (m.verb == verbInsert || m.verb == verbUpsert) && m.many && m.returns != returnsNone &&
-		r.s.Dialect == snapshot.MySQL:
+		m.returns != returnsCount && r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no RETURNING, so the rows of one statement cannot be read back").
-			WithHints("return error alone")}
+			WithHints(m.verb.withoutReadback())}
 	}
 	return nil
 }

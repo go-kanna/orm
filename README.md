@@ -860,7 +860,8 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - On PostgreSQL, a result of `([]model.OrderLine, error)` reads the rows back with `RETURNING`.
 - On MySQL, the rows go in `VALUES (?, ?, ?), (?, ?, ?), ...`, split into several statements when they need more
   placeholders than one can take. Give the constructor a transaction to have them stand or fall together.
-- MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
+- MySQL has no `RETURNING`, so there a result other than `error` alone stops generation, but for an `Insert` returning
+  `(int64, error)`: the number of rows its statements wrote.
 - PostgreSQL rejects an upsert in which two rows have the same key.
 - `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
   one by one.
