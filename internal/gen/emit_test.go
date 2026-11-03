@@ -312,7 +312,7 @@ func TestEmitRepositories(t *testing.T) {
 	t.Parallel()
 
 	const testdata = "github.com/go-kanna/orm/internal/gen/testdata/"
-	results := map[string][]snapshot.Result{
+	results := map[string][]snapshot.OutputColumn{
 		"MonthCounts": {{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8"}},
 		"TotalOf":     {{Name: "customer", Type: "text", NotNull: true}, {Name: "total", Type: "int8"}},
 	}

@@ -7,7 +7,7 @@ import (
 )
 
 // distinctNames reports a name two result columns share, since the fields take the columns by name.
-func distinctNames(columns []snapshot.Result) error {
+func distinctNames(columns []snapshot.OutputColumn) error {
 	seen := map[string]bool{}
 	for _, c := range columns {
 		if seen[c.Name] {

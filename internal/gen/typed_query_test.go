@@ -224,7 +224,7 @@ type Limits interface {
 			s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Statements: map[string]snapshot.Statement{
 				"example.com/shop/impl.Echo": {
 					Digest: snapshot.Digest(query), Params: params,
-					Columns: []snapshot.Result{{Name: "value", Type: "text", NotNull: true}},
+					Columns: []snapshot.OutputColumn{{Name: "value", Type: "text", NotNull: true}},
 				},
 			}}
 			if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
@@ -256,17 +256,17 @@ func writeTypedQuerySnapshot(t *testing.T, dir string) {
 		"example.com/shop/impl.Save": {
 			Digest:  snapshot.Digest("INSERT INTO records (state, note) VALUES (:state, :note) RETURNING id;"),
 			Params:  []snapshot.Param{{Name: "state", Type: "text"}, {Name: "note", Type: "text"}},
-			Columns: []snapshot.Result{{Name: "id", Type: "int8", NotNull: true}},
+			Columns: []snapshot.OutputColumn{{Name: "id", Type: "int8", NotNull: true}},
 		},
 		"example.com/shop/impl.Lookup": {
 			Digest: snapshot.Digest("SELECT id, state, note FROM records WHERE id = :id;"),
 			Params: []snapshot.Param{{Name: "id", Type: "int8"}},
-			Columns: []snapshot.Result{{Name: "id", Type: "int8", NotNull: true},
+			Columns: []snapshot.OutputColumn{{Name: "id", Type: "int8", NotNull: true},
 				{Name: "state", Type: "text", Nullable: true}, {Name: "note", Type: "text", Nullable: true}},
 		},
 		"example.com/shop/impl.States": {
 			Digest:  snapshot.Digest("SELECT 'active' AS state;"),
-			Columns: []snapshot.Result{{Name: "state", Type: "text"}},
+			Columns: []snapshot.OutputColumn{{Name: "state", Type: "text"}},
 		},
 	}}
 	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {

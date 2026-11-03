@@ -20,7 +20,7 @@ func (m repoMethod) defaultConstraints(d snapshot.Dialect) []diag.Diag {
 	if d != snapshot.MySQL {
 		return nil
 	}
-	if m.result != resultRow || m.verb != verbInsert && m.verb != verbUpsert {
+	if m.returns != returnsRow || m.verb != verbInsert && m.verb != verbUpsert {
 		return nil
 	}
 	if _, ok := m.autoIncrement(); ok {

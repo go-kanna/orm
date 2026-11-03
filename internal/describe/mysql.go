@@ -186,7 +186,7 @@ func mysqlStatement(ctx context.Context, conn *sql.Conn, sql string) (snapshot.S
 	return st, distinctNames(st.Columns)
 }
 
-func mysqlResult(ctx context.Context, conn *sql.Conn, text string, inputs int) (_ []snapshot.Result, err error) {
+func mysqlResult(ctx context.Context, conn *sql.Conn, text string, inputs int) (_ []snapshot.OutputColumn, err error) {
 	wrapped := "SELECT t.* FROM (\n" + text + "\n) AS t LIMIT 0" //nolint:gosec,unqueryvet // the statement described
 	rows, err := conn.QueryContext(ctx, wrapped, make([]any, inputs)...)
 
@@ -208,9 +208,9 @@ func mysqlResult(ctx context.Context, conn *sql.Conn, text string, inputs int) (
 	if err != nil {
 		return nil, fmt.Errorf("read the result: %w", err)
 	}
-	columns := make([]snapshot.Result, 0, len(types))
+	columns := make([]snapshot.OutputColumn, 0, len(types))
 	for _, t := range types {
-		c := snapshot.Result{Name: t.Name(), Type: mysqlTypeName(t.DatabaseTypeName())}
+		c := snapshot.OutputColumn{Name: t.Name(), Type: mysqlTypeName(t.DatabaseTypeName())}
 		if nullable, ok := t.Nullable(); ok {
 			c.NotNull, c.Nullable = !nullable, nullable
 		}

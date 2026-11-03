@@ -215,7 +215,7 @@ func TestMySQLStatement(t *testing.T) {
 			`SELECT id, customer_id, note FROM orders WHERE placed_at >= :since AND status = :status;`,
 			snapshot.Statement{
 				Params: []snapshot.Param{{Name: "since"}, {Name: "status"}},
-				Columns: []snapshot.Result{
+				Columns: []snapshot.OutputColumn{
 					{Name: "id", Type: "bigint unsigned", NotNull: true},
 					{Name: "customer_id", Type: "bigint", NotNull: true},
 					{Name: "note", Type: "text", Nullable: true},
@@ -223,7 +223,7 @@ func TestMySQLStatement(t *testing.T) {
 			}},
 		{"expressions",
 			`SELECT date_format(placed_at, '%Y-%m') AS month, count(*) AS count, sum(total) AS total FROM orders GROUP BY 1`,
-			snapshot.Statement{Columns: []snapshot.Result{
+			snapshot.Statement{Columns: []snapshot.OutputColumn{
 				{Name: "month", Type: "varchar", Nullable: true},
 				{Name: "count", Type: "bigint", NotNull: true},
 				{Name: "total", Type: "decimal", Nullable: true},
@@ -232,18 +232,18 @@ func TestMySQLStatement(t *testing.T) {
 			`SELECT id FROM orders WHERE customer_id = :c OR id = :c`,
 			snapshot.Statement{
 				Params:  []snapshot.Param{{Name: "c"}, {Name: "c"}},
-				Columns: []snapshot.Result{{Name: "id", Type: "bigint unsigned", NotNull: true}},
+				Columns: []snapshot.OutputColumn{{Name: "id", Type: "bigint unsigned", NotNull: true}},
 			}},
 		{"an outer join",
 			`SELECT o.id, c.email FROM orders o LEFT JOIN customers c ON c.id = o.customer_id`,
-			snapshot.Statement{Columns: []snapshot.Result{
+			snapshot.Statement{Columns: []snapshot.OutputColumn{
 				{Name: "id", Type: "bigint unsigned", NotNull: true},
 				{Name: "email", Type: "varchar", Nullable: true},
 			}}},
 		{"no rows", `UPDATE orders SET status = :status WHERE id = :id`,
 			snapshot.Statement{Params: []snapshot.Param{{Name: "status"}, {Name: "id"}}}},
 		{"a comment after the end", "SELECT id FROM orders; -- done",
-			snapshot.Statement{Columns: []snapshot.Result{{Name: "id", Type: "bigint unsigned", NotNull: true}}}},
+			snapshot.Statement{Columns: []snapshot.OutputColumn{{Name: "id", Type: "bigint unsigned", NotNull: true}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

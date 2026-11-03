@@ -87,9 +87,9 @@ type ForeignKey struct {
 type Statement struct {
 	// Digest identifies the text the statement was described from, so that generation can tell when it has changed
 	// since.
-	Digest  string   `json:"digest"`
-	Params  []Param  `json:"params"`
-	Columns []Result `json:"columns"`
+	Digest  string         `json:"digest"`
+	Params  []Param        `json:"params"`
+	Columns []OutputColumn `json:"columns"`
 }
 
 // Param is a parameter of a statement, in the order of its placeholders. MySQL does not tell its type.
@@ -98,8 +98,9 @@ type Param struct {
 	Type string `json:"type,omitempty"`
 }
 
-// Result is a column of what a statement returns. NotNull and Nullable are both false where the database cannot tell.
-type Result struct {
+// OutputColumn is a column of what a statement returns. NotNull and Nullable are both false where the database
+// cannot tell.
+type OutputColumn struct {
 	Name     string `json:"name"`
 	Type     string `json:"type"`
 	NotNull  bool   `json:"not_null,omitzero"`

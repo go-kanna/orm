@@ -12,15 +12,15 @@ import (
 func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, sig signature) {
 	model := types.TypeString(m.model, e.f.Qualifier)
 	zero := ""
-	switch m.result {
-	case resultNone:
-	case resultRow:
+	switch m.returns {
+	case returnsNone:
+	case returnsRow:
 		zero = model + "{}, "
-	case resultRows:
+	case returnsRows:
 		zero = "nil, "
-	case resultCount:
+	case returnsCount:
 		zero = "0, "
-	case resultBool, resultScalar:
+	case returnsBool, returnsScalar:
 		panic("unsupported Update result")
 	}
 	q, changes := sc.Name("q"), sc.Name("changes")
@@ -55,7 +55,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	e.printf("if %s != nil { return %s%s }\n", err, zero, err)
 	wrap := e.fmtPkg() + ".Errorf(" + goString("update "+m.target.table+": %w") + ", " + err + ")"
 	notFound := func() string { return e.notFound(m.target.table, nil, nil) }
-	if m.result == resultRow || m.result == resultRows {
+	if m.returns == returnsRow || m.returns == returnsRows {
 		e.printf("%s += %s\n", text, goString(" RETURNING "+e.columnList(m.columns)))
 		e.updateReturning(m, sc, recv, sig, text, args, err, model, wrap, notFound)
 		return
@@ -64,7 +64,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	e.printf("%s, %s := %s.executor.%s(%s, %s, %s...)\n", res, err, recv, e.exec, sig.ctx, text, args)
 	e.printf("if %s != nil { return %s%s }\n", err, zero, wrap)
 	affected := e.rowsAffected(sc, res, err, zero, wrap)
-	if m.result == resultCount {
+	if m.returns == returnsCount {
 		e.printf("return %s, nil\n", affected)
 		return
 	}
@@ -79,7 +79,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 func (e repoEmitter) updateReturning(m repoMethod, sc gofile.Scope, recv string, sig signature,
 	text, args, err, model, wrap string, notFound func() string,
 ) {
-	if m.result == resultRows {
+	if m.returns == returnsRows {
 		rows := sc.Name("rows")
 		e.printf("%s, %s := %s.executor.%s(%s, %s, %s...)\n", rows, err, recv, e.query, sig.ctx, text, args)
 		e.printf("if %s != nil { return nil, %s }\ndefer %s.Close()\n", err, wrap, rows)

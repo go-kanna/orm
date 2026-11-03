@@ -226,7 +226,7 @@ func postgresStatement(ctx context.Context, conn *pgx.Conn, sql string) (snapsho
 		st.Params = append(st.Params, snapshot.Param{Name: names[i], Type: types[oid]})
 	}
 	for _, f := range desc.Fields {
-		c := snapshot.Result{Name: f.Name, Type: types[f.DataTypeOID]}
+		c := snapshot.OutputColumn{Name: f.Name, Type: types[f.DataTypeOID]}
 		if nn, ok := notNull[attribute{f.TableOID, f.TableAttributeNumber}]; ok {
 			c.NotNull, c.Nullable = nn, !nn
 		}

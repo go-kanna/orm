@@ -76,7 +76,7 @@ func TestDiff(t *testing.T) {
 		}, []string{key + " has been rewritten since it was described"}},
 		{"a statement described otherwise", func(s *snapshot.Snapshot) {
 			st := s.Statements[key]
-			st.Columns = []snapshot.Result{{Name: "month", Type: "date"}}
+			st.Columns = []snapshot.OutputColumn{{Name: "month", Type: "date"}}
 			s.Statements[key] = st
 		}, []string{key + " is described otherwise by the database"}},
 	}

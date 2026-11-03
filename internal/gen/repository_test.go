@@ -201,7 +201,7 @@ ORDER BY 1;
 
 var monthCountsDescribed = snapshot.Statement{
 	Params:  []snapshot.Param{{Name: "since", Type: "timestamptz"}},
-	Columns: []snapshot.Result{{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8", NotNull: true}},
+	Columns: []snapshot.OutputColumn{{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8", NotNull: true}},
 }
 
 func TestRepositories(t *testing.T) {
@@ -491,8 +491,10 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 		{"a column that may be NULL in a field that cannot be nil",
 			"\tMonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)\n", monthCounts,
 			map[string]snapshot.Statement{"MonthCounts": {
-				Params:  monthCountsDescribed.Params,
-				Columns: []snapshot.Result{{Name: "month", Type: "timestamptz", Nullable: true}, {Name: "count", Type: "int8"}},
+				Params: monthCountsDescribed.Params,
+				Columns: []snapshot.OutputColumn{
+					{Name: "month", Type: "timestamptz", Nullable: true}, {Name: "count", Type: "int8"},
+				},
 			}},
 			header + "error: -- query: MonthCounts: the column month may be NULL, which repository.MonthCount.Month, " +
 				"a time.Time, cannot hold\n  declare it as *time.Time"},
