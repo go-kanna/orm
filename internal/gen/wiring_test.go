@@ -46,16 +46,20 @@ package repository
 
 import (
 	"testing"
+"context"
+"github.com/go-kanna/orm"
 	"example.com/shop/db"
 )
 
 func TestWiring(t *testing.T) {
 	reader := &db.Reader{}
-	first := NewOrders(reader)
+	logger := func(context.Context, orm.QueryLog) {}
+first := NewOrders(reader, orm.WithQueryLogger(logger))
 	if first.(*orders).db != reader { t.Fatal("constructor did not use reader") }
 	tx := db.Tx{}
 	bound := first.Bind(%s)
-	if bound == first { t.Fatal("Bind reused the original repository") }
+	if bound.(*orders).executor.options.QueryLogger == nil { t.Fatal("Bind dropped query logger") }
+if bound == first { t.Fatal("Bind reused the original repository") }
 	if bound.(*orders).db != tx.DBTX() { t.Fatal("Bind did not use the transaction") }
 	if first.(*orders).db != reader { t.Fatal("Bind changed the original repository") }
 }

@@ -21,7 +21,7 @@ func (e repoEmitter) deleteReturning(m repoMethod, sc gofile.Scope, recv string,
 	e.printf("if %s != nil { return nil, %s }\n", err, err)
 	rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 	wrap := e.fmtPkg() + ".Errorf(" + goString("delete from "+m.target.table+": %w") + ", " + err + ")"
-	e.printf("%s, %s := %s.db.%s(%s, %s+%s, %s...)\n",
+	e.printf("%s, %s := %s.executor.%s(%s, %s+%s, %s...)\n",
 		rows, err, recv, e.query, sig.ctx, text, goString(" RETURNING "+e.columnList(columns)), args)
 	e.printf("if %s != nil { return nil, %s }\ndefer %s.Close()\n", err, wrap, rows)
 	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, columns, sc)
@@ -35,7 +35,7 @@ func (e repoEmitter) deleteSelected(m repoMethod, sc gofile.Scope, recv string, 
 	e.printf("if %s != nil { return 0, %s }\n", err, err)
 	res := e.execResult(sc)
 	wrap := e.fmtPkg() + ".Errorf(" + goString("delete from "+m.target.table+": %w") + ", " + err + ")"
-	e.printf("%s, %s := %s.db.%s(%s, %s, %s...)\n", res, err, recv, e.exec, sig.ctx, text, args)
+	e.printf("%s, %s := %s.executor.%s(%s, %s, %s...)\n", res, err, recv, e.exec, sig.ctx, text, args)
 	e.printf("if %s != nil { return 0, %s }\n", err, wrap)
 	e.printf("return %s, nil\n", e.rowsAffected(sc, res, err, "0, ", wrap))
 }
