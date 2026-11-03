@@ -10,7 +10,9 @@ import (
 	"github.com/go-kanna/internal/gofile"
 )
 
-func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q, notFound string) {
+func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q string,
+	notFound func() string,
+) {
 	typ := types.TypeString(m.projection.model, e.f.Qualifier)
 	read := sc.Name("read")
 	if m.result == resultRow {
@@ -47,7 +49,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 		e.printf("if len(%s) == 0 { return nil, nil }\nreturn &%s[0], nil\n", out, out)
 		return
 	}
-	e.printf("if len(%s) == 0 { return %s, %s }\nreturn %s[0], nil\n", out, zero, notFound, out)
+	e.printf("if len(%s) == 0 { return %s, %s }\nreturn %s[0], nil\n", out, zero, notFound(), out)
 }
 
 func (e repoEmitter) projectionSources(m repoMethod) string {
@@ -55,7 +57,7 @@ func (e repoEmitter) projectionSources(m repoMethod) string {
 	for _, s := range m.projection.sources {
 		parts = append(parts, fmt.Sprintf("{Table:%q,Column:%q,Name:%q}", s.table, s.column.col.Name, s.name))
 	}
-	return "[]" + e.ormPkg() + ".SelectColumn{" + strings.Join(parts, ",") + "}"
+	return "[]" + e.ref("SelectColumn") + "{" + strings.Join(parts, ",") + "}"
 }
 
 func (e repoEmitter) projectionJoins(m repoMethod) string {
@@ -81,7 +83,7 @@ func (e repoEmitter) projectionJoins(m repoMethod) string {
 			parts = append(parts, fmt.Sprintf("{Table:%q,Fields:%s}", name, namesLiteral(fields)))
 		}
 	}
-	return "[]" + e.ormPkg() + ".TableJoin{" + strings.Join(parts, ",") + "}"
+	return "[]" + e.ref("TableJoin") + "{" + strings.Join(parts, ",") + "}"
 }
 
 func tableColumnNames(m repoMethod) []string {

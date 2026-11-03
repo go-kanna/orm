@@ -15,9 +15,9 @@ import (
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	"github.com/go-kanna/orm/internal/gen/testdata/pgxrepo"
-	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
-	"github.com/go-kanna/orm/internal/gen/testdata/repository"
+	"github.com/go-kanna/orm/internal/gen/testdata/postgres/pgxstore"
+	pgrepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
+	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 )
 
 // postgresSchema creates a schema of the test's own in the database KANNA_ORM_TEST_POSTGRES names, dropped when the
@@ -68,17 +68,17 @@ func pgxConn(t *testing.T, url string) *pgx.Conn {
 }
 
 // pgxRepository opens OrderRepository through pgx on the database at url, closed when the test ends.
-func pgxRepository(t *testing.T, url string) repository.OrderRepository {
+func pgxRepository(t *testing.T, url string) pgrepository.OrderRepository {
 	t.Helper()
 
-	return pgxrepo.NewOrderRepository(pgxConn(t, url))
+	return pgxstore.NewOrderRepository(pgxConn(t, url))
 }
 
 // onPostgres runs test on OrderRepository through each driver, each on a schema of its own.
-func onPostgres(t *testing.T, test func(t *testing.T, repo repository.OrderRepository)) {
+func onPostgres(t *testing.T, test func(t *testing.T, repo pgrepository.OrderRepository)) {
 	t.Helper()
 
-	repos := map[string]func(t *testing.T, url string) repository.OrderRepository{"pgx": pgxRepository}
+	repos := map[string]func(t *testing.T, url string) pgrepository.OrderRepository{"pgx": pgxRepository}
 	if pgsqlRepository != nil {
 		repos["database/sql"] = pgsqlRepository
 	}
@@ -156,7 +156,7 @@ func ids(orders []model.Order) []model.OrderID {
 func TestGeneratedRepository_Postgres(t *testing.T) {
 	t.Parallel()
 
-	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
+	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
 		ctx := t.Context()
 
 		o, err := repo.Get(ctx, 1)
@@ -170,11 +170,11 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 		if _, err := repo.Get(ctx, 9); !errors.Is(err, orm.ErrNotFound) || err.Error() != "orders with id 9: orm: not found" {
 			t.Errorf("Get(9) error = %v, want orm.ErrNotFound", err)
 		}
-		if _, err := repo.Get(ctx, 2, postgres.Orders().StatusEq("open")); !errors.Is(err, orm.ErrNotFound) {
+		if _, err := repo.Get(ctx, 2, pgscopes.Orders().StatusEq("open")); !errors.Is(err, orm.ErrNotFound) {
 			t.Errorf("Get(2) of the open orders error = %v, want orm.ErrNotFound", err)
 		}
 
-		if o, err := repo.First(ctx, postgres.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
+		if o, err := repo.First(ctx, pgscopes.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
 			t.Errorf("First, latest first = %v, %v; want 3", o.ID, err)
 		}
 		for _, tt := range []struct {
@@ -182,12 +182,12 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			list func() ([]model.Order, error)
 			want []model.OrderID
 		}{
-			{"open", func() ([]model.Order, error) { return repo.List(ctx, postgres.Orders().StatusEq("open").IDAsc()) },
+			{"open", func() ([]model.Order, error) { return repo.List(ctx, pgscopes.Orders().StatusEq("open").IDAsc()) },
 				[]model.OrderID{1, 3}},
 			{"of a customer", func() ([]model.Order, error) {
-				return repo.ListByCustomer(ctx, 10, postgres.Orders().IDDesc())
+				return repo.ListByCustomer(ctx, 10, pgscopes.Orders().IDDesc())
 			}, []model.OrderID{2, 1}},
-			{"none", func() ([]model.Order, error) { return repo.List(ctx, postgres.Orders().TotalGt(1000)) },
+			{"none", func() ([]model.Order, error) { return repo.List(ctx, pgscopes.Orders().TotalGt(1000)) },
 				[]model.OrderID{}},
 		} {
 			got, err := tt.list()
@@ -196,7 +196,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			}
 		}
 
-		page := postgres.Orders().PlacedAtDesc().Limit(2)
+		page := pgscopes.Orders().PlacedAtDesc().Limit(2)
 		first, err := repo.List(ctx, page)
 		if err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
 			t.Fatalf("the first page = %v, %v", ids(first), err)
@@ -209,16 +209,16 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			t.Errorf("the page before = %v, %v; want [3]", ids(before), err)
 		}
 
-		if n, err := repo.Count(ctx, postgres.Orders().StatusEq("open")); err != nil || n != 2 {
+		if n, err := repo.Count(ctx, pgscopes.Orders().StatusEq("open")); err != nil || n != 2 {
 			t.Errorf("Count of the open orders = %d, %v; want 2", n, err)
 		}
-		if _, err := repo.Count(ctx, postgres.Orders().IDAsc()); err == nil {
+		if _, err := repo.Count(ctx, pgscopes.Orders().IDAsc()); err == nil {
 			t.Error("Count takes a scope that orders the rows")
 		}
-		if ok, err := repo.Exists(ctx, postgres.Orders().CustomerIDEq(20)); err != nil || !ok {
+		if ok, err := repo.Exists(ctx, pgscopes.Orders().CustomerIDEq(20)); err != nil || !ok {
 			t.Errorf("Exists of customer 20 = %v, %v; want true", ok, err)
 		}
-		if ok, err := repo.Exists(ctx, postgres.Orders().CustomerIDEq(99)); err != nil || ok {
+		if ok, err := repo.Exists(ctx, pgscopes.Orders().CustomerIDEq(99)); err != nil || ok {
 			t.Errorf("Exists of customer 99 = %v, %v; want false", ok, err)
 		}
 
@@ -238,7 +238,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 		if _, err := repo.DeleteStale(ctx); err == nil {
 			t.Error("DeleteStale deletes without a condition")
 		}
-		if n, err := repo.DeleteStale(ctx, postgres.Orders().StatusEq("closed")); err != nil || n != 1 {
+		if n, err := repo.DeleteStale(ctx, pgscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
 			t.Errorf("DeleteStale of the closed orders = %d, %v; want 1", n, err)
 		}
 	})
@@ -247,13 +247,13 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 	t.Parallel()
 
-	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
+	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
 		ctx := t.Context()
 
-		o, err := repo.Get(ctx, 1, postgres.Orders().
+		o, err := repo.Get(ctx, 1, pgscopes.Orders().
 			WithCustomer().
-			WithLines(postgres.OrderLines().LineNoDesc().WithOrder()).
-			WithTags(postgres.Tags().NameAsc()))
+			WithLines(pgscopes.OrderLines().LineNoDesc().WithOrder()).
+			WithTags(pgscopes.Tags().NameAsc()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -278,9 +278,9 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 			t.Errorf("Tags = %v, want [gift rush], by name", tags)
 		}
 
-		lines, err := repo.Get(ctx, 1, postgres.Orders().WithLines(postgres.OrderLines().LineNoAsc().
-			WithNotes(postgres.LineNotes().BodyAsc().WithLine()).
-			WithTags(postgres.Tags().NameAsc())))
+		lines, err := repo.Get(ctx, 1, pgscopes.Orders().WithLines(pgscopes.OrderLines().LineNoAsc().
+			WithNotes(pgscopes.LineNotes().BodyAsc().WithLine()).
+			WithTags(pgscopes.Tags().NameAsc())))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -288,7 +288,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 			t.Errorf("the notes and tags of the lines of order 1, by both columns of their key = %s", got)
 		}
 
-		all, err := repo.List(ctx, postgres.Orders().IDAsc().WithLines().WithTags())
+		all, err := repo.List(ctx, pgscopes.Orders().IDAsc().WithLines().WithTags())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -298,7 +298,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 		if plain, err := repo.Get(ctx, 1); err != nil || plain.Lines != nil || plain.Customer != nil {
 			t.Errorf("Get without With = %+v, %v; want no relation loaded", plain, err)
 		}
-		if _, err := repo.List(ctx, postgres.Orders().WithLines(postgres.OrderLines().Limit(1))); err == nil {
+		if _, err := repo.List(ctx, pgscopes.Orders().WithLines(pgscopes.OrderLines().Limit(1))); err == nil {
 			t.Error("List loads lines by a scope with a limit")
 		}
 	})
@@ -307,7 +307,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 	t.Parallel()
 
-	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
+	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
 		ctx := t.Context()
 
 		memo, contact := "fragile", must(model.NewEmail("bob@example.com"))
@@ -380,7 +380,7 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 			SKU: "G"}}); err != nil {
 			t.Fatal(err)
 		}
-		got, err := repo.Get(ctx, 4, postgres.Orders().WithLines(postgres.OrderLines().LineNoAsc()))
+		got, err := repo.Get(ctx, 4, pgscopes.Orders().WithLines(pgscopes.OrderLines().LineNoAsc()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -411,7 +411,7 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 func TestGeneratedRepository_PostgresQueries(t *testing.T) {
 	t.Parallel()
 
-	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
+	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
 		ctx := t.Context()
 
 		counts, err := repo.MonthCounts(ctx, time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
@@ -437,7 +437,7 @@ func TestGeneratedRepository_PostgresQueries(t *testing.T) {
 		if err := repo.Reopen(ctx, 2); err != nil {
 			t.Fatal(err)
 		}
-		if n, err := repo.Count(ctx, postgres.Orders().StatusEq("closed")); err != nil || n != 1 {
+		if n, err := repo.Count(ctx, pgscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
 			t.Errorf("the closed orders = %d, %v; want order 1 alone", n, err)
 		}
 	})

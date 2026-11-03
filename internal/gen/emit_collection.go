@@ -10,10 +10,11 @@ import (
 func (e emitter) collection(lk link) {
 	name := lk.field.path[len(lk.field.path)-1]
 	model := e.relationModel(lk)
-	e.printf("func (s %s) Preload%s(build func(%sColumns) %s.Many[%s]) %s {\n",
-		e.p.name, name, e.p.name, e.orm, model, e.p.name)
-	e.printf("parent := %s.NewParent()\nreturn %s{%s.PreloadMany(%s, %q, parent, build(%sColumnsFor(parent)))}\n}\n\n",
-		e.orm, e.p.name, e.orm, e.q("s"), strings.Join(lk.field.path, "."), lowerFirst(e.p.name))
+	e.printf("func (s %s) Preload%s(build func(%sColumns) %s[%s]) %s {\n",
+		e.p.name, name, e.p.name, e.ref("Many"), model, e.p.name)
+	e.printf("parent := %s()\nreturn %s{%s(%s, %q, parent, build(%sColumnsFor(parent)))}\n}\n\n",
+		e.ref("NewParent"), e.p.name, e.ref("PreloadMany"), e.q("s"), strings.Join(lk.field.path, "."),
+		lowerFirst(e.p.name))
 }
 
 func (e repoEmitter) preloadCollection(lk link, n preloadNames) {
@@ -22,13 +23,13 @@ func (e repoEmitter) preloadCollection(lk link, n preloadNames) {
 	}
 	field := strings.Join(lk.field.path, ".")
 	model := types.TypeString(lk.model, e.f.Qualifier)
-	e.printf("if sub, parent, ok := %s.Batched[%s](%s, %q); ok {\n", e.ormPkg(), model, n.q, field)
+	e.printf("if sub, parent, ok := %s[%s](%s, %q); ok {\n", e.ref("PreloadedMany"), model, n.q, field)
 	e.printf("type parentKey struct { %s }\n", e.keyFields(lk.keys))
 	e.printf("keys := []parentKey{}\nfor i := range %s {\n%s\n}\n", n.rows, keyOf("parentKey", "key", n.rows+
 		"[i]", lk.keys, func(k string) string { return "keys=append(keys," + k + ")" }))
 	e.printf("flat := []%s{}\nowners := []parentKey{}\n", model)
 	cols := e.models[lk.target.table].columns
-	config := e.ormPkg() + ".Batch{ParentTable:" + strconv.Quote(lk.way.fk.References) + ",Table:" +
+	config := e.ref("Batch") + "{ParentTable:" + strconv.Quote(lk.way.fk.References) + ",Table:" +
 		strconv.Quote(lk.target.table) + ",ParentKeys:" + columnNamesLiteral(lk.keys) + ",ChildKeys:" +
 		columnNamesLiteral(lk.targetKeys)
 	if lk.way.kind == manyToMany {
@@ -41,7 +42,7 @@ func (e repoEmitter) preloadCollection(lk link, n preloadNames) {
 			nilable(c.typ)))
 	}
 	if len(manifests) > 0 {
-		config += ",Projections:[]" + e.ormPkg() + ".Projection{" + strings.Join(manifests, ",") + "}"
+		config += ",Projections:[]" + e.ref("Projection") + "{" + strings.Join(manifests, ",") + "}"
 	}
 	config += "}"
 	e.printf("for chunk := range %s.Chunk(keys,%d) {\ninputs:=make([][]any,len(chunk))\nfor"+

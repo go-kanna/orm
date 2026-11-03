@@ -14,12 +14,12 @@ import (
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepo"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepository"
-	"github.com/go-kanna/orm/internal/gen/testdata/pgxrepo"
-	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
-	"github.com/go-kanna/orm/internal/gen/testdata/repository"
+	mysqlrepository "github.com/go-kanna/orm/internal/gen/testdata/mysql/repository"
+	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
+	"github.com/go-kanna/orm/internal/gen/testdata/postgres/pgxstore"
+	pgrepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
+	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 )
 
 // The codes the databases refuse a lock with: lock_not_available on PostgreSQL, for NOWAIT and for lock_timeout, and
@@ -71,20 +71,20 @@ func TestGeneratedRepository_PostgresLockStrengths(t *testing.T) {
 	all := []string{keyShare, share, noKey, update}
 	for _, tt := range []struct {
 		name   string
-		get    func(repository.OrderRepository, context.Context, model.OrderID) (model.Order, error)
+		get    func(pgrepository.OrderRepository, context.Context, model.OrderID) (model.Order, error)
 		blocks []string
 	}{
-		{"key-share", repository.OrderRepository.GetForKeyShare, []string{update}},
-		{"share", repository.OrderRepository.GetForShare, []string{noKey, update}},
-		{"no-key-update", repository.OrderRepository.GetForNoKeyUpdate, []string{share, noKey, update}},
-		{"update", repository.OrderRepository.GetForUpdate, all},
+		{"key-share", pgrepository.OrderRepository.GetForKeyShare, []string{update}},
+		{"share", pgrepository.OrderRepository.GetForShare, []string{noKey, update}},
+		{"no-key-update", pgrepository.OrderRepository.GetForNoKeyUpdate, []string{share, noKey, update}},
+		{"update", pgrepository.OrderRepository.GetForUpdate, all},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			url := postgresSchema(t)
 			other := pgxConn(t, url)
-			if o, err := tt.get(pgxrepo.NewOrderRepository(pgxTx(t, url)), t.Context(), 1); err != nil || o.ID != 1 {
+			if o, err := tt.get(pgxstore.NewOrderRepository(pgxTx(t, url)), t.Context(), 1); err != nil || o.ID != 1 {
 				t.Fatalf("the row = %v, %v", o.ID, err)
 			}
 			for _, clause := range all {
@@ -107,7 +107,7 @@ func TestGeneratedRepository_PostgresLockEndsWithTheTransaction(t *testing.T) {
 
 			url := postgresSchema(t)
 			other, tx := pgxConn(t, url), pgxTx(t, url)
-			if _, err := pgxrepo.NewOrderRepository(tx).GetForUpdate(t.Context(), 1); err != nil {
+			if _, err := pgxstore.NewOrderRepository(tx).GetForUpdate(t.Context(), 1); err != nil {
 				t.Fatal(err)
 			}
 			if !pgLocked(t, other, "orders WHERE id = 1", "FOR UPDATE") {
@@ -128,7 +128,7 @@ func TestGeneratedRepository_PostgresLockWaits(t *testing.T) {
 
 	url := postgresSchema(t)
 	ctx := t.Context()
-	if _, err := pgxrepo.NewOrderRepository(pgxTx(t, url)).GetForUpdate(ctx, 1); err != nil {
+	if _, err := pgxstore.NewOrderRepository(pgxTx(t, url)).GetForUpdate(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -136,7 +136,7 @@ func TestGeneratedRepository_PostgresLockWaits(t *testing.T) {
 	if _, err := waiting.Exec(ctx, "SET LOCAL lock_timeout = '100ms'"); err != nil {
 		t.Fatal(err)
 	}
-	_, err := pgxrepo.NewOrderRepository(waiting).GetForUpdate(ctx, 1)
+	_, err := pgxstore.NewOrderRepository(waiting).GetForUpdate(ctx, 1)
 	if !lockNotAvailable(err) || errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("GetForUpdate of a row locked past the timeout error = %v, want %s", err, pgLockNotAvailable)
 	}
@@ -145,7 +145,7 @@ func TestGeneratedRepository_PostgresLockWaits(t *testing.T) {
 func TestGeneratedRepository_PostgresLockNoRow(t *testing.T) {
 	t.Parallel()
 
-	_, err := pgxrepo.NewOrderRepository(pgxTx(t, postgresSchema(t))).GetForUpdate(t.Context(), 9)
+	_, err := pgxstore.NewOrderRepository(pgxTx(t, postgresSchema(t))).GetForUpdate(t.Context(), 9)
 	if !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("GetForUpdate(9) error = %v, want orm.ErrNotFound", err)
 	}
@@ -156,15 +156,15 @@ func TestGeneratedRepository_PostgresNoWait(t *testing.T) {
 
 	url := postgresSchema(t)
 	ctx := t.Context()
-	if _, err := pgxrepo.NewOrderRepository(pgxTx(t, url)).GetForUpdate(ctx, 1); err != nil {
+	if _, err := pgxstore.NewOrderRepository(pgxTx(t, url)).GetForUpdate(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := pgxrepo.NewOrderRepository(pgxTx(t, url)).GetNoWait(ctx, 1)
+	_, err := pgxstore.NewOrderRepository(pgxTx(t, url)).GetNoWait(ctx, 1)
 	if !lockNotAvailable(err) || errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("GetNoWait of a locked row error = %v, want %s", err, pgLockNotAvailable)
 	}
-	if o, err := pgxrepo.NewOrderRepository(pgxTx(t, url)).GetNoWait(ctx, 2); err != nil || o.ID != 2 {
+	if o, err := pgxstore.NewOrderRepository(pgxTx(t, url)).GetNoWait(ctx, 2); err != nil || o.ID != 2 {
 		t.Errorf("GetNoWait of a free row = %v, %v", o.ID, err)
 	}
 }
@@ -174,17 +174,17 @@ func TestGeneratedRepository_PostgresSkipLocked(t *testing.T) {
 
 	url := postgresSchema(t)
 	ctx := t.Context()
-	holder := pgxrepo.NewOrderRepository(pgxTx(t, url))
+	holder := pgxstore.NewOrderRepository(pgxTx(t, url))
 	if _, err := holder.GetForUpdate(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 
 	tx := pgxTx(t, url)
-	repo := pgxrepo.NewOrderRepository(tx)
-	orders := postgres.Orders().IDAsc()
+	repo := pgxstore.NewOrderRepository(tx)
+	orders := pgscopes.Orders().IDAsc()
 	for _, tt := range []struct {
 		name string
-		s    postgres.Order
+		s    pgscopes.Order
 		want []model.OrderID
 	}{
 		{"the free rows", orders, []model.OrderID{2, 3}},
@@ -209,7 +209,7 @@ func TestGeneratedRepository_PostgresSkipLocked(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	repo = pgxrepo.NewOrderRepository(pgxTx(t, url))
+	repo = pgxstore.NewOrderRepository(pgxTx(t, url))
 	if _, err := repo.FirstUnlocked(ctx, orders); !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("FirstUnlocked with every row locked error = %v, want orm.ErrNotFound", err)
 	}
@@ -226,8 +226,8 @@ func TestGeneratedRepository_PostgresLockLeavesRelations(t *testing.T) {
 
 	url := postgresSchema(t)
 	other := pgxConn(t, url)
-	repo := pgxrepo.NewOrderRepository(pgxTx(t, url))
-	o, err := repo.GetNoWait(t.Context(), 1, postgres.Orders().WithLines().WithTags())
+	repo := pgxstore.NewOrderRepository(pgxTx(t, url))
+	o, err := repo.GetNoWait(t.Context(), 1, pgscopes.Orders().WithLines().WithTags())
 	if err != nil || len(o.Lines) != 2 || len(o.Tags) != 2 {
 		t.Fatalf("GetNoWait with relations = %+v, %v", o, err)
 	}
@@ -253,8 +253,8 @@ func TestGeneratedRepository_PostgresLockOutsideATransaction(t *testing.T) {
 	defer pool.Close()
 
 	const want = "orm: ListUnlocked needs a transaction to hold its lock: give the repository a pgx.Tx"
-	for name, db := range map[string]pgxrepo.DBTX{"a connection": pgxConn(t, url), "a pool": pool} {
-		repo := pgxrepo.NewOrderRepository(db)
+	for name, db := range map[string]pgxstore.DBTX{"a connection": pgxConn(t, url), "a pool": pool} {
+		repo := pgxstore.NewOrderRepository(db)
 		if _, err := repo.ListUnlocked(ctx); err == nil || err.Error() != want {
 			t.Errorf("ListUnlocked on %s error = %v, want %q", name, err, want)
 		}
@@ -271,7 +271,7 @@ func TestGeneratedRepository_PostgresLockOutsideATransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	if _, err := pgxrepo.NewOrderRepository(tx).GetForUpdate(ctx, 1); err != nil {
+	if _, err := pgxstore.NewOrderRepository(tx).GetForUpdate(ctx, 1); err != nil {
 		t.Errorf("GetForUpdate in a transaction of the pool: %v", err)
 	}
 }
@@ -318,7 +318,7 @@ func TestGeneratedRepository_MySQLLockStrengths(t *testing.T) {
 			t.Parallel()
 
 			db := mysqlDB(t)
-			if o, err := tt.get(mysqlrepo.NewOrderRepository(mysqlTx(t, db)), t.Context(), 1); err != nil || o.ID != 1 {
+			if o, err := tt.get(mysqlstore.NewOrderRepository(mysqlTx(t, db)), t.Context(), 1); err != nil || o.ID != 1 {
 				t.Fatalf("the row = %v, %v", o.ID, err)
 			}
 			for _, clause := range []string{share, update} {
@@ -339,7 +339,7 @@ func TestGeneratedRepository_MySQLLockEndsWithTheTransaction(t *testing.T) {
 
 			db := mysqlDB(t)
 			tx := mysqlTx(t, db)
-			if _, err := mysqlrepo.NewOrderRepository(tx).GetForUpdate(t.Context(), 1); err != nil {
+			if _, err := mysqlstore.NewOrderRepository(tx).GetForUpdate(t.Context(), 1); err != nil {
 				t.Fatal(err)
 			}
 			if !mysqlLocked(t, db, "orders WHERE id = 1", "FOR UPDATE") {
@@ -360,11 +360,11 @@ func TestGeneratedRepository_MySQLNoWait(t *testing.T) {
 
 	db := mysqlDB(t)
 	ctx := t.Context()
-	if _, err := mysqlrepo.NewOrderRepository(mysqlTx(t, db)).GetForUpdate(ctx, 1); err != nil {
+	if _, err := mysqlstore.NewOrderRepository(mysqlTx(t, db)).GetForUpdate(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 
-	repo := mysqlrepo.NewOrderRepository(mysqlTx(t, db))
+	repo := mysqlstore.NewOrderRepository(mysqlTx(t, db))
 	if _, err := repo.GetNoWait(ctx, 1); !lockNotAvailable(err) || errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("GetNoWait of a locked row error = %v, want %d", err, mysqlLockNoWait)
 	}
@@ -378,14 +378,14 @@ func TestGeneratedRepository_MySQLSkipLocked(t *testing.T) {
 
 	db := mysqlDB(t)
 	ctx := t.Context()
-	holder := mysqlrepo.NewOrderRepository(mysqlTx(t, db))
+	holder := mysqlstore.NewOrderRepository(mysqlTx(t, db))
 	if _, err := holder.GetForUpdate(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 
 	tx := mysqlTx(t, db)
-	repo := mysqlrepo.NewOrderRepository(tx)
-	orders := mysql.Orders().IDAsc()
+	repo := mysqlstore.NewOrderRepository(tx)
+	orders := mysqlscopes.Orders().IDAsc()
 	if got, err := repo.ListUnlocked(ctx, orders); err != nil || !slices.Equal(ids(got), []model.OrderID{2, 3}) {
 		t.Errorf("ListUnlocked = %v, %v; want the free rows", ids(got), err)
 	}
@@ -405,7 +405,7 @@ func TestGeneratedRepository_MySQLSkipLocked(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	repo = mysqlrepo.NewOrderRepository(mysqlTx(t, db))
+	repo = mysqlstore.NewOrderRepository(mysqlTx(t, db))
 	if _, err := repo.FirstUnlocked(ctx, orders); !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("FirstUnlocked with every row locked error = %v, want orm.ErrNotFound", err)
 	}
@@ -418,8 +418,8 @@ func TestGeneratedRepository_MySQLLockLeavesRelations(t *testing.T) {
 	t.Parallel()
 
 	db := mysqlDB(t)
-	repo := mysqlrepo.NewOrderRepository(mysqlTx(t, db))
-	o, err := repo.GetNoWait(t.Context(), 1, mysql.Orders().WithLines().WithTags())
+	repo := mysqlstore.NewOrderRepository(mysqlTx(t, db))
+	o, err := repo.GetNoWait(t.Context(), 1, mysqlscopes.Orders().WithLines().WithTags())
 	if err != nil || len(o.Lines) != 2 || len(o.Tags) != 2 {
 		t.Fatalf("GetNoWait with relations = %+v, %v", o, err)
 	}
@@ -445,8 +445,8 @@ func TestGeneratedRepository_MySQLLockOutsideATransaction(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	const want = "orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx"
-	for name, on := range map[string]mysqlrepo.DBTX{"a pool": db, "a connection": conn} {
-		repo := mysqlrepo.NewOrderRepository(on)
+	for name, on := range map[string]mysqlstore.DBTX{"a pool": db, "a connection": conn} {
+		repo := mysqlstore.NewOrderRepository(on)
 		if _, err := repo.ListUnlocked(ctx); err == nil || err.Error() != want {
 			t.Errorf("ListUnlocked on %s error = %v, want %q", name, err, want)
 		}

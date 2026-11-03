@@ -174,7 +174,7 @@ func pendingScopeNames(idx []indexed) map[string]bool {
 	return names
 }
 
-// modelSyntax reads the model of the scope type spec declares, in the package at pkgPath, from the orm.Of[M] of its
+// modelSyntax reads the model of the scope type spec declares, in the package at pkgPath, from the scope.Of[M] of its
 // one field and the imports of f.
 func modelSyntax(f *ast.File, pkgPath string, spec *ast.TypeSpec) (modelPath, modelName string, ok bool) {
 	st, ok := spec.Type.(*ast.StructType)
@@ -190,7 +190,7 @@ func modelSyntax(f *ast.File, pkgPath string, spec *ast.TypeSpec) (modelPath, mo
 		return "", "", false
 	}
 	imports := importNames(f)
-	if x, ok := of.X.(*ast.Ident); !ok || imports[x.Name] != ormPath {
+	if x, ok := of.X.(*ast.Ident); !ok || imports[x.Name] != scopePath {
 		return "", "", false
 	}
 	switch m := ix.Index.(type) {

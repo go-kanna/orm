@@ -21,9 +21,19 @@ through pgx or database/sql, or MySQL 8.4 or later through database/sql.
 go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 ```
 
-The generated code imports `github.com/go-kanna/orm`, which the line above already requires: a scope type holds an
-`orm.Of`, and a row that is not there is `orm.ErrNotFound`. It depends on nothing outside the standard library; the
-driver is yours.
+The generated code imports packages of `github.com/go-kanna/orm`, which the line above already requires. They depend on
+nothing outside the standard library; the driver is yours. Code written by hand uses these:
+
+| Package        | What for                                                                                                  |
+|----------------|-----------------------------------------------------------------------------------------------------------|
+| `orm`          | `ErrNotFound` and `ErrRequiredRelation`, the errors a repository returns                                  |
+| `orm/scope`    | `Of`, the one field of a scope type declared by hand                                                      |
+| `orm/relation` | `Single`, `Many`, and `Column`, what the closures of `Select<Field>` and `Preload<Field>` return and read |
+| `orm/join`     | `On`, an explicit condition of a joined projection                                                        |
+| `orm/option`   | `WithBefore` and `WithAfter`, the options a repository's constructor takes                                |
+| `orm/hook`     | `Before`, `After`, `Query`, and `Execution`, the functions those options take and what they receive       |
+
+`orm/impl` is what the generated code runs on, and only the generated code imports it.
 
 ## Use
 
@@ -222,7 +232,7 @@ $ go tool kanna-orm describe -check ./...
 
 ## Scope types
 
-A scope type is a struct whose only field is an unexported `orm.Of[M]`, `M` being the model the table's rows are read
+A scope type is a struct whose only field is an unexported `scope.Of[M]`, `M` being the model the table's rows are read
 into, so that nothing but its methods narrows it. Each table kanna-orm reads or writes has one, and each model belongs
 to one table: the scope type is the only place where the two are tied together.
 
@@ -238,7 +248,7 @@ A table named otherwise, or a scope type of a name of your own, is declared by h
 
 ```go
 //kanna:scope table=people
-type Person struct{ q orm.Of[model.Person] }
+type Person struct{ q scope.Of[model.Person] }
 ```
 
 A model that a relation reaches but no scope type names stops generation:
@@ -922,21 +932,21 @@ once instead, and `skip-locked` has it pass those rows over.
   A same-package method delegating to a generated helper keeps its lock on that helper.
 - A `Get`, a `Find`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
 
-### Query logging
+### Hooks
 
-Generated constructors accept optional repository options. `WithQueryLogger` takes a function, with no logging framework dependency:
+Generated constructors accept optional repository options. `option.WithBefore` and `option.WithAfter` take the functions of package `hook`, which a repository calls around each statement it runs, with no logging or tracing library dependency. To log queries, add an After hook:
 
 ```go
-logQuery := func(ctx context.Context, q orm.QueryLog) {
-    fmt.Printf("%s (%s): %v\n", q.SQL, q.Duration, q.Err)
-    // Use ctx for request metadata; choose whether to log q.Args.
+logQuery := func(ctx context.Context, e hook.Execution) {
+    fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
+    // Use ctx for request metadata; choose whether to log e.Args.
 }
-repo := store.NewOrderRepository(db, orm.WithQueryLogger(logQuery))
+repo := store.NewOrderRepository(db, option.WithAfter(logQuery))
 ```
 
-`QueryLog` contains `SQL string`, `Args []any`, `Duration time.Duration`, and `Err error`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. The callback receives that call's context and the SQL with its placeholders, with arguments supplied separately. It runs after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results. Errors are observed before repository error translation. A condition or validation error that prevents SQL from running produces no event.
+A Before hook receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. An After hook receives that context and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Before hooks. Errors are observed before repository error translation. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
 
-`Bind` preserves the logger when switching to a transaction. Without a logger, no events are produced and the clock is not read. Callbacks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the callback. The callback decides which arguments to write to logs. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`; manually implemented Go methods using the raw connection are outside the generated execution path. Both database examples register a function that prints query events.
+Options can be given more than once. Before hooks run in the order given, each with the context the one before returned, and After hooks in the reverse order, so that the first hooks given enclose the others. `Bind` keeps the hooks when switching to a transaction. Without After hooks, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`; manually implemented Go methods using the raw connection are outside the generated execution path. Both database examples add an After hook that prints each statement.
 
 ### Reading a projection
 
@@ -1194,19 +1204,19 @@ Declare a scope for the related model, as for other relations. Generation adds t
 
 ```go
 func (s Order) WithCurrentApprover() Order {
-    return s.SelectApprover(func(parent OrderColumns) orm.Single[model.Approval] {
+    return s.SelectApprover(func(parent OrderColumns) relation.Single[model.Approval] {
         return Approvals().RevisionEqColumn(parent.Revision).RevokedAtIsNull().One()
     })
 }
 
 func (s Order) WithLatestApprover() Order {
-    return s.SelectApprover(func(_ OrderColumns) orm.Single[model.Approval] {
+    return s.SelectApprover(func(_ OrderColumns) relation.Single[model.Approval] {
         return Approvals().RevokedAtIsNull().ApprovedAtDesc().IDDesc().First()
     })
 }
 
 func (s Order) WithRecentApprovals() Order {
-    return s.PreloadApprovals(func(_ OrderColumns) orm.Many[model.Approval] {
+    return s.PreloadApprovals(func(_ OrderColumns) relation.Many[model.Approval] {
         return Approvals().ApprovedAtDesc().IDDesc().Limit(3).Many()
     })
 }

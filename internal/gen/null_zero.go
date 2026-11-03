@@ -41,7 +41,7 @@ func (e repoEmitter) scanTargets(sc gofile.Scope, row string, columns []column) 
 				result = "return nil,err"
 			}
 			assignments = append(assignments,
-				fmt.Sprintf("if err := %s.CheckSelection(%s, %q, !%s.Valid); err != nil { %s }", e.ormPkg(),
+				fmt.Sprintf("if err := %s(%s, %q, !%s.Valid); err != nil { %s }", e.ref("CheckSelection"),
 					c.selectedBy, fieldPath(c), local, result))
 		}
 	}

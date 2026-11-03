@@ -10,9 +10,9 @@ func (e emitter) changes() {
 	model := types.TypeString(e.p.model, e.f.Qualifier)
 	name := e.p.name + "ChangeSet"
 	e.printf("// %s holds explicitly assigned columns of %s.\n", name, e.p.table)
-	e.printf("type %s struct { changes %s.Changes[%s] }\n\n", name, e.orm, model)
+	e.printf("type %s struct { changes %s[%s] }\n\n", name, e.ref("Changes"), model)
 	e.printf("func %sChanges() %s { return %s{} }\n\n", e.p.name, name, name)
-	e.printf("func (c %s) Of() %s.Changes[%s] { return c.changes }\n\n", name, e.orm, model)
+	e.printf("func (c %s) Of() %s[%s] { return c.changes }\n\n", name, e.ref("Changes"), model)
 	for _, col := range changeColumns(e.p) {
 		field := col.path[len(col.path)-1]
 		typ := types.TypeString(col.typ, e.f.Qualifier)

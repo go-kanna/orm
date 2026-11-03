@@ -38,11 +38,11 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 // Open narrows to the orders that are not closed.
 func (s Order) Open() Order {
@@ -158,8 +158,8 @@ func TestCommand_Mistakes(t *testing.T) {
 			"-- scopes/broken.go --\npackage scopes\n\nvar _ = Orders().Closed()\n",
 			"./broken.go:3:18: error: Orders().Closed undefined (type Order has no field or method Closed)\n"},
 		{"a mistake in a declaration", true, "-- scopes/more.go --\npackage scopes\n\nimport (\n" +
-			"\t\"example.com/shop/model\"\n\t\"github.com/go-kanna/orm\"\n)\n\n" +
-			"//kanna:scope table=order\ntype Archived struct{ q orm.Of[model.Order] }\n",
+			"\t\"example.com/shop/model\"\n\t\"github.com/go-kanna/orm/scope\"\n)\n\n" +
+			"//kanna:scope table=order\ntype Archived struct{ q scope.Of[model.Order] }\n",
 			"./more.go:8:1: error: Archived: the snapshot has no table order\n  did you mean orders?\n"},
 	}
 	for _, tt := range tests {
@@ -324,11 +324,11 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=order
-type Archived struct{ q orm.Of[model.Order] }
+type Archived struct{ q scope.Of[model.Order] }
 `)
 	describeShop(t, dir)
 	code, _, errOut := run(t, dir, "./...")
@@ -350,8 +350,8 @@ func TestCommand_ATypeThatDoesNotTypeCheck(t *testing.T) {
 		{"a relation's", "Status string\n}", "Status string\n\tLines  []Line\n}",
 			"../model/model.go:6:11: error: undefined: Line\n"},
 		// The model's fields are unknown, so are the methods: the calls to them stay errors.
-		{"the model's", "q orm.Of[model.Order]", "q orm.Of[model.Ordr]",
-			"./scopes.go:9:35: error: undefined: model.Ordr\n" +
+		{"the model's", "q scope.Of[model.Order]", "q scope.Of[model.Ordr]",
+			"./scopes.go:9:37: error: undefined: model.Ordr\n" +
 				"./scopes.go:13:11: error: s.StatusNe undefined (type Order has no field or method StatusNe)\n" +
 				"./scopes.go:17:9: error: undefined: Orders\n"},
 	}

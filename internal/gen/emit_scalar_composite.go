@@ -10,7 +10,7 @@ import (
 func (e repoEmitter) preloadScalarComposite(lk link, n preloadNames, c compositeNames) {
 	valueType := types.TypeString(lk.scalar.typ, e.f.Qualifier)
 	field := strings.Join(lk.field.path, ".")
-	e.printf("if _, %s := %s.Preloaded[%s](%s, %q); %s {\n", n.ok, e.ormPkg(), valueType, n.q, field, n.ok)
+	e.printf("if _, %s := %s[%s](%s, %q); %s {\n", n.ok, e.ref("Preloaded"), valueType, n.q, field, n.ok)
 	e.printf("type %s struct{ %s }\n", c.key, e.keyFields(lk.keys))
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, c.key, n.rows)
 	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows,
@@ -29,7 +29,7 @@ func (e repoEmitter) preloadScalarComposite(lk link, n preloadNames, c composite
 		dests = append(dests, "&"+c.k+".k"+strconv.Itoa(i))
 	}
 	condition := e.inKeys(columns, dbTypes, n.chunk, lk.keys, c.arrays, c)
-	e.printf("var %s %s.Of[%s]\n", n.sub, e.ormPkg(), valueType)
+	e.printf("var %s %s[%s]\n", n.sub, e.ref("Of"), valueType)
 	e.printf("%s = %s.Where(%s).OrderBy(%q, false)\n", n.sub, n.sub, condition, sqlName(e.d, lk.scalar.col.Name))
 	e.printf("rd, %s := %s.Render(%s, 1)\nif %s != nil { return %s }\n", n.err, n.sub, e.dialect(), n.err, n.err)
 	query := "SELECT " + strings.Join(columns, ", ") + ", " + sqlName(e.d, lk.scalar.col.Name) +

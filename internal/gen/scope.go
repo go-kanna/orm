@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	// ormPath is the import path of the package the generated code runs on.
-	ormPath = "github.com/go-kanna/orm"
 	// Output files are named for the declarations they implement.
 	scopesOutputName     = "scopes_gen.go"
 	repositoryOutputName = "repository_gen.go"
@@ -33,7 +31,7 @@ type scope struct {
 	name string
 	// pos is where its directive is.
 	pos token.Position
-	// field names the type's one field, the orm.Of the generated methods narrow.
+	// field names the type's one field, the scope.Of the generated methods narrow.
 	field string
 	// model is the struct the rows of table are read into.
 	model *types.Named
@@ -170,12 +168,12 @@ func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, [
 	return sc, ds
 }
 
-// modelOf returns the one field of the scope type ts declares, and M, the model of the orm.Of[M] it holds.
+// modelOf returns the one field of the scope type ts declares, and M, the model of the scope.Of[M] it holds.
 func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []diag.Diag) {
 	name := ts.Name.Name
 	pos := pkg.Fset.Position(ts.Name.Pos())
-	shape := diag.Errorf(pos, "%s: a scope type is a struct whose only field is an orm.Of of its model", name).
-		WithHints(fmt.Sprintf("as in type %s struct{ q orm.Of[model.%[1]s] }", name))
+	shape := diag.Errorf(pos, "%s: a scope type is a struct whose only field is an scope.Of of its model", name).
+		WithHints(fmt.Sprintf("as in type %s struct{ q scope.Of[model.%[1]s] }", name))
 	if ts.TypeParams != nil {
 		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: a scope type is not generic: it is the scope of one table", name)}
 	}
@@ -192,7 +190,7 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 		return "", nil, []diag.Diag{packages.NotTypeChecked(pos)}
 	}
 	of, ok := types.Unalias(f.Type()).(*types.Named)
-	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != ormPath || of.Obj().Name() != "Of" {
+	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != implPath || of.Obj().Name() != "Of" {
 		return "", nil, []diag.Diag{shape}
 	}
 
@@ -201,10 +199,10 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 	if packages.Invalid(m) {
 		return "", nil, []diag.Diag{packages.NotTypeChecked(pos)}
 	}
-	example := "q orm.Of[" + types.TypeString(m, qualifier) + "]"
+	example := "q scope.Of[" + types.TypeString(m, qualifier) + "]"
 	switch {
 	case f.Embedded():
-		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: its orm.Of is embedded, which makes Where a method of the scope",
+		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: its scope.Of is embedded, which makes Where a method of the scope",
 			name).WithHints("name the field: " + example)}
 	case f.Exported():
 		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: the field %s is exported, so code outside the package could "+
@@ -214,7 +212,7 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 	if !ok || !isStruct(model) {
 		d := diag.Errorf(pos, "%s: the model, %s, is not a named struct", name, types.TypeString(m, qualifier))
 		if p, ok := m.(*types.Pointer); ok {
-			d = d.WithHints("hold the struct itself: orm.Of[" + types.TypeString(p.Elem(), qualifier) + "]")
+			d = d.WithHints("hold the struct itself: scope.Of[" + types.TypeString(p.Elem(), qualifier) + "]")
 		}
 		return "", nil, []diag.Diag{d}
 	}

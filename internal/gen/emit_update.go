@@ -26,11 +26,11 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	q, changes := sc.Name("q"), sc.Name("changes")
 	if m.scoped {
 		qs := sc.Name("qs")
-		e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.ormPkg(), model, sig.scopes)
+		e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, sig.scopes)
 		e.printf("for i, s := range %s { %s[i] = s.Of() }\n", sig.scopes, qs)
-		e.printf("%s := %s.Join(%s...)\n", q, e.ormPkg(), qs)
+		e.printf("%s := %s(%s...)\n", q, e.ref("Combine"), qs)
 	} else {
-		e.printf("var %s %s.Of[%s]\n", q, e.ormPkg(), model)
+		e.printf("var %s %s[%s]\n", q, e.ref("Of"), model)
 	}
 	if m.changes != "" {
 		e.printf("%s := %s.Of()\n", changes, sig.params[m.changes])
@@ -39,7 +39,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 				goString(sqlName(e.d, k.col.col.Name)+" = "), sig.params[k.param])
 		}
 	} else {
-		e.printf("var %s %s.Changes[%s]\n", changes, e.ormPkg(), model)
+		e.printf("var %s %s[%s]\n", changes, e.ref("Changes"), model)
 		for _, c := range m.updated() {
 			e.printf("%s = %s.Set(%q, %s)\n", changes, changes, c.col.Name,
 				e.storageValue(c, sig.row+"."+fieldPath(c)))
@@ -54,7 +54,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 		text, args, err, changes, e.dialect(), m.target.table, columnNamesLiteral(m.updated()), q)
 	e.printf("if %s != nil { return %s%s }\n", err, zero, err)
 	wrap := e.fmtPkg() + ".Errorf(" + goString("update "+m.target.table+": %w") + ", " + err + ")"
-	notFound := e.notFound(m.target.table, nil, nil)
+	notFound := func() string { return e.notFound(m.target.table, nil, nil) }
 	if m.result == resultRow || m.result == resultRows {
 		e.printf("%s += %s\n", text, goString(" RETURNING "+e.columnList(m.columns)))
 		e.updateReturning(m, sc, recv, sig, text, args, err, model, wrap, notFound)
@@ -69,15 +69,15 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 		return
 	}
 	if e.d == snapshot.MySQL {
-		e.updateMatched(sc, recv, sig.ctx, q, affected, err, wrap, notFound, m.target.table)
+		e.updateMatched(sc, recv, sig.ctx, q, affected, err, wrap, notFound(), m.target.table)
 	} else {
-		e.printf("if %s == 0 { return %s }\n", affected, notFound)
+		e.printf("if %s == 0 { return %s }\n", affected, notFound())
 	}
 	e.printf("return nil\n")
 }
 
 func (e repoEmitter) updateReturning(m repoMethod, sc gofile.Scope, recv string, sig signature,
-	text, args, err, model, wrap, notFound string,
+	text, args, err, model, wrap string, notFound func() string,
 ) {
 	if m.result == resultRows {
 		rows := sc.Name("rows")
@@ -101,7 +101,7 @@ func (e repoEmitter) updateReturning(m repoMethod, sc gofile.Scope, recv string,
 		noRows = e.f.Import("database/sql", "sql") + ".ErrNoRows"
 	}
 	e.printf("if %s.Is(%s, %s) { return %s{}, %s }\n", e.f.Import("errors", "errors"),
-		err, noRows, model, notFound)
+		err, noRows, model, notFound())
 	e.printf("if %s != nil { return %s{}, %s }\n", err, model, wrap)
 	e.assignScanned(assignments)
 	e.printf("return %s, nil\n", row)

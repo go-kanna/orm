@@ -57,7 +57,7 @@ func (e repoEmitter) preloadComposite(lk link, n preloadNames, c compositeNames)
 		valueType = "[]" + elemType
 	}
 
-	e.printf("if %[1]s, %[2]s := %[3]s.Preloaded[%[4]s](%[5]s, %[6]q); %[2]s {\n", n.sub, n.ok, e.ormPkg(),
+	e.printf("if %[1]s, %[2]s := %[3]s[%[4]s](%[5]s, %[6]q); %[2]s {\n", n.sub, n.ok, e.ref("Preloaded"),
 		types.TypeString(lk.model, e.f.Qualifier), n.q, strings.Join(lk.field.path, "."))
 	e.printf("type %s struct{ %s }\n", c.key, e.keyFields(lk.keys))
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, c.key, n.rows)

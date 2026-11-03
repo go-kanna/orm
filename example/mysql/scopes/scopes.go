@@ -3,7 +3,7 @@
 package scopes
 
 import (
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/relation"
 
 	"github.com/go-kanna/orm/example/mysql/model"
 )
@@ -23,19 +23,19 @@ func (s Order) Latest() Order {
 }
 
 func (s Order) WithCurrentApprover() Order {
-	return s.SelectApprover(func(parent OrderColumns) orm.Single[model.Approval] {
+	return s.SelectApprover(func(parent OrderColumns) relation.Single[model.Approval] {
 		return Approvals().RevisionEqColumn(parent.Revision).RevokedAtIsNull().One()
 	})
 }
 
 func (s Order) WithLatestApprover() Order {
-	return s.SelectApprover(func(_ OrderColumns) orm.Single[model.Approval] {
+	return s.SelectApprover(func(_ OrderColumns) relation.Single[model.Approval] {
 		return Approvals().RevokedAtIsNull().ApprovedAtDesc().IDDesc().First()
 	})
 }
 
 func (s Order) WithRecentApprovals() Order {
-	return s.PreloadApprovals(func(_ OrderColumns) orm.Many[model.Approval] {
+	return s.PreloadApprovals(func(_ OrderColumns) relation.Many[model.Approval] {
 		return Approvals().ApprovedAtDesc().IDDesc().Limit(3).Many()
 	})
 }

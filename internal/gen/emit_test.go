@@ -118,7 +118,9 @@ func described(t *testing.T, dir string) map[string]snapshot.Statement {
 func TestEmit(t *testing.T) {
 	t.Parallel()
 
-	for dir, dialect := range map[string]snapshot.Dialect{"postgres": snapshot.PostgreSQL, "mysql": snapshot.MySQL} {
+	for dir, dialect := range map[string]snapshot.Dialect{
+		"postgres/scopes": snapshot.PostgreSQL, "mysql/scopes": snapshot.MySQL,
+	} {
 		t.Run(dir, func(t *testing.T) {
 			t.Parallel()
 
@@ -218,21 +220,21 @@ package catalog
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=products
-type Product struct{ q orm.Of[model.Product] }
+type Product struct{ q scope.Of[model.Product] }
 -- scopes/scopes.go --
 package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"order_lines": {
@@ -279,14 +281,14 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=customers
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"orders": {
@@ -319,9 +321,9 @@ func TestEmitRepositories(t *testing.T) {
 		d            snapshot.Dialect
 		drv, dest    string
 	}{
-		{"postgres", "repository", snapshot.PostgreSQL, "pgx", "pgxrepo"},
-		{"postgres", "repository", snapshot.PostgreSQL, "database/sql", "pgsqlrepo"},
-		{"mysql", "mysqlrepository", snapshot.MySQL, "database/sql", "mysqlrepo"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "pgx", "postgres/pgxstore"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "database/sql", "postgres/sqlstore"},
+		{"mysql/scopes", "mysql/repository", snapshot.MySQL, "database/sql", "mysql/sqlstore"},
 	} {
 		t.Run(tt.dest, func(t *testing.T) {
 			t.Parallel()
@@ -376,17 +378,17 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 //kanna:scope table=invoices
-type Invoice struct{ q orm.Of[model.Invoice] }
+type Invoice struct{ q scope.Of[model.Invoice] }
 -- repository/repository.go --
 package repository
 

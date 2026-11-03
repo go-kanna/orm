@@ -63,29 +63,29 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 //kanna:scope table=users
-type User struct{ q orm.Of[model.User] }
+type User struct{ q scope.Of[model.User] }
 
 //kanna:scope table=logs
-type Log struct{ q orm.Of[model.Log] }
+type Log struct{ q scope.Of[model.Log] }
 
 //kanna:scope table=notes
-type Note struct{ q orm.Of[model.Note] }
+type Note struct{ q scope.Of[model.Note] }
 
 //kanna:scope table=tickets
-type Ticket struct{ q orm.Of[model.Ticket] }
+type Ticket struct{ q scope.Of[model.Ticket] }
 
 //kanna:scope table=sessions
-type Session struct{ q orm.Of[model.Session] }
+type Session struct{ q scope.Of[model.Session] }
 `
 
 // repositoryTables are the tables of repositoryModule.
