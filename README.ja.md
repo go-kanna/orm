@@ -749,11 +749,11 @@ return tx.Commit(ctx)
 生成 constructor は任意の repository option を受け取ります。`WithQueryLogger` に関数を渡すため、特定のロギングライブラリには依存しません。
 
 ```go
-logQuery := func(ctx context.Context, q orm.QueryLog) {
+logQuery := func(ctx context.Context, q option.QueryLog) {
     fmt.Printf("%s (%s): %v\n", q.SQL, q.Duration, q.Err)
     // ctx からリクエスト情報を取り出し、q.Args を出すかはここで決める。
 }
-repo := store.NewOrderRepository(db, orm.WithQueryLogger(logQuery))
+repo := store.NewOrderRepository(db, option.WithQueryLogger(logQuery))
 ```
 
 `QueryLog` は `SQL string`、`Args []any`、`Duration time.Duration`、`Err error` を持ちます。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度通知します。呼び出し時の context と、プレースホルダーを含む SQL、別項目の引数を渡します。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、エラー変換前のエラーを通知します。条件や検証のエラーで SQL を実行しなかった場合は通知しません。

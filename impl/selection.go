@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-)
 
-// ErrRequiredRelation means a required selection returned no value.
-var ErrRequiredRelation = errors.New("orm: required relation has no value")
+	"github.com/go-kanna/orm"
+)
 
 // Single selects zero or one related row. One and First differ in how extra matches are handled.
 type Single[M any] struct {
@@ -161,7 +160,7 @@ func CheckSelection[M any](q Of[M], field string, missing bool) error {
 	for _, p := range q.projections {
 		if p.field == field && p.value.isRequired() &&
 			missing {
-			return fmt.Errorf("%s: %w", field, ErrRequiredRelation)
+			return fmt.Errorf("%s: %w", field, orm.ErrRequiredRelation)
 		}
 	}
 	return nil

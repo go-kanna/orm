@@ -47,14 +47,14 @@ package repository
 import (
 	"testing"
 "context"
-"github.com/go-kanna/orm"
+"github.com/go-kanna/orm/option"
 	"example.com/shop/db"
 )
 
 func TestWiring(t *testing.T) {
 	reader := &db.Reader{}
-	logger := func(context.Context, orm.QueryLog) {}
-first := NewOrders(reader, orm.WithQueryLogger(logger))
+	logger := func(context.Context, option.QueryLog) {}
+first := NewOrders(reader, option.WithQueryLogger(logger))
 	if first.(*orders).db != reader { t.Fatal("constructor did not use reader") }
 	tx := db.Tx{}
 	bound := first.Bind(%s)

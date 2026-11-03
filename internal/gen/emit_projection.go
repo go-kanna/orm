@@ -10,7 +10,9 @@ import (
 	"github.com/go-kanna/internal/gofile"
 )
 
-func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q, notFound string) {
+func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q string,
+	notFound func() string,
+) {
 	typ := types.TypeString(m.projection.model, e.f.Qualifier)
 	read := sc.Name("read")
 	if m.result == resultRow {
@@ -47,7 +49,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 		e.printf("if len(%s) == 0 { return nil, nil }\nreturn &%s[0], nil\n", out, out)
 		return
 	}
-	e.printf("if len(%s) == 0 { return %s, %s }\nreturn %s[0], nil\n", out, zero, notFound, out)
+	e.printf("if len(%s) == 0 { return %s, %s }\nreturn %s[0], nil\n", out, zero, notFound(), out)
 }
 
 func (e repoEmitter) projectionSources(m repoMethod) string {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/option"
 	"github.com/go-kanna/orm/relation"
 	_ "github.com/go-sql-driver/mysql"
 
@@ -39,7 +40,7 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer func() { _ = db.Close() }()
-	queryLog := orm.WithQueryLogger(func(_ context.Context, q orm.QueryLog) {
+	queryLog := option.WithQueryLogger(func(_ context.Context, q option.QueryLog) {
 		fmt.Fprintf(w, "SQL (%s): %s; error=%v\n", q.Duration, q.SQL, q.Err)
 	})
 	ex := example{

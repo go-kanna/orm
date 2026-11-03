@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
 	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepo"
 	"github.com/go-kanna/orm/internal/gen/testdata/pgxrepo"
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
+	"github.com/go-kanna/orm/option"
 )
 
 func TestQueryLogging_Postgres(t *testing.T) {
 	t.Parallel()
-	var logs []orm.QueryLog
+	var logs []option.QueryLog
 	repo := pgxrepo.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureQueries(t, &logs))
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, postgres.Orders().WithLines()); err != nil {
@@ -37,7 +37,7 @@ func TestQueryLogging_Postgres(t *testing.T) {
 
 func TestQueryLogging_MySQL(t *testing.T) {
 	t.Parallel()
-	var logs []orm.QueryLog
+	var logs []option.QueryLog
 	repo := mysqlrepo.NewOrderRepository(mysqlDB(t), captureQueries(t, &logs))
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, mysql.Orders().WithLines()); err != nil {
@@ -55,10 +55,10 @@ func TestQueryLogging_MySQL(t *testing.T) {
 	checkQueryLogs(t, logs)
 }
 
-func captureQueries(t *testing.T, logs *[]orm.QueryLog) orm.Option {
+func captureQueries(t *testing.T, logs *[]option.QueryLog) option.Option {
 	t.Helper()
 	ctx := t.Context()
-	return orm.WithQueryLogger(func(got context.Context, q orm.QueryLog) {
+	return option.WithQueryLogger(func(got context.Context, q option.QueryLog) {
 		if got != ctx {
 			t.Error("query context was not preserved")
 		}
@@ -67,7 +67,7 @@ func captureQueries(t *testing.T, logs *[]orm.QueryLog) orm.Option {
 	})
 }
 
-func checkQueryLogs(t *testing.T, logs []orm.QueryLog) {
+func checkQueryLogs(t *testing.T, logs []option.QueryLog) {
 	t.Helper()
 	if len(logs) != 5 {
 		t.Fatalf("got %d events, want parent, preload, count, custom SQL, failed insert: %+v", len(logs), logs)

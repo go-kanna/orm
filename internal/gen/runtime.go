@@ -13,6 +13,8 @@ const (
 	scopePath = "github.com/go-kanna/orm/scope"
 	// relationPath is the import path of what a relation is selected by.
 	relationPath = "github.com/go-kanna/orm/relation"
+	// optionPath is the import path of the options of a repository.
+	optionPath = "github.com/go-kanna/orm/option"
 	// implPath is the import path of what the generated code runs on.
 	implPath = "github.com/go-kanna/orm/impl"
 )
@@ -20,8 +22,8 @@ const (
 // publicNames are the names of the runtime that code written by hand reads, by the import path it reads each from,
 // which the generated code names as it does. Any other name is of impl.
 var publicNames = map[string]string{
-	"Of": scopePath, "Single": relationPath, "Many": relationPath, "Column": relationPath, "Option": ormPath,
-	"QueryLog": ormPath, "QueryLogger": ormPath, "WithQueryLogger": ormPath, "ErrNotFound": ormPath,
+	"Of": scopePath, "Single": relationPath, "Many": relationPath, "Column": relationPath, "Option": optionPath,
+	"QueryLog": optionPath, "QueryLogger": optionPath, "WithQueryLogger": optionPath, "ErrNotFound": ormPath,
 	"ErrRequiredRelation": ormPath,
 }
 

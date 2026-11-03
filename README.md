@@ -927,11 +927,11 @@ once instead, and `skip-locked` has it pass those rows over.
 Generated constructors accept optional repository options. `WithQueryLogger` takes a function, with no logging framework dependency:
 
 ```go
-logQuery := func(ctx context.Context, q orm.QueryLog) {
+logQuery := func(ctx context.Context, q option.QueryLog) {
     fmt.Printf("%s (%s): %v\n", q.SQL, q.Duration, q.Err)
     // Use ctx for request metadata; choose whether to log q.Args.
 }
-repo := store.NewOrderRepository(db, orm.WithQueryLogger(logQuery))
+repo := store.NewOrderRepository(db, option.WithQueryLogger(logQuery))
 ```
 
 `QueryLog` contains `SQL string`, `Args []any`, `Duration time.Duration`, and `Err error`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. The callback receives that call's context and the SQL with its placeholders, with arguments supplied separately. It runs after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results. Errors are observed before repository error translation. A condition or validation error that prevents SQL from running produces no event.

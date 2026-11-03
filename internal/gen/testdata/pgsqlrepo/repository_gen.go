@@ -15,6 +15,7 @@ import (
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
 	"github.com/go-kanna/orm/internal/gen/testdata/repository"
+	"github.com/go-kanna/orm/option"
 	"github.com/go-kanna/orm/scope"
 )
 
@@ -63,7 +64,7 @@ type OrderRepository struct {
 }
 
 // NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 	return OrderRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 

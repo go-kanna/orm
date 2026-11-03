@@ -353,7 +353,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	for _, k := range m.keys {
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
-	notFound := e.notFound(m.target.table, names, args)
+	notFound := func() string { return e.notFound(m.target.table, names, args) }
 	if m.projection != nil && m.verb != verbDelete {
 		e.projectedRead(m, sc, recv, sig, q, notFound)
 		return
@@ -382,7 +382,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 			return
 		}
 		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\n", err, model)
-		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound)
+		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound())
 	case verbList:
 		e.printf("return select%s(%s, %s.executor, %s, %s)\n", e.names[m.target.table], sig.ctx, recv, q, lockClause(m))
 	case verbPluck:
@@ -415,7 +415,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("%[1]s, %[2]s := %[3]s.executor.%[4]s(%[5]s, `DELETE FROM %[6]s`+%[7]s.Where(), %[7]s.Args()...)\n"+
 			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, "", wrap)
 		affected := e.rowsAffected(sc, res, err, "", wrap)
-		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
+		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound())
 	case verbInsert, verbUpdate, verbUpsert: // method writes them
 	}
 }

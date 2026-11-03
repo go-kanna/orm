@@ -13,6 +13,7 @@ import (
 	"github.com/go-kanna/orm/bench/postgres/kanna/repository"
 	"github.com/go-kanna/orm/bench/postgres/kanna/scopes"
 	"github.com/go-kanna/orm/impl"
+	"github.com/go-kanna/orm/option"
 	"github.com/go-kanna/orm/scope"
 )
 
@@ -61,7 +62,7 @@ type CustomerRepository struct {
 }
 
 // NewCustomerRepository returns a CustomerRepository running on db.
-func NewCustomerRepository(db DBTX, opts ...orm.Option) CustomerRepository {
+func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
 	return CustomerRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
@@ -101,7 +102,7 @@ type OrderRepository struct {
 }
 
 // NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 	return OrderRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
 }
 
