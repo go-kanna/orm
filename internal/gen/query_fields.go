@@ -73,15 +73,11 @@ func queryArguments(fset *token.FileSet, params *types.Tuple) (map[string]queryA
 			if c.relationValue {
 				continue
 			}
-			for _, name := range []string{c.col.Name, lowerFirst(c.path[len(c.path)-1])} {
-				if prior, ok := args[name]; ok {
-					if prior.field != nil && prior.parameter == p.Name() && fieldPath(*prior.field) == fieldPath(c) {
-						continue
-					}
-					ambiguous[name] = true
-				}
-				args[name] = queryArgument{parameter: p.Name(), typ: c.typ, field: new(c)}
+			name := lowerFirst(c.path[len(c.path)-1])
+			if _, ok := args[name]; ok {
+				ambiguous[name] = true
 			}
+			args[name] = queryArgument{parameter: p.Name(), typ: c.typ, field: new(c)}
 		}
 	}
 	return args, ambiguous, ds

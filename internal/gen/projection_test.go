@@ -29,6 +29,9 @@ type Card struct {
 }
 type Record struct {`, 1)
 	archive = strings.Replace(archive, "Note string", "Caption string", 1)
+	// Save names its values itself, now that the field holding note is Caption.
+	archive = strings.Replace(archive, "Save(ctx context.Context, record model.Record) (int64, error)",
+		"Save(ctx context.Context, state model.State, note string) (int64, error)", 1)
 	archive = strings.Replace(archive, "type Record struct { q scope.Of[model.Record] }",
 		`type Record struct { q scope.Of[model.Record] }
 func (s Record) WithUnusedRelation() Record {

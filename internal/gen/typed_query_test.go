@@ -169,8 +169,6 @@ func TestCommand_TypedQueryMistakes(t *testing.T) {
 			"Save(ctx context.Context, state int64, record model.Record)", ":state matches multiple arguments or struct fields"},
 		{"explicit note parameter and field", "Save(ctx context.Context, record model.Record)",
 			"Save(ctx context.Context, record model.Record, note string)", ":note matches multiple arguments or struct fields"},
-		{"two fields of one struct", "ID int64", "ID int64 `orm:\"state\"`",
-			":state matches multiple arguments or struct fields"},
 		{"nullzero on number", "Note string", "Note int64", "nullzero requires a string field"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -192,12 +190,11 @@ func TestCommand_TypedQueryArgumentAliases(t *testing.T) {
 		placeholders    []string
 		want            string
 	}{
-		{name: "snake case collision", parameter: ", min_places string",
-			placeholders: []string{"min_places"}, want: ":min_places matches multiple arguments or struct fields"},
-		{name: "lower camel collision", parameter: ", minPlaces string",
+		{name: "a field", placeholders: []string{"minPlaces"}},
+		{name: "a parameter of a field's name", parameter: ", minPlaces string",
 			placeholders: []string{"minPlaces"}, want: ":minPlaces matches multiple arguments or struct fields"},
-		{name: "unused collision", parameter: ", minPlaces string", placeholders: []string{"min_places"}},
-		{name: "same field aliases", placeholders: []string{"min_places", "minPlaces"}},
+		{name: "a field by its column's name", placeholders: []string{"min_places"},
+			want: ":min_places is none of the parameters of the method"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

@@ -533,23 +533,24 @@ func (r repoReader) modelOfTable(pos token.Position, name, table, why string) ta
 // keys matches the parameters naming columns to the fields of the model holding them.
 func (r repoReader) keys(m *repoMethod, keyParams []*types.Var) []diag.Diag {
 	var ds []diag.Diag
+	// A key is named after the field holding its column, as customerID for CustomerID, whatever the column's name.
+	param := func(c column) string { return lowerFirst(c.path[len(c.path)-1]) }
 	for _, p := range keyParams {
-		name := columnName(p.Name())
-		i := slices.IndexFunc(m.columns, func(c column) bool { return c.col.Name == name })
+		i := slices.IndexFunc(m.columns, func(c column) bool { return param(c) == p.Name() })
 		if i < 0 {
-			d := diag.Errorf(m.pos, "%s: %s has no column for the parameter %s", m.name, m.target.table, p.Name())
+			d := diag.Errorf(m.pos, "%s: %s has no field for the parameter %s", m.name, typeName(m.model), p.Name())
 			names := make([]string, 0, len(m.columns))
 			for _, c := range m.columns {
-				names = append(names, c.col.Name)
+				names = append(names, param(c))
 			}
-			if near, ok := suggest.Closest(name, names); ok {
-				c := m.columns[slices.IndexFunc(m.columns, func(c column) bool { return c.col.Name == near })]
-				d = d.WithHints(fmt.Sprintf("did you mean %s (%s)?", lowerFirst(c.path[len(c.path)-1]), near))
+			if near, ok := suggest.Closest(p.Name(), names); ok {
+				d = d.WithHints(fmt.Sprintf("did you mean %s?", near))
 			}
 			ds = append(ds, d)
 			continue
 		}
 		c := m.columns[i]
+		name := c.col.Name
 		if _, ptr := p.Type().Underlying().(*types.Pointer); ptr && fieldTakes(c.typ, p.Type()) {
 			d := diag.Errorf(m.pos, "%s: %s is %s, but a key is compared by its value, and nil would compare by "+
 				"= NULL, which matches no row", m.name, p.Name(), typeName(p.Type())).

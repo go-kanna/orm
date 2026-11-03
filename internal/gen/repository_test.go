@@ -288,8 +288,8 @@ func TestRepositories_Mistakes(t *testing.T) {
 			at + "error: List: its last parameter, ids, takes no scope type"},
 		{"a column misspelled", snapshot.PostgreSQL,
 			"\tListByCustomer(ctx context.Context, custmerID int64, s ...scopes.Order) ([]model.Order, error)\n",
-			at + "error: ListByCustomer: orders has no column for the parameter custmerID\n" +
-				"  did you mean customerID (customer_id)?"},
+			at + "error: ListByCustomer: model.Order has no field for the parameter custmerID\n" +
+				"  did you mean customerID?"},
 		{"a parameter of another type than its field", snapshot.PostgreSQL,
 			"\tListByCustomer(ctx context.Context, customerID string) ([]model.Order, error)\n",
 			at + "error: ListByCustomer: customerID is a string, but Order.CustomerID, which holds customer_id, is an " +
