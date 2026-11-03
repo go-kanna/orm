@@ -156,9 +156,15 @@ func TestFindScopes_Mistakes(t *testing.T) {
 		name, decls, want string
 	}{
 		{"a directive it cannot read", `
-//kanna:scope
+//kanna:scope colour=red
 type Order struct{ q scope.Of[model.Order] }
-`, "scopes.go:10:1: error: //kanna:scope wants the table its type is a scope of\n  as in //kanna:scope table=orders"},
+`, "scopes.go:10:1: error: //kanna:scope takes table= and func=, not \"colour=red\"\n" +
+			"  as in //kanna:scope table=orders"},
+		{"a model named after no table", `
+//kanna:scope
+type Item struct{ q scope.Of[model.Item] }
+`, "scopes.go:10:1: error: Item: the snapshot has no table items, which its model is named after\n" +
+			"  name its table with table=, as in //kanna:scope table=person"},
 		{"a table misspelled", `
 //kanna:scope table=order
 type Order struct{ q scope.Of[model.Order] }
@@ -255,6 +261,8 @@ type Order int
 package model
 
 type Order struct{ ID int64 }
+
+type Item struct{ ID int64 }
 -- scopes/scopes.go --
 package scopes
 

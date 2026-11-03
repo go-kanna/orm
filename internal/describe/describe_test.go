@@ -287,8 +287,6 @@ func TestDescribe_ScopeDirectives(t *testing.T) {
 	tests := []struct {
 		name, directive, want string
 	}{
-		{"without its table", "//kanna:scope",
-			"scopes.go:3:1: error: //kanna:scope wants the table its type is a scope of\n  as in //kanna:scope table=orders"},
 		{"with an option it does not know", "//kanna:scope table=orders colour=red",
 			"scopes.go:3:1: error: //kanna:scope takes table= and func=, not \"colour=red\"\n" +
 				"  as in //kanna:scope table=orders"},

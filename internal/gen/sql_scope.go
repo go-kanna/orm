@@ -121,7 +121,11 @@ func (r resolver) sqlScope(st sqlfile.Statement, d snapshot.Dialect,
 		}
 		t, err := r.typeOf(expr)
 		if err != nil {
-			return sc, []diag.Diag{errorf("%v", err)}
+			d := errorf("%v", err)
+			if ni := (notImportedError{}); errors.As(err, &ni) && ni.path != "" {
+				d = d.WithHints(fmt.Sprintf("import it in a Go file of the package, as in import _ %q", ni.path))
+			}
+			return sc, []diag.Diag{d}
 		}
 		if variadic {
 			t = types.NewSlice(t)
@@ -161,8 +165,8 @@ func (r resolver) sqlScope(st sqlfile.Statement, d snapshot.Dialect,
 }
 
 // resolver reads the types of the parameters of a scope written by hand, as the Go files of pkg would: an identifier
-// by what pkg declares and the predeclared types, and a type of another package by the name a file of pkg imports it
-// by, or else by the name of a package pkg imports, directly or not, when only one of them has the name.
+// by what pkg declares and the predeclared types, and a type of another package by the name the files of pkg import
+// it by.
 type resolver struct {
 	pkg *packages.Package
 }
@@ -221,28 +225,60 @@ func (r resolver) typeOf(e ast.Expr) (types.Type, error) {
 		types.ExprString(e))
 }
 
-// imported finds the package a file of r.pkg would refer to as name.
+// imported finds the package the Go files of r.pkg written by hand import as name, by that name or, for one imported
+// for its side effects alone, as in import _ "time", by the package's own. A package they do not import is not looked
+// for among those they import in turn, which would change as those change; it is only told of, as one to import.
 func (r resolver) imported(name string) (*types.Package, error) {
 	byPath := map[string]*types.Package{}
 	for _, p := range r.pkg.Types.Imports() {
 		byPath[p.Path()] = p
 	}
+	var found *types.Package
 	for _, f := range r.pkg.Syntax {
+		if ast.IsGenerated(f) {
+			continue // What the files kanna-orm wrote import is no declaration of the package's.
+		}
 		for _, imp := range f.Imports {
 			path, err := strconv.Unquote(imp.Path.Value)
 			p := byPath[path]
 			if err != nil || p == nil {
 				continue
 			}
-			if imp.Name != nil && imp.Name.Name == name || imp.Name == nil && p.Name() == name {
-				return p, nil
+			local := p.Name()
+			if imp.Name != nil && imp.Name.Name != "_" {
+				local = imp.Name.Name
+			}
+			switch {
+			case local != name, found == p:
+			case found != nil:
+				return nil, fmt.Errorf("%s names both %s and %s, which files of package %s import", name, found.Path(),
+					p.Path(), r.pkg.Name)
+			default:
+				found = p
 			}
 		}
 	}
+	if found != nil {
+		return found, nil
+	}
+	path, _ := r.deeper(name)
+	return nil, notImportedError{name: name, pkg: r.pkg.Name, path: path}
+}
 
-	var found []*types.Package
+// notImportedError is the error of name, which no package the files of pkg import is named, with path, the one
+// package of the name among those they import in turn, if there is one, which they could import.
+type notImportedError struct{ name, pkg, path string }
+
+func (e notImportedError) Error() string {
+	return fmt.Sprintf("%s names no package that package %s imports", e.name, e.pkg)
+}
+
+// deeper finds the import path of the one package named name among those the packages r.pkg imports import, at any
+// depth, to tell of.
+func (r resolver) deeper(name string) (string, bool) {
+	var found []string
 	seen := map[*types.Package]bool{}
-	for next := r.pkg.Types.Imports(); len(next) > 0 && len(found) == 0; {
+	for next := r.pkg.Types.Imports(); len(next) > 0; {
 		var deeper []*types.Package
 		for _, p := range next {
 			if seen[p] {
@@ -250,17 +286,14 @@ func (r resolver) imported(name string) (*types.Package, error) {
 			}
 			seen[p] = true
 			if p.Name() == name {
-				found = append(found, p)
+				found = append(found, p.Path())
 			}
 			deeper = append(deeper, p.Imports()...)
 		}
 		next = deeper
 	}
-	switch len(found) {
-	case 0:
-		return nil, fmt.Errorf("%s names no package that package %s imports", name, r.pkg.Name)
-	case 1:
-		return found[0], nil
+	if len(found) != 1 {
+		return "", false
 	}
-	return nil, fmt.Errorf("%s names both %s and %s", name, found[0].Path(), found[1].Path())
+	return found[0], true
 }
