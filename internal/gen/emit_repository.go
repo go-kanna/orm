@@ -288,7 +288,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		} else {
 			e.update(m, sc, recv, sig)
 		}
-	case verbGet, verbFind, verbFirst, verbList, verbPluck, verbCount, verbExists, verbDelete:
+	case verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbDelete:
 		e.read(m, sc, recv, sig)
 	}
 	e.printf("}\n\n")
@@ -312,12 +312,15 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	model := types.TypeString(m.model, e.f.Qualifier)
 	table := sqlName(e.d, m.target.table)
 	q := sc.Name("q")
-	if m.lock != "" {
-		resultModel := model
+	if m.lock != "" && m.pluck == nil {
+		zero := model + "{}"
 		if m.projection != nil {
-			resultModel = types.TypeString(m.projection.model, e.f.Qualifier)
+			zero = types.TypeString(m.projection.model, e.f.Qualifier) + "{}"
 		}
-		e.inTransaction(m, sc, recv, sig, resultModel)
+		if m.returns == returnsRows || m.optional {
+			zero = "nil"
+		}
+		e.inTransaction(m, sc, recv, sig, zero)
 	}
 	if e.constantRead(m, sc, recv, sig, q) {
 		return
@@ -340,6 +343,10 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
 	notFound := func() string { return sig.mapped(e.notFound(m.target.table, names, args)) }
+	if m.pluck != nil {
+		e.pluckRead(m, sc, recv, sig, q, notFound)
+		return
+	}
 	if m.projection != nil && m.verb != verbDelete {
 		e.projectedRead(m, sc, recv, sig, q, notFound)
 		return
@@ -385,8 +392,6 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		rows := sc.Name("rows")
 		e.printf("%[1]s, %[2]s := %[3]s\nif %[2]s != nil {\nreturn nil, %[4]s\n}\nreturn %[1]s, nil\n", rows, err, read,
 			sig.mapped(err))
-	case verbPluck:
-		e.pluckRows(m, sc, recv, sig, q)
 	case verbCount, verbExists:
 		query, typ, zero := "`SELECT count(*) FROM "+table+"`+"+rd+".Where()", "int64", "0"
 		if m.verb == verbExists {
@@ -423,14 +428,10 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 
 // inTransaction writes the check that m, which locks rows, runs on what can hold a lock: a transaction, which alone has
 // a Commit among what DBTX is implemented by.
-func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv string, sig signature, model string) {
+func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv string, sig signature, zero string) {
 	commit, tx := "Commit() error", "*sql.Tx"
 	if e.drv == driverPgx {
 		commit, tx = "Commit("+e.f.Import("context", "context")+".Context) error", "pgx.Tx"
-	}
-	zero := model + "{}"
-	if m.returns == returnsRows || m.optional {
-		zero = "nil"
 	}
 	e.printf("if _, %[1]s := %[2]s.db.dbtx.(interface{ %[3]s }); !%[1]s {\nreturn %[4]s, %[5]s\n}\n",
 		sc.Name("ok"), recv, commit, zero, sig.mapped(e.fmtPkg()+".Errorf("+
@@ -1104,29 +1105,60 @@ func ifSet(expr string, pointer bool, do func(v string) string) string {
 	return "if " + expr + " != nil {\n" + do("*"+expr) + "\n}"
 }
 
-func (e repoEmitter) pluckRows(m repoMethod, sc gofile.Scope, recv string, sig signature, q string) {
-	rd, err := sc.Name("rd"), sc.Name("err")
-	rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
+// pluckRead writes the body of m, which reads the values of one column of the rows its keys and its scopes match, as
+// a projection reads its columns: with no relation loaded.
+func (e repoEmitter) pluckRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q string,
+	notFound func() string,
+) {
 	column := m.pluck
 	typ := types.TypeString(column.typ, e.f.Qualifier)
-	query := "SELECT " + sqlName(e.d, column.col.Name) + " FROM " + sqlName(e.d, m.target.table)
-	what := fmt.Sprintf("%q", "pluck "+m.target.table+"."+column.col.Name+": %w")
-	wrap := e.fmtPkg() + ".Errorf(" + what + ", " + err + ")"
-	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, %[5]s)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q,
-		e.dialect(), e.orderKey(m.table))
-	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit(), "+
-		"%[7]s.Args()...)\n", rows, err, recv, e.query, sig.ctx, goString(query), rd)
-	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
-	if column.nullzero {
-		e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[5]s\n", out, typ, rows, row, e.storageType(*column))
-		e.printf("if %[1]s := %[2]s.Scan(&%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", err, rows, row, wrap)
-		e.printf("%[1]s = append(%[1]s, %[2]s.V)\n}\n", out, row)
-		e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", err, rows, wrap)
-	} else {
-		e.scalarRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ)
+	rd, err, rows, out, row := sc.Name("rd"), sc.Name("err"), sc.Name("rows"), sc.Name("out"), sc.Name("row")
+	zero := "nil"
+	if !m.optional && m.verb != verbList {
+		zero = sc.Name("zero")
+		e.printf("var %s %s\n", zero, typ)
 	}
+	if m.lock != "" {
+		e.inTransaction(m, sc, recv, sig, zero)
+	}
+	e.printf("if %[1]s := %[2]s.ProjectionOnly(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,
+		sig.mapped(err))
+	switch m.verb { //nolint:exhaustive // a value is read by these alone
+	case verbFirst:
+		e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
+	case verbGet, verbFind:
+		e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,
+			sig.mapped(err))
+	}
+	query := "SELECT " + sqlName(e.d, column.col.Name) + " FROM " + sqlName(e.d, m.target.table)
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "read "+m.target.table+"."+column.col.Name+": %w") +
+		", " + err + ")")
+	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, %[5]s)\nif %[2]s != nil {\nreturn %[6]s, %[7]s\n}\n", rd, err, q,
+		e.dialect(), e.orderKey(m.table), zero, sig.mapped(err))
+	text := goString(query) + "+" + rd + ".Where()+" + rd + ".OrderBy()+" + rd + ".Limit()"
+	if m.lock != "" {
+		text += "+" + lockClause(m)
+	}
+	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s.Args()...)\n", rows, err, recv, e.query, sig.ctx, text,
+		rd)
+	e.printf("if %s != nil {\nreturn %s, %s\n}\ndefer %s.Close()\n", err, zero, wrap, rows)
+	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[5]s\n", out, typ, rows, row, e.storageType(*column))
+	e.printf("if %[1]s := %[2]s.Scan(&%[3]s); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, rows, row, zero, wrap)
+	value := row
+	if column.nullzero {
+		value = row + ".V"
+	}
+	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", out, value)
+	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn %[3]s, %[4]s\n}\n", err, rows, zero, wrap)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
-	e.printf("return %s, nil\n", out)
+	switch {
+	case m.verb == verbList:
+		e.printf("return %s, nil\n", out)
+	case m.optional:
+		e.printf("if len(%[1]s) == 0 {\nreturn nil, nil\n}\nreturn &%[1]s[0], nil\n", out)
+	default:
+		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s, %[3]s\n}\nreturn %[1]s[0], nil\n", out, zero, notFound())
+	}
 }
 
 func (e repoEmitter) parameterType(m repoMethod, p *types.Var) string {

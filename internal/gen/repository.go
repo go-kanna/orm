@@ -31,7 +31,6 @@ const (
 	verbFind   verb = "Find"
 	verbFirst  verb = "First"
 	verbList   verb = "List"
-	verbPluck  verb = "Pluck"
 	verbCount  verb = "Count"
 	verbExists verb = "Exists"
 	verbInsert verb = "Insert"
@@ -50,7 +49,6 @@ var shapes = map[verb]string{
 	verbFind:   "Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)",
 	verbFirst:  "First(ctx context.Context, s ...scopes.Order) (model.Order, error)",
 	verbList:   "List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)",
-	verbPluck:  "ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)",
 	verbCount:  "Count(ctx context.Context, s ...scopes.Order) (int64, error)",
 	verbExists: "Exists(ctx context.Context, s ...scopes.Order) (bool, error)",
 	verbInsert: "Insert(ctx context.Context, o model.Order) (model.Order, error), or with error alone",
@@ -372,7 +370,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	cds = append(cds, pds...)
 	if pluck.Found {
 		return m, append(cds, diag.Errorf(pluck.Pos, "%s: //kanna:pluck is no more: a List of a column's values is "+
-			"named after its field", m.name).WithHints("as in "+shapes[verbPluck]+", which reads ID"))
+			"named after its field", m.name).WithHints("as in "+pluckShape+", which reads ID"))
 	}
 	if st, ok := r.queries[m.name]; ok {
 		if conflict.Found {
@@ -387,9 +385,6 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	sig := fn.Signature()
 	params, results := sig.Params(), sig.Results()
 	v, ok := verbOf(m.name)
-	if v == verbList && results.Len() == 2 && plucks(results.At(0).Type()) {
-		v = verbPluck
-	}
 	if !ok {
 		return m, errorf("its name starts with no verb kanna-orm knows, and no -- query: %s is written for it", m.name)
 	}
@@ -412,7 +407,13 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		return m, parameterDiags
 	}
 
-	if results.Len() == 2 {
+	plucked := results.Len() == 2 && plucks(v, results.At(0).Type())
+	if plucked {
+		m.returns, m.optional = returnsRow, v == verbFind
+		if v == verbList {
+			m.returns = returnsRows
+		}
+	} else if results.Len() == 2 {
 		var ok bool
 		models, ok = r.resultModels(&m, results.At(0).Type(), models)
 		if !ok {
@@ -429,8 +430,8 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	if !m.shaped() {
 		return m, shapeError()
 	}
-	if v == verbPluck {
-		if ds := r.pluckColumn(&m); ds != nil {
+	if plucked {
+		if ds := r.pluckColumn(&m, results.At(0).Type()); ds != nil {
 			return m, ds
 		}
 	}
@@ -596,7 +597,7 @@ func (m repoMethod) shaped() bool {
 		ok = m.returns == returnsRow && m.optional
 	case verbGet, verbFirst:
 		ok = m.returns == returnsRow && !m.optional
-	case verbList, verbPluck:
+	case verbList:
 		ok = m.returns == returnsRows
 	case verbCount:
 		ok = m.returns == returnsCount
@@ -933,55 +934,68 @@ func lowerFirst(s string) string {
 	return string(runes)
 }
 
-// plucks reports whether t, the result of a List, is a slice of the values of a column rather than of rows.
-func plucks(t types.Type) bool {
-	slice, ok := t.Underlying().(*types.Slice)
-	if !ok {
+// pluckShape is the form of a method reading the values of one column, for a hint.
+const pluckShape = "ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)"
+
+// plucks reports whether t, the result of a method of verb v, is the value of a column rather than a row: a value of
+// a Get or a First, a pointer to one of a Find, or a slice of them of a List.
+func plucks(v verb, t types.Type) bool {
+	switch v {
+	case verbFind:
+		ptr, ok := t.(*types.Pointer)
+		if !ok {
+			return false
+		}
+		t = ptr.Elem()
+	case verbList:
+		slice, ok := t.Underlying().(*types.Slice)
+		if !ok {
+			return false
+		}
+		t = slice.Elem()
+	case verbGet, verbFirst:
+	case verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete:
 		return false
 	}
-	_, row := elemOf(slice.Elem()).Underlying().(*types.Struct)
-	return !row || holdsColumn(elemOf(slice.Elem()))
+	_, row := elemOf(t).Underlying().(*types.Struct)
+	return !row || holdsColumn(elemOf(t))
 }
 
-// pluckColumn finds the column m, a List of the values of one column, reads: that of the field its name says the
-// plural of after List, as ListNames reads that of Name, and ListCustomerIDs that of CustomerID.
-func (r repoReader) pluckColumn(m *repoMethod) []diag.Diag {
-	rest := strings.TrimPrefix(m.name, string(verbList))
+// pluckColumn finds the column m reads the values of, as t, its result: that of the field its name says after the
+// verb, as GetName reads that of Name, or the plural of after List, as ListNames and ListCustomerIDs read those of
+// Name and CustomerID. The value is of the field's type.
+func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
+	switch {
+	case m.verb == verbList:
+		t = t.Underlying().(*types.Slice).Elem() //nolint:forcetypeassert // plucks saw a slice
+	case m.optional:
+		t = t.(*types.Pointer).Elem() //nolint:forcetypeassert // plucks saw a pointer
+	}
+	rest := strings.TrimPrefix(m.name, string(m.verb))
 	for _, c := range m.columns {
-		if field := c.path[len(c.path)-1]; rest != field+"s" && decl.SnakeCase(rest) != decl.Plural(field) {
+		field := c.path[len(c.path)-1]
+		if m.verb == verbList && rest != field+"s" && decl.SnakeCase(rest) != decl.Plural(field) ||
+			m.verb != verbList && rest != field {
 			continue
 		}
-		slice, ok := m.fn.Signature().Results().At(0).Type().Underlying().(*types.Slice)
-		if !ok {
-			return []diag.Diag{diag.Errorf(m.pos, "%s: pluck returns a slice", m.name)}
+		if !types.Identical(t, c.typ) {
+			return []diag.Diag{diag.Errorf(m.pos, "%s: it reads %s.%s, %s %s, as %s %s", m.name,
+				m.model.Obj().Name(), strings.Join(c.path, "."), article(typeName(c.typ)), typeName(c.typ),
+				article(typeName(t)), typeName(t)).WithHints("declare it of the field's type, " + typeName(c.typ))}
 		}
-		elem := slice.Elem()
-		if _, ok := readable(elem, c.col.Type); !ok {
-			return []diag.Diag{diag.Errorf(m.pos, "%s: %s cannot hold column %s (%s)",
-				m.name, typeName(elem), c.col.Name, c.col.Type)}
-		}
-		zeroable := c.nullzero && types.Identical(elem, c.typ)
-		if !c.col.NotNull && !nilable(elem) && !zeroable {
-			return []diag.Diag{diag.Errorf(m.pos, "%s: column %s may be NULL; return a slice of a nullable type",
-				m.name, c.col.Name)}
-		}
-		c.typ = elem
-		c.nullzero = c.nullzero && !nilable(elem)
 		m.pluck = &c
 		return nil
 	}
-	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s has no field %s is the "+
-		"plural of", m.name, typeName(m.model), rest).WithHints("name it List and the plural of a field, as in " +
-		shapes[verbPluck] + ", which reads ID")}
+	field := "named " + rest
+	if m.verb == verbList {
+		field = rest + " is the plural of"
+	}
+	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s has no field %s", m.name,
+		typeName(m.model), field).WithHints("name it after a field, as in " + pluckShape + ", which reads ID")}
 }
 
 func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Named) ([]*types.Named, bool) {
 	switch {
-	case m.verb == verbPluck:
-		if _, ok := t.Underlying().(*types.Slice); !ok {
-			return nil, false
-		}
-		m.returns = returnsRows
 	case isBasic(t, types.Int64):
 		m.returns = returnsCount
 	case isBasic(t, types.Bool):

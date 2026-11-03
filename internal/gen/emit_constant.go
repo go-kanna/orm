@@ -11,7 +11,7 @@ import (
 // constantRead writes the body of m, a read or a Delete that takes no scope, with its statement a constant, and
 // reports whether it did: one with nothing a scope could change is the same statement every time.
 func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q string) bool {
-	if m.scoped || m.projection != nil {
+	if m.scoped || m.projection != nil || m.pluck != nil {
 		return false
 	}
 	switch m.verb {
@@ -20,7 +20,7 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 		if m.returns != returnsNone && m.returns != returnsCount {
 			return false
 		}
-	case verbPluck, verbInsert, verbUpdate, verbUpsert:
+	case verbInsert, verbUpdate, verbUpsert:
 		return false
 	}
 	table := sqlName(e.d, m.target.table)

@@ -120,6 +120,79 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 	return rows, nil
 }
 
+func (r OrderRepository) ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error) {
+	qs := make([]scope.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := impl.Combine(qs...)
+	if err := q.ProjectionOnly("ListIDs"); err != nil {
+		return nil, r.mapError(err)
+	}
+	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("read orders.id: %w", err))
+	}
+	defer rows.Close()
+	out := []model.OrderID{}
+	for rows.Next() {
+		var row model.OrderID
+		if err := rows.Scan(&row); err != nil {
+			return nil, r.mapError(fmt.Errorf("read orders.id: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("read orders.id: %w", err))
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
+func (r OrderRepository) FindMemo(ctx context.Context, id model.OrderID) (**string, error) {
+	var q scope.Of[model.Order]
+	q = q.Where(`id = `, id)
+	if err := q.ProjectionOnly("FindMemo"); err != nil {
+		return nil, r.mapError(err)
+	}
+	if err := q.Unpaged("FindMemo"); err != nil {
+		return nil, r.mapError(err)
+	}
+	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("read orders.note: %w", err))
+	}
+	defer rows.Close()
+	out := []*string{}
+	for rows.Next() {
+		var row *string
+		if err := rows.Scan(&row); err != nil {
+			return nil, r.mapError(fmt.Errorf("read orders.note: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("read orders.note: %w", err))
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return &out[0], nil
+}
+
 func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.OrderTagSummary, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {

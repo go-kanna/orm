@@ -376,7 +376,6 @@ func verbContract(m *repoMethod, q query) []diag.Diag {
 			contract = "error alone, (int64, error) for the number of rows it affects, or (T, error) or ([]T, error) " +
 				"for those it returns"
 		}
-	case verbPluck: // no name starts with it
 	}
 	if contract == "" {
 		return nil

@@ -44,7 +44,7 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 		return diag.Errorf(d.Pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
 	if !reads {
-		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, or a List of rows")}
+		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, or a List")}
 	}
 	fields := strings.Fields(d.Args)
 	if len(fields) == 0 || len(fields) > 2 {

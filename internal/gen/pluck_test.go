@@ -24,7 +24,11 @@ func TestCommand_Pluck(t *testing.T) {
 				archive := strings.Replace(typedQueryShop, "type Records interface {", `type Records interface {
 	ListIDs(ctx context.Context, s ...scopes.Record) ([]int64, error)
 	ListStates(ctx context.Context, s ...scopes.Record) ([]model.State, error)
-	ListNotes(ctx context.Context, s ...scopes.Record) ([]*string, error)
+	ListNotes(ctx context.Context, s ...scopes.Record) ([]string, error)
+	GetState(ctx context.Context, id int64, s ...scopes.Record) (model.State, error)
+	FindNote(ctx context.Context, id int64, s ...scopes.Record) (*string, error)
+	//kanna:lock update
+	FirstID(ctx context.Context, s ...scopes.Record) (int64, error)
 `, 1)
 				if driver == "database/sql" {
 					archive += "\n-- impl/pluck_test.go --\n" + pluckRuntime
@@ -66,13 +70,15 @@ func TestCommand_PluckMistakes(t *testing.T) {
 			"ListMissings: it returns the values of a column, but model.Record has no field Missings is the plural of"},
 		{"ListIDsByState(ctx context.Context, s ...scopes.Record) ([]int64, error)",
 			"model.Record has no field IDsByState is the plural of"},
-		{"ListIDs(ctx context.Context, s ...scopes.Record) ([]bool, error)", "cannot hold column id"},
+		{"ListIDs(ctx context.Context, s ...scopes.Record) ([]bool, error)", "it reads Record.ID, an int64, as a bool"},
+		{"GetNames(ctx context.Context, id int64, s ...scopes.Record) (string, error)",
+			"model.Record has no field named Names"},
+		{"FindNote(ctx context.Context, id int64, s ...scopes.Record) (string, error)", "cannot implement it as declared"},
 		{"ListIDs(ctx context.Context, s ...scopes.Record) (int64, error)", "cannot implement it as declared"},
-		{"ListStates(ctx context.Context, s ...scopes.Record) ([]string, error)", "may be NULL"},
+		{"ListStates(ctx context.Context, s ...scopes.Record) ([]string, error)",
+			"it reads Record.State, a model.State, as a string"},
 		{"//kanna:conflict id\n ListIDs(ctx context.Context, s ...scopes.Record) ([]int64, error)",
 			"conflict is for an Upsert"},
-		{"//kanna:lock update\n ListIDs(ctx context.Context, s ...scopes.Record) ([]int64, error)",
-			"//kanna:lock is for a Get, a Find, a First, or a List of rows"},
 		{"//kanna:pluck id\n Values(ctx context.Context, s ...scopes.Record) ([]int64, error)",
 			"Values: //kanna:pluck is no more: a List of a column's values is named after its field"},
 	} {
@@ -152,7 +158,12 @@ func TestPluck(t *testing.T) {
 		t.Fatalf("states: %v, %v", states, err)
 	}
 	notes, err := r.ListNotes(ctx)
-	if err != nil || len(notes) != 2 || notes[0] != nil || *notes[1] != "kept" { t.Fatalf("notes: %v, %v", notes, err) }
+	if err != nil || len(notes) != 2 || notes[0] != "" || notes[1] != "kept" { t.Fatalf("notes: %v, %v", notes, err) }
+	state, err := r.GetState(ctx, 7)
+	if err != nil || state != "" { t.Fatalf("GetState: %v, %v", state, err) }
+	note, err := r.FindNote(ctx, 7)
+	if err != nil || note == nil || *note != "" { t.Fatalf("FindNote: %v, %v", note, err) }
+	if _, err := r.FirstID(ctx); err == nil { t.Fatal("FirstID locked outside a transaction") }
 	pluckMode = "empty"
 	ids, err = r.ListIDs(ctx)
 	if err != nil || ids == nil || len(ids) != 0 { t.Fatalf("empty: %v, %v", ids, err) }
