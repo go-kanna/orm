@@ -16,26 +16,44 @@ func (e repoEmitter) hooks() {
 	e.printf("ctx, trace := d.options.StartQuery(ctx, query, args)\nresult,err := d.dbtx.%s(ctx,query,args...)\n", e.exec)
 	e.printf("trace.End(err)\nreturn result,err\n}\n\n")
 	if e.drv == driverSQL {
-		e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) (%s, error) {\n", db, e.query, ctx,
-			e.ref("Rows"))
-		e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nrows,err := d.dbtx.%s(ctx,query,args...)\n", e.query)
-		e.printf("if err != nil { trace.End(err); return nil,err }\nreturn trace.Rows(%s{Rows:rows},nil)\n}\n\n", e.rows)
-		e.printf("type %s struct { *%s.Rows }\nfunc (r %s) Close() { _ = r.Rows.Close() }\n\n",
-			e.rows, e.f.Import("database/sql", "sql"), e.rows)
-		e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) %s {\n", db, e.queryRow, ctx, e.ref("Row"))
-	} else {
-		pgx := e.f.Import("github.com/jackc/pgx/v5", "pgx")
-		e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) (%s.Rows, error) {\n", db, e.query, ctx, pgx)
-		e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nrows,err := d.dbtx.%s(ctx,query,args...)\n", e.query)
-		e.printf("traced,err := trace.Rows(rows,err)\nif err != nil { return nil,err }\n"+
-			"return %s{Rows:rows, traced:traced},nil\n}\n\n", e.rows)
-		e.printf("// %[1]s is pgx.Rows read through traced, for the hooks to see the rows read to the end.\n"+
-			"type %[1]s struct { %[2]s.Rows; traced %[3]s }\n"+
-			"func (r %[1]s) Next() bool { return r.traced.Next() }\n"+
-			"func (r %[1]s) Scan(dest ...any) error { return r.traced.Scan(dest...) }\n"+
-			"func (r %[1]s) Close() { r.traced.Close() }\n\n", e.rows, pgx, e.ref("Rows"))
-		e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) %s.Row {\n", db, e.queryRow, ctx, pgx)
+		e.sqlQueries(ctx)
+		return
 	}
+	pgx := e.f.Import("github.com/jackc/pgx/v5", "pgx")
+	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) (%s.Rows, error) {\n", db, e.query, ctx, pgx)
+	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nrows,err := d.dbtx.%s(ctx,query,args...)\n", e.query)
+	e.printf("traced,err := trace.Rows(rows,err)\nif err != nil { return nil,err }\n"+
+		"return %s{Rows:rows, traced:traced},nil\n}\n\n", e.rows)
+	e.printf("// %[1]s is pgx.Rows read through traced, for the hooks to see the rows read to the end.\n"+
+		"type %[1]s struct { %[2]s.Rows; traced %[3]s }\n"+
+		"func (r %[1]s) Next() bool { return r.traced.Next() }\n"+
+		"func (r %[1]s) Scan(dest ...any) error { return r.traced.Scan(dest...) }\n"+
+		"func (r %[1]s) Close() { r.traced.Close() }\n\n", e.rows, pgx, e.ref("Rows"))
+	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) %s.Row {\n", db, e.queryRow, ctx, pgx)
 	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nreturn trace.Row(d.dbtx.%s(ctx,query,args...))\n}\n\n",
 		e.queryRow)
+}
+
+// sqlQueries writes the queries of ormDatabase on database/sql: QueryContext and QueryRowContext, for methods written
+// by hand, return *sql.Rows and *sql.Row as they are, which nothing can read through, and query and queryRow, for the
+// repositories, read the rows through the hooks.
+func (e repoEmitter) sqlQueries(ctx string) {
+	db, sql := e.database, e.f.Import("database/sql", "sql")
+	e.printf("// QueryContext and QueryRowContext return the rows of database/sql as they are, so the hooks see the " +
+		"statement done\n// as these return, before its rows are read.\n")
+	e.printf("func (d %[1]s) QueryContext(ctx %[2]s.Context, query string, args ...any) (*%[3]s.Rows, error) {\n"+
+		"ctx, trace := d.options.StartQuery(ctx, query, args)\nrows, err := d.dbtx.QueryContext(ctx, query, args...)\n"+
+		"trace.End(err)\nreturn rows, err\n}\n\n", db, ctx, sql)
+	e.printf("func (d %[1]s) QueryRowContext(ctx %[2]s.Context, query string, args ...any) *%[3]s.Row {\n"+
+		"ctx, trace := d.options.StartQuery(ctx, query, args)\nrow := d.dbtx.QueryRowContext(ctx, query, args...)\n"+
+		"trace.End(row.Err())\nreturn row\n}\n\n", db, ctx, sql)
+	e.printf("// %[1]s and %[2]s are QueryContext and QueryRowContext that read the rows through the hooks, for them to "+
+		"see the\n// statement done once its rows are read.\n", e.query, e.queryRow)
+	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) (%s, error) {\n", db, e.query, ctx, e.ref("Rows"))
+	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nrows,err := d.dbtx.QueryContext(ctx,query,args...)\n")
+	e.printf("if err != nil { trace.End(err); return nil,err }\nreturn trace.Rows(%s{Rows:rows},nil)\n}\n\n", e.rows)
+	e.printf("type %s struct { *%s.Rows }\nfunc (r %s) Close() { _ = r.Rows.Close() }\n\n", e.rows, sql, e.rows)
+	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) %s {\n", db, e.queryRow, ctx, e.ref("Row"))
+	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\n" +
+		"return trace.Row(d.dbtx.QueryRowContext(ctx,query,args...))\n}\n\n")
 }

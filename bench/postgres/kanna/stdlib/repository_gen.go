@@ -38,7 +38,25 @@ func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any)
 	return result, err
 }
 
-func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (impl.Rows, error) {
+// QueryContext and QueryRowContext return the rows of database/sql as they are, so the hooks see the statement done
+// as these return, before its rows are read.
+func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	ctx, trace := d.options.StartQuery(ctx, query, args)
+	rows, err := d.dbtx.QueryContext(ctx, query, args...)
+	trace.End(err)
+	return rows, err
+}
+
+func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	ctx, trace := d.options.StartQuery(ctx, query, args)
+	row := d.dbtx.QueryRowContext(ctx, query, args...)
+	trace.End(row.Err())
+	return row
+}
+
+// query and queryRow are QueryContext and QueryRowContext that read the rows through the hooks, for them to see the
+// statement done once its rows are read.
+func (d ormDatabase) query(ctx context.Context, query string, args ...any) (impl.Rows, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.dbtx.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -52,7 +70,7 @@ type ormSQLRows struct{ *sql.Rows }
 
 func (r ormSQLRows) Close() { _ = r.Rows.Close() }
 
-func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) impl.Row {
+func (d ormDatabase) queryRow(ctx context.Context, query string, args ...any) impl.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.dbtx.QueryRowContext(ctx, query, args...))
 }
@@ -72,7 +90,7 @@ func (r CustomerRepository) Insert(ctx context.Context, c model.Customer) (model
 VALUES ($1, $2, $3)
 RETURNING id, email, name, created_at`
 	var row model.Customer
-	err := r.db.QueryRowContext(ctx, q, c.Email, c.Name, c.CreatedAt).
+	err := r.db.queryRow(ctx, q, c.Email, c.Name, c.CreatedAt).
 		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("insert into customers: %w", err)
@@ -86,7 +104,7 @@ VALUES ($1, $2, $3)
 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
 RETURNING id, email, name, created_at`
 	var row model.Customer
-	err := r.db.QueryRowContext(ctx, q, c.Email, c.Name, c.CreatedAt).
+	err := r.db.queryRow(ctx, q, c.Email, c.Name, c.CreatedAt).
 		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -140,7 +158,7 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 	const q = `INSERT INTO order_lines (order_id, sku, quantity)
 SELECT * FROM unnest($1::int8[], $2::text[], $3::int4[])
 RETURNING id, order_id, sku, quantity`
-	rows, err := r.db.QueryContext(ctx, q, orderID, sku, quantity)
+	rows, err := r.db.query(ctx, q, orderID, sku, quantity)
 	if err != nil {
 		return nil, fmt.Errorf("insert into order_lines: %w", err)
 	}
@@ -177,7 +195,7 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.Orde
 
 // queryOrderLines runs query, a query of the rows of order_lines, and reads them.
 func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
@@ -217,7 +235,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 
 // queryOrders runs query, a query of the rows of orders, and reads them.
 func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -259,7 +277,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}

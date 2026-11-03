@@ -41,7 +41,25 @@ func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any)
 	return result, err
 }
 
-func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (impl.Rows, error) {
+// QueryContext and QueryRowContext return the rows of database/sql as they are, so the hooks see the statement done
+// as these return, before its rows are read.
+func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	ctx, trace := d.options.StartQuery(ctx, query, args)
+	rows, err := d.dbtx.QueryContext(ctx, query, args...)
+	trace.End(err)
+	return rows, err
+}
+
+func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	ctx, trace := d.options.StartQuery(ctx, query, args)
+	row := d.dbtx.QueryRowContext(ctx, query, args...)
+	trace.End(row.Err())
+	return row
+}
+
+// query and queryRow are QueryContext and QueryRowContext that read the rows through the hooks, for them to see the
+// statement done once its rows are read.
+func (d ormDatabase) query(ctx context.Context, query string, args ...any) (impl.Rows, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.dbtx.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -55,7 +73,7 @@ type ormSQLRows struct{ *sql.Rows }
 
 func (r ormSQLRows) Close() { _ = r.Rows.Close() }
 
-func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) impl.Row {
+func (d ormDatabase) queryRow(ctx context.Context, query string, args ...any) impl.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.dbtx.QueryRowContext(ctx, query, args...))
 }
@@ -129,7 +147,7 @@ func (r OrderRepository) ListIDs(ctx context.Context, s ...scopes.Order) ([]mode
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := r.db.query(ctx, `SELECT id FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders.id: %w", err)
 	}
@@ -164,7 +182,7 @@ func (r OrderRepository) FindMemo(ctx context.Context, id model.OrderID) (**stri
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := r.db.query(ctx, `SELECT note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders.note: %w", err)
 	}
@@ -207,7 +225,7 @@ func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s 
 		if err != nil {
 			return nil, err
 		}
-		rows, err := r.db.QueryContext(ctx, text+"", args...)
+		rows, err := r.db.query(ctx, text+"", args...)
 		if err != nil {
 			return nil, fmt.Errorf("project orders: %w", err)
 		}
@@ -256,7 +274,7 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 		if err != nil {
 			return nil, err
 		}
-		rows, err := r.db.QueryContext(ctx, text+"", args...)
+		rows, err := r.db.query(ctx, text+"", args...)
 		if err != nil {
 			return nil, fmt.Errorf("project orders: %w", err)
 		}
@@ -305,7 +323,7 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 		if err != nil {
 			return nil, err
 		}
-		rows, err := r.db.QueryContext(ctx, text+"", args...)
+		rows, err := r.db.query(ctx, text+"", args...)
 		if err != nil {
 			return nil, fmt.Errorf("project orders: %w", err)
 		}
@@ -349,7 +367,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, text+"", args...)
+	rows, err := r.db.query(ctx, text+"", args...)
 	if err != nil {
 		return nil, fmt.Errorf("project orders: %w", err)
 	}
@@ -395,7 +413,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, e
 		return 0, err
 	}
 	var n int64
-	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
+	if err := r.db.queryRow(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count orders: %w", err)
 	}
 	return n, nil
@@ -415,7 +433,7 @@ func (r OrderRepository) Exists(ctx context.Context, s ...scopes.Order) (bool, e
 		return false, err
 	}
 	var n bool
-	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+`)`, rd.Args()...).Scan(&n); err != nil {
+	if err := r.db.queryRow(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+`)`, rd.Args()...).Scan(&n); err != nil {
 		return false, fmt.Errorf("exists orders: %w", err)
 	}
 	return n, nil
@@ -468,7 +486,7 @@ func (r OrderRepository) DeleteReturning(ctx context.Context, s ...scopes.Order)
 	if err2 != nil {
 		return nil, err2
 	}
-	rows, err2 := r.db.QueryContext(ctx, text+` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`, args...)
+	rows, err2 := r.db.query(ctx, text+` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`, args...)
 	if err2 != nil {
 		return nil, fmt.Errorf(`delete from orders: %w`, err2)
 	}
@@ -497,7 +515,7 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 	if err2 != nil {
 		return nil, err2
 	}
-	rows, err2 := r.db.QueryContext(ctx, text+` RETURNING id, note`, args...)
+	rows, err2 := r.db.query(ctx, text+` RETURNING id, note`, args...)
 	if err2 != nil {
 		return nil, fmt.Errorf(`delete from orders: %w`, err2)
 	}
@@ -527,7 +545,7 @@ func (r OrderRepository) DeleteByCustomer(ctx context.Context, customerID int64,
 	if err2 != nil {
 		return nil, err2
 	}
-	rows, err2 := r.db.QueryContext(ctx, text+` RETURNING id, note`, args...)
+	rows, err2 := r.db.query(ctx, text+` RETURNING id, note`, args...)
 	if err2 != nil {
 		return nil, fmt.Errorf(`delete from orders: %w`, err2)
 	}
@@ -727,7 +745,7 @@ RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receip
 		q, args = withID, append(args, o.ID)
 	}
 	var row model.Order
-	err := r.db.QueryRowContext(ctx, q, args...).
+	err := r.db.queryRow(ctx, q, args...).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
@@ -776,7 +794,7 @@ RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receip
 			receipt[j] = orders[k].Receipt
 			position[j] = orders[k].Position
 		}
-		rows, err := r.db.QueryContext(ctx, withoutID, customerID, status, placedAt, memo, total, paid, contact, receipt, position)
+		rows, err := r.db.query(ctx, withoutID, customerID, status, placedAt, memo, total, paid, contact, receipt, position)
 		if err != nil {
 			return nil, fmt.Errorf("insert into orders: %w", err)
 		}
@@ -816,7 +834,7 @@ RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receip
 			position[j] = orders[k].Position
 			id[j] = orders[k].ID
 		}
-		rows, err := r.db.QueryContext(ctx, withID, customerID, status, placedAt, memo, total, paid, contact, receipt, position, id)
+		rows, err := r.db.query(ctx, withID, customerID, status, placedAt, memo, total, paid, contact, receipt, position, id)
 		if err != nil {
 			return nil, fmt.Errorf("insert into orders: %w", err)
 		}
@@ -850,7 +868,7 @@ RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receip
 		q, args = withID, append(args, o.ID)
 	}
 	var row model.Order
-	err := r.db.QueryRowContext(ctx, q, args...).
+	err := r.db.queryRow(ctx, q, args...).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
@@ -882,7 +900,7 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 	const q = `INSERT INTO order_lines (order_id, line_no, sku)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[])
 RETURNING order_id, line_no, sku`
-	rows, err := r.db.QueryContext(ctx, q, orderID, lineNo, sku)
+	rows, err := r.db.query(ctx, q, orderID, lineNo, sku)
 	if err != nil {
 		return nil, fmt.Errorf("insert into order_lines: %w", err)
 	}
@@ -997,7 +1015,7 @@ func (r OrderRepository) UpdateFields(ctx context.Context, id model.OrderID, c s
 	}
 	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	var row model.Order
-	err = r.db.QueryRowContext(ctx, text, args...).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	err = r.db.queryRow(ctx, text, args...).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
 	}
@@ -1019,7 +1037,7 @@ func (r OrderRepository) UpdateManyReturning(ctx context.Context, c scopes.Order
 		return nil, err
 	}
 	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
-	rows, err := r.db.QueryContext(ctx, text, args...)
+	rows, err := r.db.query(ctx, text, args...)
 	if err != nil {
 		return nil, fmt.Errorf(`update orders: %w`, err)
 	}
@@ -1061,7 +1079,7 @@ func (r OrderRepository) UpdateScoped(ctx context.Context, o model.Order, s ...s
 	}
 	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	var row model.Order
-	err = r.db.QueryRowContext(ctx, text, args...).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	err = r.db.queryRow(ctx, text, args...).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, fmt.Errorf("no row of orders matches: %w", orm.ErrNotFound)
 	}
@@ -1082,7 +1100,7 @@ func (r OrderRepository) UpdateLineFields(ctx context.Context, orderID model.Ord
 	}
 	text += ` RETURNING order_id, line_no, sku`
 	var row model.OrderLine
-	err = r.db.QueryRowContext(ctx, text, args...).Scan(&row.OrderID, &row.LineNo, &row.SKU)
+	err = r.db.queryRow(ctx, text, args...).Scan(&row.OrderID, &row.LineNo, &row.SKU)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.OrderLine{}, fmt.Errorf("no row of order_lines matches: %w", orm.ErrNotFound)
 	}
@@ -1098,7 +1116,7 @@ VALUES ($1, $2)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
 RETURNING id, name`
 	var row model.Customer
-	err := r.db.QueryRowContext(ctx, q, c.ID, c.Name).
+	err := r.db.queryRow(ctx, q, c.ID, c.Name).
 		Scan(&row.ID, &row.Name)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -1120,7 +1138,7 @@ RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receip
 		q, args = withID, append(args, o.ID)
 	}
 	var row model.Order
-	err := r.db.QueryRowContext(ctx, q, args...).
+	err := r.db.queryRow(ctx, q, args...).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
@@ -1161,7 +1179,7 @@ func (r OrderRepository) UpsertTags(ctx context.Context, tags []model.Tag) ([]mo
 SELECT * FROM unnest($1::text[])
 ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
 RETURNING name`
-	rows, err := r.db.QueryContext(ctx, q, name)
+	rows, err := r.db.query(ctx, q, name)
 	if err != nil {
 		return nil, fmt.Errorf("upsert into tags: %w", err)
 	}
@@ -1198,7 +1216,7 @@ VALUES ($1, $2)
 ON CONFLICT (order_id) DO UPDATE SET names = EXCLUDED.names
 RETURNING order_id, names`
 	var row model.Label
-	err := r.db.QueryRowContext(ctx, q, l.OrderID, l.Names).
+	err := r.db.queryRow(ctx, q, l.OrderID, l.Names).
 		Scan(&row.OrderID, &row.Names)
 	if err != nil {
 		return model.Label{}, fmt.Errorf("upsert into labels: %w", err)
@@ -1213,7 +1231,7 @@ FROM orders
 WHERE placed_at >= $1
 GROUP BY 1
 ORDER BY 1`
-	rows, err := r.db.QueryContext(ctx, q, since)
+	rows, err := r.db.query(ctx, q, since)
 	if err != nil {
 		return nil, fmt.Errorf("query MonthCounts: %w", err)
 	}
@@ -1248,7 +1266,7 @@ SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.no
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	rows, err := r.db.query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
 	if err != nil {
 		return nil, fmt.Errorf("query ListWithCustomers: %w", err)
 	}
@@ -1297,7 +1315,7 @@ SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.no
 	if err != nil {
 		return model.Order{}, err
 	}
-	rows, err := r.db.QueryContext(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	rows, err := r.db.query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("query FirstPlacedSince: %w", err)
 	}
@@ -1333,7 +1351,7 @@ JOIN customers c ON c.id = o.customer_id
 WHERE c.id = $1
 GROUP BY c.name`
 	var row repository.CustomerTotal
-	err := r.db.QueryRowContext(ctx, q, customerID).
+	err := r.db.queryRow(ctx, q, customerID).
 		Scan(&row.Name, &row.Total)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repository.CustomerTotal{}, fmt.Errorf("query TotalOf: %w", orm.ErrNotFound)
@@ -1385,7 +1403,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Custo
 
 // queryCustomers runs query, a query of the rows of customers, and reads them.
 func queryCustomers(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Customer, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
 	}
@@ -1422,7 +1440,7 @@ func selectLabels(ctx context.Context, db ormDatabase, q scope.Of[model.Label], 
 
 // queryLabels runs query, a query of the rows of labels, and reads them.
 func queryLabels(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Label, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read labels: %w", err)
 	}
@@ -1462,7 +1480,7 @@ func selectLineNotes(ctx context.Context, db ormDatabase, q scope.Of[model.LineN
 
 // queryLineNotes runs query, a query of the rows of line_notes, and reads them.
 func queryLineNotes(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.LineNote, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read line_notes: %w", err)
 	}
@@ -1546,7 +1564,7 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.Orde
 
 // queryOrderLines runs query, a query of the rows of order_lines, and reads them.
 func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
@@ -1591,7 +1609,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			if err != nil {
 				return fmt.Errorf("load Notes: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Notes: %w", err)
 			}
@@ -1646,7 +1664,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1751,7 +1769,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			k0s = append(k0s, k.k0)
 			k1s = append(k1s, k.k1)
 		}
-		pairs, err := db.QueryContext(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN (SELECT * FROM unnest($1::int8[], $2::int4[]))`, k0s, k1s)
+		pairs, err := db.query(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN (SELECT * FROM unnest($1::int8[], $2::int4[]))`, k0s, k1s)
 		if err != nil {
 			return fmt.Errorf("read line_tags: %w", err)
 		}
@@ -1818,7 +1836,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 
 // queryOrders runs query, a query of the rows of orders, and reads them.
 func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -1860,7 +1878,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -1912,7 +1930,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1992,7 +2010,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[model.OrderID][]model.Tag{}
-		pairs, err := db.QueryContext(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id = ANY($1)`, keys)
+		pairs, err := db.query(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id = ANY($1)`, keys)
 		if err != nil {
 			return fmt.Errorf("read order_tags: %w", err)
 		}
@@ -2050,7 +2068,7 @@ func selectTags(ctx context.Context, db ormDatabase, q scope.Of[model.Tag], lock
 
 // queryTags runs query, a query of the rows of tags, and reads them.
 func queryTags(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Tag, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read tags: %w", err)
 	}

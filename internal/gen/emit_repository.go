@@ -55,7 +55,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
 		names: readNames(models)}
 	if drv == driverSQL {
-		e.exec, e.query, e.queryRow = "ExecContext", "QueryContext", "QueryRowContext"
+		e.exec, e.query, e.queryRow = "ExecContext", "query", "queryRow"
 	}
 	for _, name := range e.names {
 		f.Reserve("select"+name, "query"+name, "preload"+name)

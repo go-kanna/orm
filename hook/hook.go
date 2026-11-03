@@ -15,7 +15,8 @@ type Query struct {
 }
 
 // Execution is a statement that has run, including reading its results. Err is the error of running or reading it,
-// before the repository translates it.
+// before the repository translates it. A query a method written by hand runs on database/sql, whose *sql.Rows and
+// *sql.Row nothing can read through, has run as QueryContext or QueryRowContext returns, before its rows are read.
 type Execution struct {
 	Query
 
