@@ -865,6 +865,38 @@ ORDER BY 1`
 - MySQL では、2 回使うパラメータは `?` ごとに 1 回ずつ渡します。
 - `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、`IN (:ids)` をメソッドの実行時に値ごとの `?` に展開し、値がなければ何にも一致しない `NULL` にします。
 
+### クエリに scope を渡す
+
+`ListWithCustomers(ctx, s ...scopes.Order)` のように、メソッドが scope を受け取るクエリは、1 つのテーブルとして読みます。クエリの結果を scope のテーブルの行として読み、scope がそれを絞り込み、並べ、ページを切り、関連を読み込みます。kanna-orm は、クエリをメソッド名の `WITH` に入れ、その後に scope を書きます:
+
+```sql
+-- query: ListWithCustomers
+SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, c.name AS customer_name
+FROM orders o
+JOIN customers c ON c.id = o.customer_id;
+```
+
+```go
+// OrderWithCustomer is an order with the name of its customer, which the query adds to it.
+type OrderWithCustomer struct {
+	model.Order
+	CustomerName string
+}
+
+ListWithCustomers(ctx context.Context, s ...scopes.Order) ([]OrderWithCustomer, error)
+```
+
+```sql
+WITH list_with_customers AS (SELECT o.id, ..., c.name AS customer_name FROM orders o JOIN customers c ON ...)
+SELECT orders.id, ..., orders.customer_name FROM list_with_customers AS orders WHERE (status = $1) ORDER BY id
+```
+
+- `Get`・`Find`・`First`・`List` のどれかで、scope のモデルの行か、モデルを値で埋め込んだ構造体の行を読みます。埋め込んだ構造体のほかのフィールドは、クエリが足すカラムを保持します。結果のカラムとフィールド（モデルのフィールドも含む）は 1 対 1 で対応し、クエリが足すカラムはモデルのカラムと重なってはいけません。scope を受け取らないクエリは、これまでどおり何を返しても構いません。
+- クエリのパラメータが先、scope のパラメータが後です。
+- クエリの中の `LIMIT` は、scope が絞り込む前に行を残します。クエリの中の `ORDER BY` は scope が読む行を並べないので、`LIMIT` のない `ORDER BY` には警告が出ます。行は scope で並べてください。
+- `After`、`Before`、`Cursor` はモデルの主キーでページを続けるので、結果の行は主キーで区別できなければなりません。2 回現れる行には、それぞれに関連を読み込みます。
+- 速さはデータベースが決め、kanna-orm は約束しません。PostgreSQL 12 以降は 1 回だけ使う `WITH` を文に取り込み、MySQL は取り込むことも、先に全体を読むこともあります。遅いときは、絞り込む条件をクエリの中に書いてください。
+
 ### 外部キー以外のカラムで関連する値を足す
 
 注文の現在の版を承認した担当者のように、外部キー以外のカラムで行に関連する値は、自分で書くクエリで読み込みます。行はいつもどおり scope、カーソル、リレーションで読み、そのキーの値をもう 1 本のクエリで読んで、Go でつなぎます:

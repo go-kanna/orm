@@ -1082,6 +1082,47 @@ ORDER BY 1`
   an array, as in `= ANY(:ids)`. On MySQL, `IN (:ids)` is written with a `?` for each of its values when the method
   runs, or with `NULL`, which matches nothing, when it has none.
 
+### Scopes on a query
+
+A query whose method takes scopes, as `ListWithCustomers(ctx, s ...scopes.Order)`, is read as a table of its own: its
+result, read as the rows of the scopes' table, is what the scopes narrow, order, and page, and load the relations of.
+kanna-orm writes the query in a `WITH` named after the method, and the scopes after it:
+
+```sql
+-- query: ListWithCustomers
+SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, c.name AS customer_name
+FROM orders o
+JOIN customers c ON c.id = o.customer_id;
+```
+
+```go
+// OrderWithCustomer is an order with the name of its customer, which the query adds to it.
+type OrderWithCustomer struct {
+	model.Order
+	CustomerName string
+}
+
+ListWithCustomers(ctx context.Context, s ...scopes.Order) ([]OrderWithCustomer, error)
+```
+
+```sql
+WITH list_with_customers AS (SELECT o.id, ..., c.name AS customer_name FROM orders o JOIN customers c ON ...)
+SELECT orders.id, ..., orders.customer_name FROM list_with_customers AS orders WHERE (status = $1) ORDER BY id
+```
+
+- It is a `Get`, a `Find`, a `First`, or a `List`, and reads rows of the scopes' model, or of a struct embedding it by
+  value, whose other fields hold the columns the query adds. The columns of the result and the fields, those of the
+  model among them, match one for one, and a column the query adds may not be one of the model's. A query that takes
+  no scope returns what it likes, as ever.
+- The query's parameters come first, then those of the scopes.
+- A `LIMIT` in the query keeps its rows before the scopes narrow them. An `ORDER BY` in it orders nothing the scopes
+  read, so one without a `LIMIT` gets a warning: order the rows by the scopes.
+- `After`, `Before`, and `Cursor` continue a page by the primary key of the model, so the rows of the result must be
+  told apart by it. A row that appears twice gets its relations twice, one set each.
+- How fast it runs is for the database to say, and kanna-orm promises nothing of it: PostgreSQL 12 and later read a
+  `WITH` used once into the statement, and MySQL may read it so or read it whole first. When it is slow, put the
+  conditions that narrow it in the query.
+
 ### Adding a value related by other columns
 
 A value related to a row by other columns than a foreign key, such as who approved the revision an order is at, is
