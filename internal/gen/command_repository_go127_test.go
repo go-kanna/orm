@@ -34,7 +34,7 @@ type OrderLine struct {
 -- scopes/scopes.go --
 package scopes
 
-//kanna:scopes ../model
+//kanna:scopes model-package=../model
 -- repository/repository.go --
 package repository
 

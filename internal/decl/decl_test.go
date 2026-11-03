@@ -94,7 +94,7 @@ func TestRead_Models(t *testing.T) {
 
 //go:generate go tool kanna-orm
 
-//kanna:scopes example.com/shop/model example.com/shop/billing
+//kanna:scopes model-package=example.com/shop/model,example.com/shop/billing
 
 //kanna:scope table=order_lines
 type Line struct{}
@@ -114,10 +114,18 @@ type Line struct{}
 		t.Errorf("Scopes = %+v, want Line alone", decls.Scopes)
 	}
 
-	_, ds = decl.Read(fset, mustParse(t, fset, "package scopes\n\n//kanna:scopes\n"))
-	if got, want := report(ds), "scopes.go:3:1: error: //kanna:scopes wants the packages of the models\n"+
-		"  as in //kanna:scopes example.com/shop/model"; got != want {
-		t.Errorf("Read of //kanna:scopes alone reports\n%s\nwant\n%s", got, want)
+	for directive, want := range map[string]string{
+		"//kanna:scopes":                                 "//kanna:scopes wants the packages of the models",
+		"//kanna:scopes ../model":                        "//kanna:scopes takes model-package=, not \"../model\"",
+		"//kanna:scopes model-package=":                  "//kanna:scopes takes model-package=, not \"model-package=\"",
+		"//kanna:scopes model-package=a,,b":              "//kanna:scopes takes model-package=, not \"model-package=a,,b\"",
+		"//kanna:scopes model-package=a model-package=b": "//kanna:scopes gives model-package= twice",
+	} {
+		_, ds = decl.Read(fset, mustParse(t, fset, "package scopes\n\n"+directive+"\n"))
+		if got, want := report(ds), "scopes.go:3:1: error: "+want+"\n  as in //kanna:scopes model-package=../model"; got !=
+			want {
+			t.Errorf("Read of %s reports\n%s\nwant\n%s", directive, got, want)
+		}
 	}
 }
 
@@ -138,8 +146,9 @@ func TestTableOf(t *testing.T) {
 		"sales_people", "children"}
 	for name, want := range map[string]string{
 		"Order": "orders", "OrderLine": "order_lines", "Category": "categories", "Status": "statuses", "Box": "boxes",
-		"Day": "days", "Person": "person", "HTTPLog": "http_logs", "SalesPerson": "sales_people", "Child": "children",
-		"Email": "",
+		"Day": "days", "HTTPLog": "http_logs", "SalesPerson": "sales_people", "Child": "children", "Email": "",
+		"Person": "", // person is not plural
+
 	} {
 		got, ok := decl.TableOf(name, func(table string) bool { return slices.Contains(tables, table) })
 		if got != want || ok != (want != "") {

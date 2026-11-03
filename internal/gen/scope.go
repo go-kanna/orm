@@ -125,8 +125,8 @@ func impliesNothing(pkg *packages.Package, s snapshot.Snapshot, models []decl.Mo
 				continue
 			}
 			if len(decl.Imply(decl.Models{Pos: m.Pos, Paths: []string{path}}, root, modPath, hasTable)) == 0 {
-				ds = append(ds, diag.Warningf(m.Pos, "//kanna:scopes %s implies no scope type: no struct of it is named "+
-					"after a table of the snapshot", path).WithHints("as order_lines is after OrderLine"))
+				ds = append(ds, diag.Warningf(m.Pos, "//kanna:scopes model-package=%s implies no scope type: no struct of "+
+					"it is named after a table of the snapshot", path).WithHints("as order_lines is after OrderLine"))
 			}
 		}
 	}

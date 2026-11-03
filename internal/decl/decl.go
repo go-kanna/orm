@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -111,10 +112,9 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		if !d.Found {
 			continue
 		}
-		paths := strings.Fields(d.Args)
-		if len(paths) == 0 {
-			ds = append(ds, diag.Errorf(d.Pos, "//kanna:scopes wants the packages of the models").
-				WithHints("as in //kanna:scopes example.com/shop/model"))
+		paths, err := modelsArgs(d.Args)
+		if err != nil {
+			ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:scopes model-package=../model"))
 			continue
 		}
 		decls.Models = append(decls.Models, Models{Pos: d.Pos, Paths: paths})
@@ -160,6 +160,26 @@ func repositoryArgs(args string) (table string, err error) {
 		}
 	}
 	return table, nil
+}
+
+// modelsArgs reads what follows //kanna:scopes: the packages of the models model-package= names, separated by commas.
+func modelsArgs(args string) ([]string, error) {
+	var paths []string
+	for field := range strings.FieldsSeq(args) {
+		key, value, _ := strings.Cut(field, "=")
+		switch {
+		case key == "model-package" && paths != nil:
+			return nil, errors.New("//kanna:scopes gives model-package= twice")
+		case key == "model-package" && value != "" && !slices.Contains(strings.Split(value, ","), ""):
+			paths = strings.Split(value, ",")
+		default:
+			return nil, fmt.Errorf("//kanna:scopes takes model-package=, not %q", field)
+		}
+	}
+	if paths == nil {
+		return nil, errors.New("//kanna:scopes wants the packages of the models")
+	}
+	return paths, nil
 }
 
 // Implied is a scope type a //kanna:scopes directive implies: one named after the struct it holds, Model, of the
@@ -210,15 +230,11 @@ func (m Models) Resolve(path, root, modPath string) (importPath, dir string, ok 
 	return path, filepath.Join(root, filepath.FromSlash(rel)), true
 }
 
-// TableOf names the table a struct called name holds the rows of, of those hasTable reports: name in snake case with
-// its last word made plural, as order_lines for OrderLine, categories for Category, and people for Person, or else as
-// it is.
+// TableOf names the table a struct called name holds the rows of, if hasTable reports it: name in snake case with its
+// last word made plural, as order_lines for OrderLine, categories for Category, and people for Person.
 func TableOf(name string, hasTable func(table string) bool) (string, bool) {
-	snake := SnakeCase(name)
-	for _, table := range []string{plural(snake), snake} {
-		if hasTable(table) {
-			return table, true
-		}
+	if table := plural(SnakeCase(name)); hasTable(table) {
+		return table, true
 	}
 	return "", false
 }

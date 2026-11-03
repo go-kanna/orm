@@ -191,7 +191,7 @@ type Email struct{ s string }
 -- scopes/scopes.go --
 package scopes
 
-//kanna:scopes example.com/shop/model
+//kanna:scopes model-package=example.com/shop/model
 -- scopes/order_scopes.sql --
 -- scope: Order.Open()
 status <> 'closed'
