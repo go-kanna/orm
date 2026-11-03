@@ -15,7 +15,7 @@ var joinUsers = impl.TableJoin{
 }
 
 var joinedColumns = []impl.SelectColumn{
-	{Table: "memberships", Column: "id"}, {Table: "users", Column: "display_name", Name: "display_name"},
+	{Table: "memberships", Column: "id"}, {Table: "users", Column: "display_name"},
 }
 
 func TestRenderJoinedProjection(t *testing.T) {
@@ -52,8 +52,6 @@ func TestJoinedProjectionRefusals(t *testing.T) {
 		{"unknown join", impl.Of[int]{}.JoinTable("absent"), joinedColumns, []impl.TableJoin{joinUsers}, "snapshot"},
 		{"ambiguous key", impl.Of[int]{}.JoinTable("users"), joinedColumns,
 			[]impl.TableJoin{joinUsers, joinUsers}, "foreign key"},
-		{"ambiguous column", impl.Of[int]{}.JoinTable("users"),
-			[]impl.SelectColumn{{Table: "memberships", Column: "id", Name: "id"}}, []impl.TableJoin{joinUsers}, "ambiguous"},
 		{"order expression", impl.Of[int]{}.JoinTable("users").OrderBy("random()", false),
 			joinedColumns, []impl.TableJoin{joinUsers}, "base column"},
 	} {

@@ -40,7 +40,7 @@ type OrderTagSummary struct {
 }
 
 type OrderSummary struct {
-	ID    OrderID `orm:"orders.id"`
+	ID    OrderID
 	Name  string
 	Total int64
 	Memo  *string
