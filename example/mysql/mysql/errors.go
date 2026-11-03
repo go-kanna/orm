@@ -8,8 +8,9 @@ import (
 	"github.com/go-kanna/orm/example/mysql/model"
 )
 
-func translateOrderError(op orderRepositoryOperation, err error) error {
-	if op == orderRepositoryOperationGet && errors.Is(err, orm.ErrNotFound) {
+// mapError says in the words of the model that an order is not there.
+func (OrderRepository) mapError(err error) error {
+	if errors.Is(err, orm.ErrNotFound) {
 		return model.ErrOrderNotFound
 	}
 	return err

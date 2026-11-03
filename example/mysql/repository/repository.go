@@ -32,7 +32,7 @@ type ProductRepository interface {
 	InsertTags(ctx context.Context, tags []model.Tag) error
 }
 
-//kanna:repository errors=translateOrderError
+//kanna:repository
 type OrderRepository interface { //nolint:interfacebloat // demonstrates order reads and writes together
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	GetApprover(ctx context.Context, id model.OrderID) (OrderApprover, error)
