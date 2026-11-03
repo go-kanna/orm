@@ -141,6 +141,13 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	if o, err := repo.First(ctx, mscopes.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
 		t.Errorf("First, latest first = %v, %v; want 3", o.ID, err)
 	}
+	if o, err := repo.First(ctx, mscopes.Orders().StatusEq("open")); err != nil || o.ID != 1 {
+		t.Errorf("First of no order = %v, %v; want 1, the first by the primary key", o.ID, err)
+	}
+	if _, err := repo.Get(ctx, 1, mscopes.Orders().Offset(1)); err == nil ||
+		err.Error() != "orm: Get reads one row by its key, but its scope keeps only some of the rows" {
+		t.Errorf("Get with an offset error = %v", err)
+	}
 	if got, err := repo.ListByCustomer(ctx, 10, mscopes.Orders().IDDesc()); err != nil ||
 		!slices.Equal(ids(got), []model.OrderID{2, 1}) {
 		t.Errorf("ListByCustomer(10) = %v, %v; want [2 1]", ids(got), err)

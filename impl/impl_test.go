@@ -200,6 +200,61 @@ func TestConditionsOnly(t *testing.T) {
 	}
 }
 
+func TestUnpaged(t *testing.T) {
+	t.Parallel()
+
+	var q impl.Of[order]
+	key := []string{"id"}
+	row := map[string]any{"id": 9}
+	for _, tt := range []struct {
+		q    impl.Of[order]
+		want string
+	}{
+		{q.Where("status <> ", "closed").OrderBy("placed_at", true), ""},
+		{q.Limit(1), "orm: Get reads one row by its key, but its scope keeps only some of the rows"},
+		{q.Offset(1), "orm: Get reads one row by its key, but its scope keeps only some of the rows"},
+		{q.After(key, row), "orm: Get reads one row by its key, but its scope keeps only some of the rows"},
+		{q.Before(key, row), "orm: Get reads one row by its key, but its scope keeps only some of the rows"},
+	} {
+		got := ""
+		if err := tt.q.Unpaged("Get"); err != nil {
+			got = err.Error()
+		}
+		if got != tt.want {
+			t.Errorf("Unpaged = %q, want %q", got, tt.want)
+		}
+	}
+}
+
+func TestDefaultOrder(t *testing.T) {
+	t.Parallel()
+
+	var q impl.Of[order]
+	key := []string{"id"}
+	for _, tt := range []struct {
+		name string
+		q    impl.Of[order]
+		key  []string
+		want string
+	}{
+		{"no order", q.DefaultOrder(key), key, " ORDER BY id"},
+		{"an order of its own", q.OrderBy("placed_at", true).DefaultOrder(key), key, " ORDER BY placed_at DESC, id DESC"},
+		{"a table without a primary key", q.DefaultOrder(nil), nil, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r, err := tt.q.Render(impl.Postgres, 1, tt.key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.OrderBy() != tt.want {
+				t.Errorf("OrderBy = %q, want %q", r.OrderBy(), tt.want)
+			}
+		})
+	}
+}
+
 func TestProjectionOnly(t *testing.T) {
 	t.Parallel()
 	var q impl.Of[order]

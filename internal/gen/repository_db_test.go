@@ -177,6 +177,13 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 		if o, err := repo.First(ctx, pscopes.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
 			t.Errorf("First, latest first = %v, %v; want 3", o.ID, err)
 		}
+		if o, err := repo.First(ctx, pscopes.Orders().StatusEq("open")); err != nil || o.ID != 1 {
+			t.Errorf("First of no order = %v, %v; want 1, the first by the primary key", o.ID, err)
+		}
+		if _, err := repo.Get(ctx, 1, pscopes.Orders().Offset(1)); err == nil ||
+			err.Error() != "orm: Get reads one row by its key, but its scope keeps only some of the rows" {
+			t.Errorf("Get with an offset error = %v", err)
+		}
 		for _, tt := range []struct {
 			name string
 			list func() ([]model.Order, error)

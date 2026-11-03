@@ -371,7 +371,13 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	case verbGet, verbFind, verbFirst:
 		rows := sc.Name("rows")
 		if m.verb == verbFirst {
-			e.printf("%[1]s = %[1]s.Limit(1)\n", q)
+			e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
+		} else {
+			zero := model + "{}, "
+			if m.optional {
+				zero = "nil, "
+			}
+			e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s%[1]s\n}\n", err, q, m.name, zero)
 		}
 		e.printf("%s, %s := select%s(%s, %s.executor, %s, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q,
 			lockClause(m))

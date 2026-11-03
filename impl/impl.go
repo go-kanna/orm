@@ -186,6 +186,27 @@ func (q Of[M]) ConditionsOnly(what string) error {
 	return nil
 }
 
+// Unpaged reports why q, given to what, a read of one row by its key, keeps only some of the rows: a limit, an
+// offset, or a row to continue from, which could leave out the very row the key names.
+func (q Of[M]) Unpaged(what string) error {
+	if q.hasLimit || q.hasOffset || q.seeking {
+		return fmt.Errorf("orm: %s reads one row by its key, but its scope keeps only some of the rows", what)
+	}
+	return nil
+}
+
+// DefaultOrder orders q by key, the primary key of its table, when q has no order of its own, so that the first of
+// its rows is one row and not any. A nil key leaves q as it is.
+func (q Of[M]) DefaultOrder(key []string) Of[M] {
+	if len(q.orders) > 0 || q.seeking {
+		return q
+	}
+	for _, k := range key {
+		q = q.OrderBy(k, false)
+	}
+	return q
+}
+
 // joinConds makes one condition of cs, sep between them, each in parentheses when there is more than one.
 func joinConds(cs []cond, sep string) cond {
 	out := cond{pieces: []string{""}}
