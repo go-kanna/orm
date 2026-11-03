@@ -15,15 +15,17 @@ const (
 	relationPath = "github.com/go-kanna/orm/relation"
 	// optionPath is the import path of the options of a repository.
 	optionPath = "github.com/go-kanna/orm/option"
+	// changePath is the import path of change.Set, the columns a change set has an update write.
+	changePath = "github.com/go-kanna/orm/change"
 	// implPath is the import path of what the generated code runs on.
 	implPath = "github.com/go-kanna/orm/impl"
 )
 
-// publicNames are the names of the runtime that code written by hand reads, by the import path it reads each from,
-// which the generated code names as it does. Any other name is of impl.
+// publicNames are the names of the runtime that code written by hand reads, or the API generated code exports shows,
+// by the import path each is read from. The generated code names them as such. Any other name is of impl.
 var publicNames = map[string]string{
 	"Of": scopePath, "Single": relationPath, "Many": relationPath, "Column": relationPath, "Option": optionPath,
-	"ErrNotFound": ormPath, "ErrRequiredRelation": ormPath,
+	"Set": changePath, "ErrNotFound": ormPath, "ErrRequiredRelation": ormPath,
 }
 
 // runtimeRef names name of the runtime in f, importing the package it is read from only once it is named, so that f

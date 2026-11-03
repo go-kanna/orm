@@ -39,7 +39,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 				goString(sqlName(e.d, k.col.col.Name)+" = "), sig.params[k.param])
 		}
 	} else {
-		e.printf("var %s %s[%s]\n", changes, e.ref("Changes"), model)
+		e.printf("var %s %s[%s]\n", changes, e.ref("Set"), model)
 		for _, c := range m.updated() {
 			e.printf("%s = %s.Set(%q, %s)\n", changes, changes, c.col.Name,
 				e.storageValue(c, sig.row+"."+fieldPath(c)))
