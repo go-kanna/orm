@@ -1,5 +1,5 @@
-// Package postgres holds scope types, generated for PostgreSQL.
-package postgres
+// Package scopes holds the scope types of the tests on PostgreSQL.
+package scopes
 
 import (
 	"github.com/go-kanna/orm/internal/gen/testdata/model"

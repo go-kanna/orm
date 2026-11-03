@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepo"
+	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
 )
 
 // mysqlDB creates a database of the test's own on the server KANNA_ORM_TEST_MYSQL names, dropped when the test ends,
@@ -124,7 +124,7 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	repo := mysqlrepo.NewOrderRepository(mysqlDB(t))
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t))
 
 	o, err := repo.Get(ctx, 1)
 	if err != nil {
@@ -138,15 +138,15 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	if _, err := repo.Get(ctx, 9); !errors.Is(err, orm.ErrNotFound) || err.Error() != "orders with id 9: orm: not found" {
 		t.Errorf("Get(9) error = %v, want orm.ErrNotFound", err)
 	}
-	if o, err := repo.First(ctx, mysql.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
+	if o, err := repo.First(ctx, mysqlscopes.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
 		t.Errorf("First, latest first = %v, %v; want 3", o.ID, err)
 	}
-	if got, err := repo.ListByCustomer(ctx, 10, mysql.Orders().IDDesc()); err != nil ||
+	if got, err := repo.ListByCustomer(ctx, 10, mysqlscopes.Orders().IDDesc()); err != nil ||
 		!slices.Equal(ids(got), []model.OrderID{2, 1}) {
 		t.Errorf("ListByCustomer(10) = %v, %v; want [2 1]", ids(got), err)
 	}
 
-	page := mysql.Orders().PlacedAtDesc().Limit(2)
+	page := mysqlscopes.Orders().PlacedAtDesc().Limit(2)
 	first, err := repo.List(ctx, page)
 	if err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
 		t.Fatalf("the first page = %v, %v", ids(first), err)
@@ -159,10 +159,10 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 		t.Errorf("the page before = %v, %v; want [3]", ids(before), err)
 	}
 
-	if n, err := repo.Count(ctx, mysql.Orders().StatusEq("open")); err != nil || n != 2 {
+	if n, err := repo.Count(ctx, mysqlscopes.Orders().StatusEq("open")); err != nil || n != 2 {
 		t.Errorf("Count of the open orders = %d, %v; want 2", n, err)
 	}
-	if ok, err := repo.Exists(ctx, mysql.Orders().CustomerIDEq(99)); err != nil || ok {
+	if ok, err := repo.Exists(ctx, mysqlscopes.Orders().CustomerIDEq(99)); err != nil || ok {
 		t.Errorf("Exists of customer 99 = %v, %v; want false", ok, err)
 	}
 	if line, err := repo.GetLine(ctx, 1, 2); err != nil || line.SKU != "B" {
@@ -175,7 +175,7 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	if err := repo.Delete(ctx, 3); !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("Delete(3) again error = %v, want orm.ErrNotFound", err)
 	}
-	if n, err := repo.DeleteStale(ctx, mysql.Orders().StatusEq("closed")); err != nil || n != 1 {
+	if n, err := repo.DeleteStale(ctx, mysqlscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
 		t.Errorf("DeleteStale of the closed orders = %d, %v; want 1", n, err)
 	}
 }
@@ -185,7 +185,7 @@ func TestGeneratedRepository_MySQLPreloads(t *testing.T) {
 
 	ctx := t.Context()
 	db := mysqlDB(t)
-	repo := mysqlrepo.NewOrderRepository(db)
+	repo := mysqlstore.NewOrderRepository(db)
 
 	// More orders than go in one IN (...), each with two lines and two tags.
 	if _, err := db.ExecContext(ctx, `
@@ -201,9 +201,9 @@ INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 		t.Fatal(err)
 	}
 
-	lines, err := repo.Get(ctx, 1, mysql.Orders().WithLines(mysql.OrderLines().LineNoAsc().
-		WithNotes(mysql.LineNotes().BodyAsc().WithLine()).
-		WithTags(mysql.Tags().NameAsc())))
+	lines, err := repo.Get(ctx, 1, mysqlscopes.Orders().WithLines(mysqlscopes.OrderLines().LineNoAsc().
+		WithNotes(mysqlscopes.LineNotes().BodyAsc().WithLine()).
+		WithTags(mysqlscopes.Tags().NameAsc())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,10 +211,10 @@ INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 		t.Errorf("the notes and tags of the lines of order 1, by both columns of their key = %s", got)
 	}
 
-	all, err := repo.List(ctx, mysql.Orders().IDAsc().
+	all, err := repo.List(ctx, mysqlscopes.Orders().IDAsc().
 		WithCustomer().
-		WithLines(mysql.OrderLines().LineNoDesc().WithOrder()).
-		WithTags(mysql.Tags().NameAsc()))
+		WithLines(mysqlscopes.OrderLines().LineNoDesc().WithOrder()).
+		WithTags(mysqlscopes.Tags().NameAsc()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestGeneratedRepository_MySQLWrites(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	repo := mysqlrepo.NewOrderRepository(mysqlDB(t))
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t))
 
 	memo, contact := "fragile", must(model.NewEmail("bob@example.com"))
 	placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
@@ -314,7 +314,7 @@ func TestGeneratedRepository_MySQLWrites(t *testing.T) {
 		SKU: "G"}}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := repo.Get(ctx, 4, mysql.Orders().WithLines(mysql.OrderLines().LineNoAsc()))
+	got, err := repo.Get(ctx, 4, mysqlscopes.Orders().WithLines(mysqlscopes.OrderLines().LineNoAsc()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestGeneratedRepository_MySQLQueries(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	repo := mysqlrepo.NewOrderRepository(mysqlDB(t))
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t))
 
 	counts, err := repo.MonthCounts(ctx, time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
 	if err != nil || len(counts) != 1 || counts[0].Count != 2 || counts[0].Month.Month() != time.October {
@@ -372,7 +372,7 @@ func TestGeneratedRepository_MySQLQueries(t *testing.T) {
 	if err := repo.Reopen(ctx, 2); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := repo.Count(ctx, mysql.Orders().StatusEq("closed")); err != nil || n != 1 {
+	if n, err := repo.Count(ctx, mysqlscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
 		t.Errorf("the closed orders = %d, %v; want order 1 alone", n, err)
 	}
 }

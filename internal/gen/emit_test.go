@@ -118,7 +118,9 @@ func described(t *testing.T, dir string) map[string]snapshot.Statement {
 func TestEmit(t *testing.T) {
 	t.Parallel()
 
-	for dir, dialect := range map[string]snapshot.Dialect{"postgres": snapshot.PostgreSQL, "mysql": snapshot.MySQL} {
+	for dir, dialect := range map[string]snapshot.Dialect{
+		"postgres/scopes": snapshot.PostgreSQL, "mysql/scopes": snapshot.MySQL,
+	} {
 		t.Run(dir, func(t *testing.T) {
 			t.Parallel()
 
@@ -319,9 +321,9 @@ func TestEmitRepositories(t *testing.T) {
 		d            snapshot.Dialect
 		drv, dest    string
 	}{
-		{"postgres", "repository", snapshot.PostgreSQL, "pgx", "pgxrepo"},
-		{"postgres", "repository", snapshot.PostgreSQL, "database/sql", "pgsqlrepo"},
-		{"mysql", "mysqlrepository", snapshot.MySQL, "database/sql", "mysqlrepo"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "pgx", "postgres/pgxstore"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "database/sql", "postgres/sqlstore"},
+		{"mysql/scopes", "mysql/repository", snapshot.MySQL, "database/sql", "mysql/sqlstore"},
 	} {
 		t.Run(tt.dest, func(t *testing.T) {
 			t.Parallel()

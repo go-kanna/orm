@@ -8,19 +8,19 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepo"
-	"github.com/go-kanna/orm/internal/gen/testdata/pgxrepo"
-	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
+	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
+	"github.com/go-kanna/orm/internal/gen/testdata/postgres/pgxstore"
+	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 	"github.com/go-kanna/orm/option"
 )
 
 func TestQueryLogging_Postgres(t *testing.T) {
 	t.Parallel()
 	var logs []option.QueryLog
-	repo := pgxrepo.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureQueries(t, &logs))
+	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureQueries(t, &logs))
 	ctx := t.Context()
-	if _, err := repo.Get(ctx, 1, postgres.Orders().WithLines()); err != nil {
+	if _, err := repo.Get(ctx, 1, pgscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.Count(ctx); err != nil {
@@ -38,9 +38,9 @@ func TestQueryLogging_Postgres(t *testing.T) {
 func TestQueryLogging_MySQL(t *testing.T) {
 	t.Parallel()
 	var logs []option.QueryLog
-	repo := mysqlrepo.NewOrderRepository(mysqlDB(t), captureQueries(t, &logs))
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureQueries(t, &logs))
 	ctx := t.Context()
-	if _, err := repo.Get(ctx, 1, mysql.Orders().WithLines()); err != nil {
+	if _, err := repo.Get(ctx, 1, mysqlscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.Count(ctx); err != nil {

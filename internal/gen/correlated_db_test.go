@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
-	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepo"
-	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
-	"github.com/go-kanna/orm/internal/gen/testdata/repository"
+	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
+	pgrepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
+	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 	"github.com/go-kanna/orm/relation"
 )
 
@@ -31,18 +31,18 @@ func checkCorrelatedCollections(t *testing.T, order model.Order) {
 }
 func TestCorrelatedCollections_Postgres(t *testing.T) {
 	t.Parallel()
-	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
-		order, err := repo.Get(t.Context(), 1, postgres.Orders().
-			PreloadTags(func(_ postgres.OrderColumns) relation.Many[model.Tag] {
-				return postgres.Tags().NameAsc().Limit(1).Many()
+	onPostgres(t, func(t *testing.T, repo pgrepository.OrderRepository) {
+		order, err := repo.Get(t.Context(), 1, pgscopes.Orders().
+			PreloadTags(func(_ pgscopes.OrderColumns) relation.Many[model.Tag] {
+				return pgscopes.Tags().NameAsc().Limit(1).Many()
 			}).
-			PreloadLines(func(_ postgres.OrderColumns) relation.Many[model.OrderLine] {
-				return postgres.OrderLines().LineNoAsc().
-					PreloadNotes(func(parent postgres.OrderLineColumns) relation.Many[model.LineNote] {
-						return postgres.LineNotes().LineNoEqColumn(parent.LineNo).BodyAsc().Limit(1).Many()
+			PreloadLines(func(_ pgscopes.OrderColumns) relation.Many[model.OrderLine] {
+				return pgscopes.OrderLines().LineNoAsc().
+					PreloadNotes(func(parent pgscopes.OrderLineColumns) relation.Many[model.LineNote] {
+						return pgscopes.LineNotes().LineNoEqColumn(parent.LineNo).BodyAsc().Limit(1).Many()
 					}).
-					PreloadTags(func(_ postgres.OrderLineColumns) relation.Many[model.Tag] {
-						return postgres.Tags().NameAsc().Limit(1).Many()
+					PreloadTags(func(_ pgscopes.OrderLineColumns) relation.Many[model.Tag] {
+						return pgscopes.Tags().NameAsc().Limit(1).Many()
 					}).Many()
 			}))
 		if err != nil {
@@ -53,16 +53,18 @@ func TestCorrelatedCollections_Postgres(t *testing.T) {
 }
 func TestCorrelatedCollections_MySQL(t *testing.T) {
 	t.Parallel()
-	repo := mysqlrepo.NewOrderRepository(mysqlDB(t))
-	order, err := repo.Get(t.Context(), 1, mysql.Orders().
-		PreloadTags(func(_ mysql.OrderColumns) relation.Many[model.Tag] { return mysql.Tags().NameAsc().Limit(1).Many() }).
-		PreloadLines(func(_ mysql.OrderColumns) relation.Many[model.OrderLine] {
-			return mysql.OrderLines().LineNoAsc().
-				PreloadNotes(func(parent mysql.OrderLineColumns) relation.Many[model.LineNote] {
-					return mysql.LineNotes().LineNoEqColumn(parent.LineNo).BodyAsc().Limit(1).Many()
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t))
+	order, err := repo.Get(t.Context(), 1, mysqlscopes.Orders().
+		PreloadTags(func(_ mysqlscopes.OrderColumns) relation.Many[model.Tag] {
+			return mysqlscopes.Tags().NameAsc().Limit(1).Many()
+		}).
+		PreloadLines(func(_ mysqlscopes.OrderColumns) relation.Many[model.OrderLine] {
+			return mysqlscopes.OrderLines().LineNoAsc().
+				PreloadNotes(func(parent mysqlscopes.OrderLineColumns) relation.Many[model.LineNote] {
+					return mysqlscopes.LineNotes().LineNoEqColumn(parent.LineNo).BodyAsc().Limit(1).Many()
 				}).
-				PreloadTags(func(_ mysql.OrderLineColumns) relation.Many[model.Tag] {
-					return mysql.Tags().NameAsc().Limit(1).Many()
+				PreloadTags(func(_ mysqlscopes.OrderLineColumns) relation.Many[model.Tag] {
+					return mysqlscopes.Tags().NameAsc().Limit(1).Many()
 				}).Many()
 		}))
 	if err != nil {

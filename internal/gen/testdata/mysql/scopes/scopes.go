@@ -1,5 +1,5 @@
-// Package mysql holds scope types, generated for MySQL.
-package mysql
+// Package scopes holds the scope types of the tests on MySQL.
+package scopes
 
 import (
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
