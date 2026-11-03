@@ -26,6 +26,8 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 | `orm/join`   | 結合した projection の明示的な条件 `On`                                     |
 | `orm/option` | repository の constructor に渡す option `WithHook`                          |
 | `orm/hook`   | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution` |
+| `orm/pgx`    | pgx で repository を動かす `DBTX`。DI で 1 度だけ渡す |
+| `orm/stdlib` | `database/sql` で repository を動かす `DBTX`。同上 |
 
 `orm/change` の `Set` は、生成される change set の `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
 
@@ -415,13 +417,15 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 `Bind(db DBTX) Category` を宣言すると、トランザクションへの接続も生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
 
-DI に具体的な引数型を渡すには、`-constructor-db` で公開コンストラクタの引数型を指定します:
+repository のどのパッケージの `DBTX` も、ランタイムのものの別名です。pgx なら `github.com/go-kanna/orm/pgx` の `type DBTX = ormpgx.DBTX`、`database/sql` なら `github.com/go-kanna/orm/stdlib` の `stdlib.DBTX` です。そのため 1 つの値ですべての repository を動かせ、DI では 1 度だけ渡せば済みます。kanna-di なら、コンテナのパッケージに provider を 1 つ書きます:
 
 ```go
-//go:generate go tool kanna-orm -destination . -constructor-db "*example.com/app/db.Reader"
+import "github.com/go-kanna/orm/pgx"
+
+func provideDBTX(reader db.Reader) pgx.DBTX { return reader }
 ```
 
-これで `NewCategory(db *db.Reader, opts ...option.Option) Category` が生成され、Bind では引き続きトランザクションの DBTX を使えます。フラグには公開型の完全なインポートパスと名前を指定し、必要なら先頭に `*` を付けます。生成器がそのパッケージを読み込み、選択したドライバの DBTX を実装しているか検証します。同一パッケージへの生成に限り指定できます。コンストラクタや Bind を手書きでラップする必要はありません。
+別の DB で動かしたい repository には、`func provideCategory(w db.Writer) Category { return NewCategory(w) }` のように、その repository の provider を手で書きます。
 
 アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、そこに自分で書きます。書くまでは生成が止まります。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` は、行を確かめてから `r.upsert` を呼べます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
 
@@ -469,11 +473,7 @@ func (OrderRepository) mapError(err error) error {
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
-type DBTX interface {
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
+type DBTX = ormpgx.DBTX
 
 func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository
 ```
@@ -1048,7 +1048,6 @@ kanna-orm describe [flags] [packages]
 | フラグ | 意味 |
 |---|---|
 | `-destination <dir>` | リポジトリの実装を dir に書き出す。インターフェースがある場合は必須。`.` ならインターフェースと同じパッケージに出力する |
-| `-constructor-db <type>` | 同一パッケージに生成する公開コンストラクタの引数型。例: `*example.com/app/db.Reader`。デフォルトは `DBTX` |
 | `-driver <name>` | `pgx` または `database/sql`（デフォルト: PostgreSQL では `pgx`、MySQL では `database/sql`） |
 | `-snapshot <file>` | 読み込むスナップショット（デフォルト: モジュールのルートの `kanna-orm.snapshot.json`） |
 | `-tags <list>` | カンマ区切りのビルドタグ |

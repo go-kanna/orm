@@ -98,23 +98,17 @@ func (e repoEmitter) printf(format string, args ...any) {
 	fmt.Fprintf(e.f, format, args...)
 }
 
-// db writes DBTX, what the repositories run on, named as sqlc names it.
+// db writes DBTX, what the repositories run on, named as sqlc names it: the one of the runtime, which the packages of
+// repositories all declare theirs as, so that one value serves them all.
 func (e repoEmitter) db() {
-	ctx := e.f.Import("context", "context")
 	if e.drv == driverSQL {
-		sql := e.f.Import("database/sql", "sql")
-		e.printf("// DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.\ntype DBTX interface {\n")
-		e.printf("ExecContext(ctx %[1]s.Context, query string, args ...any) (%[2]s.Result, error)\n", ctx, sql)
-		e.printf("QueryContext(ctx %[1]s.Context, query string, args ...any) (*%[2]s.Rows, error)\n", ctx, sql)
-		e.printf("QueryRowContext(ctx %[1]s.Context, query string, args ...any) *%[2]s.Row\n}\n\n", ctx, sql)
+		e.printf("// DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.\ntype DBTX = %s.DBTX\n\n",
+			e.f.Import(stdlibPath, "stdlib"))
 		return
 	}
-	pgconn := e.f.Import("github.com/jackc/pgx/v5/pgconn", "pgconn")
-	pgx := e.f.Import("github.com/jackc/pgx/v5", "pgx")
-	e.printf("// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DBTX interface {\n")
-	e.printf("Exec(ctx %[1]s.Context, sql string, args ...any) (%[2]s.CommandTag, error)\n", ctx, pgconn)
-	e.printf("Query(ctx %[1]s.Context, sql string, args ...any) (%[2]s.Rows, error)\n", ctx, pgx)
-	e.printf("QueryRow(ctx %[1]s.Context, sql string, args ...any) %[2]s.Row\n}\n\n", ctx, pgx)
+	e.f.Import("github.com/jackc/pgx/v5", "pgx") // the pgx the code reads, and the runtime's under another name
+	e.printf("// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DBTX = %s.DBTX\n\n",
+		e.f.Import(pgxPath, "ormpgx"))
 }
 
 // repository writes the implementation of repo: its struct, constructor, and methods.
@@ -137,13 +131,9 @@ func (e repoEmitter) repository(repo repository) {
 		e.printf("func %s(db DBTX, opts ...%s) *%s { return &%s{db: %s{dbtx: db, options: %s(opts...)}} }\n\n",
 			constructor, e.ref("Option"), name, name, e.database, e.ref("NewOptions"))
 		if repo.publicConstructor {
-			input := "DBTX"
-			if repo.constructorDB != nil {
-				input = types.TypeString(repo.constructorDB, e.f.Qualifier)
-			}
 			e.printf("// New%[1]s returns %[1]s running on db.\n"+
-				"func New%[1]s(db %[2]s, opts ...%[4]s) %[1]s { return %[3]s(db, opts...) }\n\n",
-				repo.name, input, constructor, e.ref("Option"))
+				"func New%[1]s(db DBTX, opts ...%[3]s) %[1]s { return %[2]s(db, opts...) }\n\n",
+				repo.name, constructor, e.ref("Option"))
 		}
 		e.printf("var _ %s = (*%s)(nil)\n\n", iface, name)
 	} else {

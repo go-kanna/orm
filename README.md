@@ -31,6 +31,8 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 | `orm/join`   | `On`, an explicit condition of a joined projection                                      |
 | `orm/option` | `WithHook`, the option a repository's constructor takes                                 |
 | `orm/hook`   | `Hook`, `Query`, and `Execution`, the functions that option takes and what they receive |
+| `orm/pgx`    | `DBTX`, what a repository runs on by pgx, which a dependency injector provides          |
+| `orm/stdlib` | `DBTX`, what a repository runs on by `database/sql`, likewise                           |
 
 `orm/change` holds `Set`, what the `Of` of a generated change set returns, which code written by hand does not name. `orm/impl` is what the generated code runs on, and only the generated code imports it.
 
@@ -522,16 +524,18 @@ transaction type implementing DBTX, or a type exposing a parameterless `DBTX()` 
 The input must match the selected driver's statement methods, and the result must be the repository's own interface.
 An existing hand-written `Bind` is preserved.
 
-For dependency injection, `-constructor-db` chooses a concrete argument type for generated public constructors:
+The `DBTX` of every package of repositories is the one of the runtime, `type DBTX = ormpgx.DBTX` of
+`github.com/go-kanna/orm/pgx`, or `stdlib.DBTX` of `github.com/go-kanna/orm/stdlib` on `database/sql`. So one value
+serves them all, and a dependency injector provides it once, as kanna-di does by a provider in the container's package:
 
 ```go
-//go:generate go tool kanna-orm -destination . -constructor-db "*example.com/app/db.Reader"
+import "github.com/go-kanna/orm/pgx"
+
+func provideDBTX(reader db.Reader) pgx.DBTX { return reader }
 ```
 
-This generates `NewCategory(db *db.Reader, opts ...option.Option) Category`, while Bind can still use the transaction's DBTX. The flag takes
-an exported type's full import path and name, optionally prefixed with `*`, loads that package, and checks that the
-type implements the selected driver's DBTX. It applies only to same-package generation. You need no constructor or
-binding wrapper of your own.
+A repository that runs on another is given it by a provider of its own, written by hand, as
+`func provideCategory(w db.Writer) Category { return NewCategory(w) }`.
 
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
 other than `Bind`, is yours to write there; generation stops while it is missing. When you implement a method with a recognized verb or SQL query,
@@ -594,11 +598,7 @@ without generating helpers.
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
-type DBTX interface {
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
+type DBTX = ormpgx.DBTX
 
 func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository
 ```
@@ -1301,7 +1301,6 @@ Generating:
 | Flag                 | Meaning                                                                                                     |
 |----------------------|-------------------------------------------------------------------------------------------------------------|
 | `-destination <dir>` | write repository implementations into dir; required for repository interfaces; `.` keeps them in the interface package |
-| `-constructor-db <type>` | argument type for generated public constructors in the interface package, as `*example.com/app/db.Reader` (default: `DBTX`) |
 | `-driver <name>`     | `pgx` or `database/sql` (default: `pgx` on PostgreSQL, `database/sql` on MySQL)                             |
 | `-snapshot <file>`   | the snapshot to read (default: `kanna-orm.snapshot.json` at the root of the module)                         |
 | `-tags <list>`       | comma-separated build tags                                                                                  |

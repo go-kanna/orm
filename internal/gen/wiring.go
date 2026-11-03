@@ -1,12 +1,9 @@
 package gen
 
 import (
-	"errors"
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/directive"
@@ -14,45 +11,6 @@ import (
 
 type binding struct {
 	accessor, localDBTX bool
-}
-
-type databaseTypeRef struct {
-	path, name string
-	pointer    bool
-}
-
-func parseDatabaseType(text string) (databaseTypeRef, error) {
-	ref := databaseTypeRef{pointer: strings.HasPrefix(text, "*")}
-	text = strings.TrimPrefix(text, "*")
-	i := strings.LastIndex(text, ".")
-	if i <= 0 || !ast.IsExported(text[i+1:]) || !token.IsIdentifier(text[i+1:]) {
-		return ref, errors.New("-constructor-db wants a qualified type, as *example.com/app/db.Reader")
-	}
-	ref.path, ref.name = text[:i], text[i+1:]
-	return ref, nil
-}
-
-func databaseType(text string, imported map[string]*types.Package, drv driver) (types.Type, error) {
-	ref, err := parseDatabaseType(text)
-	if err != nil {
-		return nil, err
-	}
-	pkg := imported[ref.path]
-	if pkg == nil {
-		return nil, fmt.Errorf("-constructor-db: package %s is not loaded", ref.path)
-	}
-	obj, ok := pkg.Scope().Lookup(ref.name).(*types.TypeName)
-	if !ok {
-		return nil, fmt.Errorf("-constructor-db: %s.%s is not a type", ref.path, ref.name)
-	}
-	input := obj.Type()
-	if ref.pointer {
-		input = types.NewPointer(input)
-	}
-	if !acceptsDatabase(input, imported, drv) {
-		return nil, fmt.Errorf("-constructor-db: %s does not implement DBTX for %s", text, drv)
-	}
-	return input, nil
 }
 
 // acceptsDatabase compares the input with the driver's own statement methods, without requiring the rest of it.

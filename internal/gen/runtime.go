@@ -17,6 +17,9 @@ const (
 	changePath = "github.com/go-kanna/orm/change"
 	// implPath is the import path of what the generated code runs on.
 	implPath = "github.com/go-kanna/orm/impl"
+	// pgxPath and stdlibPath are the import paths of the DBTX the repositories run on, by pgx and by database/sql.
+	pgxPath    = "github.com/go-kanna/orm/pgx"
+	stdlibPath = "github.com/go-kanna/orm/stdlib"
 )
 
 // publicNames are the names of the runtime that code written by hand reads, or the API generated code exports shows,

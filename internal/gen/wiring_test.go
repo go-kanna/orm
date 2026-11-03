@@ -105,42 +105,36 @@ func TestCommand_RepositoryWiring(t *testing.T) {
 
 	for _, driver := range []string{"pgx", "database/sql"} {
 		for _, accessor := range []bool{false, true} {
-			for _, custom := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/accessor=%v/custom=%v", driver, accessor, custom), func(t *testing.T) {
-					t.Parallel()
+			t.Run(fmt.Sprintf("%s/accessor=%v", driver, accessor), func(t *testing.T) {
+				t.Parallel()
 
-					dir := wiringModule(t, driver, accessor)
-					args := []string{"-destination", ".", "-driver", driver}
-					if custom {
-						args = append(args, "-constructor-db", "*example.com/shop/db.Reader")
+				dir := wiringModule(t, driver, accessor)
+				args := []string{"-destination", ".", "-driver", driver}
+				code, stdout, stderr := run(t, filepath.Join(dir, "repository"), append([]string{"-deps"}, args...)...)
+				if code != cli.ExitOK {
+					t.Fatalf("kanna-orm -deps = %d\n%s", code, stderr)
+				}
+				var report deps.Report
+				if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Contains(report.Declares, "example.com/shop/repository.NewOrders") {
+					t.Fatalf("generated constructor missing from dependency report: %v", report.Declares)
+				}
+				for range 2 {
+					if code, _, errOut := run(t, filepath.Join(dir, "repository"), args...); code != cli.ExitOK {
+						t.Fatalf("kanna-orm = %d\n%s", code, errOut)
 					}
-					code, stdout, stderr := run(t, filepath.Join(dir, "repository"),
-						append([]string{"-deps"}, args...)...)
-					if code != cli.ExitOK {
-						t.Fatalf("kanna-orm -deps = %d\n%s", code, stderr)
-					}
-					var report deps.Report
-					if err := json.Unmarshal([]byte(stdout), &report); err != nil {
-						t.Fatal(err)
-					}
-					if !slices.Contains(report.Declares, "example.com/shop/repository.NewOrders") {
-						t.Fatalf("generated constructor missing from dependency report: %v", report.Declares)
-					}
-					for range 2 {
-						if code, _, errOut := run(t, filepath.Join(dir, "repository"), args...); code != cli.ExitOK {
-							t.Fatalf("kanna-orm = %d\n%s", code, errOut)
-						}
-					}
-					if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
-						t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
-					}
-					moduleCommand(t, dir, "test", "-mod=mod", "./...")
-					if code, _, errOut := run(t, filepath.Join(dir, "repository"),
-						append([]string{"-check"}, args...)...); code != cli.ExitOK {
-						t.Fatalf("kanna-orm -check = %d\n%s", code, errOut)
-					}
-				})
-			}
+				}
+				if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+					t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+				}
+				moduleCommand(t, dir, "test", "-mod=mod", "./...")
+				if code, _, errOut := run(t, filepath.Join(dir, "repository"),
+					append([]string{"-check"}, args...)...); code != cli.ExitOK {
+					t.Fatalf("kanna-orm -check = %d\n%s", code, errOut)
+				}
+			})
 		}
 	}
 }
@@ -149,39 +143,30 @@ func TestCommand_RepositoryWiringMistakes(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name, input, bind, want string
+		name, bind, want string
 	}{
-		{"unqualified type", "Reader", "", "-constructor-db wants a qualified type"},
-		{"missing type", "*example.com/shop/db.Missing", "", "db.Missing is not a type"},
-		{"not a database", "*example.com/shop/db.NotADatabase", "", "does not implement DBTX"},
-		{"wrong argument", "", "Bind(tx int) Orders", "its argument must implement DBTX"},
-		{"wrong arity", "", "Bind() Orders", "declare it as Bind(db DBTX) Orders"},
-		{"wrong result", "", "Bind(tx db.Tx) error", "declare it as Bind(db DBTX) Orders"},
+		{"wrong argument", "Bind(tx int) Orders", "its argument must implement DBTX"},
+		{"wrong arity", "Bind() Orders", "declare it as Bind(db DBTX) Orders"},
+		{"wrong result", "Bind(tx db.Tx) error", "declare it as Bind(db DBTX) Orders"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			dir := wiringModule(t, "database/sql", true)
-			if tt.bind != "" {
-				path := filepath.Join(dir, "repository", "repository.go")
-				data, err := os.ReadFile(path) //nolint:gosec // the fixture written above
-				if err != nil {
-					t.Fatal(err)
-				}
-				text := strings.Replace(string(data), "Bind(tx db.Tx) Orders", tt.bind, 1)
-				if !strings.Contains(tt.bind, "db.Tx") {
-					text = strings.Replace(text, "\t\"example.com/shop/db\"\n", "", 1)
-				}
-				//nolint:gosec // the fixture written above
-				if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-					t.Fatal(err)
-				}
+			path := filepath.Join(dir, "repository", "repository.go")
+			data, err := os.ReadFile(path) //nolint:gosec // the fixture written above
+			if err != nil {
+				t.Fatal(err)
 			}
-			args := []string{"-destination", ".", "-driver", "database/sql"}
-			if tt.input != "" {
-				args = append(args, "-constructor-db", tt.input)
+			text := strings.Replace(string(data), "Bind(tx db.Tx) Orders", tt.bind, 1)
+			if !strings.Contains(tt.bind, "db.Tx") {
+				text = strings.Replace(text, "\t\"example.com/shop/db\"\n", "", 1)
 			}
-			code, _, errOut := run(t, filepath.Join(dir, "repository"), args...)
+			//nolint:gosec // the fixture written above
+			if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", ".", "-driver", "database/sql")
 			if code != cli.ExitFailure || !strings.Contains(errOut, tt.want) {
 				t.Fatalf("kanna-orm = %d\n%s\nwant %s", code, errOut, tt.want)
 			}
