@@ -9,7 +9,7 @@ import (
 )
 
 // mapError says in the words of the model that an order is not there.
-func (OrderRepository) mapError(err error) error {
+func (Order) mapError(err error) error {
 	if errors.Is(err, orm.ErrNotFound) {
 		return model.ErrOrderNotFound
 	}

@@ -45,10 +45,10 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 	}})
 	ex := example{
 		db:          db,
-		customers:   mysql.NewCustomerRepository(db),
-		products:    mysql.NewProductRepository(db),
-		orders:      mysql.NewOrderRepository(db, queryLog),
-		fulfillment: mysql.NewFulfillmentRepository(db),
+		customers:   mysql.NewCustomer(db),
+		products:    mysql.NewProduct(db),
+		orders:      mysql.NewOrder(db, queryLog),
+		fulfillment: mysql.NewFulfillment(db),
 		w:           w,
 	}
 	for _, step := range []struct {
@@ -79,10 +79,10 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 // example is what each step of the example runs on, and the customers it has written.
 type example struct {
 	db          *sql.DB
-	customers   mysql.CustomerRepository
-	products    mysql.ProductRepository
-	orders      mysql.OrderRepository
-	fulfillment mysql.FulfillmentRepository
+	customers   mysql.Customer
+	products    mysql.Product
+	orders      mysql.Order
+	fulfillment mysql.Fulfillment
 	w           io.Writer
 	ann, bob    model.Customer
 }
@@ -208,7 +208,7 @@ func (ex *example) placeOrders(ctx context.Context) error {
 }
 
 // ship writes the shipment of o, and o as shipped.
-func (ex *example) ship(ctx context.Context, fulfillment mysql.FulfillmentRepository, o model.Order) error {
+func (ex *example) ship(ctx context.Context, fulfillment mysql.Fulfillment, o model.Order) error {
 	s := model.Shipment{OrderID: o.ID, Carrier: "Kanna Post", Tracking: fmt.Sprintf("KP%06d", o.ID)}
 	if err := fulfillment.InsertShipment(ctx, s); err != nil {
 		return fmt.Errorf("the shipment: %w", err)
@@ -317,7 +317,7 @@ func (ex *example) cancel(ctx context.Context) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	fulfillment := mysql.NewFulfillmentRepository(tx)
+	fulfillment := mysql.NewFulfillment(tx)
 	o, err := fulfillment.GetForUpdate(ctx, 3)
 	if err != nil {
 		return fmt.Errorf("order 3: %w", err)
@@ -346,7 +346,7 @@ func (ex *example) shipNext(ctx context.Context) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = first.Rollback() }()
-	fulfillment := mysql.NewFulfillmentRepository(first)
+	fulfillment := mysql.NewFulfillment(first)
 	o, err := fulfillment.FirstToShip(ctx, next)
 	if err != nil {
 		return fmt.Errorf("worker 1: %w", err)
@@ -358,7 +358,7 @@ func (ex *example) shipNext(ctx context.Context) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = second.Rollback() }()
-	if _, err := mysql.NewFulfillmentRepository(second).FirstToShip(ctx, next); !errors.Is(err, orm.ErrNotFound) {
+	if _, err := mysql.NewFulfillment(second).FirstToShip(ctx, next); !errors.Is(err, orm.ErrNotFound) {
 		return fmt.Errorf("worker 2: %w, not orm.ErrNotFound", err)
 	}
 	fmt.Fprintln(ex.w, "worker 2 finds no order to take")

@@ -12,7 +12,7 @@ import (
 //go:generate go tool kanna-orm -destination ../postgres
 
 //kanna:repository
-type CustomerRepository interface {
+type Customer interface {
 	// UpsertByEmail meets a customer by their email address, keeping when they joined.
 	//kanna:conflict email keep=created_at coalesce=phone
 	UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
@@ -23,7 +23,7 @@ type CustomerRepository interface {
 }
 
 //kanna:repository
-type ProductRepository interface {
+type Product interface {
 	// UpsertAll writes the catalog in one statement, however many products it has.
 	//kanna:conflict sku
 	UpsertAll(ctx context.Context, products []model.Product) error
@@ -34,7 +34,7 @@ type ProductRepository interface {
 }
 
 //kanna:repository
-type OrderRepository interface { //nolint:interfacebloat // demonstrates order read and write variants together
+type Order interface { //nolint:interfacebloat // demonstrates order read and write variants together
 	Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	ListApprovers(ctx context.Context, ids []model.OrderID) ([]OrderApprover, error)
@@ -51,10 +51,10 @@ type OrderRepository interface { //nolint:interfacebloat // demonstrates order r
 	MonthlySales(ctx context.Context, since time.Time) ([]MonthSales, error)
 }
 
-// FulfillmentRepository takes an order from one status to the next.
+// Fulfillment takes an order from one status to the next.
 //
 //kanna:repository
-type FulfillmentRepository interface {
+type Fulfillment interface {
 	// GetForUpdate keeps the order as it is read until the transaction ends.
 	//kanna:lock update
 	GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)
