@@ -448,14 +448,16 @@ page, and it continues from there in the scope's order:
 s := scopes.Orders().Open().PlacedAtDesc().Limit(20)
 
 page, err := repo.List(ctx, s)
-// ...
+// WHERE status <> $1
+// ORDER BY placed_at DESC, id DESC LIMIT 20
 next, err := repo.List(ctx, s.After(page[len(page)-1]))
 // WHERE status <> $1 AND (placed_at, id) < ($2, $3)
 // ORDER BY placed_at DESC, id DESC LIMIT 20
 ```
 
-- When the order does not end in the primary key, `After` and `Before` add it, so that rows equal in the order still
-  come in one. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
+- When the order does not end in the primary key, it gets the key, in the direction of its last column, on the first
+  page as on those `After` and `Before` continue to, so that rows equal in the order come in one, the same on every
+  page. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
 - When every column of the order goes the same way, the condition compares rows, as above. When they do not, and on
   MySQL, it is spelled out: `a < $1 OR (a = $1 AND b < $2)`.
 - `Before` goes the other way, to the page before the one a row is the first of. The repository reads that page from
