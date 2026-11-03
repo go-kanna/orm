@@ -2,6 +2,7 @@ package gen_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ import (
 func TestHooks_Postgres(t *testing.T) {
 	t.Parallel()
 	var done []hook.Execution
-	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done)...)
+	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done))
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, pgscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
@@ -39,7 +40,7 @@ func TestHooks_Postgres(t *testing.T) {
 func TestHooks_MySQL(t *testing.T) {
 	t.Parallel()
 	var done []hook.Execution
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done)...)
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done))
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, mysqlscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
@@ -59,20 +60,20 @@ func TestHooks_MySQL(t *testing.T) {
 type hookKey struct{}
 
 // captureExecutions has a repository mark the context of each statement before it runs, and record it after.
-func captureExecutions(t *testing.T, done *[]hook.Execution) []option.Option {
+func captureExecutions(t *testing.T, done *[]hook.Execution) option.Option {
 	t.Helper()
-	return []option.Option{
-		option.WithBefore(func(ctx context.Context, q hook.Query) context.Context {
+	return option.WithHook(hook.Hook{
+		Before: func(ctx context.Context, q hook.Query) context.Context {
 			return context.WithValue(ctx, hookKey{}, q.SQL)
-		}),
-		option.WithAfter(func(ctx context.Context, e hook.Execution) {
+		},
+		After: func(ctx context.Context, e hook.Execution) {
 			if ctx.Value(hookKey{}) != e.SQL {
 				t.Error("After did not get the context of Before")
 			}
 			e.Args = slices.Clone(e.Args)
 			*done = append(*done, e)
-		}),
-	}
+		},
+	})
 }
 
 func checkExecutions(t *testing.T, done []hook.Execution) {
@@ -89,5 +90,45 @@ func checkExecutions(t *testing.T, done []hook.Execution) {
 	}
 	if len(done[0].Args) != 1 || done[0].Args[0] != model.OrderID(1) {
 		t.Fatalf("query arguments: %+v", done[0].Args)
+	}
+}
+
+func TestHooks_CanceledContext_Postgres(t *testing.T) {
+	t.Parallel()
+	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), cancelStatements())
+	ctx := t.Context()
+	_, query := repo.Get(ctx, 1)
+	_, queryRow := repo.Count(ctx)
+	_, exec := repo.CloseOld(ctx, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	checkCanceled(t, map[string]error{"Query": query, "QueryRow": queryRow, "Exec": exec})
+}
+
+func TestHooks_CanceledContext_MySQL(t *testing.T) {
+	t.Parallel()
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t), cancelStatements())
+	ctx := t.Context()
+	_, query := repo.Get(ctx, 1)
+	_, queryRow := repo.Count(ctx)
+	_, exec := repo.CloseOld(ctx, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
+	checkCanceled(t, map[string]error{"Query": query, "QueryRow": queryRow, "Exec": exec})
+}
+
+// cancelStatements has a repository run each statement with a context its Before has canceled.
+func cancelStatements() option.Option {
+	return option.WithHook(hook.Hook{Before: func(ctx context.Context, _ hook.Query) context.Context {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+		return ctx
+	}})
+}
+
+// checkCanceled checks that each statement, run through the method of DBTX its key names, stopped on the canceled
+// context.
+func checkCanceled(t *testing.T, errs map[string]error) {
+	t.Helper()
+	for through, err := range errs {
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("a statement through %s ran with a context Before canceled: %v", through, err)
+		}
 	}
 }

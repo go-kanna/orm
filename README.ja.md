@@ -25,10 +25,10 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 | `orm/scope`    | 手書きで宣言するスコープ型のフィールド `Of`                                                     |
 | `orm/relation` | `Select<Field>` と `Preload<Field>` に渡すクロージャが返す・受け取る `Single`、`Many`、`Column` |
 | `orm/join`     | 結合した projection の明示的な条件 `On`                                                         |
-| `orm/option`   | repository の constructor に渡す option `WithBefore` と `WithAfter`                             |
-| `orm/hook`     | それらの option に渡す関数と、その関数が受け取る値 `Before`、`After`、`Query`、`Execution`      |
+| `orm/option`   | repository の constructor に渡す option `WithHook`                                              |
+| `orm/hook`     | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution`                     |
 
-`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
+`orm/change` の `Set` は、生成される change set の `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
 
 ## 使い方
 
@@ -757,19 +757,19 @@ return tx.Commit(ctx)
 
 ### フック
 
-生成 constructor は任意の repository option を受け取ります。`option.WithBefore` と `option.WithAfter` には `hook` パッケージの関数を渡し、repository は実行する文ごとにその前後でそれらを呼びます。特定のロギングやトレーシングのライブラリには依存しません。クエリをログに出すには After を登録します。
+生成 constructor は任意の repository option を受け取ります。`option.WithHook` には `hook.Hook`（Before と After の組）を渡し、repository は実行する文ごとにその前後でそれらを呼びます。どちらかは nil でかまいません。特定のロギングやトレーシングのライブラリには依存しません。クエリをログに出すには After を渡します。
 
 ```go
 logQuery := func(ctx context.Context, e hook.Execution) {
     fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
     // ctx からリクエスト情報を取り出し、e.Args を出すかはここで決める。
 }
-repo := store.NewOrderRepository(db, option.WithAfter(logQuery))
+repo := store.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。After はその context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。エラー変換前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
+Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。エラー変換前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
-option は何度でも渡せます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に呼ばれます。最初に渡したフックがほかを包む形です。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。生の接続を使って Go で手実装したメソッドは、生成コードの実行経路の外にあります。両 DB の example に、実行した文を出す After の登録例があります。
+フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。生の接続を使って Go で手実装したメソッドは、生成コードの実行経路の外にあります。両 DB の example に、実行した文を出す After を渡す例があります。
 
 ### 専用の型へ読み込む projection
 

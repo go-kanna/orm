@@ -8,30 +8,20 @@ import (
 	"github.com/go-kanna/orm/hook"
 )
 
-// Options configures generated repositories: the hooks each statement they run is called between.
+// Options configures generated repositories: the hooks each statement they run is called between, the first given
+// first.
 type Options struct {
-	Before []hook.Before
-	After  []hook.After
+	Hooks []hook.Hook
 }
 
 // Option is one setting of Options.
 type Option func(*Options)
 
-// WithBefore adds f to the hooks called as each statement starts, after those added before it. A nil f adds none.
-func WithBefore(f hook.Before) Option {
+// WithHook adds h to the hooks, inside those added before it. A hook of neither function adds none.
+func WithHook(h hook.Hook) Option {
 	return func(o *Options) {
-		if f != nil {
-			o.Before = append(slices.Clip(o.Before), f)
-		}
-	}
-}
-
-// WithAfter adds f to the hooks called once each statement is done, before those added before it, so that the first
-// hooks added enclose the others. A nil f adds none.
-func WithAfter(f hook.After) Option {
-	return func(o *Options) {
-		if f != nil {
-			o.After = append(slices.Clip(o.After), f)
+		if h.Before != nil || h.After != nil {
+			o.Hooks = append(slices.Clip(o.Hooks), h)
 		}
 	}
 }
@@ -54,21 +44,30 @@ type QueryTrace struct {
 	finished bool
 }
 
-// StartQuery calls the Before hooks of o for a statement of sql and args. It returns the context the statement runs
-// with, and the trace calling the After hooks once the statement ends, nil without any.
+// StartQuery calls the Before of each hook of o for a statement of sql and args, in order. It returns the context the
+// statement runs with, the one the last Before returned, and the trace calling each After once the statement ends, in
+// reverse, with the context its own Before returned. The trace is nil without any After.
 func (o Options) StartQuery(ctx context.Context, sql string, args []any) (context.Context, *QueryTrace) {
 	q := hook.Query{SQL: sql, Args: args}
-	for _, f := range o.Before {
-		ctx = f(ctx, q) //nolint:fatcontext // each Before wraps the context the one before it returned, once a statement
+	contexts := make([]context.Context, len(o.Hooks))
+	after := false
+	for i, h := range o.Hooks {
+		if h.Before != nil {
+			ctx = h.Before(ctx, q) //nolint:fatcontext // each Before wraps the context of the one before it, once a statement
+		}
+		contexts[i] = ctx
+		after = after || h.After != nil
 	}
-	if len(o.After) == 0 {
+	if !after {
 		return ctx, nil
 	}
 	started := time.Now()
 	return ctx, &QueryTrace{complete: func(err error) {
 		e := hook.Execution{Query: q, Duration: time.Since(started), Err: err}
-		for _, f := range slices.Backward(o.After) {
-			f(ctx, e)
+		for i, h := range slices.Backward(o.Hooks) {
+			if h.After != nil {
+				h.After(contexts[i], e)
+			}
 		}
 	}}
 }

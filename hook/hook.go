@@ -1,5 +1,5 @@
-// Package hook holds the functions a generated repository calls around each statement it runs: Before as it starts,
-// After once it is done. They depend on no logging or tracing library; what they do is yours.
+// Package hook holds what a generated repository calls around each statement it runs: a Before as it starts, and an
+// After once it is done. It depends on no logging or tracing library; what the hooks do is yours.
 package hook
 
 import (
@@ -23,10 +23,14 @@ type Execution struct {
 	Err      error
 }
 
-// Before is called as a statement starts. The statement runs with the context it returns, which After then receives:
-// return ctx itself to leave it as it was. Calls from concurrent statements may overlap.
-type Before func(ctx context.Context, q Query) context.Context
-
-// After is called once a statement has run and its results have been read, or it has failed. Calls from concurrent
-// statements may overlap.
-type After func(ctx context.Context, e Execution)
+// Hook is a pair of functions a repository calls around each statement it runs. Either may be nil. Of the hooks a
+// repository is given, those given first enclose the others: their Before runs first, and their After last. Calls from
+// concurrent statements may overlap.
+type Hook struct {
+	// Before is called as a statement starts. It returns ctx, or a context derived from it: the statement runs with that
+	// context, its cancellation and deadline included, and the next Before receives it.
+	Before func(ctx context.Context, q Query) context.Context
+	// After is called once the statement has run and its results have been read, or it has failed. It receives the
+	// context its own Before returned, or, without a Before, the one that Before would have received.
+	After func(ctx context.Context, e Execution)
+}
