@@ -391,3 +391,23 @@ func TestGeneratedRepository_MySQLQueries(t *testing.T) {
 		t.Errorf("the closed orders = %d, %v; want order 1 alone", n, err)
 	}
 }
+
+func TestGeneratedRepository_MySQLSliceArgument(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	repo := mstdlib.NewOrderRepository(mysqlDB(t))
+	for _, tt := range []struct {
+		ids  []model.OrderID
+		want []int64
+	}{
+		{[]model.OrderID{1, 3}, []int64{10, 20}},
+		{[]model.OrderID{2}, []int64{10}},
+		{nil, []int64{}},
+	} {
+		got, err := repo.CustomersOf(ctx, tt.ids)
+		if err != nil || !slices.Equal(got, tt.want) {
+			t.Errorf("CustomersOf(%v) = %v, %v; want %v", tt.ids, got, err, tt.want)
+		}
+	}
+}

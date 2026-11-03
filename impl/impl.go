@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Dialect is the database a scope is rendered for.
@@ -238,6 +239,32 @@ func List[T any](vs []T) any {
 }
 
 type list []any
+
+// Expand writes a statement of MySQL from pieces, the SQL around its parameters, and args, one for each: a ? for an
+// argument, and a ? for each of the values of a List, or NULL when it has none, with the arguments of the statement in
+// their order.
+func Expand(pieces []string, args ...any) (string, []any) {
+	var (
+		b   strings.Builder
+		out = make([]any, 0, len(args))
+	)
+	b.WriteString(pieces[0])
+	for i, arg := range args {
+		l, ok := arg.(list)
+		switch {
+		case !ok:
+			b.WriteByte('?')
+			out = append(out, arg)
+		case len(l) == 0:
+			b.WriteString("NULL")
+		default:
+			b.WriteString(strings.Repeat("?, ", len(l)-1) + "?")
+			out = append(out, l...)
+		}
+		b.WriteString(pieces[i+1])
+	}
+	return b.String(), out
+}
 
 // ProjectionOnly rejects relation loading in a projection. Filters, ordering, and pagination remain valid.
 func (q Of[M]) ProjectionOnly(what string) error {

@@ -17,3 +17,6 @@ UPDATE orders SET status = 'closed' WHERE placed_at < :before AND status <> 'clo
 
 -- query: Reopen
 UPDATE orders SET status = 'open' WHERE id = :id;
+
+-- query: CustomersOf
+SELECT customer_id FROM orders WHERE id IN (:ids) ORDER BY id;

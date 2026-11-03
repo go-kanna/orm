@@ -27,6 +27,9 @@ type query struct {
 	// passed for them, in order.
 	sql  string
 	args []queryArgument
+	// pieces are the SQL around the parameters, when an argument stands for a list of values the statement is written
+	// with at run time, as IN (:ids) takes it on MySQL.
+	pieces []string
 	// row is T, of a result of T or []T, and fields its fields holding the columns of the result, in their order.
 	row    types.Type
 	scalar bool
@@ -147,7 +150,11 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 			continue
 		}
 		if arg, ok := declared[p.Name]; ok {
-			if want, ok := fits(arg.typ, p.Type); !ok {
+			typ := arg.typ
+			if r.s.Dialect == snapshot.MySQL && expands(typ) {
+				typ = typ.Underlying().(*types.Slice).Elem() //nolint:forcetypeassert // expands sees a slice
+			}
+			if want, ok := fits(typ, p.Type); !ok {
 				typ := typeName(arg.typ)
 				ds = append(ds, diag.Errorf(st.Header, "-- query: %s: :%s is %s, which %s, %s %s, is not", st.Name,
 					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want))
@@ -172,6 +179,10 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 		if p := params.At(i).Name(); !used[p] {
 			ds = append(ds, diag.Warningf(m.pos, "%s: the query does not use %s", m.name, p))
 		}
+	}
+
+	if r.s.Dialect == snapshot.MySQL && slices.ContainsFunc(q.args, func(a queryArgument) bool { return expands(a.typ) }) {
+		q.pieces, _, _ = placeholder.Split(st.Text, r.s.Dialect) // Rewrite has read it
 	}
 
 	rds := r.queryResult(m, &q, results, described, st, shape)
@@ -315,4 +326,15 @@ func unusedQueries(queries map[string]sqlfile.Statement, pkgPath string, methods
 		ds = append(ds, d)
 	}
 	return ds
+}
+
+// expands reports whether an argument of type t stands for a list of values, as IN (:ids) takes it on MySQL: a slice
+// of other than bytes, which no Value method makes one value of.
+func expands(t types.Type) bool {
+	if _, ok := t.Underlying().(*types.Slice); !ok || isBytes(t) {
+		return false
+	}
+	obj, _, _ := types.LookupFieldOrMethod(t, true, nil, "Value")
+	_, valuer := obj.(*types.Func)
+	return !valuer
 }

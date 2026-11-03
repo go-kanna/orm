@@ -843,6 +843,28 @@ func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
 	return nil
 }
 
+// CustomersOf runs the query of its name in queries.sql.
+func (r OrderRepository) CustomersOf(ctx context.Context, ids []model.OrderID) ([]int64, error) {
+	q, args := impl.Expand([]string{`SELECT customer_id FROM orders WHERE id IN (`, `) ORDER BY id`}, impl.List(ids))
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
+	}
+	defer rows.Close()
+	out := []int64{}
+	for rows.Next() {
+		var row int64
+		if err := rows.Scan(&row); err != nil {
+			return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
+	}
+	return out, nil
+}
+
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
 func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
