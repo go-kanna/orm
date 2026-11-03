@@ -158,7 +158,19 @@ func TestCommand_TypedQueryMistakes(t *testing.T) {
 		name, before, after, want string
 	}{
 		{"ambiguous struct fields", "Save(ctx context.Context, record model.Record)",
-			"Save(ctx context.Context, first model.Record, second model.Record)", "matches fields of multiple parameters"},
+			"Save(ctx context.Context, first model.Record, second model.Record)", "matches multiple arguments or struct fields"},
+		{"explicit parameter and field", "Save(ctx context.Context, record model.Record)",
+			"Save(ctx context.Context, state model.State, record model.Record)",
+			":state matches multiple arguments or struct fields"},
+		{"field before explicit parameter", "Save(ctx context.Context, record model.Record)",
+			"Save(ctx context.Context, record model.Record, state model.State)",
+			":state matches multiple arguments or struct fields"},
+		{"collision before type mismatch", "Save(ctx context.Context, record model.Record)",
+			"Save(ctx context.Context, state int64, record model.Record)", ":state matches multiple arguments or struct fields"},
+		{"explicit note parameter and field", "Save(ctx context.Context, record model.Record)",
+			"Save(ctx context.Context, record model.Record, note string)", ":note matches multiple arguments or struct fields"},
+		{"two fields of one struct", "ID int64", "ID int64 `orm:\"state\"`",
+			":state matches multiple arguments or struct fields"},
 		{"nullzero on number", "Note string", "Note int64", "nullzero requires a string field"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -169,6 +181,66 @@ func TestCommand_TypedQueryMistakes(t *testing.T) {
 			if code != cli.ExitFailure || !strings.Contains(errOut, tt.want) {
 				t.Fatalf("kanna-orm = %d\n%s\nwant %s", code, errOut, tt.want)
 			}
+		})
+	}
+}
+
+func TestCommand_TypedQueryArgumentAliases(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, parameter string
+		placeholders    []string
+		want            string
+	}{
+		{name: "snake case collision", parameter: ", min_places string",
+			placeholders: []string{"min_places"}, want: ":min_places matches multiple arguments or struct fields"},
+		{name: "lower camel collision", parameter: ", minPlaces string",
+			placeholders: []string{"minPlaces"}, want: ":minPlaces matches multiple arguments or struct fields"},
+		{name: "unused collision", parameter: ", minPlaces string", placeholders: []string{"min_places"}},
+		{name: "same field aliases", placeholders: []string{"min_places", "minPlaces"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			expressions := make([]string, 0, len(tt.placeholders))
+			params := make([]snapshot.Param, 0, len(tt.placeholders))
+			for _, name := range tt.placeholders {
+				expressions = append(expressions, ":"+name+"::TEXT")
+				params = append(params, snapshot.Param{Name: name, Type: "text"})
+			}
+			query := "SELECT " + strings.Join(expressions, " || ") + " AS value;"
+			archive := `
+-- repository/repository.go --
+package repository
+import "context"
+type Thresholds struct { MinPlaces string }
+//kanna:repository
+type Limits interface {
+	Echo(ctx context.Context, thresholds Thresholds` + tt.parameter + `) (string, error)
+}
+-- impl/queries.sql --
+-- query: Echo
+` + query
+			dir := writeModule(t, archive)
+			s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Statements: map[string]snapshot.Statement{
+				"example.com/shop/impl.Echo": {
+					Digest: snapshot.Digest(query), Params: params,
+					Columns: []snapshot.Result{{Name: "value", Type: "text", NotNull: true}},
+				},
+			}}
+			if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl")
+			if tt.want != "" {
+				if code != cli.ExitFailure || !strings.Contains(errOut, tt.want) {
+					t.Fatalf("kanna-orm = %d\n%s\nwant %s", code, errOut, tt.want)
+				}
+				return
+			}
+			if code != cli.ExitOK {
+				t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+			}
+			moduleCommand(t, dir, "test", "-mod=mod", "./...")
 		})
 	}
 }

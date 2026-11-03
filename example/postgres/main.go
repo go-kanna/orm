@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/go-kanna/orm/example/postgres/model"
+	"github.com/go-kanna/orm/example/postgres/repository"
 	"github.com/go-kanna/orm/example/postgres/scopes"
 	"github.com/go-kanna/orm/example/postgres/store"
 )
@@ -197,7 +198,7 @@ func (ex *example) placeOrders(ctx context.Context) error {
 			}
 		}
 		for _, tag := range p.tags {
-			if err := ex.orders.Tag(ctx, o.ID, tag); err != nil {
+			if err := ex.orders.Tag(ctx, o.ID, repository.TagInput{Tag: tag}); err != nil {
 				return fmt.Errorf("order %d: %w", o.ID, err)
 			}
 		}
