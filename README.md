@@ -769,22 +769,6 @@ work. If `default` omits a key needed by that existing readback, generation fail
 An error-only method needs no readback and can still omit the column. MySQL's existing restriction on returning
 models from bulk writes also remains in place.
 
-### Ignoring an insert conflict
-
-Use `//kanna:insert` to generate an insert with a domain-specific method name, such as `Use`. The directive takes no arguments and cannot be combined with a hand-written query or `//kanna:pluck`.
-
-On PostgreSQL, add `do=nothing` to `//kanna:conflict` on an Insert. The columns must name a primary or unique key. Only conflicts on that key are ignored; other constraint errors are returned.
-
-```go
-//kanna:insert
-//kanna:conflict token_hash do=nothing
-Use(ctx context.Context, token model.UsedIDToken) (int64, error)
-```
-
-The count is the number of rows inserted: one for a new token, zero for an existing one. An Insert returning only `error` succeeds when the conflict is ignored. One returning a model uses `RETURNING` and returns `orm.ErrNotFound` when the conflict inserts no row. Bulk inserts can return the count or the slice of newly inserted rows; existing rows are omitted.
-
-`do=nothing` cannot be combined with `keep=` or `coalesce=`, or used on an Upsert. MySQL rejects this directive at generation time: `INSERT IGNORE` would also suppress unrelated errors and cannot restrict conflict handling to the declared key. An ordinary Insert may also return `(int64, error)` for its inserted row count.
-
 ### Upserting
 
 `Upsert` meets an existing row by its primary key. To meet it by another unique key, name its columns with
@@ -860,8 +844,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - On PostgreSQL, a result of `([]model.OrderLine, error)` reads the rows back with `RETURNING`.
 - On MySQL, the rows go in `VALUES (?, ?, ?), (?, ?, ?), ...`, split into several statements when they need more
   placeholders than one can take. Give the constructor a transaction to have them stand or fall together.
-- MySQL has no `RETURNING`, so there a result other than `error` alone stops generation, but for an `Insert` returning
-  `(int64, error)`: the number of rows its statements wrote.
+- MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
 - PostgreSQL rejects an upsert in which two rows have the same key.
 - `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
   one by one.
