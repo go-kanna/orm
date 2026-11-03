@@ -515,12 +515,12 @@ interface when generated into a separate package, its constructor, and the `DBTX
 ### Same-package implementations
 
 Use `-destination .` to keep the interface and its implementation in the same package. The interface must be exported;
-`Category` generates an unexported `category`, a `newCategory(db DBTX, opts ...option.Option) *category` constructor,
-and pointer receiver methods. It also generates `NewCategory(db DBTX, opts ...option.Option) Category` unless you
-already declare `NewCategory` yourself.
+`Category` generates an unexported `category`, a `newCategory(db DBTX, opts ...option.Option) category` constructor,
+and value receiver methods. It also generates `NewCategory(db DBTX, opts ...option.Option) Category` unless you
+already declare `NewCategory` yourself, which can call `newCategory`.
 Keep scope types in a separate package; their methods go into `scopes_gen.go`.
 
-Declare `Bind(db DBTX) Category` to generate transaction binding. The argument may instead be a concrete database or
+Declare `Bind(db DBTX) Category` to generate transaction binding, in either package. The argument may instead be a concrete database or
 transaction type implementing DBTX, or a type exposing a parameterless `DBTX()` method that returns one, such as
 `Bind(tx tx.Tx) Category`. Bind returns a new implementation using that connection and leaves the original unchanged.
 The input must match the selected driver's statement methods, and the result must be the repository's own interface.
@@ -543,7 +543,7 @@ Write application-specific methods directly on the generated type. A method with
 other than `Bind`, is yours to write there; generation stops while it is missing. When you implement a method with a recognized verb or SQL query,
 kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can check its row
 before calling `r.upsert`. kanna-orm writes the helper only when a method written on the type calls it on its
-receiver, as `r.upsert`, so a method running SQL of its own needs none. This helper behavior applies only to same-package generation. The helper has the same
+receiver, as `r.upsert`, so a method running SQL of its own needs none. The helper has the same
 signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
 already be declared. Queries belong in the destination's
 `.sql` files, including when the destination also declares the interface.
@@ -557,7 +557,7 @@ type Category interface {
 	Upsert(ctx context.Context, c model.Category) error
 }
 
-func (r *category) Upsert(ctx context.Context, c model.Category) error {
+func (r category) Upsert(ctx context.Context, c model.Category) error {
 	if c.Name == "" {
 		return errors.New("a category needs a name")
 	}
@@ -595,8 +595,10 @@ func (OrderRepository) mapError(err error) error {
 ### Separate-package implementations
 
 With a separate destination such as `-destination ../postgres`, kanna-orm generates an exported struct with the
-interface's name, a value constructor, and value receiver methods. Methods written by hand on that struct are skipped
-without generating helpers.
+interface's name, `newOrderRepository` and `NewOrderRepository` constructors, and value receiver methods. All else
+goes as in the same package: `Bind`, the helper of a method written by hand, and a `NewOrderRepository` of your own.
+As the interface's package cannot name the destination's `DBTX`, `Bind` takes a transaction exposing `DBTX()`, as
+`Bind(tx tx.Tx) OrderRepository`, or the runtime's `DBTX` itself, of `orm/pgx` or `orm/stdlib`.
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
@@ -652,9 +654,8 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
   `(int64, error)` returns the number of rows it deleted, none among them.
 - A [hand-written query](#hand-written-sql) of the method's name takes the place of its verb; a method with neither
   stops generation.
-- A method you write yourself on the generated struct stays in your file. For [same-package implementations](#same-package-implementations),
-  a recognized verb or named query also generates a private helper when the package calls it. Separate-package
-  implementations skip the method.
+- A method you write yourself on the generated struct stays in your file. Of a recognized verb or named query, it
+  also gets a private helper when it calls one on its receiver, in either package.
 
 A method tells its model by its result, its row, or its scopes. One that takes nothing but keys, as
 `Delete(ctx, id)`, reads or writes the table the repository is named after: `OrderRepository` reaches `orders`, the
@@ -1005,7 +1006,7 @@ once instead, and `skip-locked` has it pass those rows over.
   no index for its condition locks the whole table.
 - `//kanna:lock` anywhere but right above such a method stops generation, rather than leave the method unlocked. So does
   one on a method a [hand-written query](#hand-written-sql) or your own code alone implements: write the lock there.
-  A same-package method delegating to a generated helper keeps its lock on that helper.
+  A method delegating to a generated helper keeps its lock on that helper.
 - A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such as `GetForUpdateForm`, says nothing of a lock.
 
 ### Hooks

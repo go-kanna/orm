@@ -413,9 +413,9 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 ### 同じパッケージに実装する
 
-`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) *category` コンストラクタ、ポインタレシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。スコープのメソッドは `scopes_gen.go` に出力されます。スコープ型は別のパッケージに置いてください。
+`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) category` コンストラクタ、値レシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。自分で宣言する `NewCategory` からは `newCategory` を呼べます。スコープのメソッドは `scopes_gen.go` に出力されます。スコープ型は別のパッケージに置いてください。
 
-`Bind(db DBTX) Category` を宣言すると、トランザクションへの接続も生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
+`Bind(db DBTX) Category` を宣言すると、どちらのパッケージに実装するときも、トランザクションへの接続を生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
 
 repository のどのパッケージの `DBTX` も、ランタイムのものの別名です。pgx なら `github.com/go-kanna/orm/pgx` の `type DBTX = ormpgx.DBTX`、`database/sql` なら `github.com/go-kanna/orm/stdlib` の `stdlib.DBTX` です。そのため 1 つの値ですべての repository を動かせ、DI では 1 度だけ渡せば済みます。kanna-di なら、コンテナのパッケージに provider を 1 つ書きます:
 
@@ -429,7 +429,7 @@ func provideDBTX(reader db.Reader) pgx.DBTX { return reader }
 
 アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、そこに自分で書きます。書くまでは生成が止まります。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` は、行を確かめてから `r.upsert` を呼べます。ヘルパーは、その型に書いたメソッドが `r.upsert` のようにレシーバで呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
 
-このヘルパーの生成は同一パッケージへの出力に限ります。ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
+ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
 
 ```go
 //go:generate go tool kanna-orm -destination .
@@ -440,7 +440,7 @@ type Category interface {
 	Upsert(ctx context.Context, c model.Category) error
 }
 
-func (r *category) Upsert(ctx context.Context, c model.Category) error {
+func (r category) Upsert(ctx context.Context, c model.Category) error {
 	if c.Name == "" {
 		return errors.New("a category needs a name")
 	}
@@ -469,7 +469,7 @@ func (OrderRepository) mapError(err error) error {
 
 ### 別のパッケージに実装する
 
-`-destination ../postgres` のように別のパッケージを指定すると、インターフェースと同じ名前の公開構造体、値を返すコンストラクタ、値レシーバーのメソッドを生成します。その構造体に手書きしたメソッドは生成対象から外し、ヘルパーも生成しません。
+`-destination ../postgres` のように別のパッケージを指定すると、インターフェースと同じ名前の公開構造体、`newOrderRepository` と `NewOrderRepository` のコンストラクタ、値レシーバーのメソッドを生成します。ほかは同じパッケージに実装するときと同じで、`Bind`、手書きしたメソッドのヘルパー、自分で宣言する `NewOrderRepository` が使えます。インターフェースのパッケージからは生成先の `DBTX` を参照できないので、`Bind` は `Bind(tx tx.Tx) OrderRepository` のように `DBTX()` を持つトランザクションの型か、`orm/pgx` や `orm/stdlib` のランタイムの `DBTX` を受け取ります。
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
@@ -517,7 +517,7 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - スコープを渡しても条件がない `Delete` は、すべての行を削除せずにエラーを返します。
 - `error` だけを返す `Delete` は、`Update` と同じく、1 行も削除しなかったときに `orm.ErrNotFound` を返します。`(int64, error)` を返す `Delete` は削除した行数を返します。0 行の場合も同じです。
 - メソッドと同じ名前の[手書きのクエリ](#手書きの-sql)があれば、動詞の代わりにそれが使われます。動詞も手書きのクエリもないメソッドは生成を止めます。
-- 生成された構造体のメソッドを自分で書いた場合、その実装は手書きのファイルに残ります。[同じパッケージへの出力](#同じパッケージに実装する)で、認識できる動詞か手書きのクエリがある場合は、非公開のヘルパーも生成します。別のパッケージへの出力では、そのメソッドを生成対象から外します。
+- 生成された構造体のメソッドを自分で書いた場合、その実装は手書きのファイルに残ります。認識できる動詞か手書きのクエリがあり、そのメソッドがレシーバでヘルパーを呼んでいれば、どちらのパッケージへの出力でも、非公開のヘルパーを生成します。
 
 メソッドのモデルは、戻り値、書き込む行、スコープから決まります。`Delete(ctx, id)` のようにキーしか受け取らないメソッドは、repository の名前のテーブルを読み書きします。`OrderRepository` なら、`//kanna:scopes` と同じ規則で `Order` のテーブルの `orders` です。キーの型からは決めないので、フィールドの名前を変えたりモデルを足したりしても、メソッドが別のテーブルに移ることはありません。名前がテーブルに合わない repository は `table=` でテーブルを指定します。`table=` は名前より優先されます。どちらもなければ、そのようなメソッドで生成を止めます:
 
@@ -799,7 +799,7 @@ return tx.Commit(ctx)
 - スコープが読み込むリレーションは、ロックせずに読みます。
 - 確実にロックされるのは存在する行だけなので、行の挿入を防げるとは当てにしないでください。
 - PostgreSQL は `Offset` で飛ばした行もロックします。InnoDB は返した行ではなく走査した行をロックするので、条件に使えるインデックスがない読み取りはテーブル全体をロックします。
-- `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や手書きのコードだけで実装するメソッドに付けた場合も同じです。ロックはそちらに書いてください。同一パッケージで生成ヘルパーを呼ぶメソッドでは、そのヘルパーにロックを引き継ぎます。
+- `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や手書きのコードだけで実装するメソッドに付けた場合も同じです。ロックはそちらに書いてください。生成ヘルパーを呼ぶメソッドでは、そのヘルパーにロックを引き継ぎます。
 - `GetForUpdate` や `ListForShare` のように名前がロックで終わる `Get`、`Find`、`First`、`List` は、`//kanna:lock` がないと警告が出て、別の強さの `//kanna:lock` なら生成を止めます。`GetForUpdateForm` のように後ろに語が続く名前は、ロックのことを言っていないものとして扱います。
 
 ### フック

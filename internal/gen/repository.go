@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"go/types"
 	"maps"
-	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -214,6 +213,9 @@ type repoReader struct {
 	local    bool
 	driver   driver
 	declared map[string]token.Position
+	// calls are what the methods written by hand select on their receiver, by the type they are declared on: the
+	// helpers they call.
+	calls map[string]map[string]bool
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -248,7 +250,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
 	_, manualConstructor := r.declared["New"+repo.name]
-	repo.publicConstructor = r.local && !manualConstructor
+	repo.publicConstructor = !manualConstructor
 	if r.local && !ts.Name.IsExported() {
 		return repo, []diag.Diag{diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
 			repo.name)}
@@ -285,17 +287,14 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 
 	var ds []diag.Diag
 	implementation := repo.implementation()
-	var called map[string]bool
-	if r.local {
-		called = r.selected(implementation)
-	}
+	called := r.calls[implementation]
 	for _, fn := range methods {
 		_, overridden := r.skip[implementation][fn.Name()]
 		_, generated := verbOf(fn.Name())
 		_, query := r.queries[fn.Name()]
-		// A method written by hand gets a helper, its name made unexported, only if the package calls the helper: one
+		// A method written by hand gets a helper, its name made unexported, only if it calls the helper: one
 		// that runs SQL of its own needs none, and kanna-orm may not be able to write one for it.
-		if overridden && (!r.local || (!generated && !query) || !called[lowerFirst(fn.Name())]) {
+		if overridden && (!generated && !query || !called[lowerFirst(fn.Name())]) {
 			if f := docs[fn.Name()]; f != nil {
 				for _, md := range methodDirectives {
 					if d, _ := directive.Find(r.pkg.Fset, f.Doc, md.key); d.Found {
@@ -307,7 +306,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		}
 		var m repoMethod
 		var mds []diag.Diag
-		if r.local && fn.Name() == "Bind" {
+		if fn.Name() == "Bind" {
 			m, mds = r.bindMethod(repoMethod{name: fn.Name(), pos: r.pkg.Fset.Position(fn.Pos()), fn: fn},
 				docs[fn.Name()], ts)
 		} else {
@@ -328,41 +327,6 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		ds = append(ds, mapErrorSignature(repo, implementation, m)...)
 	}
 	return repo, ds
-}
-
-// selected names what the methods written by hand on implementation select on their receiver, as r.upsert does upsert
-// in func (r *category) Upsert: the helpers they call. A selector on anything else, as on a value of another type, is
-// none of them.
-func (r repoReader) selected(implementation string) map[string]bool {
-	names := map[string]bool{}
-	for _, f := range r.pkg.Syntax {
-		if filepath.Base(r.pkg.Fset.Position(f.Pos()).Filename) == repositoryOutputName {
-			continue
-		}
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Body == nil || fn.Recv == nil || len(fn.Recv.List) != 1 || len(fn.Recv.List[0].Names) != 1 {
-				continue
-			}
-			t := fn.Recv.List[0].Type
-			if star, ok := t.(*ast.StarExpr); ok {
-				t = star.X
-			}
-			if id, ok := t.(*ast.Ident); !ok || id.Name != implementation {
-				continue
-			}
-			recv := fn.Recv.List[0].Names[0].Name
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				if s, ok := n.(*ast.SelectorExpr); ok {
-					if x, ok := s.X.(*ast.Ident); ok && x.Name == recv {
-						names[s.Sel.Name] = true
-					}
-				}
-				return true
-			})
-		}
-	}
-	return names
 }
 
 // method reads fn, a method of the repository ts declares, as field, its syntax, declares it. fallback is the model

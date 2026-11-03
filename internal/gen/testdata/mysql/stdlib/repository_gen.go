@@ -78,9 +78,13 @@ func (d ormDatabase) queryRow(ctx context.Context, query string, args ...any) im
 // OrderRepository implements repository.OrderRepository on MySQL through database/sql.
 type OrderRepository struct{ db ormDatabase }
 
-// NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+func newOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 	return OrderRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewOrderRepository returns OrderRepository running on db.
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+	return newOrderRepository(db, opts...)
 }
 
 var _ repository.OrderRepository = OrderRepository{}
