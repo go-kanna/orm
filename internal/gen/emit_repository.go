@@ -47,9 +47,6 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve("DBTX")
 	for _, repo := range repos {
 		f.Reserve(repo.implementation(), repo.constructor())
-		if repo.errors != "" {
-			f.Reserve(repo.operationNames()...)
-		}
 		if repo.publicConstructor {
 			f.Reserve("New" + repo.name)
 		}
@@ -116,9 +113,6 @@ func (e repoEmitter) db() {
 
 // repository writes the implementation of repo: its struct, constructor, and methods.
 func (e repoEmitter) repository(repo repository) {
-	if repo.errors != "" {
-		e.operations(repo)
-	}
 	iface := repo.name
 	if p := repo.iface; p != nil {
 		if pkg := e.f.Import(p.Path(), p.Name()); pkg != "" {
@@ -180,11 +174,12 @@ type signature struct {
 	// interface gives them.
 	ctx, scopes, row string
 	params           map[string]string
-	errorResult      string
+	// recv is the receiver, when the errors the method returns go through its mapError.
+	recv string
 }
 
 // signature writes the parameters and the results of m, naming each parameter in sc.
-func (e repoEmitter) signature(m repoMethod, sc gofile.Scope, translate bool) signature {
+func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 	sig := m.fn.Signature()
 	s := signature{params: map[string]string{}}
 	params := make([]string, 0, sig.Params().Len())
@@ -234,24 +229,11 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope, translate bool) si
 		params = append(params, local+" "+typ)
 	}
 	results := make([]string, 0, sig.Results().Len())
-	for i := range sig.Results().Len() {
-		r := sig.Results().At(i)
-		typ := types.TypeString(r.Type(), e.f.Qualifier)
-		if translate {
-			name := "result"
-			if i == sig.Results().Len()-1 {
-				name = "resultErr"
-			}
-			local := sc.Name(name)
-			if i == sig.Results().Len()-1 {
-				s.errorResult = local
-			}
-			typ = local + " " + typ
-		}
-		results = append(results, typ)
+	for r := range sig.Results().Variables() {
+		results = append(results, types.TypeString(r.Type(), e.f.Qualifier))
 	}
 	s.text = "(" + strings.Join(params, ", ") + ") "
-	if len(results) == 1 && !translate {
+	if len(results) == 1 {
 		s.text += results[0]
 	} else {
 		s.text += "(" + strings.Join(results, ", ") + ")"
@@ -271,8 +253,11 @@ func (e repoEmitter) dialect() string {
 func (e repoEmitter) method(repo repository, m repoMethod) {
 	sc := e.f.Scope()
 	recv := sc.Name("r")
-	translate := repo.errors != "" && m.bind == nil
-	sig := e.signature(m, sc, translate)
+	sig := e.signature(m, sc)
+	// A helper of a method written by hand returns its errors as they are, for the method to map.
+	if repo.mapError && m.bind == nil && m.name == m.fn.Name() {
+		sig.recv = recv
+	}
 	if m.query != nil {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
 	}
@@ -281,10 +266,6 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		receiver = "*" + receiver
 	}
 	e.printf("func (%s %s) %s%s {\n", recv, receiver, m.name, sig.text)
-	if translate {
-		e.printf("defer func() {\nif %s != nil {\n%s = %s(%s, %s)\n}\n}()\n",
-			sig.errorResult, sig.errorResult, repo.errors, repo.operationType()+m.fn.Name(), sig.errorResult)
-	}
 	if m.bind != nil {
 		input := sig.ctx
 		if m.bind.accessor {
@@ -333,7 +314,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		if m.projection != nil {
 			resultModel = types.TypeString(m.projection.model, e.f.Qualifier)
 		}
-		e.inTransaction(m, sc, recv, resultModel)
+		e.inTransaction(m, sc, recv, sig, resultModel)
 	}
 	if m.scoped {
 		qs, i, x := sc.Name("qs"), sc.Name("i"), sc.Name("x")
@@ -352,19 +333,19 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	for _, k := range m.keys {
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
-	notFound := func() string { return e.notFound(m.target.table, names, args) }
+	notFound := func() string { return sig.mapped(e.notFound(m.target.table, names, args)) }
 	if m.projection != nil && m.verb != verbDelete {
 		e.projectedRead(m, sc, recv, sig, q, notFound)
 		return
 	}
 	rd, err := sc.Name("rd"), sc.Name("err")
 	render := func(zero string) {
-		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, nil)\nif %[2]s != nil {\nreturn %[5]s%[2]s\n}\n", rd, err, q,
-			e.dialect(), zero)
+		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, nil)\nif %[2]s != nil {\nreturn %[5]s%[6]s\n}\n", rd, err, q,
+			e.dialect(), zero, sig.mapped(err))
 	}
 	conditionsOnly := func(zero string) {
 		e.printf("if %[1]s := %[2]s.ConditionsOnly(%[3]q); %[1]s != nil {\n"+
-			"return %[4]s%[1]s\n}\n", err, q, m.name, zero)
+			"return %[4]s%[5]s\n}\n", err, q, m.name, zero, sig.mapped(err))
 	}
 
 	switch m.verb {
@@ -377,19 +358,27 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 			if m.optional {
 				zero = "nil, "
 			}
-			e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s%[1]s\n}\n", err, q, m.name, zero)
+			e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s%[5]s\n}\n", err, q, m.name, zero,
+				sig.mapped(err))
 		}
 		e.printf("%s, %s := select%s(%s, %s.executor, %s, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q,
 			lockClause(m))
 		if m.optional {
-			e.printf("if %s != nil { return nil, %s }\n", err, err)
+			e.printf("if %s != nil { return nil, %s }\n", err, sig.mapped(err))
 			e.printf("if len(%s) == 0 { return nil, nil }\nreturn &%s[0], nil\n", rows, rows)
 			return
 		}
-		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\n", err, model)
+		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[3]s\n}\n", err, model, sig.mapped(err))
 		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound())
 	case verbList:
-		e.printf("return select%s(%s, %s.executor, %s, %s)\n", e.names[m.target.table], sig.ctx, recv, q, lockClause(m))
+		read := fmt.Sprintf("select%s(%s, %s.executor, %s, %s)", e.names[m.target.table], sig.ctx, recv, q, lockClause(m))
+		if sig.recv == "" {
+			e.printf("return %s\n", read)
+			break
+		}
+		rows := sc.Name("rows")
+		e.printf("%[1]s, %[2]s := %[3]s\nif %[2]s != nil {\nreturn nil, %[4]s\n}\nreturn %[1]s, nil\n", rows, err, read,
+			sig.mapped(err))
 	case verbPluck:
 		e.pluckRows(m, sc, recv, sig, q)
 	case verbCount, verbExists:
@@ -403,8 +392,8 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("var %s %s\n", n, typ)
 		e.printf("if %[1]s := %[2]s.executor.%[3]s(%[4]s, %[5]s, %[6]s.Args()...).Scan(&%[7]s); %[1]s != nil {\n",
 			err, recv, e.queryRow, sig.ctx, query, rd, n)
-		e.printf("return %s, %s.Errorf(%q, %s)\n}\nreturn %s, nil\n", zero, e.fmtPkg(),
-			strings.ToLower(string(m.verb))+" "+m.target.table+": %w", err, n)
+		e.printf("return %s, %s\n}\nreturn %s, nil\n", zero, sig.mapped(e.fmtPkg()+".Errorf("+
+			strconv.Quote(strings.ToLower(string(m.verb))+" "+m.target.table+": %w")+", "+err+")"), n)
 	case verbDelete:
 		if m.returns == returnsRows {
 			e.deleteReturning(m, sc, recv, sig, q)
@@ -416,7 +405,8 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		}
 		render("")
 		res := e.execResult(sc)
-		wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " + err + ")"
+		wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " +
+			err + ")")
 		e.printf("%[1]s, %[2]s := %[3]s.executor.%[4]s(%[5]s, `DELETE FROM %[6]s`+%[7]s.Where(), %[7]s.Args()...)\n"+
 			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, "", wrap)
 		affected := e.rowsAffected(sc, res, err, "", wrap)
@@ -427,7 +417,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 
 // inTransaction writes the check that m, which locks rows, runs on what can hold a lock: a transaction, which alone has
 // a Commit among what DBTX is implemented by.
-func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv, model string) {
+func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv string, sig signature, model string) {
 	commit, tx := "Commit() error", "*sql.Tx"
 	if e.drv == driverPgx {
 		commit, tx = "Commit("+e.f.Import("context", "context")+".Context) error", "pgx.Tx"
@@ -436,9 +426,9 @@ func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv, model st
 	if m.returns == returnsRows || m.optional {
 		zero = "nil"
 	}
-	e.printf("if _, %[1]s := %[2]s.db.(interface{ %[3]s }); !%[1]s {\nreturn %[4]s, %[5]s.Errorf(%[6]q)\n}\n",
-		sc.Name("ok"), recv, commit, zero, e.fmtPkg(),
-		"orm: "+m.name+" needs a transaction to hold its lock: give the repository a "+tx)
+	e.printf("if _, %[1]s := %[2]s.db.(interface{ %[3]s }); !%[1]s {\nreturn %[4]s, %[5]s\n}\n",
+		sc.Name("ok"), recv, commit, zero, sig.mapped(e.fmtPkg()+".Errorf("+
+			strconv.Quote("orm: "+m.name+" needs a transaction to hold its lock: give the repository a "+tx)+")"))
 }
 
 // orderKey is the primary key of t as Render takes it, for an order to end in.
@@ -593,7 +583,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	}
 
 	q, err := sc.Name("q"), sc.Name("err")
-	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")"
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
 	call := strings.Join(append([]string{sig.ctx, q}, args...), ", ")
 	e.printf("const %s = %s\n", q, goString(query.String()))
 	switch m.returns {
@@ -638,11 +628,11 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + where
 
 	q, res, err := sc.Name("q"), e.execResult(sc), sc.Name("err")
-	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "update "+m.target.table+": %w") + ", " + err + ")"
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "update "+m.target.table+": %w") + ", " + err + ")")
 	e.printf("const %s = %s\n", q, goString(query))
 	e.printf("%[1]s, %[2]s := %[3]s.executor.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn %[6]s\n}\n", res, err, recv, e.exec,
 		strings.Join(append([]string{sig.ctx, q}, args...), ", "), wrap)
-	affected, notFound := e.rowsAffected(sc, res, err, "", wrap), e.notFound(m.target.table, key, keyArgs)
+	affected, notFound := e.rowsAffected(sc, res, err, "", wrap), sig.mapped(e.notFound(m.target.table, key, keyArgs))
 	if e.d != snapshot.MySQL {
 		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
 		return
@@ -690,7 +680,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 
 	err := sc.Name("err")
-	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")"
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
 	if m.many {
 		chunk, args, i := sc.Name("chunk"), sc.Name("args"), sc.Name("i")
 		fields := make([]string, 0, len(inserted))
@@ -795,7 +785,7 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 	call := strings.Join(args, ", ")
 	what := fmt.Sprintf("%q", "query "+m.name+": %w")
-	wrap := e.fmtPkg() + ".Errorf(" + what + ", " + err + ")"
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + what + ", " + err + ")")
 	e.printf("const %s = %s\n", q, goString(m.query.sql))
 	switch m.returns {
 	case returnsNone:
@@ -830,9 +820,9 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 			return
 		}
 		e.printf("if %[1]s.Is(%[2]s, %[3]s.ErrNoRows) {\n%[4]s"+
-			"return %[5]s, %[6]s.Errorf(%[7]s, %[8]s)\n}\n",
-			e.f.Import("errors", "errors"), err, e.driverPkg(), zeroDeclaration, zeroValue, e.fmtPkg(), what,
-			e.ref("ErrNotFound"))
+			"return %[5]s, %[6]s\n}\n",
+			e.f.Import("errors", "errors"), err, e.driverPkg(), zeroDeclaration, zeroValue,
+			sig.mapped(e.fmtPkg()+".Errorf("+what+", "+e.ref("ErrNotFound")+")"))
 		e.printf("if %[1]s != nil {\n%[2]sreturn %[3]s, %[4]s\n}\n", err, zeroDeclaration, zeroValue, wrap)
 		e.assignScanned(assignments)
 		e.printf("return %s, nil\n", row)

@@ -18,24 +18,30 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 	if m.returns == returnsRow {
 		e.printf("%s := func() ([]%s, error) {\n", read, typ)
 	}
+	// The errors of a row read go through mapError once read returns them.
+	mapped := sig.mapped
+	if m.returns == returnsRow {
+		mapped = func(err string) string { return err }
+	}
 	zero := "nil"
 	err, text, args, reversed := sc.Name("err"), sc.Name("text"), sc.Name("args"), sc.Name("reversed")
-	e.printf("if %s := %s.ProjectionOnly(%q); %s != nil { return %s, %s }\n", err, q, m.name, err, zero, err)
+	e.printf("if %s := %s.ProjectionOnly(%q); %s != nil { return %s, %s }\n", err, q, m.name, err, zero, mapped(err))
 	if m.verb == verbFirst {
 		e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
 	}
 	if m.verb == verbGet || m.verb == verbFind {
-		e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil { return %[4]s, %[1]s }\n", err, q, m.name, zero)
+		e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil { return %[4]s, %[5]s }\n", err, q, m.name, zero,
+			mapped(err))
 	}
 	rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 	query := "SELECT " + e.columnList(m.projection.columns) + " FROM " + sqlName(e.d, m.target.table)
 	e.printf("%s, %s, %s, %s := %s.RenderProjection(%s, %q, %s, %s, %s, %s, %s)\n",
 		text, args, reversed, err, q, e.dialect(), m.target.table, e.projectionSources(m), e.projectionJoins(m),
 		namesLiteral(tableColumnNames(m)), goString(query), e.orderKey(m.table))
-	e.printf("if %s != nil { return %s, %s }\n", err, zero, err)
+	e.printf("if %s != nil { return %s, %s }\n", err, zero, mapped(err))
 	e.printf("%s, %s := %s.executor.%s(%s, %s+%s, %s...)\n",
 		rows, err, recv, e.query, sig.ctx, text, lockClause(m), args)
-	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "project "+m.target.table+": %w") + ", " + err + ")"
+	wrap := mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "project "+m.target.table+": %w") + ", " + err + ")")
 	e.printf("if %s != nil { return %s, %s }\ndefer %s.Close()\n", err, zero, wrap, rows)
 	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, m.projection.columns, sc)
 	e.printf("if %s { %s.Reverse(%s) }\n", reversed, e.f.Import("slices", "slices"), out)
@@ -47,7 +53,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 	if !m.optional {
 		zero = typ + "{}"
 	}
-	e.printf("%s, %s := %s()\nif %s != nil { return %s, %s }\n", out, err, read, err, zero, err)
+	e.printf("%s, %s := %s()\nif %s != nil { return %s, %s }\n", out, err, read, err, zero, sig.mapped(err))
 	if m.optional {
 		e.printf("if len(%s) == 0 { return nil, nil }\nreturn &%s[0], nil\n", out, out)
 		return
