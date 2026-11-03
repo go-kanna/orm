@@ -5,6 +5,7 @@ package scopes
 import (
 	"time"
 
+	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/join"
@@ -51,11 +52,11 @@ func (s Order) First() relation.Single[model.Order] { return s.q.First() }
 func (s Order) Many() relation.Many[model.Order]    { return s.q.Many() }
 
 // OrderChangeSet holds explicitly assigned columns of orders.
-type OrderChangeSet struct{ changes impl.Changes[model.Order] }
+type OrderChangeSet struct{ changes change.Set[model.Order] }
 
 func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
 
-func (c OrderChangeSet) Of() impl.Changes[model.Order] { return c.changes }
+func (c OrderChangeSet) Of() change.Set[model.Order] { return c.changes }
 
 func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
@@ -1062,11 +1063,11 @@ func (s Customer) First() relation.Single[model.Customer] { return s.q.First() }
 func (s Customer) Many() relation.Many[model.Customer]    { return s.q.Many() }
 
 // CustomerChangeSet holds explicitly assigned columns of customers.
-type CustomerChangeSet struct{ changes impl.Changes[model.Customer] }
+type CustomerChangeSet struct{ changes change.Set[model.Customer] }
 
 func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
 
-func (c CustomerChangeSet) Of() impl.Changes[model.Customer] { return c.changes }
+func (c CustomerChangeSet) Of() change.Set[model.Customer] { return c.changes }
 
 func (c CustomerChangeSet) SetName(v string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("name", v)}
@@ -1344,11 +1345,11 @@ func (s OrderLine) First() relation.Single[model.OrderLine] { return s.q.First()
 func (s OrderLine) Many() relation.Many[model.OrderLine]    { return s.q.Many() }
 
 // OrderLineChangeSet holds explicitly assigned columns of order_lines.
-type OrderLineChangeSet struct{ changes impl.Changes[model.OrderLine] }
+type OrderLineChangeSet struct{ changes change.Set[model.OrderLine] }
 
 func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
 
-func (c OrderLineChangeSet) Of() impl.Changes[model.OrderLine] { return c.changes }
+func (c OrderLineChangeSet) Of() change.Set[model.OrderLine] { return c.changes }
 
 func (c OrderLineChangeSet) SetSKU(v string) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("sku", v)}
@@ -1748,11 +1749,11 @@ func (s Tag) First() relation.Single[model.Tag] { return s.q.First() }
 func (s Tag) Many() relation.Many[model.Tag]    { return s.q.Many() }
 
 // TagChangeSet holds explicitly assigned columns of tags.
-type TagChangeSet struct{ changes impl.Changes[model.Tag] }
+type TagChangeSet struct{ changes change.Set[model.Tag] }
 
 func TagChanges() TagChangeSet { return TagChangeSet{} }
 
-func (c TagChangeSet) Of() impl.Changes[model.Tag] { return c.changes }
+func (c TagChangeSet) Of() change.Set[model.Tag] { return c.changes }
 
 func (c TagChangeSet) SetName(v string) TagChangeSet {
 	return TagChangeSet{c.changes.Set("name", v)}
@@ -1909,11 +1910,11 @@ func (s LineNote) First() relation.Single[model.LineNote] { return s.q.First() }
 func (s LineNote) Many() relation.Many[model.LineNote]    { return s.q.Many() }
 
 // LineNoteChangeSet holds explicitly assigned columns of line_notes.
-type LineNoteChangeSet struct{ changes impl.Changes[model.LineNote] }
+type LineNoteChangeSet struct{ changes change.Set[model.LineNote] }
 
 func LineNoteChanges() LineNoteChangeSet { return LineNoteChangeSet{} }
 
-func (c LineNoteChangeSet) Of() impl.Changes[model.LineNote] { return c.changes }
+func (c LineNoteChangeSet) Of() change.Set[model.LineNote] { return c.changes }
 
 func (c LineNoteChangeSet) SetOrderID(v model.OrderID) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Set("order_id", v)}

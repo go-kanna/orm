@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
+	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/join"
 	"github.com/go-kanna/orm/relation"
@@ -42,11 +43,11 @@ func (s Customer) First() relation.Single[model.Customer] { return s.q.First() }
 func (s Customer) Many() relation.Many[model.Customer]    { return s.q.Many() }
 
 // CustomerChangeSet holds explicitly assigned columns of customers.
-type CustomerChangeSet struct{ changes impl.Changes[model.Customer] }
+type CustomerChangeSet struct{ changes change.Set[model.Customer] }
 
 func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
 
-func (c CustomerChangeSet) Of() impl.Changes[model.Customer] { return c.changes }
+func (c CustomerChangeSet) Of() change.Set[model.Customer] { return c.changes }
 
 func (c CustomerChangeSet) SetEmail(v string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("email", v)}
@@ -532,11 +533,11 @@ func (s Order) First() relation.Single[model.Order] { return s.q.First() }
 func (s Order) Many() relation.Many[model.Order]    { return s.q.Many() }
 
 // OrderChangeSet holds explicitly assigned columns of orders.
-type OrderChangeSet struct{ changes impl.Changes[model.Order] }
+type OrderChangeSet struct{ changes change.Set[model.Order] }
 
 func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
 
-func (c OrderChangeSet) Of() impl.Changes[model.Order] { return c.changes }
+func (c OrderChangeSet) Of() change.Set[model.Order] { return c.changes }
 
 func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
@@ -1136,11 +1137,11 @@ func (s OrderLine) First() relation.Single[model.OrderLine] { return s.q.First()
 func (s OrderLine) Many() relation.Many[model.OrderLine]    { return s.q.Many() }
 
 // OrderLineChangeSet holds explicitly assigned columns of order_lines.
-type OrderLineChangeSet struct{ changes impl.Changes[model.OrderLine] }
+type OrderLineChangeSet struct{ changes change.Set[model.OrderLine] }
 
 func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
 
-func (c OrderLineChangeSet) Of() impl.Changes[model.OrderLine] { return c.changes }
+func (c OrderLineChangeSet) Of() change.Set[model.OrderLine] { return c.changes }
 
 func (c OrderLineChangeSet) SetOrderID(v int64) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("order_id", v)}

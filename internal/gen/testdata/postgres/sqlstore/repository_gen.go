@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
@@ -837,7 +838,7 @@ func (r OrderRepository) UpdateScoped(ctx context.Context, o model.Order, s ...s
 		qs[i] = s.Of()
 	}
 	q := impl.Combine(qs...)
-	var changes impl.Changes[model.Order]
+	var changes change.Set[model.Order]
 	changes = changes.Set("customer_id", o.CustomerID)
 	changes = changes.Set("status", o.Status)
 	changes = changes.Set("placed_at", o.PlacedAt)
