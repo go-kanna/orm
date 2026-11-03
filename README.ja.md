@@ -528,23 +528,23 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - メソッドと同じ名前の[手書きのクエリ](#手書きの-sql)があれば、動詞の代わりにそれが使われます。動詞も手書きのクエリもないメソッドは生成を止めます。
 - 生成された構造体のメソッドを自分で書いた場合、その実装は手書きのファイルに残ります。[同じパッケージへの出力](#同じパッケージに実装する)で、認識できる動詞か手書きのクエリがある場合は、非公開のヘルパーも生成します。別のパッケージへの出力では、そのメソッドを生成対象から外します。
 
-メソッドのモデルは、戻り値、書き込む行、スコープから決まり、それらがなければ `model.OrderID` のようにモデルと一緒に宣言された型のキーから決まります。`uuid.UUID` や `int64` のような他の型のキーしか受け取らないメソッドからはモデルが決まらず、インターフェースが `table=` でテーブルを指定しない限り、生成を止めます:
+メソッドのモデルは、戻り値、書き込む行、スコープから決まります。`Delete(ctx, id)` のようにキーしか受け取らないメソッドは、repository の名前のテーブルを読み書きします。`OrderRepository` なら、`//kanna:scopes` と同じ規則で `Order` のテーブルの `orders` です。キーの型からは決めないので、フィールドの名前を変えたりモデルを足したりしても、メソッドが別のテーブルに移ることはありません。名前がテーブルに合わない repository は `table=` でテーブルを指定します。`table=` は名前より優先されます。どちらもなければ、そのようなメソッドで生成を止めます:
 
 ```go
 //kanna:repository table=todos
-type TodoRepository interface {
+type TaskRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (model.Todo, error) // todos, by its result
 	Delete(ctx context.Context, id uuid.UUID) error            // todos, by table=
 }
 ```
 
-`table=` は、モデルが決まらないメソッドのテーブルであり、それ以外には適用されません。自分のモデルが決まるメソッドはそのテーブルを読み書きするので、集約のインターフェースは引き続き集約の各テーブルに届きます。
+名前や `table=` のテーブルは、テーブルが決まらないメソッドのテーブルであり、それ以外には適用されません。自分のモデルが決まるメソッドはそのテーブルを読み書きするので、集約のインターフェースは引き続き集約の各テーブルに届きます。
 
-`orm.ErrNotFound` は、見つからなかったものの情報でラップされて返るので、`errors.Is` で判定し、リポジトリを呼び出す箇所でアプリケーションのエラーに変換してください。
+`orm.ErrNotFound` は、見つからなかったものの情報でラップされて返るので、`errors.Is` で判定するか、[`mapError`](#エラーの対応づけ) でアプリケーションのエラーに変えてください。
 
 ### uuid をキーにする
 
-Go 1.27 以降では、`uuid` カラムは標準ライブラリの `uuid.UUID` で保持します。pgx と database/sql はこの型をそのまま読み書きします。それより前のバージョンでは、string か、`Scan` メソッドと `Value` メソッドを持つ独自の型で保持します。uuid をキーにするテーブルの宣言は、`table=` を除いて他のテーブルと同じです:
+Go 1.27 以降では、`uuid` カラムは標準ライブラリの `uuid.UUID` で保持します。pgx と database/sql はこの型をそのまま読み書きします。それより前のバージョンでは、string か、`Scan` メソッドと `Value` メソッドを持つ独自の型で保持します。uuid をキーにするテーブルの宣言は、他のテーブルと同じです:
 
 ```go
 type Todo struct {
@@ -552,7 +552,7 @@ type Todo struct {
 	Title string
 }
 
-//kanna:repository table=todos
+//kanna:repository
 type TodoRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (model.Todo, error)
 	List(ctx context.Context, s ...scopes.Todo) ([]model.Todo, error)
@@ -561,7 +561,7 @@ type TodoRepository interface {
 }
 ```
 
-- `uuid.UUID` はモデルと一緒に宣言された型ではないので、これしか受け取らないメソッドからはテーブルが決まりません。`Delete` のテーブルは `table=` から決まり、`Get` のテーブルは戻り値から決まります。
+- uuid しか受け取らないメソッドからはテーブルが決まりません。`Delete` は `TodoRepository` の名前の `todos` を、`Get` は戻り値のテーブルを読み書きします。
 - uuid には比較できる順序がないので、そのカラムには `Eq`、`Ne`、`In`、`NotIn`、`Asc`、`Desc` は生成されますが、`Lt` も `Between` も生成されません。それでもページは uuid を基準に行の続きから読み込めて、カーソルは uuid をテキストとして保持します。
 - デフォルトが `uuidv7()` のカラムを、自動採番の対象として自動判定はしません。`orm:",default"` がなければ、insert はゼロの UUID もそのまま書き込みます。Go 側で `uuid.NewV7()` を使って ID を与えるか、フィールドに `orm:",default"` を指定して DB のデフォルト値を使ってください。
 - MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` を受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。

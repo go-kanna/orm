@@ -652,29 +652,31 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
   a recognized verb or named query also generates a private helper when the package calls it. Separate-package
   implementations skip the method.
 
-A method tells its model by its result, its row, or its scopes, or else by a key of a type declared with the models, as
-`model.OrderID` is. One that takes nothing but keys of another type, such as `uuid.UUID` or `int64`, tells none, and
-stops generation unless the interface names the table with `table=`:
+A method tells its model by its result, its row, or its scopes. One that takes nothing but keys, as
+`Delete(ctx, id)`, reads or writes the table the repository is named after: `OrderRepository` reaches `orders`, the
+table of `Order`, as `//kanna:scopes` names it. The type of a key tells nothing, so renaming a field or adding a model
+never moves a method to another table. A repository named otherwise names its table with `table=`, which wins over
+its name, and one that names neither stops generation at such a method:
 
 ```go
 //kanna:repository table=todos
-type TodoRepository interface {
+type TaskRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (model.Todo, error) // todos, by its result
 	Delete(ctx context.Context, id uuid.UUID) error            // todos, by table=
 }
 ```
 
-`table=` is the table of the methods that tell none, and of no other: a method that tells its own model reads or writes
-its table, so an interface of an aggregate still reaches each of its tables.
+The table of the name or of `table=` is that of the methods that tell none, and of no other: a method that tells its
+own model reads or writes its table, so an interface of an aggregate still reaches each of its tables.
 
-`orm.ErrNotFound` comes wrapped with what was not found, so test for it with `errors.Is`, and turn it into your
-application's error where you call the repository.
+`orm.ErrNotFound` comes wrapped with what was not found, so test for it with `errors.Is`, or turn it into an error of
+your application in [`mapError`](#mapping-errors).
 
 ### Keyed by a uuid
 
 On Go 1.27 or later, a `uuid` column is held by the `uuid.UUID` of the standard library, which pgx and database/sql
 read and write as it is; before, by a string, or by a type of your own with `Scan` and `Value` methods. A table keyed by
-one is declared as any other, but for `table=`:
+one is declared as any other:
 
 ```go
 type Todo struct {
@@ -682,7 +684,7 @@ type Todo struct {
 	Title string
 }
 
-//kanna:repository table=todos
+//kanna:repository
 type TodoRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (model.Todo, error)
 	List(ctx context.Context, s ...scopes.Todo) ([]model.Todo, error)
@@ -691,8 +693,8 @@ type TodoRepository interface {
 }
 ```
 
-- `uuid.UUID` is declared with no model, so a method that takes nothing but one tells no table: `Delete` takes its
-  table from `table=`, while `Get` tells its own by its result.
+- A method that takes nothing but a uuid tells no table: `Delete` reaches `todos`, which `TodoRepository` is named
+  after, while `Get` tells its own by its result.
 - A uuid has no order to compare by, so its column gets `Eq`, `Ne`, `In`, `NotIn`, `Asc`, and `Desc`, but neither `Lt`
   nor `Between`. A page still continues from a row by it, and a cursor holds it as its text.
 - A column defaulting to `uuidv7()` is not automatically treated as assigned. Without `orm:",default"`, an insert
