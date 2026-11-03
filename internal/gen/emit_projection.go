@@ -15,7 +15,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 ) {
 	typ := types.TypeString(m.projection.model, e.f.Qualifier)
 	read := sc.Name("read")
-	if m.result == resultRow {
+	if m.returns == returnsRow {
 		e.printf("%s := func() ([]%s, error) {\n", read, typ)
 	}
 	zero := "nil"
@@ -36,7 +36,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 	e.printf("if %s != nil { return %s, %s }\ndefer %s.Close()\n", err, zero, wrap, rows)
 	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, m.projection.columns, sc)
 	e.printf("if %s { %s.Reverse(%s) }\n", reversed, e.f.Import("slices", "slices"), out)
-	if m.result == resultRows {
+	if m.returns == returnsRows {
 		e.printf("return %s, nil\n", out)
 		return
 	}

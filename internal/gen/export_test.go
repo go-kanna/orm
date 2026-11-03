@@ -224,7 +224,7 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 					args = append(args, name)
 				}
 				line += fmt.Sprintf(" query %q args=%s %s", q.sql, strings.Join(args, ","),
-					[]string{"error", "row", "rows", "count", "bool", "scalar"}[m.result])
+					[]string{"error", "row", "rows", "count", "bool", "scalar"}[m.returns])
 				if q.row != nil {
 					line += " " + types.TypeString(q.row, (*types.Package).Name) + "{" + fieldNames(q.fields) + "}"
 				}
@@ -248,7 +248,7 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 			if m.many {
 				line += " many"
 			}
-			line += " " + []string{"error", "row", "rows", "count", "bool"}[m.result]
+			line += " " + []string{"error", "row", "rows", "count", "bool"}[m.returns]
 			if len(m.conflict) > 0 {
 				line += " conflict=" + strings.Join(m.conflict, ",")
 			}

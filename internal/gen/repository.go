@@ -72,16 +72,16 @@ func verbOf(name string) (verb, bool) {
 	return "", false
 }
 
-// result is what a method returns besides its error.
-type result int
+// returns is what a method returns besides its error.
+type returns int
 
 const (
-	resultNone   result = iota // error alone
-	resultRow                  // the model
-	resultRows                 // a slice of the model
-	resultCount                // an int64
-	resultBool                 // a bool
-	resultScalar               // one column of a query written by hand
+	returnsNone   returns = iota // error alone
+	returnsRow                   // the model
+	returnsRows                  // a slice of the model
+	returnsCount                 // an int64
+	returnsBool                  // a bool
+	returnsScalar                // one column of a query written by hand
 )
 
 // repository is a //kanna:repository interface.
@@ -122,7 +122,7 @@ type repoMethod struct {
 	changes  string
 	many     bool
 	optional bool
-	result   result
+	returns  returns
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
 	doNothing      bool
@@ -616,23 +616,23 @@ func (m repoMethod) shaped() bool {
 	var ok bool
 	switch m.verb {
 	case verbFind:
-		ok = m.result == resultRow && m.optional
+		ok = m.returns == returnsRow && m.optional
 	case verbGet, verbFirst:
-		ok = m.result == resultRow && !m.optional
+		ok = m.returns == returnsRow && !m.optional
 	case verbList, verbPluck:
-		ok = m.result == resultRows
+		ok = m.returns == returnsRows
 	case verbCount:
-		ok = m.result == resultCount
+		ok = m.returns == returnsCount
 	case verbExists:
-		ok = m.result == resultBool
+		ok = m.returns == returnsBool
 	case verbInsert, verbUpsert:
-		ok = m.result == resultNone || m.result == resultRow && !m.many || m.result == resultRows && m.many ||
-			m.verb == verbInsert && m.result == resultCount
+		ok = m.returns == returnsNone || m.returns == returnsRow && !m.many || m.returns == returnsRows && m.many ||
+			m.verb == verbInsert && m.returns == returnsCount
 	case verbUpdate:
 		return m.updateShaped()
 	case verbDelete:
-		ok = m.result == resultNone && !m.scoped ||
-			(m.result == resultCount || m.result == resultRows) && (m.scoped || len(m.keys) > 0)
+		ok = m.returns == returnsNone && !m.scoped ||
+			(m.returns == returnsCount || m.returns == returnsRows) && (m.scoped || len(m.keys) > 0)
 	}
 	if writes {
 		return ok && m.row != "" && len(m.keys) == 0 && !m.scoped
@@ -672,24 +672,24 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		}
 	}
 	switch {
-	case m.verb == verbDelete && m.result == resultNone && !containsKey(m.table, names):
+	case m.verb == verbDelete && m.returns == returnsNone && !containsKey(m.table, names):
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
 			strings.Join(names, ", "), m.target.table).WithHints(
 			"return (int64, error) for the number of rows deleted, or take a key of the table")}
-	case m.verb == verbDelete && m.result == resultRows && r.s.Dialect == snapshot.MySQL:
+	case m.verb == verbDelete && m.returns == returnsRows && r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no DELETE RETURNING; return error alone or (int64, error)")}
 	case m.verb == verbUpdate && m.changes != "" &&
-		(m.result == resultNone || m.result == resultRow) && !containsKey(m.table, names):
+		(m.returns == returnsNone || m.returns == returnsRow) && !containsKey(m.table, names):
 		return []diag.Diag{errorf("a single-row Update requires a unique key; " +
 			"use (int64, error) or ([]M, error) for multiple rows")}
-	case m.verb == verbUpdate && (m.result == resultRow || m.result == resultRows) && r.s.Dialect == snapshot.MySQL:
+	case m.verb == verbUpdate && (m.returns == returnsRow || m.returns == returnsRows) && r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no UPDATE RETURNING; return error alone or (int64, error)")}
 	case m.verb == verbUpdate && m.changes == "" && len(m.table.PrimaryKey) == 0:
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table)}
 	case m.verb == verbUpsert && len(m.rowKey()) == 0:
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table).WithHints(
 			"name a unique key of " + m.target.table + " with //kanna:conflict")}
-	case (m.verb == verbInsert || m.verb == verbUpsert) && m.many && m.result != resultNone &&
+	case (m.verb == verbInsert || m.verb == verbUpsert) && m.many && m.returns != returnsNone &&
 		r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no RETURNING, so the rows of one statement cannot be read back").
 			WithHints("return error alone")}
@@ -820,7 +820,7 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 	if m.verb == verbUpdate && len(m.updated()) == 0 {
 		ds = append(ds, errorf("%s holds no column of %s to update but its key", model, m.target.table))
 	}
-	if m.verb == verbInsert && m.result == resultRow && r.s.Dialect == snapshot.MySQL {
+	if m.verb == verbInsert && m.returns == returnsRow && r.s.Dialect == snapshot.MySQL {
 		if len(m.table.PrimaryKey) == 0 {
 			ds = append(ds, errorf("MySQL reads the row written back by its primary key, which %s has none",
 				m.target.table).WithHints("return error alone"))
@@ -990,11 +990,11 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 		if _, ok := t.Underlying().(*types.Slice); !ok {
 			return nil, false
 		}
-		m.result = resultRows
+		m.returns = returnsRows
 	case isBasic(t, types.Int64):
-		m.result = resultCount
+		m.returns = returnsCount
 	case isBasic(t, types.Bool):
-		m.result = resultBool
+		m.returns = returnsBool
 	default:
 		if ptr, ok := t.(*types.Pointer); ok && m.verb == verbFind {
 			t, m.optional = ptr.Elem(), true
@@ -1010,9 +1010,9 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 				if _, registered := r.l.scopeOf(model); registered {
 					return append(models, model), true
 				}
-				m.result = resultRow
+				m.returns = returnsRow
 				if many {
-					m.result = resultRows
+					m.returns = returnsRows
 				}
 				m.projection = &readProjection{model: model}
 				return models, true
@@ -1022,9 +1022,9 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 		if !ok {
 			return nil, false
 		}
-		m.result = resultRow
+		m.returns = returnsRow
 		if many {
-			m.result = resultRows
+			m.returns = returnsRows
 		}
 		return append(models, model), true
 	}
@@ -1074,11 +1074,11 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 
 func (m repoMethod) updateShaped() bool {
 	if m.changes != "" {
-		return m.row == "" && (m.result == resultNone || m.result == resultRow ||
-			m.result == resultCount || m.result == resultRows)
+		return m.row == "" && (m.returns == returnsNone || m.returns == returnsRow ||
+			m.returns == returnsCount || m.returns == returnsRows)
 	}
 	return m.row != "" && !m.many && len(m.keys) == 0 &&
-		(m.result == resultNone || m.result == resultRow)
+		(m.returns == returnsNone || m.returns == returnsRow)
 }
 
 func (m repoMethod) writeKeyRules() []diag.Diag {
