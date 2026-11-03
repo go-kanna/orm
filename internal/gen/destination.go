@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"go/types"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -113,8 +112,7 @@ func (d destination) handWritten() map[string]map[string]handMethod {
 // declares by hand, and the models they read whole rows of. pkgs are the packages the run loads, whose scope types the
 // repositories may take, and stmts the statements of the .sql files of dest.
 func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapshot.Snapshot, idx []indexed,
-	dest destination, stmts []sqlfile.Statement,
-	drv driver, constructorDB types.Type,
+	dest destination, stmts []sqlfile.Statement, drv driver,
 ) ([]repository, map[string]readModel, []diag.Diag) {
 	scopes, _ := findScopes(pkg, s, idx) // plan reports what is wrong with them
 	queries, ds := readQueries(stmts)
@@ -122,7 +120,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 	r := repoReader{
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
 		imported: importedPackages(pkgs), local: dest.holds(pkg),
-		driver: drv, constructorDB: constructorDB,
+		driver:   drv,
 		declared: output.DeclaredNames(dest.dir, repositoryOutputName, dest.name),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,

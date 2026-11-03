@@ -91,7 +91,6 @@ type repository struct {
 	// iface is the package declaring it.
 	iface             *types.Package
 	methods           []repoMethod
-	constructorDB     types.Type
 	publicConstructor bool
 	// mapError reports whether the implementation has a mapError method, which the errors its methods return go
 	// through.
@@ -211,11 +210,10 @@ type repoReader struct {
 	skip map[string]map[string]handMethod
 	// imported are the packages the run loads, and those they import, by their import paths, among which the model
 	// of a table table= names is found.
-	imported      map[string]*types.Package
-	local         bool
-	driver        driver
-	constructorDB types.Type
-	declared      map[string]token.Position
+	imported map[string]*types.Package
+	local    bool
+	driver   driver
+	declared map[string]token.Position
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -249,7 +247,6 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
-	repo.constructorDB = r.constructorDB
 	_, manualConstructor := r.declared["New"+repo.name]
 	repo.publicConstructor = r.local && !manualConstructor
 	if r.local && !ts.Name.IsExported() {

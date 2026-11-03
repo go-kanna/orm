@@ -8,7 +8,20 @@ import (
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
+	ppgx "github.com/go-kanna/orm/internal/gen/testdata/postgres/pgx"
 	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
+	pstdlib "github.com/go-kanna/orm/internal/gen/testdata/postgres/stdlib"
+	ormpgx "github.com/go-kanna/orm/pgx"
+	"github.com/go-kanna/orm/stdlib"
+)
+
+// The DBTX of each package of repositories is the runtime's of its driver, the very type, so that one value provided
+// once serves them all.
+var (
+	_ *ormpgx.DBTX = new(ppgx.DBTX)
+	_ *stdlib.DBTX = new(pstdlib.DBTX)
+	_ *stdlib.DBTX = new(mstdlib.DBTX)
 )
 
 // rendered is a scope as SQL: its clauses, and the arguments of their placeholders.

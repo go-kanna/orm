@@ -18,14 +18,11 @@ import (
 	"github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
 	"github.com/go-kanna/orm/option"
 	"github.com/go-kanna/orm/scope"
+	"github.com/go-kanna/orm/stdlib"
 )
 
 // DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.
-type DBTX interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
+type DBTX = stdlib.DBTX
 
 // ormDatabase runs statements on dbtx between the hooks of options, as the methods of the repositories, and those
 // written by hand, run them.

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"io/fs"
 	"maps"
 	"os"
@@ -27,7 +26,6 @@ import (
 // config holds what kanna-orm's own flags set.
 type config struct {
 	snapshot, tags, destination, driver string
-	constructorDB                       string
 }
 
 // Command returns kanna-orm, which generates from the snapshot kanna-orm describe, a command of its own, takes.
@@ -45,8 +43,6 @@ func Command() cli.Command[config] {
 				"//kanna:repository interfaces into `dir`; required if it has any")
 			fs.StringVar(&cfg.driver, "driver", "",
 				"`pgx` or database/sql (default: pgx on PostgreSQL, database/sql on MySQL)")
-			fs.StringVar(&cfg.constructorDB, "constructor-db", "",
-				"database argument `type` for generated public constructors, as *example.com/app/db.Reader")
 			fs.StringVar(&cfg.snapshot, "snapshot", "",
 				"the snapshot to read (default: "+snapshot.Name+" at the root of the module)")
 			fs.StringVar(&cfg.tags, "tags", "", "comma-separated build tags")
@@ -192,14 +188,6 @@ type loadedRun struct {
 // loadRun loads the packages load names for a run in dir, and those at the import paths of extra, which it reads but
 // does not generate for, and checks that dest is none of those it generates for.
 func loadRun(dir string, cfg config, load []string, dest *destination, extra []string) (loadedRun, *diag.Diag) {
-	if cfg.constructorDB != "" {
-		ref, err := parseDatabaseType(cfg.constructorDB)
-		if err != nil {
-			d := diag.Errorf(token.Position{}, "%v", err)
-			return loadedRun{}, &d
-		}
-		extra = append(slices.Clone(extra), ref.path)
-	}
 	if len(extra) > 0 {
 		if len(load) == 0 {
 			load = []string{"."}
@@ -387,18 +375,7 @@ func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx
 	if drv == driverPgx && s.Dialect == snapshot.MySQL {
 		return repoPlan{}, errorf("-driver pgx runs on PostgreSQL, but the snapshot is of MySQL")
 	}
-	if cfg.constructorDB != "" && !dest.holds(pkg) {
-		return repoPlan{}, errorf("-constructor-db requires the repository interface and implementation in the same package")
-	}
-	var input types.Type
-	if cfg.constructorDB != "" {
-		var err error
-		input, err = databaseType(cfg.constructorDB, importedPackages(pkgs), drv)
-		if err != nil {
-			return repoPlan{}, errorf("%v", err)
-		}
-	}
-	repos, models, ds := planRepositories(pkg, pkgs, s, idx, *dest, stmts, drv, input)
+	repos, models, ds := planRepositories(pkg, pkgs, s, idx, *dest, stmts, drv)
 	return repoPlan{repos: repos, models: models, driver: drv}, ds
 }
 
