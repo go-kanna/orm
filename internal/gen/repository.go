@@ -95,7 +95,9 @@ type repository struct {
 	methods           []repoMethod
 	constructorDB     types.Type
 	publicConstructor bool
-	errors            string
+	// mapError reports whether the implementation has a mapError method, which the errors its methods return go
+	// through.
+	mapError bool
 }
 
 // repoMethod is a method of a repository, with what it reads or writes.
@@ -208,7 +210,7 @@ type repoReader struct {
 	queries   map[string]sqlfile.Statement
 	queriesAt string
 	// skip names, by repository, the methods the destination declares by hand, which are left to it.
-	skip map[string]map[string]bool
+	skip map[string]map[string]handMethod
 	// imported are the packages the run loads, and those they import, by their import paths, among which the model
 	// of a table table= names is found.
 	imported      map[string]*types.Package
@@ -216,7 +218,6 @@ type repoReader struct {
 	driver        driver
 	constructorDB types.Type
 	declared      map[string]token.Position
-	errorPkg      *packages.Package
 }
 
 // findRepositories reads the //kanna:repository interfaces of pkg, and what each of their methods does.
@@ -249,7 +250,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
-	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local, errors: d.Errors}
+	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
 	repo.constructorDB = r.constructorDB
 	_, manualConstructor := r.declared["New"+repo.name]
 	repo.publicConstructor = r.local && !manualConstructor
@@ -290,7 +291,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		called = r.selected()
 	}
 	for _, fn := range methods {
-		overridden := r.skip[implementation][fn.Name()]
+		_, overridden := r.skip[implementation][fn.Name()]
 		_, generated := verbOf(fn.Name())
 		_, query := r.queries[fn.Name()]
 		// A method written by hand gets a helper, its name made unexported, only if the package calls the helper: one
@@ -315,7 +316,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		}
 		if overridden {
 			m.name = lowerFirst(m.name)
-			if r.skip[implementation][m.name] {
+			if _, ok := r.skip[implementation][m.name]; ok {
 				mds = append(mds, diag.Errorf(m.pos, "%s: generated helper %s.%s is already declared", fn.Name(),
 					implementation, m.name))
 			}
@@ -323,9 +324,9 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		ds = append(ds, mds...)
 		repo.methods = append(repo.methods, m)
 	}
-	if repo.errors != "" {
-		ds = append(ds, r.operationCollisions(repo)...)
-		ds = append(ds, r.validateTranslation(repo)...)
+	if m, ok := r.skip[implementation][mapErrorName]; ok {
+		repo.mapError = true
+		ds = append(ds, mapErrorSignature(repo, implementation, m)...)
 	}
 	return repo, ds
 }

@@ -417,7 +417,7 @@ DI に具体的な引数型を渡すには、`-constructor-db` で公開コン�
 
 これで `NewCategory(db *db.Reader) Category` が生成され、Bind では引き続きトランザクションの DBTX を使えます。フラグには公開型の完全なインポートパスと名前を指定し、必要なら先頭に `*` を付けます。生成器がそのパッケージを読み込み、選択したドライバの DBTX を実装しているか検証します。同一パッケージへの生成に限り指定できます。コンストラクタや Bind を手書きでラップする必要はありません。
 
-アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` から `r.upsert` を呼び、そのエラーを変換できます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
+アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` から `r.upsert` を呼び、そのエラーを対応づけられます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
 
 このヘルパーの生成は同一パッケージへの出力に限ります。ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
 
@@ -435,22 +435,24 @@ func (r *category) Upsert(ctx context.Context, c model.Category) error {
 }
 ```
 
-### エラーの変換
+### エラーの対応づけ
 
-[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、注文が見つからないエラーを `model.ErrOrderNotFound` へ変換します。repository に `//kanna:repository errors=translateOrderError` を指定し、実装パッケージの [postgres/errors.go](example/postgres/postgres/errors.go) に関数を置きます。
+実装の型に `mapError` メソッドを書くと、生成するメソッドが返すエラーはすべてそれを通ります。文の実行、行の読み取り、関連の読み込みのエラーと、`orm.ErrNotFound` で、どれもメソッドが何をしていたかを付けたあとのエラーです。[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example は、生成した実装の隣の [postgres/errors.go](example/postgres/postgres/errors.go) で、注文が見つからないエラーを `model.ErrOrderNotFound` に変えます。repository を使う側に、データベースのエラーを見せないためです。
 
 ```go
-func translateOrderError(op orderRepositoryOperation, err error) error {
-    if op == orderRepositoryOperationGet && errors.Is(err, orm.ErrNotFound) {
+func (OrderRepository) mapError(err error) error {
+    if errors.Is(err, orm.ErrNotFound) {
         return model.ErrOrderNotFound
     }
     return err
 }
 ```
 
-非公開の文字列型 `orderRepositoryOperation` と、`orderRepositoryOperationGet`、`orderRepositoryOperationInsert` など、エラーを返す生成メソッドごとの型付き定数を生成します。`Bind` は含みません。example の main では、注文 99 の `Get` が `model.ErrOrderNotFound` を返すことを確認します。変換を指定しない repository は引き続き `orm.ErrNotFound` を返します。
-
-関数の存在と `func(orderRepositoryOperation, error) error` という型を生成時に検証します。操作型がまだ存在しない初回生成にも対応します。生成名と手書きの宣言が衝突した場合はエラーです。エラーに文脈を付けた後、nil でない場合に一度だけ変換します。手書き SQL と関連の読み込みで発生したエラーも対象です。生成された private helper は元のインターフェースのメソッドに対応する操作定数を渡します。手書きメソッド本体には自動適用しません。`errors=` がなければ操作型や変換処理は生成しません。変換しないエラーはそのまま返し、エラーチェーンを保持してください。
+- 生成器は生成のときにメソッドを見つけ、メソッドがエラーを返すところに `return ..., r.mapError(err)` と書きます。nil を返すときは呼びません。
+- error を 1 つ受け取って error を 1 つ返す形でなければ、生成を止めます。レシーバーは実装の型で、値でもポインタでも構いません。インターフェースと同じパッケージに実装する repository では、非公開の型です（`func (*category) mapError`）。
+- repository ごとに持てます。持たない repository は、エラーをそのまま返します。
+- 手で書いたメソッドは、自分で呼びます。そのために生成するヘルパー（`r.upsert` など）はエラーをそのまま返すので、対応づけはメソッドで 1 回です。
+- メソッドごとに区別したいときは、そのメソッドを手で書きます。知らないエラーは、チェーンを保つためにそのまま返してください。
 
 ### 別のパッケージに実装する
 
@@ -750,7 +752,7 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。エラー変換前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
+Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
 フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。生の接続を使って Go で手実装したメソッドは、生成コードの実行経路の外にあります。両 DB の example に、実行した文を出す After を渡す例があります。
 

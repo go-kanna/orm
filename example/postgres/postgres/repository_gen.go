@@ -244,24 +244,6 @@ SELECT * FROM unnest($1::text[])`
 	return nil
 }
 
-type orderRepositoryOperation string
-
-const orderRepositoryOperationFind orderRepositoryOperation = "Find"
-const orderRepositoryOperationGet orderRepositoryOperation = "Get"
-const orderRepositoryOperationGetApprover orderRepositoryOperation = "GetApprover"
-const orderRepositoryOperationList orderRepositoryOperation = "List"
-const orderRepositoryOperationListSummaries orderRepositoryOperation = "ListSummaries"
-const orderRepositoryOperationCount orderRepositoryOperation = "Count"
-const orderRepositoryOperationInsert orderRepositoryOperation = "Insert"
-const orderRepositoryOperationInsertLines orderRepositoryOperation = "InsertLines"
-const orderRepositoryOperationInsertApprovals orderRepositoryOperation = "InsertApprovals"
-const orderRepositoryOperationDelete orderRepositoryOperation = "Delete"
-const orderRepositoryOperationDeleteSummaries orderRepositoryOperation = "DeleteSummaries"
-const orderRepositoryOperationTag orderRepositoryOperation = "Tag"
-const orderRepositoryOperationMonthlySales orderRepositoryOperation = "MonthlySales"
-
-var _ func(orderRepositoryOperation, error) error = translateOrderError
-
 // OrderRepository implements repository.OrderRepository on PostgreSQL through pgx.
 type OrderRepository struct {
 	db       DBTX
@@ -275,12 +257,7 @@ func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 
 var _ repository.OrderRepository = OrderRepository{}
 
-func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (result *model.Order, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationFind, resultErr)
-		}
-	}()
+func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -288,11 +265,11 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	if err := q.Unpaged("Find"); err != nil {
-		return nil, err
+		return nil, r.mapError(err)
 	}
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
-		return nil, err
+		return nil, r.mapError(err)
 	}
 	if len(rows) == 0 {
 		return nil, nil
@@ -300,12 +277,7 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 	return &rows[0], nil
 }
 
-func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (result model.Order, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationGet, resultErr)
-		}
-	}()
+func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -313,25 +285,20 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	if err := q.Unpaged("Get"); err != nil {
-		return model.Order{}, err
+		return model.Order{}, r.mapError(err)
 	}
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
-		return model.Order{}, err
+		return model.Order{}, r.mapError(err)
 	}
 	if len(rows) == 0 {
-		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+		return model.Order{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
 	}
 	return rows[0], nil
 }
 
 // GetApprover runs the query of its name in queries.sql.
-func (r OrderRepository) GetApprover(ctx context.Context, id model.OrderID) (result repository.OrderApprover, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationGetApprover, resultErr)
-		}
-	}()
+func (r OrderRepository) GetApprover(ctx context.Context, id model.OrderID) (repository.OrderApprover, error) {
 	const q = `SELECT
     o.id AS order_id,
     a.approver
@@ -342,61 +309,55 @@ WHERE o.id = $1`
 	err := r.executor.QueryRow(ctx, q, id).
 		Scan(&row.OrderID, &row.Approver)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return repository.OrderApprover{}, fmt.Errorf("query GetApprover: %w", orm.ErrNotFound)
+		return repository.OrderApprover{}, r.mapError(fmt.Errorf("query GetApprover: %w", orm.ErrNotFound))
 	}
 	if err != nil {
-		return repository.OrderApprover{}, fmt.Errorf("query GetApprover: %w", err)
+		return repository.OrderApprover{}, r.mapError(fmt.Errorf("query GetApprover: %w", err))
 	}
 	return row, nil
 }
 
-func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []model.Order, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationList, resultErr)
-		}
-	}()
+func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	return selectOrders(ctx, r.executor, q, "")
+	rows, err := selectOrders(ctx, r.executor, q, "")
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	return rows, nil
 }
 
-func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (result []repository.OrderSummary, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationListSummaries, resultErr)
-		}
-	}()
+func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) ([]repository.OrderSummary, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
-		return nil, err
+		return nil, r.mapError(err)
 	}
 	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`, []string{`id`})
 	if err != nil {
-		return nil, err
+		return nil, r.mapError(err)
 	}
 	rows, err := r.executor.Query(ctx, text+"", args...)
 	if err != nil {
-		return nil, fmt.Errorf("project orders: %w", err)
+		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 	}
 	defer rows.Close()
 	out := []repository.OrderSummary{}
 	for rows.Next() {
 		var row repository.OrderSummary
 		if err := rows.Scan(&row.ID, &row.CustomerName, &row.Status); err != nil {
-			return nil, fmt.Errorf("project orders: %w", err)
+			return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("project orders: %w", err)
+		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 	}
 	if reversed {
 		slices.Reverse(out)
@@ -404,37 +365,27 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	return out, nil
 }
 
-func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationCount, resultErr)
-		}
-	}()
+func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
-		return 0, err
+		return 0, r.mapError(err)
 	}
 	rd, err := q.Render(impl.Postgres, 1, nil)
 	if err != nil {
-		return 0, err
+		return 0, r.mapError(err)
 	}
 	var n int64
 	if err := r.executor.QueryRow(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count orders: %w", err)
+		return 0, r.mapError(fmt.Errorf("count orders: %w", err))
 	}
 	return n, nil
 }
 
-func (r OrderRepository) Insert(ctx context.Context, o model.Order) (result model.Order, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationInsert, resultErr)
-		}
-	}()
+func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
 	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
 VALUES ($1, $2, $3, $4)
 RETURNING id, customer_id, status, placed_at, note`
@@ -443,18 +394,13 @@ RETURNING id, customer_id, status, placed_at, note`
 	err := r.executor.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
 	if err != nil {
-		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
+		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 	}
 	row.Memo = nullableMemo.V
 	return row, nil
 }
 
-func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) (resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationInsertLines, resultErr)
-		}
-	}()
+func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) error {
 	if len(lines) == 0 {
 		return nil
 	}
@@ -471,17 +417,12 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 	const q = `INSERT INTO order_lines (order_id, line_no, sku, quantity)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::int4[])`
 	if _, err := r.executor.Exec(ctx, q, orderID, lineNo, sku, quantity); err != nil {
-		return fmt.Errorf("insert into order_lines: %w", err)
+		return r.mapError(fmt.Errorf("insert into order_lines: %w", err))
 	}
 	return nil
 }
 
-func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.Approval) (resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationInsertApprovals, resultErr)
-		}
-	}()
+func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.Approval) error {
 	if len(approvals) == 0 {
 		return nil
 	}
@@ -500,17 +441,12 @@ func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.
 	const q = `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::timestamptz[], $5::timestamptz[])`
 	if _, err := r.executor.Exec(ctx, q, orderID, revision, approver, approvedAt, revokedAt); err != nil {
-		return fmt.Errorf("insert into approvals: %w", err)
+		return r.mapError(fmt.Errorf("insert into approvals: %w", err))
 	}
 	return nil
 }
 
-func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationDelete, resultErr)
-		}
-	}()
+func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -518,21 +454,16 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 	q := impl.Combine(qs...)
 	text, args, err2 := q.RenderDelete(impl.Postgres, "orders", []string{"id"})
 	if err2 != nil {
-		return 0, err2
+		return 0, r.mapError(err2)
 	}
 	tag, err2 := r.executor.Exec(ctx, text, args...)
 	if err2 != nil {
-		return 0, fmt.Errorf(`delete from orders: %w`, err2)
+		return 0, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
 	}
 	return tag.RowsAffected(), nil
 }
 
-func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order) (result []repository.DeletedOrder, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationDeleteSummaries, resultErr)
-		}
-	}()
+func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]repository.DeletedOrder, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -540,49 +471,39 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 	q := impl.Combine(qs...)
 	text, args, err2 := q.RenderDelete(impl.Postgres, "orders", []string{"id"})
 	if err2 != nil {
-		return nil, err2
+		return nil, r.mapError(err2)
 	}
 	rows, err2 := r.executor.Query(ctx, text+` RETURNING id, customer_id`, args...)
 	if err2 != nil {
-		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+		return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
 	}
 	defer rows.Close()
 	out := []repository.DeletedOrder{}
 	for rows.Next() {
 		var row repository.DeletedOrder
 		if err2 := rows.Scan(&row.ID, &row.CustomerID); err2 != nil {
-			return nil, fmt.Errorf(`delete from orders: %w`, err2)
+			return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
 		}
 		out = append(out, row)
 	}
 	if err2 := rows.Err(); err2 != nil {
-		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+		return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
 	}
 	return out, nil
 }
 
 // Tag runs the query of its name in queries.sql.
-func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) (resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationTag, resultErr)
-		}
-	}()
+func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) error {
 	const q = `INSERT INTO order_tags (order_id, tag) VALUES ($1, $2)
 ON CONFLICT DO NOTHING`
 	if _, err := r.executor.Exec(ctx, q, orderID, input.Tag); err != nil {
-		return fmt.Errorf("query Tag: %w", err)
+		return r.mapError(fmt.Errorf("query Tag: %w", err))
 	}
 	return nil
 }
 
 // MonthlySales runs the query of its name in queries.sql.
-func (r OrderRepository) MonthlySales(ctx context.Context, since time.Time) (result []repository.MonthSales, resultErr error) {
-	defer func() {
-		if resultErr != nil {
-			resultErr = translateOrderError(orderRepositoryOperationMonthlySales, resultErr)
-		}
-	}()
+func (r OrderRepository) MonthlySales(ctx context.Context, since time.Time) ([]repository.MonthSales, error) {
 	const q = `SELECT date_trunc('month', o.placed_at) AS month,
        count(DISTINCT o.id) AS orders,
        sum(l.quantity * p.price)::bigint AS revenue
@@ -594,19 +515,19 @@ GROUP BY 1
 ORDER BY 1`
 	rows, err := r.executor.Query(ctx, q, since)
 	if err != nil {
-		return nil, fmt.Errorf("query MonthlySales: %w", err)
+		return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
 	}
 	defer rows.Close()
 	out := []repository.MonthSales{}
 	for rows.Next() {
 		var row repository.MonthSales
 		if err := rows.Scan(&row.Month, &row.Orders, &row.Revenue); err != nil {
-			return nil, fmt.Errorf("query MonthlySales: %w", err)
+			return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
 		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("query MonthlySales: %w", err)
+		return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
 	}
 	return out, nil
 }

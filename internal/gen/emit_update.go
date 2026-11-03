@@ -52,9 +52,9 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	text, args, err := sc.Name("text"), sc.Name("args"), sc.Name("err")
 	e.printf("%s, %s, %s := %s.RenderUpdate(%s, %q, %s, %s)\n",
 		text, args, err, changes, e.dialect(), m.target.table, columnNamesLiteral(m.updated()), q)
-	e.printf("if %s != nil { return %s%s }\n", err, zero, err)
-	wrap := e.fmtPkg() + ".Errorf(" + goString("update "+m.target.table+": %w") + ", " + err + ")"
-	notFound := func() string { return e.notFound(m.target.table, nil, nil) }
+	e.printf("if %s != nil { return %s%s }\n", err, zero, sig.mapped(err))
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + goString("update "+m.target.table+": %w") + ", " + err + ")")
+	notFound := func() string { return sig.mapped(e.notFound(m.target.table, nil, nil)) }
 	if m.returns == returnsRow || m.returns == returnsRows {
 		e.printf("%s += %s\n", text, goString(" RETURNING "+e.columnList(m.columns)))
 		e.updateReturning(m, sc, recv, sig, text, args, err, model, wrap, notFound)
@@ -69,7 +69,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 		return
 	}
 	if e.d == snapshot.MySQL {
-		e.updateMatched(sc, recv, sig.ctx, q, affected, err, wrap, notFound(), m.target.table)
+		e.updateMatched(sc, recv, sig, q, affected, err, wrap, notFound(), m.target.table)
 	} else {
 		e.printf("if %s == 0 { return %s }\n", affected, notFound())
 	}
@@ -107,14 +107,16 @@ func (e repoEmitter) updateReturning(m repoMethod, sc gofile.Scope, recv string,
 	e.printf("return %s, nil\n", row)
 }
 
-func (e repoEmitter) updateMatched(sc gofile.Scope, recv, ctx, q, affected, err, wrap, notFound, table string) {
+func (e repoEmitter) updateMatched(sc gofile.Scope, recv string, sig signature, q, affected, err, wrap, notFound,
+	table string,
+) {
 	rd, found := sc.Name("rd"), sc.Name("found")
 	e.printf("if %s == 0 {\n", affected)
 	e.printf("%s, %s := %s.Render(%s, 1, nil)\nif %s != nil { return %s }\n",
-		rd, err, q, e.dialect(), err, err)
+		rd, err, q, e.dialect(), err, sig.mapped(err))
 	e.printf("var %s bool\n", found)
 	e.printf("if %s := %s.executor.%s(%s, %s+%s.Where()+\")\", %s.Args()...).Scan(&%s); %s != nil { return %s }\n",
-		err, recv, e.queryRow, ctx, goString("SELECT EXISTS (SELECT 1 FROM "+sqlName(e.d, table)),
+		err, recv, e.queryRow, sig.ctx, goString("SELECT EXISTS (SELECT 1 FROM "+sqlName(e.d, table)),
 		rd, rd, found, err, wrap)
 	e.printf("if !%s { return %s }\n}\n", found, notFound)
 }

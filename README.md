@@ -518,7 +518,7 @@ binding wrapper of your own.
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
 other than `Bind` is left to your implementation. When you implement a method with a recognized verb or SQL query,
 kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can call `r.upsert`
-before translating its error. kanna-orm writes the helper only when the package calls it, so a method running SQL of
+before mapping its error. kanna-orm writes the helper only when the package calls it, so a method running SQL of
 its own needs none. This helper behavior applies only to same-package generation. The helper has the same
 signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
 already be declared. Queries belong in the destination's
@@ -538,32 +538,32 @@ func (r *category) Upsert(ctx context.Context, c model.Category) error {
 }
 ```
 
-### Error translation
+### Mapping errors
 
-The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples translate a missing order into
-`model.ErrOrderNotFound`. Their repository declares `//kanna:repository errors=translateOrderError`, and the
-implementation package defines the function in [postgres/errors.go](example/postgres/postgres/errors.go).
+Write a `mapError` method on the implementation, and the error each generated method returns goes through it: the
+error of a statement, of a scan, of a relation loaded, and `orm.ErrNotFound`, as wrapped with what the method was
+doing. The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples turn a missing order into
+`model.ErrOrderNotFound` in [postgres/errors.go](example/postgres/postgres/errors.go), next to the generated
+implementation, so that the code using the repository sees no error of the database:
 
 ```go
-func translateOrderError(op orderRepositoryOperation, err error) error {
-    if op == orderRepositoryOperationGet && errors.Is(err, orm.ErrNotFound) {
+func (OrderRepository) mapError(err error) error {
+    if errors.Is(err, orm.ErrNotFound) {
         return model.ErrOrderNotFound
     }
     return err
 }
 ```
 
-The generator emits a private `orderRepositoryOperation` string type and a typed constant for each generated
-error-returning method, such as `orderRepositoryOperationGet` and `orderRepositoryOperationInsert`. `Bind` is excluded.
-The examples' main programs verify that `Get` returns `model.ErrOrderNotFound` for order 99, while repositories
-without translation continue returning `orm.ErrNotFound`.
-
-The function's presence and exact `func(orderRepositoryOperation, error) error` signature are checked during generation,
-including the first run before the operation type exists. Generated operation names must not collide with handwritten
-declarations. Translation runs once for a non-nil error, after adding the generated method's error context, including
-custom SQL and relation-loading errors. A generated private helper passes its original interface method's operation.
-Handwritten method bodies are not translated automatically. Without `errors=`, no operation type or translation code
-is generated. Return an unrecognized error unchanged to preserve its error chain.
+- The generator finds the method when it runs, and writes `return ..., r.mapError(err)` where a method returns an
+  error. A method returning nil calls nothing.
+- It takes an error and returns one, or generation stops. Its receiver is the implementation, a value or a pointer.
+  For a repository implemented in its own package, that is the unexported type, as `func (*category) mapError`.
+- Each repository has its own. One without it returns the errors as they are.
+- A method written by hand calls it itself. The helper generated for it, as `r.upsert`, returns its errors as they
+  are, for the method to map once.
+- To tell the methods apart, write the method by hand. Return an error mapError does not know unchanged, to keep its
+  chain.
 
 ### Separate-package implementations
 
@@ -933,7 +933,7 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before repository error translation. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
+A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
 
 Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`; manually implemented Go methods using the raw connection are outside the generated execution path. Both database examples give an After that prints each statement.
 
