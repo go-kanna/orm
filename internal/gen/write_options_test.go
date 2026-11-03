@@ -164,3 +164,22 @@ func TestCommand_WriteOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestCommand_PointerKey(t *testing.T) {
+	t.Parallel()
+
+	archive := strings.Replace(writeOptionsShop, " GetByKey(ctx context.Context, recordKey string) (model.Record,error)\n",
+		" ListByOwner(ctx context.Context, ownerID *int64) ([]model.Record,error)\n", 1)
+	dir := writeModule(t, archive)
+	writeOptionsSnapshot(t, dir, snapshot.PostgreSQL)
+	if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+		t.Fatalf("generate scopes = %d\n%s", code, errOut)
+	}
+	code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl")
+	want := "error: ListByOwner: ownerID is *int64, but a key is compared by its value, and nil would compare by " +
+		"= NULL, which matches no row\n  declare it as int64\n" +
+		"  narrow to the rows whose owner_id is NULL by the scope's OwnerIDIsNull"
+	if code == cli.ExitOK || !strings.Contains(errOut, want) {
+		t.Fatalf("generate = %d, want %q\n%s", code, want, errOut)
+	}
+}

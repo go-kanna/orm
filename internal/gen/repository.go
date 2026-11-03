@@ -595,6 +595,17 @@ func (r repoReader) keys(m *repoMethod, keyParams []*types.Var) []diag.Diag {
 			continue
 		}
 		c := m.columns[i]
+		if _, ptr := p.Type().Underlying().(*types.Pointer); ptr && fieldTakes(c.typ, p.Type()) {
+			d := diag.Errorf(m.pos, "%s: %s is %s, but a key is compared by its value, and nil would compare by "+
+				"= NULL, which matches no row", m.name, p.Name(), typeName(p.Type())).
+				WithHints("declare it as " + typeName(elemOf(p.Type())))
+			if !c.col.NotNull {
+				d = d.WithHints(fmt.Sprintf("narrow to the rows whose %s is NULL by the scope's %sIsNull", name,
+					c.path[len(c.path)-1]))
+			}
+			ds = append(ds, d)
+			continue
+		}
 		if !fieldTakes(c.typ, p.Type()) {
 			field := m.model.Obj().Name() + "." + strings.Join(c.path, ".")
 			pt, ft := typeName(p.Type()), typeName(c.typ)
