@@ -33,7 +33,7 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 | `orm/option`   | `WithHook`, the option a repository's constructor takes                                                   |
 | `orm/hook`     | `Hook`, `Query`, and `Execution`, the functions that option takes and what they receive                   |
 
-`orm/impl` is what the generated code runs on, and only the generated code imports it.
+`orm/change` holds `Set`, what the `Of` of a generated change set returns, which code written by hand does not name. `orm/impl` is what the generated code runs on, and only the generated code imports it.
 
 ## Use
 

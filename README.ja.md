@@ -28,7 +28,7 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 | `orm/option`   | repository の constructor に渡す option `WithHook`                                              |
 | `orm/hook`     | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution`                     |
 
-`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
+`orm/change` の `Set` は、生成される change set の `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
 
 ## 使い方
 

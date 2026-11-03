@@ -8,5 +8,7 @@
 //   - [github.com/go-kanna/orm/option]: the options a repository's constructor takes.
 //   - [github.com/go-kanna/orm/hook]: the functions those options take, called around each statement.
 //
-// What the generated code runs on is in [github.com/go-kanna/orm/impl], which only the generated code imports.
+// [github.com/go-kanna/orm/change] holds Set, what the Of of a generated change set returns, which code written by hand
+// does not name. What the generated code runs on is in [github.com/go-kanna/orm/impl], which only the generated code
+// imports.
 package orm
