@@ -59,6 +59,8 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		decls Decls
 		ds    []diag.Diag
 		docs  = map[*ast.CommentGroup]bool{}
+		// marking are the comments read as the doc of a type, which //kanna:scope and //kanna:repository mark.
+		marking = map[*ast.CommentGroup]bool{}
 	)
 	for _, node := range file.Decls {
 		gd, ok := node.(*ast.GenDecl)
@@ -75,7 +77,7 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			if doc == nil && len(gd.Specs) == 1 {
 				doc = gd.Doc
 			}
-			docs[doc] = true
+			docs[doc], marking[doc] = true, true
 
 			d, fds := directive.Find(fset, doc, "scope")
 			ds = append(ds, fds...)
@@ -104,6 +106,12 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 
 	// //kanna:scopes marks no declaration, so it stands in a comment of its own.
 	for _, cg := range file.Comments {
+		if !marking[cg] {
+			if sds := stray(fset, cg); len(sds) > 0 {
+				ds = append(ds, sds...)
+				continue
+			}
+		}
 		if docs[cg] {
 			continue
 		}
@@ -120,6 +128,20 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		decls.Models = append(decls.Models, Models{Pos: d.Pos, Paths: paths})
 	}
 	return decls, ds
+}
+
+// stray reports each //kanna:scope and //kanna:repository of cg, a comment read as the doc of no type: one apart from
+// any declaration, or above a group of types, which would otherwise mark nothing without a word.
+func stray(fset *token.FileSet, cg *ast.CommentGroup) []diag.Diag {
+	var ds []diag.Diag
+	for _, c := range cg.List {
+		body, ok := strings.CutPrefix(c.Text, "//kanna:")
+		if key, _, _ := strings.Cut(body, " "); ok && (key == "scope" || key == "repository") {
+			ds = append(ds, diag.Errorf(fset.Position(c.Pos()), "//kanna:%s marks the type it is the doc of, but this "+
+				"comment is the doc of none", key).WithHints("write it right above one type, with no blank line between"))
+		}
+	}
+	return ds
 }
 
 // scopeArgs reads what follows //kanna:scope: the table, and the name func= gives the function returning the empty

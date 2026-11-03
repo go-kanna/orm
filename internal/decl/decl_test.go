@@ -1,6 +1,7 @@
 package decl_test
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -256,4 +257,42 @@ func TestRead_Mistakes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRead_StrayDirectives(t *testing.T) {
+	t.Parallel()
+
+	const want = "error: //kanna:%s marks the type it is the doc of, but this comment is the doc of none\n" +
+		"  write it right above one type, with no blank line between"
+	tests := []struct {
+		name, src, key string
+	}{
+		{"a blank line before the type", "//kanna:repository\n\ntype Orders interface{}\n", "repository"},
+		{"a group of types", "//kanna:scope table=orders\ntype (\n\tOrder struct{}\n\tLine struct{}\n)\n", "scope"},
+		{"a function", "//kanna:repository\nfunc Orders() {}\n", "repository"},
+		{"a field", "type Order struct {\n\t//kanna:scope table=orders\n\tq int\n}\n", "scope"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			scopes, repositories, ds := read(t, "package scopes\n\n"+tt.src)
+			if got := report(ds); !strings.HasSuffix(got, fmt.Sprintf(want, tt.key)) || len(ds) != 1 {
+				t.Errorf("Read reports\n%s\nwant\n%s", got, fmt.Sprintf(want, tt.key))
+			}
+			if len(scopes) > 0 || len(repositories) > 0 {
+				t.Errorf("scopes = %q, repositories = %q, want none", scopes, repositories)
+			}
+		})
+	}
+
+	t.Run("one type of a group, and //kanna:scopes", func(t *testing.T) {
+		t.Parallel()
+
+		scopes, _, ds := read(t, "package scopes\n\n//kanna:scopes model-package=../model\n\n"+
+			"type (\n\t//kanna:scope table=orders\n\tOrder struct{}\n\tLine struct{}\n)\n")
+		if len(ds) > 0 || !slices.Equal(scopes, []string{"Order orders"}) {
+			t.Errorf("scopes = %q, reports\n%s", scopes, report(ds))
+		}
+	})
 }
