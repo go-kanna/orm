@@ -965,6 +965,14 @@ func plucks(v verb, t types.Type) bool {
 	return !row || holdsColumn(elemOf(t))
 }
 
+// findOfNull reports name, a Find returning *t, which reads column, which may be NULL: nil would say both that there
+// is no row and that its value is NULL.
+func findOfNull(pos token.Position, name, column string, t types.Type) diag.Diag {
+	return diag.Errorf(pos, "%s: a Find returns nil for no row, so it cannot read column %s, which may be NULL", name,
+		column).WithHints(fmt.Sprintf("name it Get, whose (*%[1]s, error) returns nil for NULL and orm.ErrNotFound for "+
+		"no row, or return (**%[1]s, error) to tell the two apart", types.TypeString(t, nil)))
+}
+
 // pluckColumn finds the column m reads the values of, as t, its result: that of the field its name says after the
 // verb, as GetName reads that of Name, or the plural of after List, as ListNames and ListCustomerIDs read those of
 // Name and CustomerID. The value is of the field's type.
@@ -981,6 +989,9 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 		if m.verb == verbList && rest != field+"s" && decl.SnakeCase(rest) != decl.Plural(field) ||
 			m.verb != verbList && rest != field {
 			continue
+		}
+		if p, ok := c.typ.(*types.Pointer); ok && m.optional && types.Identical(t, p.Elem()) {
+			return []diag.Diag{findOfNull(m.pos, m.name, c.col.Name, t)}
 		}
 		if !types.Identical(t, c.typ) {
 			return []diag.Diag{diag.Errorf(m.pos, "%s: it reads %s.%s, %s %s, as %s %s", m.name,

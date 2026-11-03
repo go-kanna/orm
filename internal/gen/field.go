@@ -125,6 +125,13 @@ func (m *matcher) match(st *types.Struct, path []string) {
 			}
 			m.column(label, fpath, f, pos, name, tag.nullzero, tag.insertDefault)
 		case holdsModels(t):
+			if isModel(t) {
+				typ := types.TypeString(t, relativeTo(f.Pkg()))
+				m.ds = append(m.ds, diag.Errorf(pos, "%s: a relation of one row is held by a pointer, nil when its row "+
+					"is not loaded or not there", label).WithHints(fmt.Sprintf("declare it as *%s, or, for a column, "+
+					"give %s a Scan method", typ, typ)))
+				continue
+			}
 			if tag.column != "" {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q names a column, but %s is a relation`,
 					label, written, f.Name()).WithHints(`name the foreign key it follows with orm:"fk=<column>"`))

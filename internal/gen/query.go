@@ -241,10 +241,7 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 				}
 				c := described.Columns[0]
 				if m.optional && c.Nullable && !nilable(q.row) {
-					return []diag.Diag{diag.Errorf(st.Header, "%s: a Find returns nil for no row, so it cannot read column "+
-						"%s, which may be NULL", m.name, c.Name).WithHints(fmt.Sprintf(
-						"name it Get, whose (*%s, error) returns nil for NULL and orm.ErrNotFound for no row",
-						types.TypeString(q.row, nil)))}
+					return []diag.Diag{findOfNull(st.Header, m.name, c.Name, q.row)}
 				}
 				if _, ok := readable(q.row, c.Type); !ok || c.Nullable && !nilable(q.row) {
 					return []diag.Diag{diag.Errorf(st.Header, "%s: the scalar result cannot hold column %s (%s)",

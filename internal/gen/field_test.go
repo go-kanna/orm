@@ -48,7 +48,7 @@ type Order struct {
 	Audit
 	Lines      []OrderLine
 	Customer   *Customer `+"`orm:\"fk=customer_id\"`"+`
-	Coupon     Coupon
+	Coupon     *Coupon
 	Refunds    []*Refund
 }
 
@@ -108,7 +108,7 @@ type (
 		"Order.Audit.UpdatedAt *time.Time updated_at",
 		"Order.Lines []model.OrderLine relation",
 		"Order.Customer *model.Customer relation fk=customer_id",
-		"Order.Coupon model.Coupon relation",
+		"Order.Coupon *model.Coupon relation",
 		"Order.Refunds []*model.Refund relation",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -198,6 +198,9 @@ func TestFields_Mistakes(t *testing.T) {
 			`model.go:8:1: error: Order.Lines: orm:",nullzero" is for a column, and Lines is a relation`},
 		{"default on a relation", "\tCoupon *Coupon `orm:\",default\"`\n", "type Coupon struct{ ID int64 }\n",
 			`model.go:8:1: error: Order.Coupon: orm:",default" is for a column, and Coupon is a relation`},
+		{"a relation of one row in a value", "\tProfile Profile\n", "type Profile struct{ ID int64 }\n",
+			"model.go:8:1: error: Order.Profile: a relation of one row is held by a pointer, nil when its row is not " +
+				"loaded or not there\n  declare it as *Profile, or, for a column, give Profile a Scan method"},
 		{"a map", "\tMeta map[string]string\n", "",
 			"model.go:8:1: error: Order.Meta: map[string]string is neither a column nor a relation\n" +
 				`  hold the column in a type with a Scan method, or leave the field out with orm:"-"`},
