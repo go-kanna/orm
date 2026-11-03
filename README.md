@@ -1002,7 +1002,7 @@ once instead, and `skip-locked` has it pass those rows over.
 - `//kanna:lock` anywhere but right above such a method stops generation, rather than leave the method unlocked. So does
   one on a method a [hand-written query](#hand-written-sql) or your own code alone implements: write the lock there.
   A same-package method delegating to a generated helper keeps its lock on that helper.
-- A `Get`, a `Find`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
+- A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such as `GetForUpdateForm`, says nothing of a lock.
 
 ### Hooks
 

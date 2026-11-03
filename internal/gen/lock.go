@@ -25,11 +25,18 @@ var lockClauses = map[string]string{
 // lockWaits are what //kanna:lock takes after a strength, and what each adds to its clause.
 var lockWaits = map[string]string{"nowait": "NOWAIT", "skip-locked": "SKIP LOCKED"}
 
-// lockedName matches a name telling of a lock, but not one like ListForSharedFolders.
-var lockedName = regexp.MustCompile(`For(Update|NoKeyUpdate|Share|KeyShare)($|[A-Z0-9])`)
+// lockedName matches a name that ends in the strength of a lock, as GetForUpdate does, and not one in which more
+// follows, as GetForUpdateForm, which may well read rows for an update to come.
+var lockedName = regexp.MustCompile(`For(Update|NoKeyUpdate|Share|KeyShare)$`)
 
-// lock reads the //kanna:lock of m into its locking clause. A method that reads rows and whose name tells of a lock
-// but has none is warned about, as it would be generated without one.
+// namedStrengths are the strengths of //kanna:lock by the words a name ends in.
+var namedStrengths = map[string]string{
+	"Update": "update", "NoKeyUpdate": "no-key-update", "Share": "share", "KeyShare": "key-share",
+}
+
+// lock reads the //kanna:lock of m into its locking clause. A method that reads rows and whose name ends in the
+// strength of a lock but has none is warned about, as it would be generated without one; one whose //kanna:lock is of
+// another strength than its name ends in stops generation, as one of the two is wrong.
 func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList
 	if !d.Found {
@@ -52,6 +59,10 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 			WithHints("as in //kanna:lock update skip-locked")}
 	}
 	strength := fields[0]
+	if named := lockedName.FindStringSubmatch(m.name); named != nil && namedStrengths[named[1]] != strength {
+		return []diag.Diag{errorf("its name ends in a lock of %s, but //kanna:lock is of %s",
+			namedStrengths[named[1]], strength).WithHints("make the two one")}
+	}
 	clause, ok := lockClauses[strength]
 	if !ok {
 		unknown := errorf("//kanna:lock takes update, no-key-update, share, or key-share, not %q", strength)

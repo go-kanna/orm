@@ -122,10 +122,15 @@ func TestRepositories_LockMistakes(t *testing.T) {
 			"\tGetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)\n",
 			at + "warning: GetForUpdate: its name tells of a lock, but it has no //kanna:lock\n" +
 				"  declare the lock, or name it otherwise"},
-		{"a name telling of a lock, a word follows", snapshot.PostgreSQL,
-			"\tListForShareByStatus(ctx context.Context, status model.OrderStatus) ([]model.Order, error)\n",
-			at + "warning: ListForShareByStatus: its name tells of a lock, but it has no //kanna:lock\n" +
-				"  declare the lock, or name it otherwise"},
+		{"a name in which a word follows a lock", snapshot.PostgreSQL,
+			"\tGetForUpdateForm(ctx context.Context, id model.OrderID) (model.Order, error)\n", ""},
+		{"a name ending in another lock than its directive", snapshot.PostgreSQL,
+			"\t//kanna:lock update\n\tListForShare(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
+			at + "error: ListForShare: its name ends in a lock of share, but //kanna:lock is of update\n" +
+				"  make the two one"},
+		{"a name ending in the lock of its directive", snapshot.PostgreSQL,
+			"\t//kanna:lock key-share\n\tListForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
+			""},
 		{"a name that only starts like one", snapshot.PostgreSQL,
 			"\tListForSharedFolders(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n", ""},
 		{"a name telling of a lock on a verb that takes none", snapshot.PostgreSQL,
