@@ -35,7 +35,7 @@ type Record struct {`, 1)
 	archive = strings.Replace(archive, "type Record struct { q scope.Of[model.Record] }",
 		`type Record struct { q scope.Of[model.Record] }
 func (s Record) WithUnusedRelation() Record {
- return Record{impl.Preload(s.q, "Unused", impl.Of[model.Record]{})}
+ return Record{scope.Of[model.Record](impl.Preload(impl.Of[model.Record](s.q), "Unused", impl.Of[model.Record]{}))}
 }`, 1)
 	archive = strings.Replace(archive, `"github.com/go-kanna/orm/scope"`, `"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/scope"`, 1)

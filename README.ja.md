@@ -22,7 +22,7 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 | パッケージ   | 用途                                                                        |
 |--------------|-----------------------------------------------------------------------------|
 | `orm`        | repository が返すエラー `ErrNotFound`                                       |
-| `orm/scope`  | 手書きで宣言するスコープ型のフィールド `Of`                                 |
+| `orm/scope`  | 手書きで宣言するスコープ型のフィールド `Of` と、Go で SQL を書く `Raw`        |
 | `orm/join`   | 結合した projection の明示的な条件 `On`                                     |
 | `orm/option` | repository の constructor に渡す option `WithHook`                          |
 | `orm/hook`   | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution` |
@@ -92,12 +92,12 @@ func Orders() Order { return Order{} }
 
 // StatusNe narrows to the rows whose status is not v.
 func (s Order) StatusNe(v model.OrderStatus) Order {
-	return Order{s.q.Where(`status <> `, v)}
+	return Order{ormScope(ormRuntime(s.q).Where(`status <> `, v))}
 }
 
 // PlacedAtDesc orders the rows by placed_at, latest first.
 func (s Order) PlacedAtDesc() Order {
-	return Order{s.q.OrderBy(`placed_at`, true)}
+	return Order{ormScope(ormRuntime(s.q).OrderBy(`placed_at`, true))}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -217,7 +217,15 @@ $ go tool kanna-orm describe -check ./...
 
 スコープ型は、フィールドが非公開の `scope.Of[M]` だけの構造体です。`M` はテーブルの行を読み込むモデルです。これにより、スコープを絞り込めるのはそのメソッドだけになります。kanna-orm が読み書きするテーブルにはそれぞれスコープ型が 1 つあり、各モデルは 1 つのテーブルに属します。テーブルとモデルを結び付けるのはスコープ型だけです。
 
-`//kanna:scopes model-package=../model` と書くと、モデルのパッケージの構造体のうち、スナップショットに対応する名前のテーブルがあるものそれぞれについて、`scopes_gen.go` にスコープ型を宣言します。対応するテーブルの名前は、構造体の名前をスネークケースにして最後の単語を複数形にしたもの（`OrderLine` なら `order_lines`、`Category` なら `categories`、`Person` なら `people`）です。`model-package=` には、モジュールのパッケージのインポートパスか、ファイルからの相対パスを書きます。`model-package=../model,../billing` のように、カンマで区切って複数書けます。値オブジェクトのように対応するテーブルがない構造体にはスコープ型が宣言されず、中間テーブルのように対応する構造体がないテーブルにも宣言されません。そのため、これらのパッケージの構造体は、その名前のテーブルができるとモデルになります。クエリが返す型のように、モデルでない構造体は別のパッケージに置いてください。自分のメソッドは、他の型と同じように、パッケージの別のファイルでこの型に書きます。
+`//kanna:scopes model-package=../model` と書くと、モデルのパッケージの構造体のうち、スナップショットに対応する名前のテーブルがあるものそれぞれについて、`scopes_gen.go` にスコープ型を宣言します。対応するテーブルの名前は、構造体の名前をスネークケースにして最後の単語を複数形にしたもの（`OrderLine` なら `order_lines`、`Category` なら `categories`、`Person` なら `people`）です。`model-package=` には、モジュールのパッケージのインポートパスか、ファイルからの相対パスを書きます。`model-package=../model,../billing` のように、カンマで区切って複数書けます。値オブジェクトのように対応するテーブルがない構造体にはスコープ型が宣言されず、中間テーブルのように対応する構造体がないテーブルにも宣言されません。そのため、これらのパッケージの構造体は、その名前のテーブルができるとモデルになります。クエリが返す型のように、モデルでない構造体は別のパッケージに置いてください。自分のメソッドは、他の型と同じように、パッケージの別のファイルでこの型に書きます。スコープを絞るには、下の `Open` のように kanna-orm が書いたメソッドを使うか、形の決まった SQL を `.sql` ファイルに書きます（`describe` が確かめます。[手書きの SQL](#手書きの-sql) を参照）。実行時にプログラムが形を決める SQL は、`InMonths` のように `Raw` で書きます。こちらは実行するまで何も確かめません。`Raw` が持つのは `Where` と `OrderBy` だけで、どちらもそれまでの内容をすべて保ったスコープを返します。
+
+```go
+func (s Order) Open() Order { return s.StatusNe("closed") }
+
+func (s Order) InMonths(months []int) Order {
+	return Order{s.q.Raw().Where("EXTRACT(MONTH FROM placed_at) = ANY(", months, ")")}
+}
+```
 
 独自の名前のスコープ型は、`//kanna:scope` で手で宣言します。テーブルは、`//kanna:scopes` と同じくモデルの名前から決まり、単数形など別の名前のときだけ `table=` で指定します。手で宣言したものは、同じパッケージの中では、そのモデルやテーブルについて `//kanna:scopes` が暗黙に宣言するものより優先されます。別のパッケージのものとは、テーブルにスコープ型は 1 つなので、生成を止めます:
 

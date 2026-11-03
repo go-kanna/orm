@@ -25,7 +25,8 @@ func (e repoEmitter) scopedQuery(m repoMethod, sc gofile.Scope, recv string, sig
 		zero = row + "{}"
 	}
 	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, sig.scopes)
-	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sig.scopes, qs)
+	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s[%[6]s](%[2]s.Of())\n}\n", i, x, sig.scopes, qs,
+		e.ref("Of"), model)
 	e.printf("%s := %s(%s...)\n", q, e.ref("Combine"), qs)
 	switch verb { //nolint:exhaustive // queryScope takes these alone
 	case verbFirst:

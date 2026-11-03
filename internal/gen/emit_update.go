@@ -27,7 +27,7 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	if m.scoped {
 		qs := sc.Name("qs")
 		e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, sig.scopes)
-		e.printf("for i, s := range %s { %s[i] = s.Of() }\n", sig.scopes, qs)
+		e.printf("for i, s := range %s { %s[i] = %s[%s](s.Of()) }\n", sig.scopes, qs, e.ref("Of"), model)
 		e.printf("%s := %s(%s...)\n", q, e.ref("Combine"), qs)
 	} else {
 		e.printf("var %s %s[%s]\n", q, e.ref("Of"), model)

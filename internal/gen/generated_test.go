@@ -13,6 +13,7 @@ import (
 	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 	pstdlib "github.com/go-kanna/orm/internal/gen/testdata/postgres/stdlib"
 	ormpgx "github.com/go-kanna/orm/pgx"
+	"github.com/go-kanna/orm/scope"
 	"github.com/go-kanna/orm/stdlib"
 )
 
@@ -23,6 +24,9 @@ var (
 	_ *stdlib.DBTX = new(pstdlib.DBTX)
 	_ *stdlib.DBTX = new(mstdlib.DBTX)
 )
+
+// runtime is q, the scope of a scope type, as the runtime reads it.
+func runtime[M any](q scope.Of[M]) impl.Of[M] { return impl.Of[M](q) }
 
 // rendered is a scope as SQL: its clauses, and the arguments of their placeholders.
 type rendered struct {
@@ -52,6 +56,9 @@ func TestGenerated_Postgres(t *testing.T) {
 	}{
 		{"every row", pscopes.Orders(), rendered{}},
 		{"Eq", pscopes.Orders().StatusEq("open"), rendered{" WHERE (status = $1)", []any{model.OrderStatus("open")}}},
+		{"a scope written in Go by Raw, among generated ones", pscopes.Orders().StatusEq("open").InMonths([]int{1, 2}).
+			PlacedAtDesc(), rendered{" WHERE (status = $1) AND (EXTRACT(MONTH FROM placed_at) = ANY($2)) ORDER BY " +
+			"placed_at DESC, id DESC", []any{model.OrderStatus("open"), []int{1, 2}}}},
 		{"Eq of a column that may be NULL", pscopes.Orders().MemoEq("gift"),
 			rendered{" WHERE (note = $1)", []any{"gift"}}},
 		{"Eq of a value type", pscopes.Orders().ContactEq(email), rendered{" WHERE (contact = $1)", []any{email}}},
@@ -89,7 +96,7 @@ func TestGenerated_Postgres(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		if got := render(t, tt.scope.Of(), impl.Postgres); !reflect.DeepEqual(got, tt.want) {
+		if got := render(t, runtime(tt.scope.Of()), impl.Postgres); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
 		}
 	}
@@ -117,7 +124,7 @@ func TestGenerated_MySQL(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		if got := render(t, tt.scope.Of(), impl.MySQL); !reflect.DeepEqual(got, tt.want) {
+		if got := render(t, runtime(tt.scope.Of()), impl.MySQL); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%s: %+v, want %+v", tt.name, got, tt.want)
 		}
 	}
@@ -127,7 +134,7 @@ func TestGenerated_With(t *testing.T) {
 	t.Parallel()
 
 	s := pscopes.Orders().WithCustomer().WithLines(pscopes.OrderLines().SKUAsc()).WithTags()
-	lines, ok := impl.Preloaded[model.OrderLine](s.Of(), "Lines")
+	lines, ok := impl.Preloaded[model.OrderLine](runtime(s.Of()), "Lines")
 	if !ok {
 		t.Fatal("WithLines does not preload Lines")
 	}
@@ -138,10 +145,10 @@ func TestGenerated_With(t *testing.T) {
 	if got := r.OrderBy(); got != " ORDER BY sku" {
 		t.Errorf("the lines are ordered by %q, want by sku", got)
 	}
-	if _, ok := impl.Preloaded[model.Customer](s.Of(), "Customer"); !ok {
+	if _, ok := impl.Preloaded[model.Customer](runtime(s.Of()), "Customer"); !ok {
 		t.Error("WithCustomer does not preload Customer")
 	}
-	if _, ok := impl.Preloaded[model.Tag](s.Of(), "Tags"); !ok {
+	if _, ok := impl.Preloaded[model.Tag](runtime(s.Of()), "Tags"); !ok {
 		t.Error("WithTags does not preload Tags")
 	}
 }
@@ -159,13 +166,13 @@ func TestGenerated_Paging(t *testing.T) {
 		d     impl.Dialect
 		want  rendered
 	}{
-		{"After", page.After(row).Of(), impl.Postgres, rendered{
+		{"After", runtime(page.After(row).Of()), impl.Postgres, rendered{
 			" WHERE ((placed_at, id) < ($1, $2)) ORDER BY placed_at DESC, id DESC", []any{day, model.OrderID(7)},
 		}},
-		{"Before", page.Before(row).Of(), impl.Postgres, rendered{
+		{"Before", runtime(page.Before(row).Of()), impl.Postgres, rendered{
 			" WHERE ((placed_at, id) > ($1, $2)) ORDER BY placed_at, id", []any{day, model.OrderID(7)},
 		}},
-		{"After on MySQL", mscopes.Orders().PlacedAtDesc().After(row).Of(), impl.MySQL, rendered{
+		{"After on MySQL", runtime(mscopes.Orders().PlacedAtDesc().After(row).Of()), impl.MySQL, rendered{
 			" WHERE ((placed_at < ?) OR (placed_at = ? AND id < ?)) ORDER BY placed_at DESC, id DESC",
 			[]any{day, day, model.OrderID(7)},
 		}},
@@ -176,7 +183,7 @@ func TestGenerated_Paging(t *testing.T) {
 		}
 	}
 
-	r, err := pscopes.OrderLines().After(line).Of().Render(impl.Postgres, 1, nil)
+	r, err := runtime(pscopes.OrderLines().After(line).Of()).Render(impl.Postgres, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +191,7 @@ func TestGenerated_Paging(t *testing.T) {
 		t.Errorf("After by a primary key of two columns: %s", got)
 	}
 
-	if _, err := pscopes.Orders().MemoAsc().After(row).Of().Render(impl.Postgres, 1, nil); err == nil {
+	if _, err := runtime(pscopes.Orders().MemoAsc().After(row).Of()).Render(impl.Postgres, 1, nil); err == nil {
 		t.Error("After in the order of a column that may be NULL renders")
 	}
 }
@@ -202,13 +209,13 @@ func TestGenerated_Cursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := render(t, next.Of(), impl.Postgres),
-		render(t, page.After(row).Of(), impl.Postgres); !reflect.DeepEqual(got, want) {
+	if got, want := render(t, runtime(next.Of()), impl.Postgres),
+		render(t, runtime(page.After(row).Of()), impl.Postgres); !reflect.DeepEqual(got, want) {
 		t.Errorf("AfterCursor(Cursor(row)) = %+v, want After(row), %+v", got, want)
 	}
 
-	if start, err := page.AfterCursor(""); err != nil || !reflect.DeepEqual(render(t, start.Of(), impl.Postgres),
-		render(t, page.Of(), impl.Postgres)) {
+	if start, err := page.AfterCursor(""); err != nil || !reflect.DeepEqual(render(t, runtime(start.Of()), impl.Postgres),
+		render(t, runtime(page.Of()), impl.Postgres)) {
 		t.Errorf("AfterCursor of no cursor = %+v, %v; want the scope itself", start, err)
 	}
 	if _, err := pscopes.Orders().PlacedAtAsc().AfterCursor(cursor); err == nil {

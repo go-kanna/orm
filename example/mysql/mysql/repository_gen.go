@@ -16,7 +16,6 @@ import (
 	"github.com/go-kanna/orm/example/mysql/scopes"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/option"
-	"github.com/go-kanna/orm/scope"
 	"github.com/go-kanna/orm/stdlib"
 )
 
@@ -132,9 +131,9 @@ func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer,
 }
 
 func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) error {
-	qs := make([]scope.Of[model.Customer], len(s))
+	qs := make([]impl.Of[model.Customer], len(s))
 	for i, s := range s {
-		qs[i] = s.Of()
+		qs[i] = impl.Of[model.Customer](s.Of())
 	}
 	q := impl.Combine(qs...)
 	changes := c.Of()
@@ -199,18 +198,18 @@ ON DUPLICATE KEY UPDATE name = new.name, price = new.price`, args...); err != ni
 }
 
 func (r Product) List(ctx context.Context, s ...scopes.Product) ([]model.Product, error) {
-	qs := make([]scope.Of[model.Product], len(s))
+	qs := make([]impl.Of[model.Product], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Product](x.Of())
 	}
 	q := impl.Combine(qs...)
 	return selectProducts(ctx, r.db, q, "")
 }
 
 func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
-	qs := make([]scope.Of[model.Product], len(s))
+	qs := make([]impl.Of[model.Product], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Product](x.Of())
 	}
 	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
@@ -243,9 +242,9 @@ func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repo
 }
 
 func (r Product) ListNames(ctx context.Context, s ...scopes.Product) ([]string, error) {
-	qs := make([]scope.Of[model.Product], len(s))
+	qs := make([]impl.Of[model.Product], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Product](x.Of())
 	}
 	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListNames"); err != nil {
@@ -308,9 +307,9 @@ func NewOrder(db DBTX, opts ...option.Option) Order { return newOrder(db, opts..
 var _ repository.Order = Order{}
 
 func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
@@ -328,9 +327,9 @@ func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*
 }
 
 func (r Order) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
@@ -376,9 +375,9 @@ ORDER BY o.id`}, impl.InList(ids))
 }
 
 func (r Order) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	rows, err := selectOrders(ctx, r.db, q, "")
@@ -389,9 +388,9 @@ func (r Order) List(ctx context.Context, s ...scopes.Order) ([]model.Order, erro
 }
 
 func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]repository.OrderSummary, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
@@ -424,9 +423,9 @@ func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]reposito
 }
 
 func (r Order) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
@@ -515,9 +514,9 @@ VALUES (?, ?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?, ?)`, len(chunk)-1), args.
 }
 
 func (r Order) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	text, args, err2 := q.RenderDelete(impl.MySQL, "orders", []string{"id"})
@@ -605,9 +604,9 @@ func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.
 	if !stdlib.InTransaction(r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
@@ -656,7 +655,7 @@ WHERE id = ?`
 }
 
 // selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
-func selectApprovals(ctx context.Context, db ormDatabase, q scope.Of[model.Approval], lock string) ([]model.Approval, error) {
+func selectApprovals(ctx context.Context, db ormDatabase, q impl.Of[model.Approval], lock string) ([]model.Approval, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
 	if err != nil {
 		return nil, err
@@ -693,7 +692,7 @@ func queryApprovals(ctx context.Context, db ormDatabase, query string, args ...a
 }
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
-func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Customer], lock string) ([]model.Customer, error) {
+func selectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
 	if err != nil {
 		return nil, err
@@ -730,7 +729,7 @@ func queryCustomers(ctx context.Context, db ormDatabase, query string, args ...a
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`order_id`, `line_no`})
 	if err != nil {
 		return nil, err
@@ -770,7 +769,7 @@ func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...
 }
 
 // preloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q scope.Of[model.OrderLine]) error {
+func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q impl.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -803,7 +802,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], lock string) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
 	if err != nil {
 		return nil, err
@@ -845,7 +844,7 @@ func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any)
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q scope.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -1142,7 +1141,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 }
 
 // selectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
-func selectProducts(ctx context.Context, db ormDatabase, q scope.Of[model.Product], lock string) ([]model.Product, error) {
+func selectProducts(ctx context.Context, db ormDatabase, q impl.Of[model.Product], lock string) ([]model.Product, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`sku`})
 	if err != nil {
 		return nil, err
@@ -1179,7 +1178,7 @@ func queryProducts(ctx context.Context, db ormDatabase, query string, args ...an
 }
 
 // selectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
-func selectShipments(ctx context.Context, db ormDatabase, q scope.Of[model.Shipment], lock string) ([]model.Shipment, error) {
+func selectShipments(ctx context.Context, db ormDatabase, q impl.Of[model.Shipment], lock string) ([]model.Shipment, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`order_id`})
 	if err != nil {
 		return nil, err
@@ -1216,7 +1215,7 @@ func queryShipments(ctx context.Context, db ormDatabase, query string, args ...a
 }
 
 // selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
-func selectTags(ctx context.Context, db ormDatabase, q scope.Of[model.Tag], lock string) ([]model.Tag, error) {
+func selectTags(ctx context.Context, db ormDatabase, q impl.Of[model.Tag], lock string) ([]model.Tag, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`name`})
 	if err != nil {
 		return nil, err

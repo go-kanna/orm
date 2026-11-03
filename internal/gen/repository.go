@@ -877,8 +877,13 @@ func scopeModelKind(t types.Type, kind string) (*types.Named, bool) {
 	if !ok || st.NumFields() != 1 {
 		return nil, false
 	}
+	// A scope type holds a scope.Of, and a change set the runtime's Changes, which change.Set names.
+	path := implPath
+	if kind == "Of" {
+		path = scopePath
+	}
 	of := asNamed(st.Field(0).Type())
-	if of == nil || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != implPath || of.Obj().Name() != kind {
+	if of == nil || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != path || of.Obj().Name() != kind {
 		return nil, false
 	}
 	model := asNamed(of.TypeArgs().At(0))

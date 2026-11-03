@@ -112,6 +112,12 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	for _, p := range plans {
 		f.Reserve(p.name, p.fn, p.name+"Changes", p.name+"ChangeSet")
 	}
+	if len(plans) > 0 {
+		scope, impl := f.Import(scopePath, "scope"), f.Import(implPath, "impl")
+		fmt.Fprintf(f, "// ormRuntime is q, the field of a scope type, as the runtime reads it, and ormScope is the "+
+			"runtime's scope as the\n// field again.\nfunc ormRuntime[M any](q %[1]s.Of[M]) %[2]s.Of[M] { return "+
+			"%[2]s.Of[M](q) }\n\nfunc ormScope[M any](q %[2]s.Of[M]) %[1]s.Of[M] { return %[1]s.Of[M](q) }\n\n", scope, impl)
+	}
 	for _, p := range plans {
 		e := emitter{f: f, d: d, p: p}
 		e.scope()
@@ -143,13 +149,13 @@ func (e emitter) scope() {
 	unpaged := e.unpaged()
 	if p.implied {
 		e.printf("// %[1]s is the scope of %[2]s, whose rows are read into %[3]s, as //kanna:scopes implies it.\n%[5]s"+
-			"type %[1]s struct{ q %[4]s[%[3]s] }\n\n", p.name, p.table, model, e.ref("Of"), unpaged)
+			"type %[1]s struct{ q %[4]s.Of[%[3]s] }\n\n", p.name, p.table, model, e.f.Import(scopePath, "scope"), unpaged)
 	}
 	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\n%[4]sfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
 		p.fn, p.table, p.name, unpaged)
 	s := e.f.Scope().Name("s")
 	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s[%s] { return %s }\n\n",
-		s, p.name, e.ref("Of"), model, e.q(s))
+		s, p.name, e.f.Import(scopePath, "scope")+".Of", model, s+"."+p.field)
 
 	e.changes()
 	for _, c := range p.columns {
@@ -181,7 +187,7 @@ func (e emitter) scope() {
 	e.printf("func (%[1]s %[2]s) Or(%[3]s ...%[2]s) %[2]s {\n", s, p.name, alternatives)
 	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, alternatives)
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s\n}\n", i, a, alternatives, qs, e.q(a))
-	e.printf("return %s{%s.Or(%s...)}\n}\n\n", p.name, e.q(s), qs)
+	e.printf("return %s{ormScope(%s.Or(%s...))}\n}\n\n", p.name, e.q(s), qs)
 
 	sc = e.f.Scope()
 	s, other := sc.Name("s"), sc.Name("other")
@@ -216,7 +222,7 @@ func (e emitter) with(lk link) {
 	if lk.scalar != nil {
 		name := lk.field.path[len(lk.field.path)-1]
 		e.printf("func (s %s) With%s() %s {\n", e.p.name, name, e.p.name)
-		e.printf("return %s{%s(%s, %q, %s[%s]{})}\n}\n\n", e.p.name, e.ref("Preload"), e.q("s"),
+		e.printf("return %s{ormScope(%s(%s, %q, %s[%s]{}))}\n}\n\n", e.p.name, e.ref("Preload"), e.q("s"),
 			strings.Join(lk.field.path, "."), e.ref("Of"), types.TypeString(lk.scalar.typ, e.f.Qualifier))
 		return
 	}
@@ -239,8 +245,8 @@ func (e emitter) with(lk link) {
 	e.printf("// With%s loads %s, from %s %s.%s\n", name, name, lk.target.table, by, each)
 	e.printf("func (%[1]s %[2]s) With%[3]s(%[4]s ...%[5]s) %[2]s {\n", s, e.p.name, name, sub, target)
 	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), types.TypeString(lk.model, e.f.Qualifier), sub)
-	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sub, qs)
-	e.printf("return %s{%s(%s, %s, %s(%s...))}\n}\n\n", e.p.name, e.ref(preload), e.q(s),
+	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = ormRuntime(%[2]s.Of())\n}\n", i, x, sub, qs)
+	e.printf("return %s{ormScope(%s(%s, %s, %s(%s...)))}\n}\n\n", e.p.name, e.ref(preload), e.q(s),
 		strconv.Quote(strings.Join(lk.field.path, ".")), e.ref("Combine"), qs)
 }
 
@@ -339,12 +345,13 @@ func (e emitter) method(doc, s, name, params, expr string) {
 // fn writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope made
 // of the scope.Of expr returns.
 func (e emitter) fn(s, name, params, expr string) {
-	e.printf("func (%[1]s %[2]s) %[3]s(%[4]s) %[2]s {\nreturn %[2]s{%[5]s}\n}\n\n", s, e.p.name, name, params, expr)
+	e.printf("func (%[1]s %[2]s) %[3]s(%[4]s) %[2]s {\nreturn %[2]s{ormScope(%[5]s)}\n}\n\n", s, e.p.name, name, params,
+		expr)
 }
 
-// q is the scope.Of of the receiver s.
+// q is the scope of the receiver s, as the runtime reads it.
 func (e emitter) q(s string) string {
-	return s + "." + e.p.field
+	return "ormRuntime(" + s + "." + e.p.field + ")"
 }
 
 // where is the scope.Of of the receiver s narrowed by the condition parts make.
@@ -384,7 +391,7 @@ func (e emitter) column(c column) {
 		e.method(fmt.Sprintf("narrows to the rows whose %s is one of %s.", col, vs), s, name+"In", vs+" ..."+typ, in)
 		e.printf("// %sNotIn narrows to the rows whose %s is none of %s.\n", name, col, vs)
 		e.printf("func (%[1]s %[2]s) %[3]sNotIn(%[4]s ...%[5]s) %[2]s {\nif len(%[4]s) == 0 {\nreturn %[1]s\n}\n"+
-			"return %[2]s{%[6]s}\n}\n\n", s, e.p.name, name, vs, typ, notIn)
+			"return %[2]s{ormScope(%[6]s)}\n}\n\n", s, e.p.name, name, vs, typ, notIn)
 	}
 
 	if k.ordered {

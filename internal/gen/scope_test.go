@@ -229,7 +229,7 @@ type Order[M any] struct{ q scope.Of[M] }
 		{"an scope.Of embedded", `
 //kanna:scope table=orders
 type Order struct{ scope.Of[model.Order] }
-`, "scopes.go:11:6: error: Order: its scope.Of is embedded, which makes Where a method of the scope\n" +
+`, "scopes.go:11:6: error: Order: its scope.Of is embedded, which makes Raw a method of the scope\n" +
 			"  name the field: q scope.Of[model.Order]"},
 		{"an scope.Of exported", `
 //kanna:scope table=orders
