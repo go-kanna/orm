@@ -194,6 +194,10 @@ func TestFields_Mistakes(t *testing.T) {
 		{"a column on a relation", "\tLines []OrderLine `orm:\"lines\"`\n", "type OrderLine struct{ ID int64 }\n",
 			`model.go:8:1: error: Order.Lines: orm:"lines" names a column, but Lines is a relation` + "\n" +
 				`  name the foreign key it follows with orm:"fk=<column>"`},
+		{"nullzero on a relation", "\tLines []OrderLine `orm:\",nullzero\"`\n", "type OrderLine struct{ ID int64 }\n",
+			`model.go:8:1: error: Order.Lines: orm:",nullzero" is for a column, and Lines is a relation`},
+		{"default on a relation", "\tCoupon *Coupon `orm:\",default\"`\n", "type Coupon struct{ ID int64 }\n",
+			`model.go:8:1: error: Order.Coupon: orm:",default" is for a column, and Coupon is a relation`},
 		{"a map", "\tMeta map[string]string\n", "",
 			"model.go:8:1: error: Order.Meta: map[string]string is neither a column nor a relation\n" +
 				`  hold the column in a type with a Scan method, or leave the field out with orm:"-"`},
