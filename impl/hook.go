@@ -2,30 +2,38 @@ package impl
 
 import (
 	"context"
+	"slices"
 	"time"
+
+	"github.com/go-kanna/orm/hook"
 )
 
-// QueryLog describes one completed SQL statement, including reading its results.
-type QueryLog struct {
-	SQL      string
-	Args     []any
-	Duration time.Duration
-	Err      error
-}
-
-// QueryLogger receives each statement once. Calls from concurrent queries may overlap.
-// Args must not be modified or retained after the callback returns without copying.
-type QueryLogger func(context.Context, QueryLog)
-
-// Options configures generated repositories.
+// Options configures generated repositories: the hooks each statement they run is called between.
 type Options struct {
-	QueryLogger QueryLogger
+	Before []hook.Before
+	After  []hook.After
 }
 
+// Option is one setting of Options.
 type Option func(*Options)
 
-func WithQueryLogger(logger QueryLogger) Option {
-	return func(o *Options) { o.QueryLogger = logger }
+// WithBefore adds f to the hooks called as each statement starts, after those added before it. A nil f adds none.
+func WithBefore(f hook.Before) Option {
+	return func(o *Options) {
+		if f != nil {
+			o.Before = append(slices.Clip(o.Before), f)
+		}
+	}
+}
+
+// WithAfter adds f to the hooks called once each statement is done, before those added before it, so that the first
+// hooks added enclose the others. A nil f adds none.
+func WithAfter(f hook.After) Option {
+	return func(o *Options) {
+		if f != nil {
+			o.After = append(slices.Clip(o.After), f)
+		}
+	}
 }
 
 func NewOptions(opts ...Option) Options {
@@ -36,6 +44,9 @@ func NewOptions(opts ...Option) Options {
 	return o
 }
 
+// Option is the option giving a repository o, as Bind gives the repository it returns those of its receiver.
+func (o Options) Option() Option { return func(p *Options) { *p = o } }
+
 // QueryTrace is used by generated repositories to observe one statement.
 // A nil trace is disabled and never reads the clock.
 type QueryTrace struct {
@@ -43,13 +54,22 @@ type QueryTrace struct {
 	finished bool
 }
 
-func (o Options) StartQuery(ctx context.Context, sql string, args []any) *QueryTrace {
-	if o.QueryLogger == nil {
-		return nil
+// StartQuery calls the Before hooks of o for a statement of sql and args. It returns the context the statement runs
+// with, and the trace calling the After hooks once the statement ends, nil without any.
+func (o Options) StartQuery(ctx context.Context, sql string, args []any) (context.Context, *QueryTrace) {
+	q := hook.Query{SQL: sql, Args: args}
+	for _, f := range o.Before {
+		ctx = f(ctx, q) //nolint:fatcontext // each Before wraps the context the one before it returned, once a statement
+	}
+	if len(o.After) == 0 {
+		return ctx, nil
 	}
 	started := time.Now()
-	return &QueryTrace{complete: func(err error) {
-		o.QueryLogger(ctx, QueryLog{SQL: sql, Args: args, Duration: time.Since(started), Err: err})
+	return ctx, &QueryTrace{complete: func(err error) {
+		e := hook.Execution{Query: q, Duration: time.Since(started), Err: err}
+		for _, f := range slices.Backward(o.After) {
+			f(ctx, e)
+		}
 	}}
 }
 

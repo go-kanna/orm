@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/hook"
 	"github.com/go-kanna/orm/option"
 	"github.com/go-kanna/orm/relation"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,8 +41,8 @@ func run(ctx context.Context, url string, w io.Writer) error {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer pool.Close()
-	queryLog := option.WithQueryLogger(func(_ context.Context, q option.QueryLog) {
-		fmt.Fprintf(w, "SQL (%s): %s; error=%v\n", q.Duration, q.SQL, q.Err)
+	queryLog := option.WithAfter(func(_ context.Context, e hook.Execution) {
+		fmt.Fprintf(w, "SQL (%s): %s; error=%v\n", e.Duration, e.SQL, e.Err)
 	})
 	ex := example{
 		db:          pool,

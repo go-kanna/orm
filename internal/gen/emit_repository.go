@@ -66,7 +66,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve(e.database, e.sqlRows)
 
 	e.db()
-	e.queryLogging()
+	e.hooks()
 	for _, repo := range repos {
 		e.repository(repo)
 	}
@@ -290,8 +290,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		if m.bind.accessor {
 			input += ".DBTX()"
 		}
-		e.printf("return %s(%s, %s(%s.executor.options.QueryLogger))\n}\n\n",
-			repo.constructor(), input, e.ref("WithQueryLogger"), recv)
+		e.printf("return %s(%s, %s.executor.options.Option())\n}\n\n", repo.constructor(), input, recv)
 		return
 	}
 	switch m.verb {

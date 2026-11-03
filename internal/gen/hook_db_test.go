@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kanna/orm/hook"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
 	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
@@ -15,10 +16,10 @@ import (
 	"github.com/go-kanna/orm/option"
 )
 
-func TestQueryLogging_Postgres(t *testing.T) {
+func TestHooks_Postgres(t *testing.T) {
 	t.Parallel()
-	var logs []option.QueryLog
-	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureQueries(t, &logs))
+	var done []hook.Execution
+	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done)...)
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, pgscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
@@ -32,13 +33,13 @@ func TestQueryLogging_Postgres(t *testing.T) {
 	if err := repo.InsertLine(ctx, model.OrderLine{OrderID: 1, LineNo: 1, SKU: "duplicate"}); err == nil {
 		t.Fatal("duplicate key was accepted")
 	}
-	checkQueryLogs(t, logs)
+	checkExecutions(t, done)
 }
 
-func TestQueryLogging_MySQL(t *testing.T) {
+func TestHooks_MySQL(t *testing.T) {
 	t.Parallel()
-	var logs []option.QueryLog
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureQueries(t, &logs))
+	var done []hook.Execution
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done)...)
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, mysqlscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
@@ -52,34 +53,41 @@ func TestQueryLogging_MySQL(t *testing.T) {
 	if _, err := repo.InsertLine(ctx, model.OrderLine{OrderID: 1, LineNo: 1, SKU: "duplicate"}); err == nil {
 		t.Fatal("duplicate key was accepted")
 	}
-	checkQueryLogs(t, logs)
+	checkExecutions(t, done)
 }
 
-func captureQueries(t *testing.T, logs *[]option.QueryLog) option.Option {
+type hookKey struct{}
+
+// captureExecutions has a repository mark the context of each statement before it runs, and record it after.
+func captureExecutions(t *testing.T, done *[]hook.Execution) []option.Option {
 	t.Helper()
-	ctx := t.Context()
-	return option.WithQueryLogger(func(got context.Context, q option.QueryLog) {
-		if got != ctx {
-			t.Error("query context was not preserved")
-		}
-		q.Args = slices.Clone(q.Args)
-		*logs = append(*logs, q)
-	})
+	return []option.Option{
+		option.WithBefore(func(ctx context.Context, q hook.Query) context.Context {
+			return context.WithValue(ctx, hookKey{}, q.SQL)
+		}),
+		option.WithAfter(func(ctx context.Context, e hook.Execution) {
+			if ctx.Value(hookKey{}) != e.SQL {
+				t.Error("After did not get the context of Before")
+			}
+			e.Args = slices.Clone(e.Args)
+			*done = append(*done, e)
+		}),
+	}
 }
 
-func checkQueryLogs(t *testing.T, logs []option.QueryLog) {
+func checkExecutions(t *testing.T, done []hook.Execution) {
 	t.Helper()
-	if len(logs) != 5 {
-		t.Fatalf("got %d events, want parent, preload, count, custom SQL, failed insert: %+v", len(logs), logs)
+	if len(done) != 5 {
+		t.Fatalf("got %d executions, want parent, preload, count, custom SQL, failed insert: %+v", len(done), done)
 	}
 	statements := []string{"FROM orders", "FROM order_lines", "count(*)", "UPDATE orders", "INSERT INTO order_lines"}
 	for i, text := range statements {
-		q := logs[i]
-		if !strings.Contains(q.SQL, text) || q.Duration <= 0 || (q.Err != nil) != (i == 4) {
-			t.Errorf("event %d: %+v", i, q)
+		e := done[i]
+		if !strings.Contains(e.SQL, text) || e.Duration <= 0 || (e.Err != nil) != (i == 4) {
+			t.Errorf("execution %d: %+v", i, e)
 		}
 	}
-	if len(logs[0].Args) != 1 || logs[0].Args[0] != model.OrderID(1) {
-		t.Fatalf("query arguments: %+v", logs[0].Args)
+	if len(done[0].Args) != 1 || done[0].Args[0] != model.OrderID(1) {
+		t.Fatalf("query arguments: %+v", done[0].Args)
 	}
 }

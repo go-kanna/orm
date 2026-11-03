@@ -23,8 +23,7 @@ const (
 // which the generated code names as it does. Any other name is of impl.
 var publicNames = map[string]string{
 	"Of": scopePath, "Single": relationPath, "Many": relationPath, "Column": relationPath, "Option": optionPath,
-	"QueryLog": optionPath, "QueryLogger": optionPath, "WithQueryLogger": optionPath, "ErrNotFound": ormPath,
-	"ErrRequiredRelation": ormPath,
+	"ErrNotFound": ormPath, "ErrRequiredRelation": ormPath,
 }
 
 // runtimeRef names name of the runtime in f, importing the package it is read from only once it is named, so that f

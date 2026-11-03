@@ -32,14 +32,14 @@ type ormDatabase struct {
 }
 
 func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	trace := d.options.StartQuery(ctx, query, args)
+	ctx, trace := d.options.StartQuery(ctx, query, args)
 	result, err := d.db.ExecContext(ctx, query, args...)
 	trace.End(err)
 	return result, err
 }
 
 func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (impl.Rows, error) {
-	trace := d.options.StartQuery(ctx, query, args)
+	ctx, trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		trace.End(err)
@@ -53,7 +53,7 @@ type ormSQLRows struct{ *sql.Rows }
 func (r ormSQLRows) Close() { _ = r.Rows.Close() }
 
 func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) impl.Row {
-	trace := d.options.StartQuery(ctx, query, args)
+	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.db.QueryRowContext(ctx, query, args...))
 }
 

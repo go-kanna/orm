@@ -31,20 +31,20 @@ type ormDatabase struct {
 }
 
 func (d ormDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
-	trace := d.options.StartQuery(ctx, query, args)
+	ctx, trace := d.options.StartQuery(ctx, query, args)
 	result, err := d.db.Exec(ctx, query, args...)
 	trace.End(err)
 	return result, err
 }
 
 func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (impl.Rows, error) {
-	trace := d.options.StartQuery(ctx, query, args)
+	ctx, trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.db.Query(ctx, query, args...)
 	return trace.Rows(rows, err)
 }
 
 func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) impl.Row {
-	trace := d.options.StartQuery(ctx, query, args)
+	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.db.QueryRow(ctx, query, args...))
 }
 

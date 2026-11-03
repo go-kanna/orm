@@ -744,21 +744,21 @@ return tx.Commit(ctx)
 - `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や手書きのコードだけで実装するメソッドに付けた場合も同じです。ロックはそちらに書いてください。同一パッケージで生成ヘルパーを呼ぶメソッドでは、そのヘルパーにロックを引き継ぎます。
 - `GetForUpdate` のようにロックしそうな名前の `Get`、`Find`、`First`、`List` に `//kanna:lock` がないと、警告が出ます。
 
-### クエリログ
+### フック
 
-生成 constructor は任意の repository option を受け取ります。`WithQueryLogger` に関数を渡すため、特定のロギングライブラリには依存しません。
+生成 constructor は任意の repository option を受け取ります。`option.WithBefore` と `option.WithAfter` には `hook` パッケージの関数を渡し、repository は実行する文ごとにその前後でそれらを呼びます。特定のロギングやトレーシングのライブラリには依存しません。クエリをログに出すには After を登録します。
 
 ```go
-logQuery := func(ctx context.Context, q option.QueryLog) {
-    fmt.Printf("%s (%s): %v\n", q.SQL, q.Duration, q.Err)
-    // ctx からリクエスト情報を取り出し、q.Args を出すかはここで決める。
+logQuery := func(ctx context.Context, e hook.Execution) {
+    fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
+    // ctx からリクエスト情報を取り出し、e.Args を出すかはここで決める。
 }
-repo := store.NewOrderRepository(db, option.WithQueryLogger(logQuery))
+repo := store.NewOrderRepository(db, option.WithAfter(logQuery))
 ```
 
-`QueryLog` は `SQL string`、`Args []any`、`Duration time.Duration`、`Err error` を持ちます。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度通知します。呼び出し時の context と、プレースホルダーを含む SQL、別項目の引数を渡します。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、エラー変換前のエラーを通知します。条件や検証のエラーで SQL を実行しなかった場合は通知しません。
+Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。After はその context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。エラー変換前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
-`Bind` でトランザクションへ切り替えてもロガーを引き継ぎます。未設定時は通知せず、時刻も取得しません。コールバックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、コールバック終了後も保持する値はコピーしてください。ログに出す引数は利用側で選びます。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。生の接続を使って Go で手実装したメソッドは、生成コードの実行経路の外にあります。両 DB の example にクエリ情報を出す関数の登録例があります。
+option は何度でも渡せます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に呼ばれます。最初に渡したフックがほかを包む形です。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。生の接続を使って Go で手実装したメソッドは、生成コードの実行経路の外にあります。両 DB の example に、実行した文を出す After の登録例があります。
 
 ### 専用の型へ読み込む projection
 
