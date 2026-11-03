@@ -28,38 +28,51 @@ type DBTX interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// ormDatabase runs statements on dbtx between the hooks of options, as the methods of the repositories, and those
+// written by hand, run them.
 type ormDatabase struct {
-	db      DBTX
+	dbtx    DBTX
 	options impl.Options
 }
 
 func (d ormDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
-	result, err := d.db.Exec(ctx, query, args...)
+	result, err := d.dbtx.Exec(ctx, query, args...)
 	trace.End(err)
 	return result, err
 }
 
-func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (impl.Rows, error) {
+func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
-	rows, err := d.db.Query(ctx, query, args...)
-	return trace.Rows(rows, err)
+	rows, err := d.dbtx.Query(ctx, query, args...)
+	traced, err := trace.Rows(rows, err)
+	if err != nil {
+		return nil, err
+	}
+	return ormPgxRows{Rows: rows, traced: traced}, nil
 }
 
-func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) impl.Row {
+// ormPgxRows is pgx.Rows read through traced, for the hooks to see the rows read to the end.
+type ormPgxRows struct {
+	pgx.Rows
+	traced impl.Rows
+}
+
+func (r ormPgxRows) Next() bool             { return r.traced.Next() }
+func (r ormPgxRows) Scan(dest ...any) error { return r.traced.Scan(dest...) }
+func (r ormPgxRows) Close()                 { r.traced.Close() }
+
+func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
-	return trace.Row(d.db.QueryRow(ctx, query, args...))
+	return trace.Row(d.dbtx.QueryRow(ctx, query, args...))
 }
 
 // CustomerRepository implements repository.CustomerRepository on PostgreSQL through pgx.
-type CustomerRepository struct {
-	db       DBTX
-	executor ormDatabase
-}
+type CustomerRepository struct{ db ormDatabase }
 
 // NewCustomerRepository returns a CustomerRepository running on db.
 func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
-	return CustomerRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
+	return CustomerRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.CustomerRepository = CustomerRepository{}
@@ -70,7 +83,7 @@ VALUES ($1, $2, $3, $4)
 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, phone = COALESCE(EXCLUDED.phone, customers.phone)
 RETURNING id, email, name, phone, created_at`
 	var row model.Customer
-	err := r.executor.QueryRow(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt).
+	err := r.db.QueryRow(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt).
 		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -84,7 +97,7 @@ func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model
 	if err := q.Unpaged("Get"); err != nil {
 		return model.Customer{}, err
 	}
-	rows, err := selectCustomers(ctx, r.executor, q, "")
+	rows, err := selectCustomers(ctx, r.db, q, "")
 	if err != nil {
 		return model.Customer{}, err
 	}
@@ -108,7 +121,7 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 	}
 	text += ` RETURNING id, email, name, phone, created_at`
 	var row model.Customer
-	err = r.executor.QueryRow(ctx, text, args...).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
+	err = r.db.QueryRow(ctx, text, args...).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Customer{}, fmt.Errorf("no row of customers matches: %w", orm.ErrNotFound)
 	}
@@ -119,14 +132,11 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 }
 
 // ProductRepository implements repository.ProductRepository on PostgreSQL through pgx.
-type ProductRepository struct {
-	db       DBTX
-	executor ormDatabase
-}
+type ProductRepository struct{ db ormDatabase }
 
 // NewProductRepository returns a ProductRepository running on db.
 func NewProductRepository(db DBTX, opts ...option.Option) ProductRepository {
-	return ProductRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
+	return ProductRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.ProductRepository = ProductRepository{}
@@ -146,7 +156,7 @@ func (r ProductRepository) UpsertAll(ctx context.Context, products []model.Produ
 	const q = `INSERT INTO products (sku, name, price)
 SELECT * FROM unnest($1::text[], $2::text[], $3::int8[])
 ON CONFLICT (sku) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price`
-	if _, err := r.executor.Exec(ctx, q, sku, name, price); err != nil {
+	if _, err := r.db.Exec(ctx, q, sku, name, price); err != nil {
 		return fmt.Errorf("upsert into products: %w", err)
 	}
 	return nil
@@ -158,7 +168,7 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	return selectProducts(ctx, r.executor, q, "")
+	return selectProducts(ctx, r.db, q, "")
 }
 
 func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
@@ -174,7 +184,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.executor.Query(ctx, text+"", args...)
+	rows, err := r.db.Query(ctx, text+"", args...)
 	if err != nil {
 		return nil, fmt.Errorf("project products: %w", err)
 	}
@@ -206,7 +216,7 @@ func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]st
 	if err2 != nil {
 		return nil, err2
 	}
-	rows, err2 := r.executor.Query(ctx, `SELECT name FROM products`+rd2.Where()+rd2.OrderBy()+rd2.Limit(), rd2.Args()...)
+	rows, err2 := r.db.Query(ctx, `SELECT name FROM products`+rd2.Where()+rd2.OrderBy()+rd2.Limit(), rd2.Args()...)
 	if err2 != nil {
 		return nil, fmt.Errorf("pluck products.name: %w", err2)
 	}
@@ -238,21 +248,18 @@ func (r ProductRepository) InsertTags(ctx context.Context, tags []model.Tag) err
 	}
 	const q = `INSERT INTO tags (name)
 SELECT * FROM unnest($1::text[])`
-	if _, err := r.executor.Exec(ctx, q, name); err != nil {
+	if _, err := r.db.Exec(ctx, q, name); err != nil {
 		return fmt.Errorf("insert into tags: %w", err)
 	}
 	return nil
 }
 
 // OrderRepository implements repository.OrderRepository on PostgreSQL through pgx.
-type OrderRepository struct {
-	db       DBTX
-	executor ormDatabase
-}
+type OrderRepository struct{ db ormDatabase }
 
 // NewOrderRepository returns an OrderRepository running on db.
 func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
-	return OrderRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
+	return OrderRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.OrderRepository = OrderRepository{}
@@ -267,7 +274,7 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 	if err := q.Unpaged("Find"); err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := selectOrders(ctx, r.executor, q, "")
+	rows, err := selectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -287,7 +294,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	if err := q.Unpaged("Get"); err != nil {
 		return model.Order{}, r.mapError(err)
 	}
-	rows, err := selectOrders(ctx, r.executor, q, "")
+	rows, err := selectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return model.Order{}, r.mapError(err)
 	}
@@ -306,7 +313,7 @@ FROM orders AS o
 LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
 WHERE o.id = $1`
 	var row repository.OrderApprover
-	err := r.executor.QueryRow(ctx, q, id).
+	err := r.db.QueryRow(ctx, q, id).
 		Scan(&row.OrderID, &row.Approver)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.OrderApprover{}, r.mapError(fmt.Errorf("query GetApprover: %w", orm.ErrNotFound))
@@ -323,7 +330,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	rows, err := selectOrders(ctx, r.executor, q, "")
+	rows, err := selectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -343,7 +350,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	if err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := r.executor.Query(ctx, text+"", args...)
+	rows, err := r.db.Query(ctx, text+"", args...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 	}
@@ -379,7 +386,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, e
 		return 0, r.mapError(err)
 	}
 	var n int64
-	if err := r.executor.QueryRow(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
 		return 0, r.mapError(fmt.Errorf("count orders: %w", err))
 	}
 	return n, nil
@@ -391,7 +398,7 @@ VALUES ($1, $2, $3, $4)
 RETURNING id, customer_id, status, placed_at, note`
 	var row model.Order
 	var nullableMemo sql.Null[string]
-	err := r.executor.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}).
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
 	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
@@ -416,7 +423,7 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 	}
 	const q = `INSERT INTO order_lines (order_id, line_no, sku, quantity)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::int4[])`
-	if _, err := r.executor.Exec(ctx, q, orderID, lineNo, sku, quantity); err != nil {
+	if _, err := r.db.Exec(ctx, q, orderID, lineNo, sku, quantity); err != nil {
 		return r.mapError(fmt.Errorf("insert into order_lines: %w", err))
 	}
 	return nil
@@ -440,7 +447,7 @@ func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.
 	}
 	const q = `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::timestamptz[], $5::timestamptz[])`
-	if _, err := r.executor.Exec(ctx, q, orderID, revision, approver, approvedAt, revokedAt); err != nil {
+	if _, err := r.db.Exec(ctx, q, orderID, revision, approver, approvedAt, revokedAt); err != nil {
 		return r.mapError(fmt.Errorf("insert into approvals: %w", err))
 	}
 	return nil
@@ -456,7 +463,7 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (int64, 
 	if err2 != nil {
 		return 0, r.mapError(err2)
 	}
-	tag, err2 := r.executor.Exec(ctx, text, args...)
+	tag, err2 := r.db.Exec(ctx, text, args...)
 	if err2 != nil {
 		return 0, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
 	}
@@ -473,7 +480,7 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 	if err2 != nil {
 		return nil, r.mapError(err2)
 	}
-	rows, err2 := r.executor.Query(ctx, text+` RETURNING id, customer_id`, args...)
+	rows, err2 := r.db.Query(ctx, text+` RETURNING id, customer_id`, args...)
 	if err2 != nil {
 		return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
 	}
@@ -496,7 +503,7 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) error {
 	const q = `INSERT INTO order_tags (order_id, tag) VALUES ($1, $2)
 ON CONFLICT DO NOTHING`
-	if _, err := r.executor.Exec(ctx, q, orderID, input.Tag); err != nil {
+	if _, err := r.db.Exec(ctx, q, orderID, input.Tag); err != nil {
 		return r.mapError(fmt.Errorf("query Tag: %w", err))
 	}
 	return nil
@@ -513,7 +520,7 @@ JOIN products p ON p.sku = l.sku
 WHERE o.placed_at >= $1 AND o.status <> 'canceled'
 GROUP BY 1
 ORDER BY 1`
-	rows, err := r.executor.Query(ctx, q, since)
+	rows, err := r.db.Query(ctx, q, since)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
 	}
@@ -533,20 +540,17 @@ ORDER BY 1`
 }
 
 // FulfillmentRepository implements repository.FulfillmentRepository on PostgreSQL through pgx.
-type FulfillmentRepository struct {
-	db       DBTX
-	executor ormDatabase
-}
+type FulfillmentRepository struct{ db ormDatabase }
 
 // NewFulfillmentRepository returns a FulfillmentRepository running on db.
 func NewFulfillmentRepository(db DBTX, opts ...option.Option) FulfillmentRepository {
-	return FulfillmentRepository{db: db, executor: ormDatabase{db: db, options: impl.NewOptions(opts...)}}
+	return FulfillmentRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 var _ repository.FulfillmentRepository = FulfillmentRepository{}
 
 func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+	if _, ok := r.db.dbtx.(interface{ Commit(context.Context) error }); !ok {
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx")
 	}
 	var q scope.Of[model.Order]
@@ -554,7 +558,7 @@ func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderI
 	if err := q.Unpaged("GetForUpdate"); err != nil {
 		return model.Order{}, err
 	}
-	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE`)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE`)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -565,7 +569,7 @@ func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderI
 }
 
 func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
+	if _, ok := r.db.dbtx.(interface{ Commit(context.Context) error }); !ok {
 		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a pgx.Tx")
 	}
 	qs := make([]scope.Of[model.Order], len(s))
@@ -574,7 +578,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 	}
 	q := impl.Combine(qs...)
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
-	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
+	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -587,7 +591,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 func (r FulfillmentRepository) InsertShipment(ctx context.Context, s model.Shipment) error {
 	const q = `INSERT INTO shipments (order_id, carrier, tracking)
 VALUES ($1, $2, $3)`
-	if _, err := r.executor.Exec(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
+	if _, err := r.db.Exec(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
 		return fmt.Errorf("insert into shipments: %w", err)
 	}
 	return nil
@@ -597,7 +601,7 @@ func (r FulfillmentRepository) Update(ctx context.Context, o model.Order) error 
 	const q = `UPDATE orders
 SET customer_id = $1, status = $2, placed_at = $3, note = $4
 WHERE id = $5`
-	tag, err := r.executor.Exec(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}, o.ID)
+	tag, err := r.db.Exec(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}, o.ID)
 	if err != nil {
 		return fmt.Errorf("update orders: %w", err)
 	}
