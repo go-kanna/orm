@@ -692,7 +692,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 - PostgreSQL では、戻り値が `([]model.OrderLine, error)` なら `RETURNING` で行を読み戻します。
 - MySQL では、行を `VALUES (?, ?, ?), (?, ?, ?), ...` で送り、1 つの文に入るプレースホルダの数を超える場合は複数の文に分割します。すべて成功するかすべて失敗するかにしたい場合は、コンストラクタにトランザクションを渡してください。
-- MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。
+- MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。ただし `(int64, error)` を返す `Insert` は、各文が書き込んだ行数の合計を返します。
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
 - `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込んでください。
 

@@ -41,6 +41,7 @@ type Records interface {
  Upsert(ctx context.Context, record model.Record) (model.Record,error)
  //kanna:conflict record_key coalesce=note keep=owner_id
  UpsertAll(ctx context.Context, records []model.Record) error
+ InsertMany(ctx context.Context, records []model.Record) (int64, error)
  Update(ctx context.Context, record model.Record) error
  Get(ctx context.Context, id int64) (model.Record,error)
  GetByKey(ctx context.Context, recordKey string) (model.Record,error)
@@ -105,6 +106,10 @@ func TestWriteOptions(t *testing.T) {
  got,err := records.Get(ctx,saved.ID)
  if err != nil || got.Stamp != 20 { t.Fatalf("default affected UPDATE: %+v, %v",got,err) }
  if err := records.UpsertAll(ctx,[]model.Record{{Key:"one"},{Key:"two"}}); err != nil { t.Fatal(err) }
+ if n,err := records.InsertMany(ctx,[]model.Record{{Key:"four"},{Key:"five"}}); err != nil || n != 2 {
+  t.Fatalf("bulk insert count: %d, %v",n,err)
+ }
+ if n,err := records.InsertMany(ctx,nil); err != nil || n != 0 { t.Fatalf("empty bulk insert: %d, %v",n,err) }
  got,err = records.Get(ctx,first.ID)
  if err != nil || got.Note != "changed" || got.OwnerID == nil || *got.OwnerID != 22 || got.Stamp != 20 {
   t.Fatalf("bulk upsert: %+v, %v",got,err)
