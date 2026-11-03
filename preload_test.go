@@ -70,13 +70,13 @@ func TestPreload_JoinsTheScopesOfARelation(t *testing.T) {
 		t.Errorf("preloaded again, the scope of Lines renders as %s, want %s", sql, want)
 	}
 
-	joined := orm.Join(orm.Preload(q, "Lines", l.Where("a = ", 1)), orm.Preload(q, "Lines", l.Where("b = ", 2)),
+	combined := orm.Combine(orm.Preload(q, "Lines", l.Where("a = ", 1)), orm.Preload(q, "Lines", l.Where("b = ", 2)),
 		orm.Preload(q, "Customer", p))
-	if sql, _ := sub[line](t, joined, "Lines"); sql != want {
-		t.Errorf("joined, the scope of Lines renders as %s, want %s", sql, want)
+	if sql, _ := sub[line](t, combined, "Lines"); sql != want {
+		t.Errorf("combined, the scope of Lines renders as %s, want %s", sql, want)
 	}
-	if _, ok := orm.Preloaded[product](joined, "Customer"); !ok {
-		t.Error("Customer is not preloaded once joined")
+	if _, ok := orm.Preloaded[product](combined, "Customer"); !ok {
+		t.Error("Customer is not preloaded once combined")
 	}
 }
 

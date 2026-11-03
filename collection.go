@@ -17,14 +17,14 @@ type Batch struct {
 	Projections                             []Projection
 }
 type batchScope interface {
-	joinBatch(other batchScope) batchScope
+	combineBatch(other batchScope) batchScope
 }
 type batchPlan[M any] struct {
 	parent Parent
 	scope  Of[M]
 }
 
-func (p batchPlan[M]) joinBatch(_ batchScope) batchScope {
+func (p batchPlan[M]) combineBatch(_ batchScope) batchScope {
 	p.scope.err = errors.Join(p.scope.err, errors.New("orm: a collection is preloaded twice"))
 	return p
 }
@@ -47,14 +47,14 @@ func addBatch(batches []batchField, batch batchField) []batchField {
 	for i, existing := range batches {
 		if existing.field == batch.field {
 			batches = slices.Clone(batches)
-			batches[i].plan = existing.plan.joinBatch(batch.plan)
+			batches[i].plan = existing.plan.combineBatch(batch.plan)
 			return batches
 		}
 	}
 	return append(slices.Clip(batches), batch)
 }
 
-func Batched[C, M any](q Of[M], field string) (Of[C], Parent, bool) {
+func PreloadedMany[C, M any](q Of[M], field string) (Of[C], Parent, bool) {
 	for _, p := range q.batches {
 		if p.field != field {
 			continue

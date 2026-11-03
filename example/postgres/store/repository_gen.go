@@ -93,7 +93,7 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	changes := c.Of()
 	q = q.Where(`id = `, id)
 	text, args, err := changes.RenderUpdate(orm.Postgres, "customers", []string{"email", "name", "phone", "created_at"}, q)
@@ -162,7 +162,7 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	return selectProducts(ctx, r.executor, q, "")
 }
 
@@ -171,7 +171,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]st
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	rd2, err2 := q.Render(orm.Postgres, 1)
 	if err2 != nil {
 		return nil, err2
@@ -290,7 +290,7 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -312,7 +312,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -365,7 +365,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, "")
 }
 
@@ -379,7 +379,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
@@ -419,7 +419,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result i
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
 		return 0, err
 	}
@@ -520,7 +520,7 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
 	if err2 != nil {
 		return 0, err2
@@ -542,7 +542,7 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
 	if err2 != nil {
 		return nil, err2
@@ -653,7 +653,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
@@ -853,7 +853,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.Batched[model.Approval](q, "Approvals"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.Approval](q, "Approvals"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -902,7 +902,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, parent, ok := orm.Batched[model.OrderLine](q, "Lines"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -954,7 +954,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, parent, ok := orm.Batched[model.Tag](q, "Tags"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.Tag](q, "Tags"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {

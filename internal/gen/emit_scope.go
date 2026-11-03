@@ -225,7 +225,7 @@ func (e emitter) with(lk link) {
 	e.printf("func (%[1]s %[2]s) With%[3]s(%[4]s ...%[5]s) %[2]s {\n", s, e.p.name, name, sub, target)
 	e.printf("%s := make([]%s.Of[%s], len(%s))\n", qs, e.orm, types.TypeString(lk.model, e.f.Qualifier), sub)
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sub, qs)
-	e.printf("return %[1]s{%[2]s.Preload(%[3]s, %[4]s, %[2]s.Join(%[5]s...))}\n}\n\n", e.p.name, e.orm, e.q(s),
+	e.printf("return %[1]s{%[2]s.Preload(%[3]s, %[4]s, %[2]s.Combine(%[5]s...))}\n}\n\n", e.p.name, e.orm, e.q(s),
 		strconv.Quote(strings.Join(lk.field.path, ".")), qs)
 }
 

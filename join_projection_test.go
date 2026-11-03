@@ -84,7 +84,7 @@ func TestJoinScopesRemainImmutableAndRequireProjections(t *testing.T) {
 	if _, _, err := joined.RenderDelete(orm.Postgres, "memberships", []string{"id"}); err == nil {
 		t.Fatal("deletion accepted a join")
 	}
-	combined := orm.Join(joined, joined)
+	combined := orm.Combine(joined, joined)
 	text, _, _, err := combined.RenderProjection(orm.Postgres, "memberships", joinedColumns,
 		[]orm.TableJoin{joinUsers}, []string{"id"}, "unused")
 	if err != nil || strings.Count(text, " INNER JOIN ") != 1 {
@@ -99,7 +99,7 @@ func TestExplicitJoinConditions(t *testing.T) {
 		conditions := []join.Condition{join.On("user_id", "id"), join.On("tenant_id", "tenant_id")}
 		q := orm.Of[int]{}.Where("version > ", 7).JoinTable("users", conditions...)
 		conditions[0] = join.On("missing", "id")
-		q = orm.Join(q, orm.Of[int]{}.JoinTable("users", join.On("user_id", "id"), join.On("tenant_id", "tenant_id")))
+		q = orm.Combine(q, orm.Of[int]{}.JoinTable("users", join.On("user_id", "id"), join.On("tenant_id", "tenant_id")))
 		text, args, _, err := q.RenderProjection(d, "memberships", joinedColumns, metadata,
 			[]string{"id", "user_id", "tenant_id", "version"}, "unused")
 		want := `SELECT "memberships"."id", "users"."display_name" FROM ` +

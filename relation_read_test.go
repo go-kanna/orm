@@ -115,11 +115,11 @@ func TestCorrelatedFirstAndBatch(t *testing.T) {
 	}
 }
 
-func TestJoinDuplicateCollection(t *testing.T) {
+func TestCombineDuplicateCollection(t *testing.T) {
 	t.Parallel()
 	parent := orm.NewParent()
 	q := orm.PreloadMany(orm.Of[projectionParent]{}, "Children", parent, orm.Of[projectionChild]{}.Many())
-	child, token, ok := orm.Batched[projectionChild](orm.Join(q, q), "Children")
+	child, token, ok := orm.PreloadedMany[projectionChild](orm.Combine(q, q), "Children")
 	if !ok {
 		t.Fatal("collection was lost")
 	}
@@ -129,7 +129,7 @@ func TestJoinDuplicateCollection(t *testing.T) {
 	if err == nil {
 		t.Fatal("duplicate collection was silently accepted")
 	}
-	if _, _, err := orm.Batched[projectionChild](q, "Children"); !err {
+	if _, _, err := orm.PreloadedMany[projectionChild](q, "Children"); !err {
 		t.Fatal("original scope changed")
 	}
 }

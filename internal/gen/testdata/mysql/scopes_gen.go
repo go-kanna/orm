@@ -910,7 +910,7 @@ func (s Order) WithCustomer(sub ...Customer) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Customer", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Customer", orm.Combine(qs...))}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -919,7 +919,7 @@ func (s Order) WithLines(sub ...OrderLine) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Lines", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Lines", orm.Combine(qs...))}
 }
 
 func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) Order {
@@ -933,7 +933,7 @@ func (s Order) WithTags(sub ...Tag) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Tags", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Tags", orm.Combine(qs...))}
 }
 
 func (s Order) PreloadTags(build func(OrderColumns) orm.Many[model.Tag]) Order {
@@ -1619,7 +1619,7 @@ func (s OrderLine) WithOrder(sub ...Order) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Order", orm.Join(qs...))}
+	return OrderLine{orm.Preload(s.q, "Order", orm.Combine(qs...))}
 }
 
 // WithNotes loads Notes, from line_notes by order_id and line_no.
@@ -1628,7 +1628,7 @@ func (s OrderLine) WithNotes(sub ...LineNote) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Notes", orm.Join(qs...))}
+	return OrderLine{orm.Preload(s.q, "Notes", orm.Combine(qs...))}
 }
 
 func (s OrderLine) PreloadNotes(build func(OrderLineColumns) orm.Many[model.LineNote]) OrderLine {
@@ -1642,7 +1642,7 @@ func (s OrderLine) WithTags(sub ...Tag) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Tags", orm.Join(qs...))}
+	return OrderLine{orm.Preload(s.q, "Tags", orm.Combine(qs...))}
 }
 
 func (s OrderLine) PreloadTags(build func(OrderLineColumns) orm.Many[model.Tag]) OrderLine {
@@ -2192,7 +2192,7 @@ func (s LineNote) WithLine(sub ...OrderLine) LineNote {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return LineNote{orm.Preload(s.q, "Line", orm.Join(qs...))}
+	return LineNote{orm.Preload(s.q, "Line", orm.Combine(qs...))}
 }
 
 // Limit keeps the first n rows.

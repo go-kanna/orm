@@ -22,7 +22,7 @@ func (e repoEmitter) preloadCollection(lk link, n preloadNames) {
 	}
 	field := strings.Join(lk.field.path, ".")
 	model := types.TypeString(lk.model, e.f.Qualifier)
-	e.printf("if sub, parent, ok := %s.Batched[%s](%s, %q); ok {\n", e.ormPkg(), model, n.q, field)
+	e.printf("if sub, parent, ok := %s.PreloadedMany[%s](%s, %q); ok {\n", e.ormPkg(), model, n.q, field)
 	e.printf("type parentKey struct { %s }\n", e.keyFields(lk.keys))
 	e.printf("keys := []parentKey{}\nfor i := range %s {\n%s\n}\n", n.rows, keyOf("parentKey", "key", n.rows+
 		"[i]", lk.keys, func(k string) string { return "keys=append(keys," + k + ")" }))

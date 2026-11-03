@@ -73,7 +73,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...mysql.O
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -90,7 +90,7 @@ func (r OrderRepository) First(ctx context.Context, s ...mysql.Order) (model.Ord
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -107,7 +107,7 @@ func (r OrderRepository) List(ctx context.Context, s ...mysql.Order) ([]model.Or
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, "")
 }
 
@@ -116,7 +116,7 @@ func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s 
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderTagSummary, error) {
 		if err := q.ProjectionOnly("GetTagSummary"); err != nil {
@@ -162,7 +162,7 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderSummary, error) {
 		if err := q.ProjectionOnly("GetSummary"); err != nil {
@@ -208,7 +208,7 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderSummary, error) {
 		if err := q.ProjectionOnly("FindSummary"); err != nil {
@@ -254,7 +254,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...mysql.Order) ([
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
@@ -289,7 +289,7 @@ func (r OrderRepository) ListByCustomer(ctx context.Context, customerID int64, s
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`customer_id = `, customerID)
 	return selectOrders(ctx, r.executor, q, "")
 }
@@ -299,7 +299,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...mysql.Order) (int64, er
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
 		return 0, err
 	}
@@ -319,7 +319,7 @@ func (r OrderRepository) Exists(ctx context.Context, s ...mysql.Order) (bool, er
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	if err := q.ConditionsOnly("Exists"); err != nil {
 		return false, err
 	}
@@ -360,7 +360,7 @@ func (r OrderRepository) DeleteStale(ctx context.Context, s ...mysql.Order) (int
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	text, args, err2 := q.RenderDelete(orm.MySQL, "orders", []string{"id"})
 	if err2 != nil {
 		return 0, err2
@@ -381,7 +381,7 @@ func (r OrderRepository) DeleteLines(ctx context.Context, s ...mysql.OrderLine) 
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	text, args, err2 := q.RenderDelete(orm.MySQL, "order_lines", []string{"order_id", "line_no"})
 	if err2 != nil {
 		return 0, err2
@@ -402,7 +402,7 @@ func (r OrderRepository) DeleteTags(ctx context.Context, s ...mysql.Tag) (int64,
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	text, args, err2 := q.RenderDelete(orm.MySQL, "tags", []string{"name"})
 	if err2 != nil {
 		return 0, err2
@@ -472,7 +472,7 @@ func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...m
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE NOWAIT`)
 	if err != nil {
@@ -492,7 +492,7 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...mysql.Order) (m
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	q = q.Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
@@ -512,7 +512,7 @@ func (r OrderRepository) ListUnlocked(ctx context.Context, s ...mysql.Order) ([]
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 }
 
@@ -614,7 +614,7 @@ func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID,
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	changes := c.Of()
 	q = q.Where(`id = `, id)
 	text, args, err := changes.RenderUpdate(orm.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
@@ -650,7 +650,7 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c mysql.OrderChangeSet,
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	changes := c.Of()
 	text, args, err := changes.RenderUpdate(orm.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
 	if err != nil {
@@ -947,7 +947,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.Batched[model.LineNote](q, "Notes"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.LineNote](q, "Notes"); ok {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -1002,7 +1002,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, parent, ok := orm.Batched[model.Tag](q, "Tags"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.Tag](q, "Tags"); ok {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -1220,7 +1220,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.Batched[model.OrderLine](q, "Lines"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {
@@ -1272,7 +1272,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 			}
 		}
 	}
-	if sub, parent, ok := orm.Batched[model.Tag](q, "Tags"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.Tag](q, "Tags"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
 		for i := range rows {

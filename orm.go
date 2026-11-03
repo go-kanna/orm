@@ -137,9 +137,9 @@ func (q Of[M]) Not(s Of[M]) Of[M] {
 	return q
 }
 
-// Join makes one scope of qs, as if each were chained onto the one before: their conditions and orders add up, and a
+// Combine makes one scope of qs, as if each were chained onto the one before: their conditions and orders add up, and a
 // later limit or offset replaces an earlier one.
-func Join[M any](qs ...Of[M]) Of[M] {
+func Combine[M any](qs ...Of[M]) Of[M] {
 	var q Of[M]
 	for _, s := range qs {
 		q.conds = slices.Concat(q.conds, s.conds)

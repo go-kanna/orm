@@ -66,7 +66,7 @@ func TestRender(t *testing.T) {
 		{"not", q.Not(q.Where("b = ", 2).Where("c = ", 3)), orm.Postgres, 1,
 			"SELECT id FROM orders WHERE (NOT ((b = $1) AND (c = $2)))", []any{2, 3}},
 		{"not of every row", q.Not(q), orm.Postgres, 1, "SELECT id FROM orders WHERE (1 = 0)", nil},
-		{"scopes joined", orm.Join(q.Where("a = ", 1).Limit(5), q.OrderBy("id", false).Limit(10).Offset(20)),
+		{"scopes combined", orm.Combine(q.Where("a = ", 1).Limit(5), q.OrderBy("id", false).Limit(10).Offset(20)),
 			orm.Postgres, 1, "SELECT id FROM orders WHERE (a = $1) ORDER BY id LIMIT 10 OFFSET 20", []any{1}},
 	}
 	for _, tt := range tests {
@@ -96,7 +96,7 @@ func TestRender_Errors(t *testing.T) {
 			"orm: Or takes conditions alone, but its scope keeps only some of the rows"},
 		{"a negative limit", q.Limit(-1), "orm: a limit of -1 rows"},
 		{"a negative offset", q.Offset(-1), "orm: an offset of -1 rows"},
-		{"an error joined", orm.Join(q.Where("a = ", 1), q.Limit(-1)), "orm: a limit of -1 rows"},
+		{"an error combined", orm.Combine(q.Where("a = ", 1), q.Limit(-1)), "orm: a limit of -1 rows"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

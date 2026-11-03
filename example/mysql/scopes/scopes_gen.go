@@ -1614,7 +1614,7 @@ func (s Order) WithApprovals(sub ...Approval) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Approvals", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Approvals", orm.Combine(qs...))}
 }
 
 func (s Order) PreloadApprovals(build func(OrderColumns) orm.Many[model.Approval]) Order {
@@ -1628,7 +1628,7 @@ func (s Order) WithCustomer(sub ...Customer) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Customer", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Customer", orm.Combine(qs...))}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -1637,7 +1637,7 @@ func (s Order) WithLines(sub ...OrderLine) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Lines", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Lines", orm.Combine(qs...))}
 }
 
 func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) Order {
@@ -1651,7 +1651,7 @@ func (s Order) WithShipment(sub ...Shipment) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Shipment", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Shipment", orm.Combine(qs...))}
 }
 
 // WithTags loads Tags, from tags through order_tags.
@@ -1660,7 +1660,7 @@ func (s Order) WithTags(sub ...Tag) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Tags", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Tags", orm.Combine(qs...))}
 }
 
 func (s Order) PreloadTags(build func(OrderColumns) orm.Many[model.Tag]) Order {
@@ -2144,7 +2144,7 @@ func (s OrderLine) WithProduct(sub ...Product) OrderLine {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return OrderLine{orm.Preload(s.q, "Product", orm.Join(qs...))}
+	return OrderLine{orm.Preload(s.q, "Product", orm.Combine(qs...))}
 }
 
 // Limit keeps the first n rows.

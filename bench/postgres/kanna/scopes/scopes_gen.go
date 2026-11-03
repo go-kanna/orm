@@ -1018,7 +1018,7 @@ func (s Order) WithLines(sub ...OrderLine) Order {
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
-	return Order{orm.Preload(s.q, "Lines", orm.Join(qs...))}
+	return Order{orm.Preload(s.q, "Lines", orm.Combine(qs...))}
 }
 
 func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) Order {

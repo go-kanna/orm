@@ -116,7 +116,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
-	q := orm.Join(qs...)
+	q := orm.Combine(qs...)
 	return selectOrders(ctx, r.executor, q, "")
 }
 
@@ -218,7 +218,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, parent, ok := orm.Batched[model.OrderLine](q, "Lines"); ok {
+	if sub, parent, ok := orm.PreloadedMany[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 int64 }
 		keys := []parentKey{}
 		for i := range rows {
