@@ -90,13 +90,13 @@ func (r repoReader) bindMethod(m repoMethod, field *ast.Field, ts *ast.TypeSpec)
 		return errorf("cannot be implemented by a SQL query")
 	}
 	if field != nil {
-		for _, name := range []string{"conflict", "lock", "insert"} {
-			d, ds := directive.Find(r.pkg.Fset, field.Doc, name)
+		for _, md := range methodDirectives {
+			d, ds := directive.Find(r.pkg.Fset, field.Doc, md.key)
 			if len(ds) > 0 {
 				return m, ds
 			}
 			if d.Found {
-				return errorf("//kanna:%s does not apply to Bind", name)
+				return errorf("//kanna:%s does not apply to Bind", md.key)
 			}
 		}
 	}

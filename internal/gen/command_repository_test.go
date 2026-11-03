@@ -269,7 +269,12 @@ func (r *orderRepository) Insert(ctx context.Context, o model.Order) (model.Orde
 func (r *orderRepository) ReopenNew(ctx context.Context) (int64, error) {
 	return r.reopenNew(ctx)
 }
+
+// ListStatuses runs SQL of its own: kanna-orm could write no helper for it, and it calls none.
+func (r *orderRepository) ListStatuses(ctx context.Context) ([]string, error) { return nil, nil }
 `
+			archive = strings.Replace(archive, "\tReopenNew(ctx context.Context) (int64, error)\n",
+				"\tReopenNew(ctx context.Context) (int64, error)\n\tListStatuses(ctx context.Context) ([]string, error)\n", 1)
 			dir := writeModule(t, archive)
 			describeRepositoryShop(t, dir, snapshot.PostgreSQL)
 			path := filepath.Join(dir, snapshot.Name)
