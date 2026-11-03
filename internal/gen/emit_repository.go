@@ -785,10 +785,27 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 		}
 		args = append(args, value)
 	}
-	call := strings.Join(args, ", ")
 	what := fmt.Sprintf("%q", "query "+m.name+": %w")
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + what + ", " + err + ")")
-	e.printf("const %s = %s\n", q, goString(m.query.sql))
+	if m.query.pieces == nil {
+		e.printf("const %s = %s\n", q, goString(m.query.sql))
+	} else {
+		values := args[2:]
+		for i, a := range m.query.args {
+			if expands(a.typ) {
+				values[i] = e.ref("List") + "(" + values[i] + ")"
+			}
+		}
+		pieces := make([]string, 0, len(m.query.pieces))
+		for _, p := range m.query.pieces {
+			pieces = append(pieces, goString(p))
+		}
+		expanded := sc.Name("args")
+		e.printf("%s, %s := %s([]string{%s}, %s)\n", q, expanded, e.ref("Expand"), strings.Join(pieces, ", "),
+			strings.Join(values, ", "))
+		args = []string{sig.ctx, q, expanded + "..."}
+	}
+	call := strings.Join(args, ", ")
 	switch m.returns {
 	case returnsNone:
 		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,

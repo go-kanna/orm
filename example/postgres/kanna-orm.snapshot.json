@@ -104,10 +104,10 @@
     }
   },
   "statements": {
-    "github.com/go-kanna/orm/example/postgres/postgres.GetApprover": {
-      "digest": "779f95a4296d375d",
+    "github.com/go-kanna/orm/example/postgres/postgres.ListApprovers": {
+      "digest": "0699def175305738",
       "params": [
-        {"name": "id", "type": "int8"}
+        {"name": "ids", "type": "int8[]"}
       ],
       "columns": [
         {"name": "order_id", "type": "int8", "not_null": true},

@@ -315,6 +315,7 @@ func TestEmitRepositories(t *testing.T) {
 	results := map[string][]snapshot.OutputColumn{
 		"MonthCounts": {{Name: "month", Type: "timestamptz"}, {Name: "count", Type: "int8"}},
 		"TotalOf":     {{Name: "customer", Type: "text", NotNull: true}, {Name: "total", Type: "int8"}},
+		"CustomersOf": {{Name: "customer_id", Type: "int8", NotNull: true}},
 	}
 	for _, tt := range []struct {
 		scopes, repo string

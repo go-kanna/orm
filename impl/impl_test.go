@@ -276,3 +276,27 @@ func TestProjectionOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestExpand(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		args []any
+		sql  string
+		want []any
+	}{
+		{"values", []any{1, 2}, "SELECT a WHERE b = ? AND c = ?", []any{1, 2}},
+		{"a list", []any{1, impl.List([]int{3, 4})}, "SELECT a WHERE b = ? AND c = ?, ?", []any{1, 3, 4}},
+		{"an empty list", []any{1, impl.List([]int(nil))}, "SELECT a WHERE b = ? AND c = NULL", []any{1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sql, args := impl.Expand([]string{"SELECT a WHERE b = ", " AND c = ", ""}, tt.args...)
+			if sql != tt.sql || !slices.Equal(args, tt.want) {
+				t.Errorf("Expand = %s %v, want %s %v", sql, args, tt.sql, tt.want)
+			}
+		})
+	}
+}
