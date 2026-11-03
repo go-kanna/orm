@@ -50,7 +50,7 @@ var shapes = map[verb]string{
 	verbFind:   "Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)",
 	verbFirst:  "First(ctx context.Context, s ...scopes.Order) (model.Order, error)",
 	verbList:   "List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)",
-	verbPluck:  "//kanna:pluck id followed by a method returning ([]model.OrderID, error)",
+	verbPluck:  "ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)",
 	verbCount:  "Count(ctx context.Context, s ...scopes.Order) (int64, error)",
 	verbExists: "Exists(ctx context.Context, s ...scopes.Order) (bool, error)",
 	verbInsert: "Insert(ctx context.Context, o model.Order) (model.Order, error), or with error alone",
@@ -370,11 +370,11 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	pluck, pds := directive.Find(r.pkg.Fset, doc, "pluck")
 	cds = append(cds, lds...)
 	cds = append(cds, pds...)
+	if pluck.Found {
+		return m, append(cds, diag.Errorf(pluck.Pos, "%s: //kanna:pluck is no more: a List of a column's values is "+
+			"named after its field", m.name).WithHints("as in "+shapes[verbPluck]+", which reads ID"))
+	}
 	if st, ok := r.queries[m.name]; ok {
-		if pluck.Found {
-			d := diag.Errorf(pluck.Pos, "%s: //kanna:pluck cannot be combined with a hand-written query", m.name)
-			return m, append(cds, d)
-		}
 		if conflict.Found {
 			cds = append(cds, hasNoGeneratedSQL(conflict, "conflict", m.name, "-- query: "+m.name))
 		}
@@ -384,9 +384,11 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		return m, append(cds, r.query(&m, fn, st)...)
 	}
 
+	sig := fn.Signature()
+	params, results := sig.Params(), sig.Results()
 	v, ok := verbOf(m.name)
-	if pluck.Found {
-		v, ok = verbPluck, true
+	if v == verbList && results.Len() == 2 && plucks(results.At(0).Type()) {
+		v = verbPluck
 	}
 	if !ok {
 		return m, errorf("its name starts with no verb kanna-orm knows, and no -- query: %s is written for it", m.name)
@@ -397,8 +399,6 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 			WithHints("declare it as " + shapes[v])}
 	}
 
-	sig := fn.Signature()
-	params, results := sig.Params(), sig.Results()
 	if params.Len() == 0 || !isNamed(params.At(0).Type(), "context", "Context") {
 		return m, errorf("its first parameter is no context.Context")
 	}
@@ -430,7 +430,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		return m, shapeError()
 	}
 	if v == verbPluck {
-		if ds := r.pluckColumn(&m, pluck.Args); ds != nil {
+		if ds := r.pluckColumn(&m); ds != nil {
 			return m, ds
 		}
 	}
@@ -933,13 +933,22 @@ func lowerFirst(s string) string {
 	return string(runes)
 }
 
-func (r repoReader) pluckColumn(m *repoMethod, name string) []diag.Diag {
-	if len(strings.Fields(name)) != 1 {
-		return []diag.Diag{diag.Errorf(m.pos, "%s: //kanna:pluck takes exactly one column name", m.name)}
+// plucks reports whether t, the result of a List, is a slice of the values of a column rather than of rows.
+func plucks(t types.Type) bool {
+	slice, ok := t.Underlying().(*types.Slice)
+	if !ok {
+		return false
 	}
-	name = strings.TrimSpace(name)
+	_, row := elemOf(slice.Elem()).Underlying().(*types.Struct)
+	return !row || holdsColumn(elemOf(slice.Elem()))
+}
+
+// pluckColumn finds the column m, a List of the values of one column, reads: that of the field its name says the
+// plural of after List, as ListNames reads that of Name, and ListCustomerIDs that of CustomerID.
+func (r repoReader) pluckColumn(m *repoMethod) []diag.Diag {
+	rest := strings.TrimPrefix(m.name, string(verbList))
 	for _, c := range m.columns {
-		if name != c.col.Name {
+		if field := c.path[len(c.path)-1]; rest != field+"s" && decl.SnakeCase(rest) != decl.Plural(field) {
 			continue
 		}
 		slice, ok := m.fn.Signature().Results().At(0).Type().Underlying().(*types.Slice)
@@ -961,8 +970,9 @@ func (r repoReader) pluckColumn(m *repoMethod, name string) []diag.Diag {
 		m.pluck = &c
 		return nil
 	}
-	return []diag.Diag{diag.Errorf(m.pos, "%s: %s has no mapped column %s to pluck",
-		m.name, typeName(m.model), name).WithHints("name a column of the model in //kanna:pluck")}
+	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s has no field %s is the "+
+		"plural of", m.name, typeName(m.model), rest).WithHints("name it List and the plural of a field, as in " +
+		shapes[verbPluck] + ", which reads ID")}
 }
 
 func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Named) ([]*types.Named, bool) {

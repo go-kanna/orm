@@ -233,10 +233,15 @@ func (m Models) Resolve(path, root, modPath string) (importPath, dir string, ok 
 // TableOf names the table a struct called name holds the rows of, if hasTable reports it: name in snake case with its
 // last word made plural, as order_lines for OrderLine, categories for Category, and people for Person.
 func TableOf(name string, hasTable func(table string) bool) (string, bool) {
-	if table := plural(SnakeCase(name)); hasTable(table) {
+	if table := Plural(name); hasTable(table) {
 		return table, true
 	}
 	return "", false
+}
+
+// Plural writes name in snake case with its last word made plural, as order_lines for OrderLine.
+func Plural(name string) string {
+	return plural(SnakeCase(name))
 }
 
 // irregular are the plurals of English nouns no rule makes.
