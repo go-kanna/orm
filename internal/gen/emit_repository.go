@@ -57,7 +57,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 		e.exec, e.query, e.queryRow = "ExecContext", "QueryContext", "QueryRowContext"
 	}
 	for _, name := range e.names {
-		f.Reserve("select"+name, "preload"+name)
+		f.Reserve("select"+name, "query"+name, "preload"+name)
 	}
 	rows := "ormSQLRows"
 	if drv == driverPgx {
@@ -73,6 +73,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	}
 	for _, table := range slices.Sorted(maps.Keys(models)) {
 		e.selectRows(models[table])
+		e.queryRows(models[table])
 		if len(models[table].links) > 0 {
 			e.preloadRows(models[table])
 		}
@@ -318,6 +319,9 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		}
 		e.inTransaction(m, sc, recv, sig, resultModel)
 	}
+	if e.constantRead(m, sc, recv, sig, q) {
+		return
+	}
 	if m.scoped {
 		qs, i, x := sc.Name("qs"), sc.Name("i"), sc.Name("x")
 		e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, sig.scopes)
@@ -460,11 +464,9 @@ func (e repoEmitter) selectRows(rm readModel) {
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
 	ctx, db, q, lock := sc.Name("ctx"), sc.Name("db"), sc.Name("q"), sc.Name("lock")
-	rd, err, rows, out, row := sc.Name("rd"), sc.Name("err"), sc.Name("rows"), sc.Name("out"), sc.Name("row")
+	rd, err, out := sc.Name("rd"), sc.Name("err"), sc.Name("out")
 
 	query := "SELECT " + e.columnList(rm.columns) + " FROM " + sqlName(e.d, rm.target.table)
-	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "read "+rm.target.table+": %w") + ", " + err + ")"
-
 	e.printf("// %s reads the rows of %s that %s matches, in its order", name, rm.target.table, q)
 	if len(rm.links) > 0 {
 		e.printf(", with the relations it loads")
@@ -475,15 +477,32 @@ func (e repoEmitter) selectRows(rm readModel) {
 		ctx, e.f.Import("context", "context"), db, q, e.ref("Of"), model, lock, e.database)
 	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, %[5]s)\n"+
 		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect(), e.orderKey(rm.table))
-	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
-		"%[7]s.Args()...)\n", rows, err, db, e.query, ctx, goString(query), rd, lock)
-	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
-	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns, sc)
+	e.printf("%[1]s, %[2]s := query%[3]s(%[4]s, %[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
+		"%[7]s.Args()...)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", out, err, e.names[rm.target.table], ctx, db,
+		goString(query), rd, lock)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	if len(rm.links) > 0 {
 		e.printf("if %[1]s := preload%[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
 			e.names[rm.target.table], ctx, db, out, q)
 	}
+	e.printf("return %s, nil\n}\n\n", out)
+}
+
+// queryRows writes the function running a query of the whole rows of rm, and reading them.
+func (e repoEmitter) queryRows(rm readModel) {
+	name := "query" + e.names[rm.target.table]
+	model := types.TypeString(rm.model, e.f.Qualifier)
+	sc := e.f.Scope()
+	ctx, db, query, args := sc.Name("ctx"), sc.Name("db"), sc.Name("query"), sc.Name("args")
+	err, rows, out, row := sc.Name("err"), sc.Name("rows"), sc.Name("out"), sc.Name("row")
+	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "read "+rm.target.table+": %w") + ", " + err + ")"
+
+	e.printf("// %s runs %s, a query of the rows of %s, and reads them.\n", name, query, rm.target.table)
+	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s %[5]s, %[6]s string, %[7]s ...any) ([]%[8]s, error) {\n",
+		name, ctx, e.f.Import("context", "context"), db, e.database, query, args, model)
+	e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s, %[7]s...)\n", rows, err, db, e.query, ctx, query, args)
+	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)
+	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, model, rm.columns, sc)
 	e.printf("return %s, nil\n}\n\n", out)
 }
 
