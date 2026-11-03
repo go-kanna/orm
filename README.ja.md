@@ -364,7 +364,7 @@ PostgreSQL では、リレーションのクエリは、行がいくつあって
 - 読み込まれたスライスは決して nil になりません。関連する行がなければ空になります。nil のスライスは読み込まれていません。
 - ポインタは、読み込まれていないときも関連する行がないときも nil です。この 2 つを区別するには、モデルに kanna-orm の型を持ち込むことになります。
 - 関連する行に対する limit や offset は、SQL の `LATERAL` サブクエリと同じく、行ごとにページを切ります。`WithApprovals(scopes.Approvals().ApprovedAtDesc().IDDesc().Limit(3))` は、注文ごとに最新の承認を 3 件読み込みます。各行に関連する行に、スコープの順序（関連先のテーブルの主キーで終わる順序。スコープに順序がなければ主キーだけ）で `ROW_NUMBER()` の番号を振り、ページに入る行を残します。このとき、中間テーブルを経由するリレーションは 1 回のクエリで読み込みます。ページは `Offset` で進めます。`After` と `Before` を渡すと、クエリはエラーを返します。主キーのないテーブルでは、スコープに順序が必要です。
-- 外部キー以外のカラムで関連する値（注文の現在の版を承認した担当者など）は、自分で書くクエリで読み込みます。[手書きの SQL](#手書きの-sql) を参照してください。
+- 外部キー以外のカラムで関連する値（注文の現在の版を承認した担当者など）は、自分で書くクエリで読み込みます。[外部キー以外のカラムで関連する値を足す](#外部キー以外のカラムで関連する値を足す) を参照してください。
 - リレーションは読み込むだけで、決して書き込みません。`Insert` と `Update` が書き込むのはその行自身のカラムで、読み戻した行もそれらのカラムだけを保持します。
 - 複数カラムの外部キーによるリレーションは、それらのカラムを行として扱って読み込みます。PostgreSQL では `(a, b) IN (SELECT * FROM unnest($1, $2))`、MySQL では `(a, b) IN ((?, ?), ...)` です。
 
@@ -862,6 +862,32 @@ ORDER BY 1`
 - スコープには宣言されたメソッドがないので、シグネチャを `-- scope:` の行に書きます。その行のすぐ上のコメント行は、メソッドのドキュメントになります。MySQL は文のパラメータの型を教えませんが、この方法ならその必要がありません。
 - 文は、その `-- query:` や `-- scope:` の行から、次の文のコメントまたはその行までです。文の終わりにある空行とコメント行は文に含まれず、文の一番最後に付いたコメントも含まれません。そのため、スコープはコメントで終えられます。
 - MySQL では、2 回使うパラメータは `?` ごとに 1 回ずつ渡します。
+- `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、`IN (:ids)` をメソッドの実行時に値ごとの `?` に展開し、値がなければ何にも一致しない `NULL` にします。
+
+### 外部キー以外のカラムで関連する値を足す
+
+注文の現在の版を承認した担当者のように、外部キー以外のカラムで行に関連する値は、自分で書くクエリで読み込みます。行はいつもどおり scope、カーソル、リレーションで読み、そのキーの値をもう 1 本のクエリで読んで、Go でつなぎます:
+
+```sql
+-- query: ListApprovers
+SELECT o.id AS order_id, a.approver
+FROM orders AS o
+LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
+WHERE o.id = ANY(:ids) -- IN (:ids) on MySQL
+ORDER BY o.id;
+```
+
+```go
+orders, err := repo.List(ctx, scopes.Orders().Open().PlacedAtDesc().Limit(20).WithLines())
+// ...
+ids := make([]model.OrderID, len(orders))
+for i, o := range orders {
+	ids[i] = o.ID
+}
+approvers, err := repo.ListApprovers(ctx, ids)
+```
+
+[example](example/postgres/main.go) は、この方法で注文の承認者を読み込みます。
 
 ## ドライバと方言
 

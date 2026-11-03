@@ -442,7 +442,7 @@ in a query of its own: the rows related to one row come in one query, in the ord
   through a table between is then read in one query. A page continues by `Offset`: `After` and `Before` make the query
   return an error. For a table without a primary key, the scope needs an order of its own.
 - A value related by other columns than a foreign key, such as who approved the revision an order is at, is read by a
-  query of your own: see [Hand-written SQL](#hand-written-sql).
+  query of your own: see [Adding a value related by other columns](#adding-a-value-related-by-other-columns).
 - Relations are read, never written: `Insert` and `Update` write the row's own columns, and a row read back holds
   them alone.
 - A relation by a foreign key of more than one column is read by its columns as a row: `(a, b) IN (SELECT * FROM
@@ -1069,6 +1069,36 @@ ORDER BY 1`
 - A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
   ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
+- A slice argument, other than `[]byte` or a type with a `Value` method, is a list of values. PostgreSQL takes it as
+  an array, as in `= ANY(:ids)`. On MySQL, `IN (:ids)` is written with a `?` for each of its values when the method
+  runs, or with `NULL`, which matches nothing, when it has none.
+
+### Adding a value related by other columns
+
+A value related to a row by other columns than a foreign key, such as who approved the revision an order is at, is
+read by a query of your own. Read the rows as ever, with their scopes, cursor, and relations, then the values for their
+keys in one more query, and put the two together in Go:
+
+```sql
+-- query: ListApprovers
+SELECT o.id AS order_id, a.approver
+FROM orders AS o
+LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
+WHERE o.id = ANY(:ids) -- IN (:ids) on MySQL
+ORDER BY o.id;
+```
+
+```go
+orders, err := repo.List(ctx, scopes.Orders().Open().PlacedAtDesc().Limit(20).WithLines())
+// ...
+ids := make([]model.OrderID, len(orders))
+for i, o := range orders {
+	ids[i] = o.ID
+}
+approvers, err := repo.ListApprovers(ctx, ids)
+```
+
+The [examples](example/postgres/main.go) read the approvers of their orders this way.
 
 ## Drivers and dialects
 
