@@ -105,12 +105,8 @@ func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 var _ repository.OrderRepository = OrderRepository{}
 
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
-	var q scope.Of[model.Order]
-	q = q.Where(`id = `, id)
-	if err := q.Unpaged("Get"); err != nil {
-		return model.Order{}, err
-	}
-	rows, err := selectOrders(ctx, r.db, q, "")
+	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = $1`
+	rows, err := queryOrders(ctx, r.db, q, id)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -169,7 +165,19 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.Orde
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, order_id, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := queryOrderLines(ctx, db, `SELECT id, order_id, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	if err != nil {
+		return nil, err
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
+// queryOrderLines runs query, a query of the rows of order_lines, and reads them.
+func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
@@ -185,9 +193,6 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.Orde
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
-	if rd.Reversed() {
-		slices.Reverse(out)
-	}
 	return out, nil
 }
 
@@ -197,7 +202,22 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := queryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	if err != nil {
+		return nil, err
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := preloadOrders(ctx, db, out, q); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// queryOrders runs query, a query of the rows of orders, and reads them.
+func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -212,12 +232,6 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
-	}
-	if rd.Reversed() {
-		slices.Reverse(out)
-	}
-	if err := preloadOrders(ctx, db, out, q); err != nil {
-		return nil, err
 	}
 	return out, nil
 }
