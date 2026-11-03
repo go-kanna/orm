@@ -3,12 +3,12 @@ package gen_test
 import (
 	"testing"
 
-	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/mysql"
 	"github.com/go-kanna/orm/internal/gen/testdata/mysqlrepo"
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
 	"github.com/go-kanna/orm/internal/gen/testdata/repository"
+	"github.com/go-kanna/orm/relation"
 )
 
 func checkCorrelatedCollections(t *testing.T, order model.Order) {
@@ -33,13 +33,15 @@ func TestCorrelatedCollections_Postgres(t *testing.T) {
 	t.Parallel()
 	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
 		order, err := repo.Get(t.Context(), 1, postgres.Orders().
-			PreloadTags(func(_ postgres.OrderColumns) orm.Many[model.Tag] { return postgres.Tags().NameAsc().Limit(1).Many() }).
-			PreloadLines(func(_ postgres.OrderColumns) orm.Many[model.OrderLine] {
+			PreloadTags(func(_ postgres.OrderColumns) relation.Many[model.Tag] {
+				return postgres.Tags().NameAsc().Limit(1).Many()
+			}).
+			PreloadLines(func(_ postgres.OrderColumns) relation.Many[model.OrderLine] {
 				return postgres.OrderLines().LineNoAsc().
-					PreloadNotes(func(parent postgres.OrderLineColumns) orm.Many[model.LineNote] {
+					PreloadNotes(func(parent postgres.OrderLineColumns) relation.Many[model.LineNote] {
 						return postgres.LineNotes().LineNoEqColumn(parent.LineNo).BodyAsc().Limit(1).Many()
 					}).
-					PreloadTags(func(_ postgres.OrderLineColumns) orm.Many[model.Tag] {
+					PreloadTags(func(_ postgres.OrderLineColumns) relation.Many[model.Tag] {
 						return postgres.Tags().NameAsc().Limit(1).Many()
 					}).Many()
 			}))
@@ -53,13 +55,13 @@ func TestCorrelatedCollections_MySQL(t *testing.T) {
 	t.Parallel()
 	repo := mysqlrepo.NewOrderRepository(mysqlDB(t))
 	order, err := repo.Get(t.Context(), 1, mysql.Orders().
-		PreloadTags(func(_ mysql.OrderColumns) orm.Many[model.Tag] { return mysql.Tags().NameAsc().Limit(1).Many() }).
-		PreloadLines(func(_ mysql.OrderColumns) orm.Many[model.OrderLine] {
+		PreloadTags(func(_ mysql.OrderColumns) relation.Many[model.Tag] { return mysql.Tags().NameAsc().Limit(1).Many() }).
+		PreloadLines(func(_ mysql.OrderColumns) relation.Many[model.OrderLine] {
 			return mysql.OrderLines().LineNoAsc().
-				PreloadNotes(func(parent mysql.OrderLineColumns) orm.Many[model.LineNote] {
+				PreloadNotes(func(parent mysql.OrderLineColumns) relation.Many[model.LineNote] {
 					return mysql.LineNotes().LineNoEqColumn(parent.LineNo).BodyAsc().Limit(1).Many()
 				}).
-				PreloadTags(func(_ mysql.OrderLineColumns) orm.Many[model.Tag] {
+				PreloadTags(func(_ mysql.OrderLineColumns) relation.Many[model.Tag] {
 					return mysql.Tags().NameAsc().Limit(1).Many()
 				}).Many()
 		}))

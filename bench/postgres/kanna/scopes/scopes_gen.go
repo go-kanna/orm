@@ -5,10 +5,10 @@ package scopes
 import (
 	"time"
 
-	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/join"
+	"github.com/go-kanna/orm/relation"
 	"github.com/go-kanna/orm/scope"
 )
 
@@ -22,10 +22,10 @@ func Customers() Customer { return Customer{} }
 func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
 type CustomerColumns struct {
-	ID        orm.Column[int64]
-	Email     orm.Column[string]
-	Name      orm.Column[string]
-	CreatedAt orm.Column[time.Time]
+	ID        relation.Column[int64]
+	Email     relation.Column[string]
+	Name      relation.Column[string]
+	CreatedAt relation.Column[time.Time]
 }
 
 func customerColumnsFor(parent impl.Parent) CustomerColumns {
@@ -37,9 +37,9 @@ func customerColumnsFor(parent impl.Parent) CustomerColumns {
 	}
 }
 
-func (s Customer) One() orm.Single[model.Customer]   { return s.q.One() }
-func (s Customer) First() orm.Single[model.Customer] { return s.q.First() }
-func (s Customer) Many() orm.Many[model.Customer]    { return s.q.Many() }
+func (s Customer) One() relation.Single[model.Customer]   { return s.q.One() }
+func (s Customer) First() relation.Single[model.Customer] { return s.q.First() }
+func (s Customer) Many() relation.Many[model.Customer]    { return s.q.Many() }
 
 // CustomerChangeSet holds explicitly assigned columns of customers.
 type CustomerChangeSet struct{ changes impl.Changes[model.Customer] }
@@ -118,27 +118,27 @@ func (s Customer) IDDesc() Customer {
 	return Customer{s.q.OrderBy(`id`, true)}
 }
 
-func (s Customer) IDEqColumn(v orm.Column[int64]) Customer {
+func (s Customer) IDEqColumn(v relation.Column[int64]) Customer {
 	return Customer{impl.CompareColumn(s.q, `id`, "=", v)}
 }
 
-func (s Customer) IDNeColumn(v orm.Column[int64]) Customer {
+func (s Customer) IDNeColumn(v relation.Column[int64]) Customer {
 	return Customer{impl.CompareColumn(s.q, `id`, "<>", v)}
 }
 
-func (s Customer) IDLtColumn(v orm.Column[int64]) Customer {
+func (s Customer) IDLtColumn(v relation.Column[int64]) Customer {
 	return Customer{impl.CompareColumn(s.q, `id`, "<", v)}
 }
 
-func (s Customer) IDLteColumn(v orm.Column[int64]) Customer {
+func (s Customer) IDLteColumn(v relation.Column[int64]) Customer {
 	return Customer{impl.CompareColumn(s.q, `id`, "<=", v)}
 }
 
-func (s Customer) IDGtColumn(v orm.Column[int64]) Customer {
+func (s Customer) IDGtColumn(v relation.Column[int64]) Customer {
 	return Customer{impl.CompareColumn(s.q, `id`, ">", v)}
 }
 
-func (s Customer) IDGteColumn(v orm.Column[int64]) Customer {
+func (s Customer) IDGteColumn(v relation.Column[int64]) Customer {
 	return Customer{impl.CompareColumn(s.q, `id`, ">=", v)}
 }
 
@@ -220,27 +220,27 @@ func (s Customer) EmailDesc() Customer {
 	return Customer{s.q.OrderBy(`email`, true)}
 }
 
-func (s Customer) EmailEqColumn(v orm.Column[string]) Customer {
+func (s Customer) EmailEqColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `email`, "=", v)}
 }
 
-func (s Customer) EmailNeColumn(v orm.Column[string]) Customer {
+func (s Customer) EmailNeColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `email`, "<>", v)}
 }
 
-func (s Customer) EmailLtColumn(v orm.Column[string]) Customer {
+func (s Customer) EmailLtColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `email`, "<", v)}
 }
 
-func (s Customer) EmailLteColumn(v orm.Column[string]) Customer {
+func (s Customer) EmailLteColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `email`, "<=", v)}
 }
 
-func (s Customer) EmailGtColumn(v orm.Column[string]) Customer {
+func (s Customer) EmailGtColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `email`, ">", v)}
 }
 
-func (s Customer) EmailGteColumn(v orm.Column[string]) Customer {
+func (s Customer) EmailGteColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `email`, ">=", v)}
 }
 
@@ -322,27 +322,27 @@ func (s Customer) NameDesc() Customer {
 	return Customer{s.q.OrderBy(`name`, true)}
 }
 
-func (s Customer) NameEqColumn(v orm.Column[string]) Customer {
+func (s Customer) NameEqColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `name`, "=", v)}
 }
 
-func (s Customer) NameNeColumn(v orm.Column[string]) Customer {
+func (s Customer) NameNeColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `name`, "<>", v)}
 }
 
-func (s Customer) NameLtColumn(v orm.Column[string]) Customer {
+func (s Customer) NameLtColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `name`, "<", v)}
 }
 
-func (s Customer) NameLteColumn(v orm.Column[string]) Customer {
+func (s Customer) NameLteColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `name`, "<=", v)}
 }
 
-func (s Customer) NameGtColumn(v orm.Column[string]) Customer {
+func (s Customer) NameGtColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `name`, ">", v)}
 }
 
-func (s Customer) NameGteColumn(v orm.Column[string]) Customer {
+func (s Customer) NameGteColumn(v relation.Column[string]) Customer {
 	return Customer{impl.CompareColumn(s.q, `name`, ">=", v)}
 }
 
@@ -404,27 +404,27 @@ func (s Customer) CreatedAtDesc() Customer {
 	return Customer{s.q.OrderBy(`created_at`, true)}
 }
 
-func (s Customer) CreatedAtEqColumn(v orm.Column[time.Time]) Customer {
+func (s Customer) CreatedAtEqColumn(v relation.Column[time.Time]) Customer {
 	return Customer{impl.CompareColumn(s.q, `created_at`, "=", v)}
 }
 
-func (s Customer) CreatedAtNeColumn(v orm.Column[time.Time]) Customer {
+func (s Customer) CreatedAtNeColumn(v relation.Column[time.Time]) Customer {
 	return Customer{impl.CompareColumn(s.q, `created_at`, "<>", v)}
 }
 
-func (s Customer) CreatedAtLtColumn(v orm.Column[time.Time]) Customer {
+func (s Customer) CreatedAtLtColumn(v relation.Column[time.Time]) Customer {
 	return Customer{impl.CompareColumn(s.q, `created_at`, "<", v)}
 }
 
-func (s Customer) CreatedAtLteColumn(v orm.Column[time.Time]) Customer {
+func (s Customer) CreatedAtLteColumn(v relation.Column[time.Time]) Customer {
 	return Customer{impl.CompareColumn(s.q, `created_at`, "<=", v)}
 }
 
-func (s Customer) CreatedAtGtColumn(v orm.Column[time.Time]) Customer {
+func (s Customer) CreatedAtGtColumn(v relation.Column[time.Time]) Customer {
 	return Customer{impl.CompareColumn(s.q, `created_at`, ">", v)}
 }
 
-func (s Customer) CreatedAtGteColumn(v orm.Column[time.Time]) Customer {
+func (s Customer) CreatedAtGteColumn(v relation.Column[time.Time]) Customer {
 	return Customer{impl.CompareColumn(s.q, `created_at`, ">=", v)}
 }
 
@@ -510,11 +510,11 @@ func Orders() Order { return Order{} }
 func (s Order) Of() scope.Of[model.Order] { return s.q }
 
 type OrderColumns struct {
-	ID         orm.Column[int64]
-	CustomerID orm.Column[int64]
-	Status     orm.Column[string]
-	PlacedAt   orm.Column[time.Time]
-	Note       orm.Column[string]
+	ID         relation.Column[int64]
+	CustomerID relation.Column[int64]
+	Status     relation.Column[string]
+	PlacedAt   relation.Column[time.Time]
+	Note       relation.Column[string]
 }
 
 func orderColumnsFor(parent impl.Parent) OrderColumns {
@@ -527,9 +527,9 @@ func orderColumnsFor(parent impl.Parent) OrderColumns {
 	}
 }
 
-func (s Order) One() orm.Single[model.Order]   { return s.q.One() }
-func (s Order) First() orm.Single[model.Order] { return s.q.First() }
-func (s Order) Many() orm.Many[model.Order]    { return s.q.Many() }
+func (s Order) One() relation.Single[model.Order]   { return s.q.One() }
+func (s Order) First() relation.Single[model.Order] { return s.q.First() }
+func (s Order) Many() relation.Many[model.Order]    { return s.q.Many() }
 
 // OrderChangeSet holds explicitly assigned columns of orders.
 type OrderChangeSet struct{ changes impl.Changes[model.Order] }
@@ -612,27 +612,27 @@ func (s Order) IDDesc() Order {
 	return Order{s.q.OrderBy(`id`, true)}
 }
 
-func (s Order) IDEqColumn(v orm.Column[int64]) Order {
+func (s Order) IDEqColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `id`, "=", v)}
 }
 
-func (s Order) IDNeColumn(v orm.Column[int64]) Order {
+func (s Order) IDNeColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `id`, "<>", v)}
 }
 
-func (s Order) IDLtColumn(v orm.Column[int64]) Order {
+func (s Order) IDLtColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `id`, "<", v)}
 }
 
-func (s Order) IDLteColumn(v orm.Column[int64]) Order {
+func (s Order) IDLteColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `id`, "<=", v)}
 }
 
-func (s Order) IDGtColumn(v orm.Column[int64]) Order {
+func (s Order) IDGtColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `id`, ">", v)}
 }
 
-func (s Order) IDGteColumn(v orm.Column[int64]) Order {
+func (s Order) IDGteColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `id`, ">=", v)}
 }
 
@@ -694,27 +694,27 @@ func (s Order) CustomerIDDesc() Order {
 	return Order{s.q.OrderBy(`customer_id`, true)}
 }
 
-func (s Order) CustomerIDEqColumn(v orm.Column[int64]) Order {
+func (s Order) CustomerIDEqColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `customer_id`, "=", v)}
 }
 
-func (s Order) CustomerIDNeColumn(v orm.Column[int64]) Order {
+func (s Order) CustomerIDNeColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `customer_id`, "<>", v)}
 }
 
-func (s Order) CustomerIDLtColumn(v orm.Column[int64]) Order {
+func (s Order) CustomerIDLtColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `customer_id`, "<", v)}
 }
 
-func (s Order) CustomerIDLteColumn(v orm.Column[int64]) Order {
+func (s Order) CustomerIDLteColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `customer_id`, "<=", v)}
 }
 
-func (s Order) CustomerIDGtColumn(v orm.Column[int64]) Order {
+func (s Order) CustomerIDGtColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `customer_id`, ">", v)}
 }
 
-func (s Order) CustomerIDGteColumn(v orm.Column[int64]) Order {
+func (s Order) CustomerIDGteColumn(v relation.Column[int64]) Order {
 	return Order{impl.CompareColumn(s.q, `customer_id`, ">=", v)}
 }
 
@@ -796,27 +796,27 @@ func (s Order) StatusDesc() Order {
 	return Order{s.q.OrderBy(`status`, true)}
 }
 
-func (s Order) StatusEqColumn(v orm.Column[string]) Order {
+func (s Order) StatusEqColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `status`, "=", v)}
 }
 
-func (s Order) StatusNeColumn(v orm.Column[string]) Order {
+func (s Order) StatusNeColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `status`, "<>", v)}
 }
 
-func (s Order) StatusLtColumn(v orm.Column[string]) Order {
+func (s Order) StatusLtColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `status`, "<", v)}
 }
 
-func (s Order) StatusLteColumn(v orm.Column[string]) Order {
+func (s Order) StatusLteColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `status`, "<=", v)}
 }
 
-func (s Order) StatusGtColumn(v orm.Column[string]) Order {
+func (s Order) StatusGtColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `status`, ">", v)}
 }
 
-func (s Order) StatusGteColumn(v orm.Column[string]) Order {
+func (s Order) StatusGteColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `status`, ">=", v)}
 }
 
@@ -878,27 +878,27 @@ func (s Order) PlacedAtDesc() Order {
 	return Order{s.q.OrderBy(`placed_at`, true)}
 }
 
-func (s Order) PlacedAtEqColumn(v orm.Column[time.Time]) Order {
+func (s Order) PlacedAtEqColumn(v relation.Column[time.Time]) Order {
 	return Order{impl.CompareColumn(s.q, `placed_at`, "=", v)}
 }
 
-func (s Order) PlacedAtNeColumn(v orm.Column[time.Time]) Order {
+func (s Order) PlacedAtNeColumn(v relation.Column[time.Time]) Order {
 	return Order{impl.CompareColumn(s.q, `placed_at`, "<>", v)}
 }
 
-func (s Order) PlacedAtLtColumn(v orm.Column[time.Time]) Order {
+func (s Order) PlacedAtLtColumn(v relation.Column[time.Time]) Order {
 	return Order{impl.CompareColumn(s.q, `placed_at`, "<", v)}
 }
 
-func (s Order) PlacedAtLteColumn(v orm.Column[time.Time]) Order {
+func (s Order) PlacedAtLteColumn(v relation.Column[time.Time]) Order {
 	return Order{impl.CompareColumn(s.q, `placed_at`, "<=", v)}
 }
 
-func (s Order) PlacedAtGtColumn(v orm.Column[time.Time]) Order {
+func (s Order) PlacedAtGtColumn(v relation.Column[time.Time]) Order {
 	return Order{impl.CompareColumn(s.q, `placed_at`, ">", v)}
 }
 
-func (s Order) PlacedAtGteColumn(v orm.Column[time.Time]) Order {
+func (s Order) PlacedAtGteColumn(v relation.Column[time.Time]) Order {
 	return Order{impl.CompareColumn(s.q, `placed_at`, ">=", v)}
 }
 
@@ -990,27 +990,27 @@ func (s Order) NoteDesc() Order {
 	return Order{s.q.OrderBy(`note`, true)}
 }
 
-func (s Order) NoteEqColumn(v orm.Column[string]) Order {
+func (s Order) NoteEqColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `note`, "=", v)}
 }
 
-func (s Order) NoteNeColumn(v orm.Column[string]) Order {
+func (s Order) NoteNeColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `note`, "<>", v)}
 }
 
-func (s Order) NoteLtColumn(v orm.Column[string]) Order {
+func (s Order) NoteLtColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `note`, "<", v)}
 }
 
-func (s Order) NoteLteColumn(v orm.Column[string]) Order {
+func (s Order) NoteLteColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `note`, "<=", v)}
 }
 
-func (s Order) NoteGtColumn(v orm.Column[string]) Order {
+func (s Order) NoteGtColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `note`, ">", v)}
 }
 
-func (s Order) NoteGteColumn(v orm.Column[string]) Order {
+func (s Order) NoteGteColumn(v relation.Column[string]) Order {
 	return Order{impl.CompareColumn(s.q, `note`, ">=", v)}
 }
 
@@ -1023,7 +1023,7 @@ func (s Order) WithLines(sub ...OrderLine) Order {
 	return Order{impl.Preload(s.q, "Lines", impl.Combine(qs...))}
 }
 
-func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) Order {
+func (s Order) PreloadLines(build func(OrderColumns) relation.Many[model.OrderLine]) Order {
 	parent := impl.NewParent()
 	return Order{impl.PreloadMany(s.q, "Lines", parent, build(orderColumnsFor(parent)))}
 }
@@ -1116,10 +1116,10 @@ func OrderLines() OrderLine { return OrderLine{} }
 func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
 type OrderLineColumns struct {
-	ID       orm.Column[int64]
-	OrderID  orm.Column[int64]
-	SKU      orm.Column[string]
-	Quantity orm.Column[int32]
+	ID       relation.Column[int64]
+	OrderID  relation.Column[int64]
+	SKU      relation.Column[string]
+	Quantity relation.Column[int32]
 }
 
 func orderLineColumnsFor(parent impl.Parent) OrderLineColumns {
@@ -1131,9 +1131,9 @@ func orderLineColumnsFor(parent impl.Parent) OrderLineColumns {
 	}
 }
 
-func (s OrderLine) One() orm.Single[model.OrderLine]   { return s.q.One() }
-func (s OrderLine) First() orm.Single[model.OrderLine] { return s.q.First() }
-func (s OrderLine) Many() orm.Many[model.OrderLine]    { return s.q.Many() }
+func (s OrderLine) One() relation.Single[model.OrderLine]   { return s.q.One() }
+func (s OrderLine) First() relation.Single[model.OrderLine] { return s.q.First() }
+func (s OrderLine) Many() relation.Many[model.OrderLine]    { return s.q.Many() }
 
 // OrderLineChangeSet holds explicitly assigned columns of order_lines.
 type OrderLineChangeSet struct{ changes impl.Changes[model.OrderLine] }
@@ -1212,27 +1212,27 @@ func (s OrderLine) IDDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`id`, true)}
 }
 
-func (s OrderLine) IDEqColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) IDEqColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `id`, "=", v)}
 }
 
-func (s OrderLine) IDNeColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) IDNeColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `id`, "<>", v)}
 }
 
-func (s OrderLine) IDLtColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) IDLtColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `id`, "<", v)}
 }
 
-func (s OrderLine) IDLteColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) IDLteColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `id`, "<=", v)}
 }
 
-func (s OrderLine) IDGtColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) IDGtColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `id`, ">", v)}
 }
 
-func (s OrderLine) IDGteColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) IDGteColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `id`, ">=", v)}
 }
 
@@ -1294,27 +1294,27 @@ func (s OrderLine) OrderIDDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`order_id`, true)}
 }
 
-func (s OrderLine) OrderIDEqColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) OrderIDEqColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `order_id`, "=", v)}
 }
 
-func (s OrderLine) OrderIDNeColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) OrderIDNeColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `order_id`, "<>", v)}
 }
 
-func (s OrderLine) OrderIDLtColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) OrderIDLtColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `order_id`, "<", v)}
 }
 
-func (s OrderLine) OrderIDLteColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) OrderIDLteColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `order_id`, "<=", v)}
 }
 
-func (s OrderLine) OrderIDGtColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) OrderIDGtColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `order_id`, ">", v)}
 }
 
-func (s OrderLine) OrderIDGteColumn(v orm.Column[int64]) OrderLine {
+func (s OrderLine) OrderIDGteColumn(v relation.Column[int64]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `order_id`, ">=", v)}
 }
 
@@ -1396,27 +1396,27 @@ func (s OrderLine) SKUDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`sku`, true)}
 }
 
-func (s OrderLine) SKUEqColumn(v orm.Column[string]) OrderLine {
+func (s OrderLine) SKUEqColumn(v relation.Column[string]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `sku`, "=", v)}
 }
 
-func (s OrderLine) SKUNeColumn(v orm.Column[string]) OrderLine {
+func (s OrderLine) SKUNeColumn(v relation.Column[string]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `sku`, "<>", v)}
 }
 
-func (s OrderLine) SKULtColumn(v orm.Column[string]) OrderLine {
+func (s OrderLine) SKULtColumn(v relation.Column[string]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `sku`, "<", v)}
 }
 
-func (s OrderLine) SKULteColumn(v orm.Column[string]) OrderLine {
+func (s OrderLine) SKULteColumn(v relation.Column[string]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `sku`, "<=", v)}
 }
 
-func (s OrderLine) SKUGtColumn(v orm.Column[string]) OrderLine {
+func (s OrderLine) SKUGtColumn(v relation.Column[string]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `sku`, ">", v)}
 }
 
-func (s OrderLine) SKUGteColumn(v orm.Column[string]) OrderLine {
+func (s OrderLine) SKUGteColumn(v relation.Column[string]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `sku`, ">=", v)}
 }
 
@@ -1478,27 +1478,27 @@ func (s OrderLine) QuantityDesc() OrderLine {
 	return OrderLine{s.q.OrderBy(`quantity`, true)}
 }
 
-func (s OrderLine) QuantityEqColumn(v orm.Column[int32]) OrderLine {
+func (s OrderLine) QuantityEqColumn(v relation.Column[int32]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `quantity`, "=", v)}
 }
 
-func (s OrderLine) QuantityNeColumn(v orm.Column[int32]) OrderLine {
+func (s OrderLine) QuantityNeColumn(v relation.Column[int32]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `quantity`, "<>", v)}
 }
 
-func (s OrderLine) QuantityLtColumn(v orm.Column[int32]) OrderLine {
+func (s OrderLine) QuantityLtColumn(v relation.Column[int32]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `quantity`, "<", v)}
 }
 
-func (s OrderLine) QuantityLteColumn(v orm.Column[int32]) OrderLine {
+func (s OrderLine) QuantityLteColumn(v relation.Column[int32]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `quantity`, "<=", v)}
 }
 
-func (s OrderLine) QuantityGtColumn(v orm.Column[int32]) OrderLine {
+func (s OrderLine) QuantityGtColumn(v relation.Column[int32]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `quantity`, ">", v)}
 }
 
-func (s OrderLine) QuantityGteColumn(v orm.Column[int32]) OrderLine {
+func (s OrderLine) QuantityGteColumn(v relation.Column[int32]) OrderLine {
 	return OrderLine{impl.CompareColumn(s.q, `quantity`, ">=", v)}
 }
 

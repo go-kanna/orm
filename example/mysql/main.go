@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/relation"
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/go-kanna/orm/example/mysql/model"
@@ -411,7 +412,7 @@ func (ex *example) readApprovals(ctx context.Context) error {
 	if latest.Approver == nil || *latest.Approver != "reviewer-5" {
 		return fmt.Errorf("latest approver: %+v", latest)
 	}
-	recent := scopes.Orders().PreloadApprovals(func(parent scopes.OrderColumns) orm.Many[model.Approval] {
+	recent := scopes.Orders().PreloadApprovals(func(parent scopes.OrderColumns) relation.Many[model.Approval] {
 		return scopes.Approvals().RevisionGteColumn(parent.Revision).ApprovedAtDesc().IDDesc().Offset(1).Limit(2).Many()
 	})
 	offset, err := ex.orders.Get(ctx, orders[0].ID, recent)
@@ -421,21 +422,21 @@ func (ex *example) readApprovals(ctx context.Context) error {
 	if len(offset.Approvals) != 2 || offset.Approvals[0].Revision != 4 || offset.Approvals[1].Revision != 3 {
 		return fmt.Errorf("approval offset: %+v", offset)
 	}
-	absent := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) orm.Single[model.Approval] {
+	absent := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) relation.Single[model.Approval] {
 		return scopes.Approvals().RevisionEq(99).One()
 	})
 	missing, err := ex.orders.Get(ctx, orders[0].ID, absent)
 	if err != nil || missing.Approver != nil {
 		return fmt.Errorf("missing approver: %+v, %w", missing, err)
 	}
-	required := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) orm.Single[model.Approval] {
+	required := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) relation.Single[model.Approval] {
 		return scopes.Approvals().RevisionEq(99).One().Required()
 	})
 	_, err = ex.orders.Get(ctx, orders[0].ID, required)
 	if !errors.Is(err, orm.ErrRequiredRelation) {
 		return fmt.Errorf("required approver error: %w", err)
 	}
-	ambiguous := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) orm.Single[model.Approval] {
+	ambiguous := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) relation.Single[model.Approval] {
 		return scopes.Approvals().One()
 	})
 	_, err = ex.orders.Get(ctx, orders[0].ID, ambiguous)
