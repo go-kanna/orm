@@ -14,6 +14,8 @@ type OrderRepository interface {
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	First(ctx context.Context, s ...scopes.Order) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+	ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)
+	FindMemo(ctx context.Context, id model.OrderID) (**string, error)
 	GetTagSummary(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.OrderTagSummary, error)
 	GetSummary(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.OrderSummary, error)
 	FindSummary(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.OrderSummary, error)
