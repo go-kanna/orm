@@ -64,21 +64,19 @@ func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) pg
 	return trace.Row(d.dbtx.QueryRow(ctx, query, args...))
 }
 
-// CustomerRepository implements repository.CustomerRepository on PostgreSQL through pgx.
-type CustomerRepository struct{ db ormDatabase }
+// Customer implements repository.Customer on PostgreSQL through pgx.
+type Customer struct{ db ormDatabase }
 
-func newCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
-	return CustomerRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+func newCustomer(db DBTX, opts ...option.Option) Customer {
+	return Customer{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
-// NewCustomerRepository returns CustomerRepository running on db.
-func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
-	return newCustomerRepository(db, opts...)
-}
+// NewCustomer returns Customer running on db.
+func NewCustomer(db DBTX, opts ...option.Option) Customer { return newCustomer(db, opts...) }
 
-var _ repository.CustomerRepository = CustomerRepository{}
+var _ repository.Customer = Customer{}
 
-func (r CustomerRepository) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
+func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
 	const q = `INSERT INTO customers (email, name, phone, created_at)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, phone = COALESCE(EXCLUDED.phone, customers.phone)
@@ -92,7 +90,7 @@ RETURNING id, email, name, phone, created_at`
 	return row, nil
 }
 
-func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
+func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
 	const q = `SELECT id, email, name, phone, created_at FROM customers WHERE id = $1`
 	rows, err := queryCustomers(ctx, r.db, q, id)
 	if err != nil {
@@ -104,7 +102,7 @@ func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model
 	return rows[0], nil
 }
 
-func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error) {
+func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error) {
 	qs := make([]scope.Of[model.Customer], len(s))
 	for i, s := range s {
 		qs[i] = s.Of()
@@ -128,21 +126,19 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 	return row, nil
 }
 
-// ProductRepository implements repository.ProductRepository on PostgreSQL through pgx.
-type ProductRepository struct{ db ormDatabase }
+// Product implements repository.Product on PostgreSQL through pgx.
+type Product struct{ db ormDatabase }
 
-func newProductRepository(db DBTX, opts ...option.Option) ProductRepository {
-	return ProductRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+func newProduct(db DBTX, opts ...option.Option) Product {
+	return Product{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
-// NewProductRepository returns ProductRepository running on db.
-func NewProductRepository(db DBTX, opts ...option.Option) ProductRepository {
-	return newProductRepository(db, opts...)
-}
+// NewProduct returns Product running on db.
+func NewProduct(db DBTX, opts ...option.Option) Product { return newProduct(db, opts...) }
 
-var _ repository.ProductRepository = ProductRepository{}
+var _ repository.Product = Product{}
 
-func (r ProductRepository) UpsertAll(ctx context.Context, products []model.Product) error {
+func (r Product) UpsertAll(ctx context.Context, products []model.Product) error {
 	if len(products) == 0 {
 		return nil
 	}
@@ -163,7 +159,7 @@ ON CONFLICT (sku) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price`
 	return nil
 }
 
-func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]model.Product, error) {
+func (r Product) List(ctx context.Context, s ...scopes.Product) ([]model.Product, error) {
 	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -172,7 +168,7 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 	return selectProducts(ctx, r.db, q, "")
 }
 
-func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
+func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
 	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -207,7 +203,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	return out, nil
 }
 
-func (r ProductRepository) ListNames(ctx context.Context, s ...scopes.Product) ([]string, error) {
+func (r Product) ListNames(ctx context.Context, s ...scopes.Product) ([]string, error) {
 	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -242,7 +238,7 @@ func (r ProductRepository) ListNames(ctx context.Context, s ...scopes.Product) (
 	return out, nil
 }
 
-func (r ProductRepository) InsertTags(ctx context.Context, tags []model.Tag) error {
+func (r Product) InsertTags(ctx context.Context, tags []model.Tag) error {
 	if len(tags) == 0 {
 		return nil
 	}
@@ -258,21 +254,19 @@ SELECT * FROM unnest($1::text[])`
 	return nil
 }
 
-// OrderRepository implements repository.OrderRepository on PostgreSQL through pgx.
-type OrderRepository struct{ db ormDatabase }
+// Order implements repository.Order on PostgreSQL through pgx.
+type Order struct{ db ormDatabase }
 
-func newOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
-	return OrderRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+func newOrder(db DBTX, opts ...option.Option) Order {
+	return Order{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
-// NewOrderRepository returns OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
-	return newOrderRepository(db, opts...)
-}
+// NewOrder returns Order running on db.
+func NewOrder(db DBTX, opts ...option.Option) Order { return newOrder(db, opts...) }
 
-var _ repository.OrderRepository = OrderRepository{}
+var _ repository.Order = Order{}
 
-func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
+func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -292,7 +286,7 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 	return &rows[0], nil
 }
 
-func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
+func (r Order) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -313,7 +307,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 }
 
 // ListApprovers runs the query of its name in queries.sql.
-func (r OrderRepository) ListApprovers(ctx context.Context, ids []model.OrderID) ([]repository.OrderApprover, error) {
+func (r Order) ListApprovers(ctx context.Context, ids []model.OrderID) ([]repository.OrderApprover, error) {
 	const q = `SELECT
     o.id AS order_id,
     a.approver
@@ -340,7 +334,7 @@ ORDER BY o.id`
 	return out, nil
 }
 
-func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
+func (r Order) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -353,7 +347,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 	return rows, nil
 }
 
-func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) ([]repository.OrderSummary, error) {
+func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]repository.OrderSummary, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -388,7 +382,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	return out, nil
 }
 
-func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
+func (r Order) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -408,7 +402,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, e
 	return n, nil
 }
 
-func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+func (r Order) Insert(ctx context.Context, o model.Order) (model.Order, error) {
 	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
 VALUES ($1, $2, $3, $4)
 RETURNING id, customer_id, status, placed_at, note`
@@ -423,7 +417,7 @@ RETURNING id, customer_id, status, placed_at, note`
 	return row, nil
 }
 
-func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) error {
+func (r Order) InsertLines(ctx context.Context, lines []model.OrderLine) error {
 	if len(lines) == 0 {
 		return nil
 	}
@@ -445,7 +439,7 @@ SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::int4[])`
 	return nil
 }
 
-func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.Approval) error {
+func (r Order) InsertApprovals(ctx context.Context, approvals []model.Approval) error {
 	if len(approvals) == 0 {
 		return nil
 	}
@@ -469,7 +463,7 @@ SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::timestamptz[], $5::
 	return nil
 }
 
-func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {
+func (r Order) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -486,7 +480,7 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (int64, 
 	return tag.RowsAffected(), nil
 }
 
-func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]repository.DeletedOrder, error) {
+func (r Order) DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]repository.DeletedOrder, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
@@ -516,7 +510,7 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 }
 
 // Tag runs the query of its name in queries.sql.
-func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) error {
+func (r Order) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) error {
 	const q = `INSERT INTO order_tags (order_id, tag) VALUES ($1, $2)
 ON CONFLICT DO NOTHING`
 	if _, err := r.db.Exec(ctx, q, orderID, input.Tag); err != nil {
@@ -526,7 +520,7 @@ ON CONFLICT DO NOTHING`
 }
 
 // MonthlySales runs the query of its name in queries.sql.
-func (r OrderRepository) MonthlySales(ctx context.Context, since time.Time) ([]repository.MonthSales, error) {
+func (r Order) MonthlySales(ctx context.Context, since time.Time) ([]repository.MonthSales, error) {
 	const q = `SELECT date_trunc('month', o.placed_at) AS month,
        count(DISTINCT o.id) AS orders,
        sum(l.quantity * p.price)::bigint AS revenue
@@ -555,21 +549,19 @@ ORDER BY 1`
 	return out, nil
 }
 
-// FulfillmentRepository implements repository.FulfillmentRepository on PostgreSQL through pgx.
-type FulfillmentRepository struct{ db ormDatabase }
+// Fulfillment implements repository.Fulfillment on PostgreSQL through pgx.
+type Fulfillment struct{ db ormDatabase }
 
-func newFulfillmentRepository(db DBTX, opts ...option.Option) FulfillmentRepository {
-	return FulfillmentRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+func newFulfillment(db DBTX, opts ...option.Option) Fulfillment {
+	return Fulfillment{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
-// NewFulfillmentRepository returns FulfillmentRepository running on db.
-func NewFulfillmentRepository(db DBTX, opts ...option.Option) FulfillmentRepository {
-	return newFulfillmentRepository(db, opts...)
-}
+// NewFulfillment returns Fulfillment running on db.
+func NewFulfillment(db DBTX, opts ...option.Option) Fulfillment { return newFulfillment(db, opts...) }
 
-var _ repository.FulfillmentRepository = FulfillmentRepository{}
+var _ repository.Fulfillment = Fulfillment{}
 
-func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
+func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
 	if _, ok := r.db.dbtx.(interface{ Commit(context.Context) error }); !ok {
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx")
 	}
@@ -584,7 +576,7 @@ func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderI
 	return rows[0], nil
 }
 
-func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
+func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
 	if _, ok := r.db.dbtx.(interface{ Commit(context.Context) error }); !ok {
 		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a pgx.Tx")
 	}
@@ -604,7 +596,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 	return rows[0], nil
 }
 
-func (r FulfillmentRepository) InsertShipment(ctx context.Context, s model.Shipment) error {
+func (r Fulfillment) InsertShipment(ctx context.Context, s model.Shipment) error {
 	const q = `INSERT INTO shipments (order_id, carrier, tracking)
 VALUES ($1, $2, $3)`
 	if _, err := r.db.Exec(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
@@ -613,7 +605,7 @@ VALUES ($1, $2, $3)`
 	return nil
 }
 
-func (r FulfillmentRepository) Update(ctx context.Context, o model.Order) error {
+func (r Fulfillment) Update(ctx context.Context, o model.Order) error {
 	const q = `UPDATE orders
 SET customer_id = $1, status = $2, placed_at = $3, note = $4
 WHERE id = $5`
