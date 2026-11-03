@@ -2,6 +2,7 @@ package impl
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"slices"
 	"strconv"
@@ -16,42 +17,46 @@ type Batch struct {
 	ThroughParent, ThroughChild, TargetKeys []string
 	Projections                             []Projection
 }
-type batchScope interface {
-	combineBatch(other batchScope) batchScope
-}
 type batchPlan[M any] struct {
 	parent Parent
 	scope  Of[M]
 }
 
-func (p batchPlan[M]) combineBatch(_ batchScope) batchScope {
-	p.scope.err = errors.Join(p.scope.err, errors.New("orm: a collection is preloaded twice"))
-	return p
-}
-
 type batchField struct {
 	field string
-	plan  batchScope
+	plan  any // a batchPlan of the model of field
 }
 
+// PreloadMany has field loaded for each row of q by the rows m selects, correlated by parent. What keeps m from paging
+// the rows of each parent becomes an error of q now, rather than when the rows of field are read, which no parent row
+// may come to.
 func PreloadMany[M, C any](q Of[M], field string, parent Parent, m Many[C]) Of[M] {
-	if m.scope.seeking {
-		q.err = errors.Join(q.err, errors.New("orm: correlated Many does not accept a cursor; use Offset"))
-	}
-	q.err = errors.Join(q.err, m.scope.err)
-	q.batches = addBatch(q.batches, batchField{field, batchPlan[C]{parent, m.scope}})
+	q.err = errors.Join(q.err, m.scope.err, m.scope.pageEach(field))
+	q = q.addBatch(batchField{field, batchPlan[C]{parent, m.scope}})
 	return q
 }
 
-func addBatch(batches []batchField, batch batchField) []batchField {
-	for i, existing := range batches {
-		if existing.field == batch.field {
-			batches = slices.Clone(batches)
-			batches[i].plan = existing.plan.combineBatch(batch.plan)
-			return batches
-		}
+// pageEach reports why q cannot page the rows of field for each parent.
+func (q Of[M]) pageEach(field string) error {
+	switch {
+	case q.seeking:
+		return fmt.Errorf("orm: %s does not accept a cursor; use Offset", field)
+	case (q.hasLimit || q.hasOffset) && len(q.orders) == 0:
+		return fmt.Errorf("orm: %s keeps some of the rows of each parent, which requires an order", field)
+	case q.hasLimit && q.hasOffset && q.limit > math.MaxInt-q.offset:
+		return fmt.Errorf("orm: the page of %s overflows", field)
 	}
-	return append(slices.Clip(batches), batch)
+	return nil
+}
+
+// addBatch returns q loading batch too, or with an error if q loads its field by PreloadMany already.
+func (q Of[M]) addBatch(batch batchField) Of[M] {
+	if slices.ContainsFunc(q.batches, func(b batchField) bool { return b.field == batch.field }) {
+		q.err = errors.Join(q.err, fmt.Errorf("orm: %s is preloaded twice", batch.field))
+		return q
+	}
+	q.batches = append(slices.Clip(q.batches), batch)
+	return q
 }
 
 func PreloadedMany[C, M any](q Of[M], field string) (Of[C], Parent, bool) {
@@ -123,15 +128,6 @@ func (q Of[M]) validateBatch(b Batch, keys [][]any) error {
 	}
 	if b.Through != "" && (len(b.ParentKeys) != len(b.ThroughParent) || len(b.ThroughChild) != len(b.TargetKeys)) {
 		return errors.New("orm: inconsistent junction keys")
-	}
-	if q.seeking {
-		return errors.New("orm: collection cursors are unsupported; use Offset")
-	}
-	if (q.hasLimit || q.hasOffset) && len(q.orders) == 0 {
-		return errors.New("orm: per-parent pagination requires an order")
-	}
-	if q.hasLimit && q.hasOffset && q.limit > math.MaxInt-q.offset {
-		return errors.New("orm: collection page overflows")
 	}
 	return q.err
 }
