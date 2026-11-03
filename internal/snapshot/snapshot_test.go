@@ -37,7 +37,7 @@ func shop() snapshot.Snapshot {
 			"example.com/shop/repository.MonthCounts": {
 				Digest: "0123456789abcdef",
 				Params: []snapshot.Param{{Name: "since", Type: "timestamptz"}},
-				Columns: []snapshot.Result{
+				Columns: []snapshot.OutputColumn{
 					{Name: "month", Type: "timestamptz"},
 					{Name: "count", Type: "int8", NotNull: true},
 					{Name: "note", Type: "text", Nullable: true},

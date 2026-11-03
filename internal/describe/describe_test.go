@@ -105,7 +105,7 @@ func (f *fake) Statement(_ context.Context, sql string) (snapshot.Statement, err
 	if err != nil {
 		return snapshot.Statement{}, fmt.Errorf("%w", err)
 	}
-	st := snapshot.Statement{Columns: []snapshot.Result{{Name: "n", Type: "int8"}}}
+	st := snapshot.Statement{Columns: []snapshot.OutputColumn{{Name: "n", Type: "int8"}}}
 	for _, name := range names {
 		st.Params = append(st.Params, snapshot.Param{Name: name})
 	}
@@ -155,11 +155,11 @@ CREATE TABLE orders (id bigint PRIMARY KEY);
 		"example.com/shop/store.CountOpen": {
 			Digest:  snapshot.Digest("SELECT count(*) AS n FROM orders WHERE status = :status;"),
 			Params:  []snapshot.Param{{Name: "status"}},
-			Columns: []snapshot.Result{{Name: "n", Type: "int8"}},
+			Columns: []snapshot.OutputColumn{{Name: "n", Type: "int8"}},
 		},
 		"example.com/shop/ledger.CountOpen": {
 			Digest:  snapshot.Digest("SELECT count(*) AS n FROM orders WHERE status <> 'closed'"),
-			Columns: []snapshot.Result{{Name: "n", Type: "int8"}},
+			Columns: []snapshot.OutputColumn{{Name: "n", Type: "int8"}},
 		},
 		"example.com/shop/scopes.Order.Open": {
 			Digest: snapshot.Digest("status <> 'closed'"),
@@ -340,7 +340,7 @@ SELECT count(*) AS n FROM orders WHERE status = :status
 			snapshot.Statement{Params: []snapshot.Param{{Name: "at", Type: "timestamptz"}}},
 			snapshot.Statement{
 				Params:  []snapshot.Param{{Name: "status", Type: "text"}},
-				Columns: []snapshot.Result{{Name: "n", Type: "int8"}},
+				Columns: []snapshot.OutputColumn{{Name: "n", Type: "int8"}},
 			}},
 		{"MySQL",
 			func(t *testing.T) describe.Database {
@@ -354,7 +354,7 @@ SELECT count(*) AS n FROM orders WHERE status = :status
 			snapshot.Statement{Params: []snapshot.Param{{Name: "at"}}},
 			snapshot.Statement{
 				Params:  []snapshot.Param{{Name: "status"}},
-				Columns: []snapshot.Result{{Name: "n", Type: "bigint", NotNull: true}},
+				Columns: []snapshot.OutputColumn{{Name: "n", Type: "bigint", NotNull: true}},
 			}},
 	}
 	for _, tt := range tests {

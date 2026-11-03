@@ -244,7 +244,7 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 
 // resultFields matches the fields of row, a struct, to columns, the result of a query written by hand at header, for
 // the method name: one for each column, by its name or its tag, in the order of the columns.
-func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result, header token.Position,
+func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.OutputColumn, header token.Position,
 	name string,
 ) ([]column, []diag.Diag) {
 	errorf := func(format string, args ...any) diag.Diag {
@@ -291,7 +291,7 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Result
 		if f.relationValue {
 			continue
 		}
-		if !slices.ContainsFunc(columns, func(c snapshot.Result) bool { return c.Name == f.col.Name }) {
+		if !slices.ContainsFunc(columns, func(c snapshot.OutputColumn) bool { return c.Name == f.col.Name }) {
 			ds = append(ds, errorf("the query returns no column %s for %s.%s", f.col.Name, typeName(row),
 				strings.Join(f.path, ".")).WithHints(`select it, or leave the field out with orm:"-"`))
 		}

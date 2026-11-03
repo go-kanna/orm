@@ -105,7 +105,7 @@ func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
 		"example.com/shop/impl.FindCustom": {
 			Digest: snapshot.Digest(statements[0].Text),
 			Params: []snapshot.Param{{Name: "recordKey", Type: "text"}},
-			Columns: []snapshot.Result{
+			Columns: []snapshot.OutputColumn{
 				{Name: "id", Type: "bigint", NotNull: true},
 				{Name: "record_key", Type: "text", NotNull: true},
 				{Name: "owner_id", Type: "bigint", Nullable: true},
@@ -116,7 +116,7 @@ func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
 		"example.com/shop/impl.FindKeyOf": {
 			Digest:  snapshot.Digest(statements[1].Text),
 			Params:  []snapshot.Param{{Name: "id", Type: "bigint"}},
-			Columns: []snapshot.Result{{Name: "record_key", Type: "text", NotNull: true}},
+			Columns: []snapshot.OutputColumn{{Name: "record_key", Type: "text", NotNull: true}},
 		},
 	}
 	if err := files.WriteFile(snapshot.Name, snapshot.Marshal(s), 0o600); err != nil {
@@ -246,7 +246,7 @@ func TestRepositories_FindOfANullableColumn(t *testing.T) {
 		"-- query: FindNote\nSELECT note FROM orders WHERE id = :id;\n",
 		map[string]snapshot.Statement{"FindNote": {
 			Params:  []snapshot.Param{{Name: "id", Type: "int8"}},
-			Columns: []snapshot.Result{{Name: "note", Type: "text", Nullable: true}},
+			Columns: []snapshot.OutputColumn{{Name: "note", Type: "text", Nullable: true}},
 		}})
 	if ds != want {
 		t.Errorf("Repositories reports\n%s\nwant\n%s", ds, want)

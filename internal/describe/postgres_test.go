@@ -267,14 +267,14 @@ func TestPostgresStatement(t *testing.T) {
 			`SELECT id, note FROM orders WHERE placed_at >= :since AND status = :status;`,
 			snapshot.Statement{
 				Params: []snapshot.Param{{Name: "since", Type: "timestamptz"}, {Name: "status", Type: "text"}},
-				Columns: []snapshot.Result{
+				Columns: []snapshot.OutputColumn{
 					{Name: "id", Type: "int8", NotNull: true},
 					{Name: "note", Type: "text", Nullable: true},
 				},
 			}},
 		{"expressions, which may or may not be NULL",
 			`SELECT date_trunc('month', placed_at) AS month, count(*) AS count, sum(total) AS total FROM orders GROUP BY 1`,
-			snapshot.Statement{Columns: []snapshot.Result{
+			snapshot.Statement{Columns: []snapshot.OutputColumn{
 				{Name: "month", Type: "timestamptz"},
 				{Name: "count", Type: "int8"},
 				{Name: "total", Type: "numeric"},
@@ -283,7 +283,7 @@ func TestPostgresStatement(t *testing.T) {
 			`SELECT id FROM orders WHERE customer_id = :c OR id = :c`,
 			snapshot.Statement{
 				Params:  []snapshot.Param{{Name: "c", Type: "int8"}},
-				Columns: []snapshot.Result{{Name: "id", Type: "int8", NotNull: true}},
+				Columns: []snapshot.OutputColumn{{Name: "id", Type: "int8", NotNull: true}},
 			}},
 		{"a domain, an enum, and an array",
 			`SELECT c.email, o.mood, o.tags FROM orders o JOIN customers c ON c.id = o.customer_id
@@ -292,7 +292,7 @@ func TestPostgresStatement(t *testing.T) {
 				Params: []snapshot.Param{
 					{Name: "mood", Type: "mood"}, {Name: "email", Type: "text"}, {Name: "tags", Type: "text[]"},
 				},
-				Columns: []snapshot.Result{
+				Columns: []snapshot.OutputColumn{
 					{Name: "email", Type: "text", NotNull: true},
 					{Name: "mood", Type: "mood", Nullable: true},
 					{Name: "tags", Type: "text[]", NotNull: true},
@@ -300,7 +300,7 @@ func TestPostgresStatement(t *testing.T) {
 			}},
 		{"an outer join, read as the table declares the column",
 			`SELECT o.id, c.email FROM orders o LEFT JOIN customers c ON c.id = o.customer_id`,
-			snapshot.Statement{Columns: []snapshot.Result{
+			snapshot.Statement{Columns: []snapshot.OutputColumn{
 				{Name: "id", Type: "int8", NotNull: true},
 				{Name: "email", Type: "text", NotNull: true},
 			}}},
@@ -309,7 +309,7 @@ func TestPostgresStatement(t *testing.T) {
 		{"rows returned", `UPDATE orders SET status = :status WHERE id = :id RETURNING id, status`,
 			snapshot.Statement{
 				Params: []snapshot.Param{{Name: "status", Type: "text"}, {Name: "id", Type: "int8"}},
-				Columns: []snapshot.Result{
+				Columns: []snapshot.OutputColumn{
 					{Name: "id", Type: "int8", NotNull: true},
 					{Name: "status", Type: "text", NotNull: true},
 				},
