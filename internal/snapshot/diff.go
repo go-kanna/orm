@@ -93,7 +93,10 @@ func describeColumn(c Column) string {
 	if c.Default {
 		parts = append(parts, "with a default")
 	}
-	if c.Assigned {
+	switch {
+	case c.Writable:
+		parts = append(parts, "assigned by the database unless given")
+	case c.Assigned:
 		parts = append(parts, "assigned by the database")
 	}
 	return strings.Join(parts, ", ")

@@ -743,14 +743,19 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 ### Writing
 
-A row is written as the model holds it. Database-assigned columns, such as identity, serial and AUTO_INCREMENT,
-and fields explicitly tagged `default` are left out of INSERT statements. Otherwise a zero value is written as a
-zero value: a `false` for a column defaulting to `true` stays `false`. Set `created_at` and `updated_at` in your domain,
-or explicitly use their database defaults.
+A row is written as the model holds it. A column the database assigns unless given, as a serial, an identity
+`BY DEFAULT`, or an AUTO_INCREMENT one, is left to the database when the model's value is zero, and written when it is
+not, as gorm and Rails do: an id is never 0, so 0 reads as none. So a fixture can give its ids, and an `Upsert` can meet
+its row by such a key, inserting a row of no id and updating the one of its id. Writing a value does not move the
+sequence, so a later row the database assigns may take the same one: give values the sequence will not reach, or set
+it after. A column the database always assigns, as an identity `ALWAYS` or a generated one, is left out always, as is a
+field tagged `default`. Otherwise a zero value is written as a zero value: a `false` for a column defaulting to `true`
+stays `false`. Set `created_at` and `updated_at` in your domain, or explicitly use their database defaults.
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
-done. MySQL reads it back by `LAST_INSERT_ID()` when the database assigns its primary key, and by its primary key
-otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
+done. A row goes by one of two constant statements, with the column and without, as its value says, and the rows of a
+bulk insert by two statements, read back in the order given. MySQL reads a row back by `LAST_INSERT_ID()` when the
+database assigned its primary key, and by its primary key, or an upsert's conflict key, otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
 whether the row is there before returning `orm.ErrNotFound`.
 
 ### Database defaults
@@ -814,8 +819,8 @@ VALUES (?, ?, ?, ?) AS new
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name
 ```
 
-The columns must be the primary key or a unique key of the table, exactly, and none the database assigns, as an insert
-never gives those to meet a row by. The row met gets every column but those of the key, the primary key, and those
+The columns must be the primary key or a unique key of the table, exactly, and none the database always assigns, as an
+insert never gives those to meet a row by. The row met gets every column but those of the key, the primary key, and those
 `keep=` names; with none left, the key is set to itself, so that the row is still read back. MySQL updates on a conflict
 over any unique key, so a table with unique keys besides the one named gets a warning:
 

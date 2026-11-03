@@ -610,20 +610,95 @@ func (r OrderRepository) ListUnlocked(ctx context.Context, s ...scopes.Order) ([
 }
 
 func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position)
+	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
+	res, err := r.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+	if o.ID == 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+		}
+		var row model.Order
+		if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+		}
+		return row, nil
 	}
 	var row model.Order
-	err = r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
-	if err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+	}
+	return row, nil
+}
+
+func (r OrderRepository) InsertOrders(ctx context.Context, orders []model.Order) error {
+	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	if len(orders) == 0 {
+		return nil
+	}
+	// The rows whose id is zero, which the database assigns, and those which give it.
+	var assigned, given []int
+	for i := range orders {
+		if orders[i].ID == 0 {
+			assigned = append(assigned, i)
+		} else {
+			given = append(given, i)
+		}
+	}
+	for chunk := range slices.Chunk(assigned, 7281) {
+		args := make([]any, 0, len(chunk)*9)
+		for _, k := range chunk {
+			args = append(args, orders[k].CustomerID, orders[k].Status, orders[k].PlacedAt, orders[k].Memo, orders[k].Total, orders[k].Paid, orders[k].Contact, orders[k].Receipt, orders[k].Position)
+		}
+		if _, err := r.db.ExecContext(ctx, withoutID+strings.Repeat(`, (?, ?, ?, ?, ?, ?, ?, ?, ?)`, len(chunk)-1), args...); err != nil {
+			return r.mapError(fmt.Errorf("insert into orders: %w", err))
+		}
+	}
+	for chunk := range slices.Chunk(given, 6553) {
+		args := make([]any, 0, len(chunk)*10)
+		for _, k := range chunk {
+			args = append(args, orders[k].CustomerID, orders[k].Status, orders[k].PlacedAt, orders[k].Memo, orders[k].Total, orders[k].Paid, orders[k].Contact, orders[k].Receipt, orders[k].Position, orders[k].ID)
+		}
+		if _, err := r.db.ExecContext(ctx, withID+strings.Repeat(`, (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, len(chunk)-1), args...); err != nil {
+			return r.mapError(fmt.Errorf("insert into orders: %w", err))
+		}
+	}
+	return nil
+}
+
+func (r OrderRepository) UpsertOrder(ctx context.Context, o model.Order) (model.Order, error) {
+	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = new.customer_id, status = new.status, placed_at = new.placed_at, note = new.note, total = new.total, paid = new.paid, contact = new.contact, receipt = new.receipt, `order` = new.`order`"
+	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = new.customer_id, status = new.status, placed_at = new.placed_at, note = new.note, total = new.total, paid = new.paid, contact = new.contact, receipt = new.receipt, `order` = new.`order`"
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
+	res, err := r.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
+	}
+	if o.ID == 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
+		}
+		var row model.Order
+		if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
+		}
+		return row, nil
+	}
+	var row model.Order
+	if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
 	return row, nil
 }
@@ -777,19 +852,29 @@ ON DUPLICATE KEY UPDATE name = new.name`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), customer_id = new.customer_id, status = new.status, note = new.note, total = new.total, paid = new.paid, contact = new.contact, receipt = new.receipt"
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position)
+	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = new.customer_id, status = new.status, note = new.note, total = new.total, paid = new.paid, contact = new.contact, receipt = new.receipt"
+	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = new.customer_id, status = new.status, note = new.note, total = new.total, paid = new.paid, contact = new.contact, receipt = new.receipt"
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
+	res, err := r.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
+	if o.ID == 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
+		}
+		var row model.Order
+		if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
+		}
+		return row, nil
 	}
 	var row model.Order
-	err = r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).
-		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
-	if err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE `order` = ?", o.Position).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
 	return row, nil

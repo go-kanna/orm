@@ -45,6 +45,8 @@ SELECT c.relname,
        ` + postgresColumnTypeName + `,
        a.attnotnull,
        a.attidentity <> '' OR a.attgenerated <> '' OR coalesce(pg_get_expr(d.adbin, d.adrelid), '') LIKE 'nextval(%',
+       a.attidentity = 'd' OR a.attidentity = '' AND a.attgenerated = '' AND
+           coalesce(pg_get_expr(d.adbin, d.adrelid), '') LIKE 'nextval(%',
        a.atthasdef
 FROM pg_attribute a
 JOIN pg_class c ON c.oid = a.attrelid
@@ -107,7 +109,8 @@ func postgresTables(ctx context.Context, conn *pgx.Conn) (map[string]snapshot.Ta
 		dflt  bool
 	)
 	rows, _ := conn.Query(ctx, postgresColumnsQuery)
-	_, err := pgx.ForEachRow(rows, []any{&table, &col.Name, &col.Type, &col.NotNull, &col.Assigned, &dflt}, func() error {
+	_, err := pgx.ForEachRow(rows, []any{&table, &col.Name, &col.Type, &col.NotNull, &col.Assigned, &col.Writable,
+		&dflt}, func() error {
 		col.Default = dflt && !col.Assigned
 		t := tables[table]
 		t.Columns = append(t.Columns, col)

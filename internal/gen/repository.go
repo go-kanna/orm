@@ -1101,7 +1101,7 @@ func (m repoMethod) writeKeyRules() []diag.Diag {
 			switch {
 			case !held(name):
 				ds = append(ds, errorf("%s has no field for %s, which it meets its row by", model, name))
-			case m.verb == verbUpsert && (m.table.Columns[i].Assigned || m.field(name).insertDefault):
+			case m.verb == verbUpsert && (m.table.Columns[i].Assigned && !m.gives(name) || m.field(name).insertDefault):
 				ds = append(ds, errorf("the database assigns %s, so an insert never meets a row by it", name).
 					WithHints(fmt.Sprintf("name another unique key of %s with //kanna:conflict", m.target.table)))
 			}

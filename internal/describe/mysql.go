@@ -20,6 +20,7 @@ SELECT c.TABLE_NAME,
        c.COLUMN_TYPE,
        c.IS_NULLABLE = 'NO',
        c.EXTRA LIKE '%auto_increment%' OR c.GENERATION_EXPRESSION <> '',
+       c.EXTRA LIKE '%auto_increment%',
        c.COLUMN_DEFAULT IS NOT NULL
 FROM information_schema.COLUMNS c
 JOIN information_schema.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
@@ -65,7 +66,8 @@ func mysqlTables(ctx context.Context, conn *sql.Conn) (map[string]snapshot.Table
 		col   snapshot.Column
 		dflt  bool
 	)
-	err := eachRow(ctx, conn, mysqlColumnsQuery, []any{&table, &col.Name, &col.Type, &col.NotNull, &col.Assigned, &dflt},
+	err := eachRow(ctx, conn, mysqlColumnsQuery, []any{&table, &col.Name, &col.Type, &col.NotNull, &col.Assigned,
+		&col.Writable, &dflt},
 		func() {
 			col.Default = dflt && !col.Assigned
 			t := tables[table]

@@ -148,7 +148,7 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
     },
     "orders": {
       "columns": [
-        {"name": "id", "type": "int8", "not_null": true, "assigned": true},
+        {"name": "id", "type": "int8", "not_null": true, "assigned": true, "writable": true},
         {"name": "customer_id", "type": "int8", "not_null": true},
         {"name": "number", "type": "text", "not_null": true},
         {"name": "status", "type": "text", "not_null": true, "default": true},
