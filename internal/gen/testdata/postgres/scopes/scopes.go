@@ -25,3 +25,9 @@ type LineNote struct{ q scope.Of[model.LineNote] }
 
 //kanna:scope table=labels
 type Label struct{ q scope.Of[model.Label] }
+
+// InMonths narrows to the orders placed in months, by SQL written in Go, as a condition whose shape the program
+// chooses is.
+func (s Order) InMonths(months []int) Order {
+	return Order{s.q.Raw().Where("EXTRACT(MONTH FROM placed_at) = ANY(", months, ")")}
+}

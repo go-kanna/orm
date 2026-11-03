@@ -27,7 +27,7 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 | Package      | What for                                                                                |
 |--------------|-----------------------------------------------------------------------------------------|
 | `orm`        | `ErrNotFound`, the error a repository returns                                           |
-| `orm/scope`  | `Of`, the one field of a scope type declared by hand                                    |
+| `orm/scope`  | `Of`, the one field of a scope type declared by hand, and `Raw`, for SQL written in Go  |
 | `orm/join`   | `On`, an explicit condition of a joined projection                                      |
 | `orm/option` | `WithHook`, the option a repository's constructor takes                                 |
 | `orm/hook`   | `Hook`, `Query`, and `Execution`, the functions that option takes and what they receive |
@@ -99,12 +99,12 @@ func Orders() Order { return Order{} }
 
 // StatusNe narrows to the rows whose status is not v.
 func (s Order) StatusNe(v model.OrderStatus) Order {
-	return Order{s.q.Where(`status <> `, v)}
+	return Order{ormScope(ormRuntime(s.q).Where(`status <> `, v))}
 }
 
 // PlacedAtDesc orders the rows by placed_at, latest first.
 func (s Order) PlacedAtDesc() Order {
-	return Order{s.q.OrderBy(`placed_at`, true)}
+	return Order{ormScope(ormRuntime(s.q).OrderBy(`placed_at`, true))}
 }
 
 // WithLines loads Lines, from order_lines by order_id.
@@ -249,7 +249,19 @@ path of the module or a path relative to the file, and more than one separated b
 `model-package=../model,../billing`. A struct no table is named after, such as a value type, gets none, and neither does
 a table no struct is named after, such as one between two others. So a struct of those packages becomes a model once a
 table of its name is made: keep the structs that are not, such as those a query returns, in a package of their own.
-Methods of your own are written on the type as on any other, in another file of the package.
+Methods of your own are written on the type as on any other, in another file of the package. One narrows the scope
+by the methods kanna-orm writes, as `Open` below does; by SQL of a shape of its own in a `.sql` file, which `describe`
+checks (see [Hand-written SQL](#hand-written-sql)); or, for SQL whose shape the program chooses as it runs, by `Raw`,
+as `InMonths` does, which nothing checks before it runs. `Raw` has `Where` and `OrderBy` alone, each returning the
+scope with all it held before.
+
+```go
+func (s Order) Open() Order { return s.StatusNe("closed") }
+
+func (s Order) InMonths(months []int) Order {
+	return Order{s.q.Raw().Where("EXTRACT(MONTH FROM placed_at) = ANY(", months, ")")}
+}
+```
 
 A scope type of a name of your own is declared by hand with `//kanna:scope`. Its table is the one its model is named
 after, as with `//kanna:scopes`, unless `table=` names another, as one in the singular. It wins over the one

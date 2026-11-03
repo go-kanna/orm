@@ -193,7 +193,7 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 		return "", nil, []diag.Diag{packages.NotTypeChecked(pos)}
 	}
 	of, ok := types.Unalias(f.Type()).(*types.Named)
-	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != implPath || of.Obj().Name() != "Of" {
+	if !ok || of.Obj().Pkg() == nil || of.Obj().Pkg().Path() != scopePath || of.Obj().Name() != "Of" {
 		return "", nil, []diag.Diag{shape}
 	}
 
@@ -205,7 +205,7 @@ func modelOf(pkg *packages.Package, ts *ast.TypeSpec) (string, *types.Named, []d
 	example := "q scope.Of[" + types.TypeString(m, qualifier) + "]"
 	switch {
 	case f.Embedded():
-		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: its scope.Of is embedded, which makes Where a method of the scope",
+		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: its scope.Of is embedded, which makes Raw a method of the scope",
 			name).WithHints("name the field: " + example)}
 	case f.Exported():
 		return "", nil, []diag.Diag{diag.Errorf(pos, "%s: the field %s is exported, so code outside the package could "+

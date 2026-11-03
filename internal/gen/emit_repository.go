@@ -311,7 +311,8 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	if m.scoped {
 		qs, i, x := sc.Name("qs"), sc.Name("i"), sc.Name("x")
 		e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, sig.scopes)
-		e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sig.scopes, qs)
+		e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s[%[6]s](%[2]s.Of())\n}\n", i, x, sig.scopes, qs,
+			e.ref("Of"), model)
 		e.printf("%s := %s(%s...)\n", q, e.ref("Combine"), qs)
 	} else {
 		e.printf("var %s %s[%s]\n", q, e.ref("Of"), model)

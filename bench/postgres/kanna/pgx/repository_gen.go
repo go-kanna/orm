@@ -14,7 +14,6 @@ import (
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/option"
 	ormpgx "github.com/go-kanna/orm/pgx"
-	"github.com/go-kanna/orm/scope"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -129,9 +128,9 @@ func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error)
 }
 
 func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
-	qs := make([]scope.Of[model.Order], len(s))
+	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
-		qs[i] = x.Of()
+		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
 	return selectOrders(ctx, r.db, q, "")
@@ -172,7 +171,7 @@ RETURNING id, order_id, sku, quantity`
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
@@ -209,7 +208,7 @@ func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], lock string) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
@@ -249,7 +248,7 @@ func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any)
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q scope.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
