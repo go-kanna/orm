@@ -612,15 +612,14 @@ The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not nam
 
 `Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, with the same absence contract; a scalar one reads a column that is never NULL, as its nil means no row.
 
-Use `//kanna:pluck customer_id` above a repository method such as `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` to read one column as a typed slice. The method name is yours to choose. Conditions, ordering, limits, offsets, and cursors work as for `List`; relations are not loaded. Duplicate values are preserved and no matching rows returns an empty slice. Generation checks the column and result type. Nullable columns require nullable elements unless the model field uses `nullzero` and the element has that field’s type. A pluck directive cannot be combined with hand-written SQL, `conflict`, or `lock`.
+A `List` returning a slice of values rather than of rows reads one column, that of the field its name says the plural of after `List`: `ListNames` reads `Name`, and `ListCustomerIDs` reads `CustomerID`. The name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering, limits, offsets, and cursors work as for `List`; relations are not loaded. Duplicate values are preserved and no matching rows returns an empty slice. Generation checks the column and result type. Nullable columns require nullable elements unless the model field uses `nullzero` and the element has that field’s type.
 
 ```go
-//kanna:pluck name
-Names(ctx context.Context, s ...scopes.Product) ([]string, error)
+ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
 ```
 
 ```go
-names, err := products.Names(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
 ```
 
 Both database examples use this method to read the affordable product names without loading whole products.

@@ -493,15 +493,14 @@ func NewOrderRepository(db DBTX) OrderRepository
 
 `Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたはユニークキーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。ただし、`Limit`、`Offset`、`After`、`Before` で行の一部だけを残すスコープは、キーが指す行そのものを外しうるのでエラーになります。キー引数はポインタではなく値を受け取ります。nil は何にもマッチしない `= NULL` で比べることになるので、ポインタのキー引数は生成を止めます。NULL の行はスコープの `IsNull` で絞り込みます。複数行の候補から一つ選ぶ場合は `First` を使います。スコープの順序で先頭の行を、スコープに順序がなければ主キーの順で先頭の行を返します。ポインタを返す `Find...` は、結果の構造体へのポインタでもスカラーへのポインタでも、同じ不在時の契約を保ったまま手書き SQL でも実装できます。スカラーの場合は nil が「行がない」を表すので、NULL にならない列を読みます。
 
-repository のメソッドに `//kanna:pluck customer_id` を付けると、1 カラムだけを型付きスライスで取得します。たとえば `CustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)` と宣言し、メソッド名は自由に選べます。条件・並び順・件数制限・オフセット・カーソルは `List` と同様に使えます。関連は読み込まず、重複値は保持します。該当行がなければ空のスライスを返します。カラムと戻り値の型を生成時に検証します。NULL を許すカラムには nullable な要素型が必要ですが、モデルの `nullzero` フィールドと同じ型ならゼロ値に変換します。手書き SQL・`conflict`・`lock` との併用は生成エラーです。
+行ではなく値のスライスを返す `List` は、1 カラムを読みます。読むのは、名前の `List` の後ろが複数形を表すフィールドのカラムで、`ListNames` なら `Name`、`ListCustomerIDs` なら `CustomerID` です。名前が言うのは何を読むかだけです。どの行かはいつもどおりキーとスコープで言うので、`ListNamesByPrice` のような名前は生成を止めます。条件・並び順・件数制限・オフセット・カーソルは `List` と同様に使えます。関連は読み込まず、重複値は保持します。該当行がなければ空のスライスを返します。カラムと戻り値の型を生成時に検証します。NULL を許すカラムには nullable な要素型が必要ですが、モデルの `nullzero` フィールドと同じ型ならゼロ値に変換します。
 
 ```go
-//kanna:pluck name
-Names(ctx context.Context, s ...scopes.Product) ([]string, error)
+ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
 ```
 
 ```go
-names, err := products.Names(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
 ```
 
 両 DB の example では、このメソッドで価格を絞った商品名を取得し、モデル全体を読み込まずに値の一覧を返します。
