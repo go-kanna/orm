@@ -19,6 +19,9 @@ type OrderRepository interface {
 	Exists(ctx context.Context, s ...postgres.Order) (bool, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...postgres.Order) (int64, error)
+	DeleteReturning(ctx context.Context, s ...postgres.Order) ([]model.Order, error)
+	DeleteSummaries(ctx context.Context, s ...postgres.Order) ([]DeletedOrder, error)
+	DeleteByCustomer(ctx context.Context, customerID int64, s ...postgres.Order) ([]DeletedOrder, error)
 	DeleteLines(ctx context.Context, s ...postgres.OrderLine) (int64, error)
 	DeleteTags(ctx context.Context, s ...postgres.Tag) (int64, error)
 	GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error)
@@ -63,6 +66,11 @@ type OrderRepository interface {
 	TotalOf(ctx context.Context, customerID int64) (CustomerTotal, error)
 	CloseOld(ctx context.Context, before time.Time) (int64, error)
 	Reopen(ctx context.Context, id model.OrderID) error
+}
+
+type DeletedOrder struct {
+	ID   model.OrderID
+	Memo *string
 }
 
 type MonthCount struct {

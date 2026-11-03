@@ -308,7 +308,7 @@ func TestRepositories_Mistakes(t *testing.T) {
 		{"nothing telling the table", snapshot.PostgreSQL, "\tDeleteByID(ctx context.Context, id int64) error\n",
 			at + "error: DeleteByID: nothing tells the table it reads or writes\n" +
 				"  give it the scopes of the table, as in Delete(ctx context.Context, id model.OrderID) error, or " +
-				"DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)\n" +
+				"DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error) or ([]model.Order, error)\n" +
 				"  or name the table of the methods that tell none: //kanna:repository table=<table>"},
 		{"an Update of a table without a primary key", snapshot.PostgreSQL,
 			"\tUpdateLog(ctx context.Context, l model.Log) error\n",

@@ -166,6 +166,94 @@ func (r OrderRepository) DeleteStale(ctx context.Context, s ...postgres.Order) (
 	return n, nil
 }
 
+func (r OrderRepository) DeleteReturning(ctx context.Context, s ...postgres.Order) ([]model.Order, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	if err2 != nil {
+		return nil, err2
+	}
+	rows, err2 := r.db.QueryContext(ctx, text+` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`, args...)
+	if err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	defer rows.Close()
+	out := []model.Order{}
+	for rows.Next() {
+		var row model.Order
+		if err2 := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err2 != nil {
+			return nil, fmt.Errorf(`delete from orders: %w`, err2)
+		}
+		out = append(out, row)
+	}
+	if err2 := rows.Err(); err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	return out, nil
+}
+
+func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...postgres.Order) ([]repository.DeletedOrder, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	if err2 != nil {
+		return nil, err2
+	}
+	rows, err2 := r.db.QueryContext(ctx, text+` RETURNING id, note`, args...)
+	if err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	defer rows.Close()
+	out := []repository.DeletedOrder{}
+	for rows.Next() {
+		var row repository.DeletedOrder
+		if err2 := rows.Scan(&row.ID, &row.Memo); err2 != nil {
+			return nil, fmt.Errorf(`delete from orders: %w`, err2)
+		}
+		out = append(out, row)
+	}
+	if err2 := rows.Err(); err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	return out, nil
+}
+
+func (r OrderRepository) DeleteByCustomer(ctx context.Context, customerID int64, s ...postgres.Order) ([]repository.DeletedOrder, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Where(`customer_id = `, customerID)
+	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	if err2 != nil {
+		return nil, err2
+	}
+	rows, err2 := r.db.QueryContext(ctx, text+` RETURNING id, note`, args...)
+	if err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	defer rows.Close()
+	out := []repository.DeletedOrder{}
+	for rows.Next() {
+		var row repository.DeletedOrder
+		if err2 := rows.Scan(&row.ID, &row.Memo); err2 != nil {
+			return nil, fmt.Errorf(`delete from orders: %w`, err2)
+		}
+		out = append(out, row)
+	}
+	if err2 := rows.Err(); err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	return out, nil
+}
+
 func (r OrderRepository) DeleteLines(ctx context.Context, s ...postgres.OrderLine) (int64, error) {
 	qs := make([]orm.Of[model.OrderLine], len(s))
 	for i, x := range s {

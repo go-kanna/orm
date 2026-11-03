@@ -936,7 +936,7 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. Fields match the original model's field names or mapped column names; column tags and `nullzero` handling are inherited. A projection field can use an `orm` column tag to choose a source column under another Go name. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Projection methods are read-only; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates, expressions, and joins can still use hand-written SQL returning a DTO.
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. Fields match the original model's field names or mapped column names; column tags and `nullzero` handling are inherited. A projection field can use an `orm` column tag to choose a source column under another Go name. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates, expressions, and joins can still use hand-written SQL returning a DTO.
 
 ## Hand-written SQL
 
@@ -1237,6 +1237,23 @@ Without pagination, the method deletes all matching rows. With `Limit` or `Offse
 A WHERE condition is required even when a limit is supplied. Paged deletion requires an explicit order; end it in a unique key, such as `IDAsc()`, to choose consistently among equal sort values. Existing keyset cursor scopes can select targets too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
 
 The existing `Delete(ctx, id) error` form retains its missing-row error behavior. Method shape, rather than an `All` suffix, distinguishes it from the scoped count-returning form. Both database examples use the scoped `Delete` to remove the oldest matching order with a limit.
+
+On PostgreSQL, a slice result generates `DELETE … RETURNING` to return the deleted rows in the same statement:
+
+```go
+DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
+
+type DeletedOrder struct {
+    ID         model.OrderID
+    CustomerID model.CustomerID
+}
+
+deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
+    Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
+```
+
+The result can be the original model or a dedicated projection type with the same field mapping and type rules as read projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty, non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed order. MySQL has no `DELETE RETURNING`, so a slice result is rejected during generation. The PostgreSQL example returns a projection of each deleted order.
 
 ## License
 

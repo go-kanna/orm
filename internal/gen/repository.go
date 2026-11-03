@@ -57,7 +57,7 @@ var shapes = map[verb]string{
 		"Update(ctx context.Context, id model.OrderID, c scopes.OrderChangeSet, s ...scopes.Order) (model.Order, error)",
 	verbUpsert: "Upsert(ctx context.Context, o model.Order) error",
 	verbDelete: "Delete(ctx context.Context, id model.OrderID) error, or DeleteStale(ctx context.Context, " +
-		"s ...scopes.Order) (int64, error)",
+		"s ...scopes.Order) (int64, error) or ([]model.Order, error)",
 }
 
 // verbOf tells the verb name starts with: a verb, followed by nothing or by a word of its own, as in GetByNumber, but
@@ -631,7 +631,8 @@ func (m repoMethod) shaped() bool {
 	case verbUpdate:
 		return m.updateShaped()
 	case verbDelete:
-		ok = m.result == resultNone && !m.scoped || m.result == resultCount && (m.scoped || len(m.keys) > 0)
+		ok = m.result == resultNone && !m.scoped ||
+			(m.result == resultCount || m.result == resultRows) && (m.scoped || len(m.keys) > 0)
 	}
 	if writes {
 		return ok && m.row != "" && len(m.keys) == 0 && !m.scoped
@@ -657,6 +658,8 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
 			strings.Join(names, ", "), m.target.table).WithHints(
 			"return (int64, error) for the number of rows deleted, or take a key of the table")}
+	case m.verb == verbDelete && m.result == resultRows && r.s.Dialect == snapshot.MySQL:
+		return []diag.Diag{errorf("MySQL has no DELETE RETURNING; return error alone or (int64, error)")}
 	case m.verb == verbUpdate && m.changes != "" &&
 		(m.result == resultNone || m.result == resultRow) && !containsKey(m.table, names):
 		return []diag.Diag{errorf("a single-row Update requires a unique key; " +
@@ -961,7 +964,7 @@ func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Na
 		if ptr, ok := t.(*types.Pointer); ok && m.verb == verbFind {
 			t, m.optional = ptr.Elem(), true
 		}
-		reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList
+		reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList || m.verb == verbDelete
 		if reads && m.scoped && len(models) == 1 {
 			row, many := t, false
 			if slice, ok := t.Underlying().(*types.Slice); ok {
