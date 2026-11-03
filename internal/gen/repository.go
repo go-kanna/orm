@@ -683,6 +683,23 @@ func (m *repoMethod) oneRowKey(names []string) (diag.Diag, bool) {
 	return diag.Diag{}, true
 }
 
+// changeSetRows reports why names, the key columns of m, an Update of a change set, select no rows it can write, if
+// they do not.
+func (m *repoMethod) changeSetRows(names []string) (diag.Diag, bool) {
+	errorf := func(format string, args ...any) diag.Diag {
+		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
+	}
+	switch {
+	case len(names) == 0 && !m.scoped:
+		return errorf("an Update of a change set writes the rows its keys or scopes select, but it takes neither").
+			WithHints(fmt.Sprintf("take a unique key of %s, or scopes that select the rows", m.target.table)), false
+	case (m.returns == returnsNone || m.returns == returnsRow) && !containsKey(m.table, names):
+		return errorf("a single-row Update requires a unique key; use (int64, error) or ([]M, error) for multiple rows"),
+			false
+	}
+	return diag.Diag{}, true
+}
+
 // verbRules reports what else a method of its verb asks of its table.
 func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
@@ -697,6 +714,11 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 			return []diag.Diag{d}
 		}
 	}
+	if m.verb == verbUpdate && m.changes != "" {
+		if d, ok := m.changeSetRows(names); !ok {
+			return []diag.Diag{d}
+		}
+	}
 	switch {
 	case m.verb == verbDelete && m.returns == returnsNone && !containsKey(m.table, names):
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
@@ -704,10 +726,6 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 			"return (int64, error) for the number of rows deleted, or take a key of the table")}
 	case m.verb == verbDelete && m.returns == returnsRows && r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no DELETE RETURNING; return error alone or (int64, error)")}
-	case m.verb == verbUpdate && m.changes != "" &&
-		(m.returns == returnsNone || m.returns == returnsRow) && !containsKey(m.table, names):
-		return []diag.Diag{errorf("a single-row Update requires a unique key; " +
-			"use (int64, error) or ([]M, error) for multiple rows")}
 	case m.verb == verbUpdate && (m.returns == returnsRow || m.returns == returnsRows) && r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no UPDATE RETURNING; return error alone or (int64, error)")}
 	case m.verb == verbUpdate && m.changes == "" && len(m.table.PrimaryKey) == 0:
