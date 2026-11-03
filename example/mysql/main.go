@@ -41,9 +41,9 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer func() { _ = db.Close() }()
-	queryLog := option.WithAfter(func(_ context.Context, e hook.Execution) {
+	queryLog := option.WithHook(hook.Hook{After: func(_ context.Context, e hook.Execution) {
 		fmt.Fprintf(w, "SQL (%s): %s; error=%v\n", e.Duration, e.SQL, e.Err)
-	})
+	}})
 	ex := example{
 		db:          db,
 		customers:   store.NewCustomerRepository(db),

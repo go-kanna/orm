@@ -30,8 +30,8 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 | `orm/scope`    | `Of`, the one field of a scope type declared by hand                                                      |
 | `orm/relation` | `Single`, `Many`, and `Column`, what the closures of `Select<Field>` and `Preload<Field>` return and read |
 | `orm/join`     | `On`, an explicit condition of a joined projection                                                        |
-| `orm/option`   | `WithBefore` and `WithAfter`, the options a repository's constructor takes                                |
-| `orm/hook`     | `Before`, `After`, `Query`, and `Execution`, the functions those options take and what they receive       |
+| `orm/option`   | `WithHook`, the option a repository's constructor takes                                                   |
+| `orm/hook`     | `Hook`, `Query`, and `Execution`, the functions that option takes and what they receive                   |
 
 `orm/impl` is what the generated code runs on, and only the generated code imports it.
 
@@ -934,19 +934,19 @@ once instead, and `skip-locked` has it pass those rows over.
 
 ### Hooks
 
-Generated constructors accept optional repository options. `option.WithBefore` and `option.WithAfter` take the functions of package `hook`, which a repository calls around each statement it runs, with no logging or tracing library dependency. To log queries, add an After hook:
+Generated constructors accept optional repository options. `option.WithHook` takes a `hook.Hook`, a Before and an After a repository calls around each statement it runs, with no logging or tracing library dependency. Either may be nil. To log queries, give an After:
 
 ```go
 logQuery := func(ctx context.Context, e hook.Execution) {
     fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
     // Use ctx for request metadata; choose whether to log e.Args.
 }
-repo := store.NewOrderRepository(db, option.WithAfter(logQuery))
+repo := store.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-A Before hook receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. An After hook receives that context and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Before hooks. Errors are observed before repository error translation. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
+A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before repository error translation. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
 
-Options can be given more than once. Before hooks run in the order given, each with the context the one before returned, and After hooks in the reverse order, so that the first hooks given enclose the others. `Bind` keeps the hooks when switching to a transaction. Without After hooks, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`; manually implemented Go methods using the raw connection are outside the generated execution path. Both database examples add an After hook that prints each statement.
+Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`; manually implemented Go methods using the raw connection are outside the generated execution path. Both database examples give an After that prints each statement.
 
 ### Reading a projection
 

@@ -19,7 +19,7 @@ import (
 func TestHooks_Postgres(t *testing.T) {
 	t.Parallel()
 	var done []hook.Execution
-	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done)...)
+	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done))
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, pgscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestHooks_Postgres(t *testing.T) {
 func TestHooks_MySQL(t *testing.T) {
 	t.Parallel()
 	var done []hook.Execution
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done)...)
+	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done))
 	ctx := t.Context()
 	if _, err := repo.Get(ctx, 1, mysqlscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
@@ -59,20 +59,20 @@ func TestHooks_MySQL(t *testing.T) {
 type hookKey struct{}
 
 // captureExecutions has a repository mark the context of each statement before it runs, and record it after.
-func captureExecutions(t *testing.T, done *[]hook.Execution) []option.Option {
+func captureExecutions(t *testing.T, done *[]hook.Execution) option.Option {
 	t.Helper()
-	return []option.Option{
-		option.WithBefore(func(ctx context.Context, q hook.Query) context.Context {
+	return option.WithHook(hook.Hook{
+		Before: func(ctx context.Context, q hook.Query) context.Context {
 			return context.WithValue(ctx, hookKey{}, q.SQL)
-		}),
-		option.WithAfter(func(ctx context.Context, e hook.Execution) {
+		},
+		After: func(ctx context.Context, e hook.Execution) {
 			if ctx.Value(hookKey{}) != e.SQL {
 				t.Error("After did not get the context of Before")
 			}
 			e.Args = slices.Clone(e.Args)
 			*done = append(*done, e)
-		}),
-	}
+		},
+	})
 }
 
 func checkExecutions(t *testing.T, done []hook.Execution) {

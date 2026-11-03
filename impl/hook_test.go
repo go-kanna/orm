@@ -14,7 +14,7 @@ import (
 func TestStartQuery_Disabled(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	got, trace := impl.NewOptions(impl.WithBefore(nil), impl.WithAfter(nil)).StartQuery(ctx, "SELECT 1", nil)
+	got, trace := impl.NewOptions(impl.WithHook(hook.Hook{})).StartQuery(ctx, "SELECT 1", nil)
 	if got != ctx || trace != nil {
 		t.Fatal("no hooks changed the context or started a trace")
 	}
@@ -29,12 +29,12 @@ func TestStartQuery_Completion(t *testing.T) {
 			t.Parallel()
 			var done []hook.Execution
 			ctx := t.Context()
-			o := impl.NewOptions(impl.WithAfter(func(got context.Context, e hook.Execution) {
+			o := impl.NewOptions(impl.WithHook(hook.Hook{After: func(got context.Context, e hook.Execution) {
 				if got != ctx {
 					t.Error("query context was not preserved")
 				}
 				done = append(done, e)
-			}))
+			}}))
 			_, trace := o.StartQuery(ctx, "SELECT $1", []any{int64(42)})
 			var want error
 			switch how {
@@ -77,30 +77,33 @@ func TestStartQuery_Completion(t *testing.T) {
 
 type contextKey string
 
-func TestStartQuery_Order(t *testing.T) {
+func TestStartQuery_Pairs(t *testing.T) {
 	t.Parallel()
 	var calls []string
-	before := func(name string) impl.Option {
-		return impl.WithBefore(func(ctx context.Context, q hook.Query) context.Context {
-			if q.SQL != "SELECT 1" {
-				t.Errorf("Before %s got %q", name, q.SQL)
-			}
-			calls = append(calls, "before "+name+" sees "+seen(ctx))
-			return context.WithValue(ctx, contextKey(name), true)
+	pair := func(name string) impl.Option {
+		return impl.WithHook(hook.Hook{
+			Before: func(ctx context.Context, q hook.Query) context.Context {
+				if q.SQL != "SELECT 1" {
+					t.Errorf("Before %s got %q", name, q.SQL)
+				}
+				calls = append(calls, "before "+name+" sees "+seen(ctx))
+				return context.WithValue(ctx, contextKey(name), true)
+			},
+			After: func(ctx context.Context, _ hook.Execution) {
+				calls = append(calls, "after "+name+" sees "+seen(ctx))
+			},
 		})
 	}
-	after := func(name string) impl.Option {
-		return impl.WithAfter(func(ctx context.Context, _ hook.Execution) {
-			calls = append(calls, "after "+name+" sees "+seen(ctx))
-		})
-	}
-	o := impl.NewOptions(before("a"), after("a"), before("b"), after("b"))
+	afterAlone := impl.WithHook(hook.Hook{After: func(ctx context.Context, _ hook.Execution) {
+		calls = append(calls, "after alone sees "+seen(ctx))
+	}})
+	o := impl.NewOptions(pair("a"), afterAlone, pair("b"))
 	ctx, trace := o.StartQuery(t.Context(), "SELECT 1", nil)
 	if seen(ctx) != "a b" {
 		t.Errorf("the statement runs with a context of %q, want that of every Before", seen(ctx))
 	}
 	trace.End(nil)
-	want := []string{"before a sees ", "before b sees a", "after b sees a b", "after a sees a b"}
+	want := []string{"before a sees ", "before b sees a", "after b sees a b", "after alone sees a", "after a sees a"}
 	if !slices.Equal(calls, want) {
 		t.Errorf("calls =\n%q\nwant\n%q", calls, want)
 	}
@@ -119,9 +122,9 @@ func seen(ctx context.Context) string {
 
 func TestStartQuery_BeforeAlone(t *testing.T) {
 	t.Parallel()
-	o := impl.NewOptions(impl.WithBefore(func(ctx context.Context, _ hook.Query) context.Context {
+	o := impl.NewOptions(impl.WithHook(hook.Hook{Before: func(ctx context.Context, _ hook.Query) context.Context {
 		return context.WithValue(ctx, contextKey("a"), true)
-	}))
+	}}))
 	ctx, trace := o.StartQuery(t.Context(), "SELECT 1", nil)
 	if seen(ctx) != "a" || trace != nil {
 		t.Fatal("Before alone did not give its context, or started a trace")
@@ -130,11 +133,11 @@ func TestStartQuery_BeforeAlone(t *testing.T) {
 
 func TestOptions_Option(t *testing.T) {
 	t.Parallel()
-	noop := func(context.Context, hook.Execution) {}
-	o := impl.NewOptions(impl.WithAfter(noop))
-	more := impl.NewOptions(o.Option(), impl.WithAfter(noop))
-	if len(o.After) != 1 || len(more.After) != 2 {
-		t.Fatalf("Option gave %d hooks and kept %d of its own, want 2 and 1", len(more.After), len(o.After))
+	noop := hook.Hook{After: func(context.Context, hook.Execution) {}}
+	o := impl.NewOptions(impl.WithHook(noop))
+	more := impl.NewOptions(o.Option(), impl.WithHook(noop))
+	if len(o.Hooks) != 1 || len(more.Hooks) != 2 {
+		t.Fatalf("Option gave %d hooks and kept %d of its own, want 2 and 1", len(more.Hooks), len(o.Hooks))
 	}
 }
 
