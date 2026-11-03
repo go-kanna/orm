@@ -55,7 +55,7 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 func (e repoEmitter) projectionSources(m repoMethod) string {
 	parts := make([]string, 0, len(m.projection.sources))
 	for _, s := range m.projection.sources {
-		parts = append(parts, fmt.Sprintf("{Table:%q,Column:%q,Name:%q}", s.table, s.column.col.Name, s.name))
+		parts = append(parts, fmt.Sprintf("{Table:%q,Column:%q}", s.table, s.column.col.Name))
 	}
 	return "[]" + e.ref("SelectColumn") + "{" + strings.Join(parts, ",") + "}"
 }

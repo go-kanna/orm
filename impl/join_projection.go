@@ -31,8 +31,6 @@ func (q Of[M]) JoinTable(table string, on ...join.Condition) Of[M] {
 // SelectColumn describes a projection source for generated queries.
 type SelectColumn struct {
 	Table, Column string
-	// Name is the unqualified name inferred from the projection field, if any.
-	Name string
 }
 
 // TableJoin describes snapshot columns and an optional foreign key for generated queries.
@@ -164,14 +162,6 @@ func (q Of[M]) projectionJoins(table string, columns []SelectColumn, joins []Tab
 	for _, c := range columns {
 		if c.Table != table && !slices.ContainsFunc(active, func(join TableJoin) bool { return join.Table == c.Table }) {
 			return nil, fmt.Errorf("orm: projection column %s.%s requires Join(%q)", c.Table, c.Column, c.Table)
-		}
-		if c.Name == "" {
-			continue
-		}
-		for _, join := range active {
-			if join.Table != c.Table && slices.Contains(join.Fields, c.Name) {
-				return nil, fmt.Errorf("orm: projection column %s is ambiguous; qualify its orm tag", c.Name)
-			}
 		}
 	}
 	return active, nil

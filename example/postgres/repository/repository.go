@@ -92,7 +92,7 @@ type DeletedOrder struct {
 }
 
 type OrderSummary struct {
-	ID           model.OrderID `orm:"orders.id"`
-	CustomerName string        `orm:"customers.name"`
+	ID           model.OrderID
+	CustomerName string `orm:"customers.name"`
 	Status       model.OrderStatus
 }

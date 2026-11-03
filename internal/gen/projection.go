@@ -4,7 +4,6 @@ import (
 	"go/types"
 	"maps"
 	"slices"
-	"strings"
 
 	"github.com/go-kanna/internal/diag"
 
@@ -21,7 +20,6 @@ type readProjection struct {
 type projectionSource struct {
 	table  string
 	column column
-	name   string
 }
 
 func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
@@ -37,7 +35,7 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 				}
 				continue
 			}
-			sources[name] = projectionSource{table: m.target.table, column: c, name: name}
+			sources[name] = projectionSource{table: m.target.table, column: c}
 			alias := c.col
 			alias.Name = name
 			alias.NotNull = c.col.NotNull || c.nullzero
@@ -59,7 +57,7 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 						continue
 					}
 					source := column{col: db}
-					sources[name] = projectionSource{table: fk.References, column: source, name: name}
+					sources[name] = projectionSource{table: fk.References, column: source}
 					alias := db
 					alias.Name = name
 					table.Columns = append(table.Columns, alias)
@@ -78,7 +76,7 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 				if _, ok := sources[qualified]; ok {
 					continue
 				}
-				sources[qualified] = projectionSource{table: name, column: column{col: db}, name: qualified}
+				sources[qualified] = projectionSource{table: name, column: column{col: db}}
 				alias := db
 				alias.Name = qualified
 				table.Columns = append(table.Columns, alias)
@@ -109,9 +107,6 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 		c.col = source.col
 		c.nullzero = c.nullzero || source.nullzero
 		m.projection.columns = append(m.projection.columns, c)
-		if strings.Contains(selected.name, ".") {
-			selected.name = ""
-		}
 		m.projection.sources = append(m.projection.sources, selected)
 	}
 	if len(m.projection.columns) == 0 {
