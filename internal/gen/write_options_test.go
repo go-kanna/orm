@@ -43,7 +43,7 @@ type Records interface {
  UpsertAll(ctx context.Context, records []model.Record) error
  Update(ctx context.Context, record model.Record) error
  Get(ctx context.Context, id int64) (model.Record,error)
- GetByKey(ctx context.Context, recordKey string) (model.Record,error)
+ GetByKey(ctx context.Context, key string) (model.Record,error)
 }
 `
 
@@ -168,7 +168,7 @@ func TestCommand_WriteOptions(t *testing.T) {
 func TestCommand_PointerKey(t *testing.T) {
 	t.Parallel()
 
-	archive := strings.Replace(writeOptionsShop, " GetByKey(ctx context.Context, recordKey string) (model.Record,error)\n",
+	archive := strings.Replace(writeOptionsShop, " GetByKey(ctx context.Context, key string) (model.Record,error)\n",
 		" ListByOwner(ctx context.Context, ownerID *int64) ([]model.Record,error)\n", 1)
 	dir := writeModule(t, archive)
 	writeOptionsSnapshot(t, dir, snapshot.PostgreSQL)

@@ -594,7 +594,8 @@ A transaction is begun and committed as it would be without kanna-orm: give the 
 
 What a method does is told by the verb its name starts with; what follows the verb is yours to choose. Its parameters
 tell the rest: a parameter of a model type is a row to write, the scopes say how to read, and any other parameter is
-the column of its name, which the rows must equal.
+named after a field of the model, as `customerID` after `CustomerID`, and the rows must equal it in the field's column.
+The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not name a parameter: `memo` does.
 
 | Verb     | Declared as                                                                                    | Does                                                                                  |
 |----------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
@@ -1045,9 +1046,10 @@ ORDER BY 1`
 - A parameter is `:` followed by a name, as `:since` is. A `:` after another `:`, a letter, a digit, `_`, or `]`
   starts none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a
   quoted name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
-- A query's parameters take their types from the method. A struct argument can provide parameters through its exported
-  fields, by column name (including tags) or lower-camel field name. A name used by SQL must match exactly one argument or struct field; collisions stop generation, including those between an explicit parameter and a field. Use distinct parameter and field names, including `orm` tags. A field remains addressable by its lower-camel name even when it has a tag. This lets a model be written without a separate
-  parameter DTO. The `nullzero` option also applies to these field arguments.
+- A query's parameters take their types from the method. A struct argument provides one through each of its exported
+  fields, by the field's name in lower camel case, as `:customerID` for `CustomerID`, whatever its column. A name used
+  by SQL must match exactly one argument or field: a parameter of a field's name stops generation. This lets a model be
+  written without a separate parameter DTO. The `nullzero` option also applies to these field arguments.
 - Result columns go directly into model fields by column name and tag. A one-column result can instead be a scalar
   or enum, and `[]T` can collect those values directly. `T` returns one row or `orm.ErrNotFound`; `[]T` returns every
   row. With no result columns, `(int64, error)` reports affected rows; with one bigint column, it scans that value.

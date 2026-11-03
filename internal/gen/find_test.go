@@ -14,7 +14,7 @@ import (
 
 const findMethods = `
  Find(ctx context.Context, id int64, s ...scopes.Record) (*model.Record,error)
- FindByKey(ctx context.Context, recordKey string) (*model.Record,error)
+ FindByKey(ctx context.Context, key string) (*model.Record,error)
  //kanna:lock update
  FindForUpdate(ctx context.Context, id int64) (*model.Record,error)
  FindCustom(ctx context.Context, recordKey string) (*model.Record,error)
