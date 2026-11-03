@@ -96,6 +96,12 @@ func TestGenerated_MySQL(t *testing.T) {
 		{"NotIn", mscopes.Orders().StatusNotIn("open"),
 			rendered{" WHERE (status NOT IN (?))", []any{model.OrderStatus("open")}}},
 		{"HasPrefix", mscopes.Orders().MemoHasPrefix("a_b"), rendered{" WHERE (note LIKE ? ESCAPE '!')", []any{"a!_b%"}}},
+		{"a scope written by hand with a variadic parameter", mscopes.Orders().Tagged("gift", "rush"), rendered{
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (?, ?)))", []any{"gift", "rush"},
+		}},
+		{"a scope written by hand with a variadic parameter of none", mscopes.Orders().Tagged(), rendered{
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (NULL)))", nil,
+		}},
 	}
 	for _, tt := range tests {
 		if got := render(t, tt.scope.Of(), impl.MySQL); !reflect.DeepEqual(got, tt.want) {

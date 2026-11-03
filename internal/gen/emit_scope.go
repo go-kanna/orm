@@ -226,10 +226,10 @@ func (e emitter) with(lk link) {
 // written writes the method of w, a scope written by hand, which narrows the scope by its condition.
 func (e emitter) written(w sqlScope) {
 	sc := e.f.Scope()
-	locals := map[string]string{}
+	locals, typeOf := map[string]string{}, map[string]types.Type{}
 	params := make([]string, 0, len(w.params))
 	for _, p := range w.params {
-		locals[p.name] = sc.Name(p.name)
+		locals[p.name], typeOf[p.name] = sc.Name(p.name), p.typ
 		if s, ok := p.typ.(*types.Slice); ok && p.variadic {
 			params = append(params, locals[p.name]+" ..."+types.TypeString(s.Elem(), e.f.Qualifier))
 			continue
@@ -240,7 +240,11 @@ func (e emitter) written(w sqlScope) {
 
 	parts := []string{goString(w.pieces[0])}
 	for i, a := range w.args {
-		parts = append(parts, locals[a])
+		if e.d == snapshot.MySQL && expands(typeOf[a]) {
+			parts = append(parts, e.ref("List")+"("+locals[a]+")")
+		} else {
+			parts = append(parts, locals[a])
+		}
 		if piece := w.pieces[i+1]; piece != "" || i < len(w.args)-1 {
 			parts = append(parts, goString(piece))
 		}
