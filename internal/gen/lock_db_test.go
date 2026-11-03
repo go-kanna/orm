@@ -252,7 +252,8 @@ func TestGeneratedRepository_PostgresLockOutsideATransaction(t *testing.T) {
 	}
 	defer pool.Close()
 
-	const want = "orm: ListUnlocked needs a transaction to hold its lock: give the repository a pgx.Tx"
+	const want = "orm: ListUnlocked needs a transaction to hold its lock: give the repository a pgx.Tx, " +
+		"or a DBTX wrapping one with an Unwrap method returning it"
 	for name, db := range map[string]ppgx.DBTX{"a connection": pgxConn(t, url), "a pool": pool} {
 		repo := ppgx.NewOrderRepository(db)
 		if _, err := repo.ListUnlocked(ctx); err == nil || err.Error() != want {
@@ -444,7 +445,8 @@ func TestGeneratedRepository_MySQLLockOutsideATransaction(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	const want = "orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx"
+	const want = "orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, " +
+		"or a DBTX wrapping one with an Unwrap method returning it"
 	for name, on := range map[string]mstdlib.DBTX{"a pool": db, "a connection": conn} {
 		repo := mstdlib.NewOrderRepository(on)
 		if _, err := repo.ListUnlocked(ctx); err == nil || err.Error() != want {

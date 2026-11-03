@@ -562,8 +562,8 @@ func NewFulfillment(db DBTX, opts ...option.Option) Fulfillment { return newFulf
 var _ repository.Fulfillment = Fulfillment{}
 
 func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit(context.Context) error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx")
+	if !ormpgx.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = $1 FOR UPDATE`
 	rows, err := queryOrders(ctx, r.db, q, id)
@@ -577,8 +577,8 @@ func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.
 }
 
 func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit(context.Context) error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a pgx.Tx")
+	if !ormpgx.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a pgx.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {

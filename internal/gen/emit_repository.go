@@ -303,7 +303,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		if m.returns == returnsRows || m.optional {
 			zero = "nil"
 		}
-		e.inTransaction(m, sc, recv, sig, zero)
+		e.inTransaction(m, recv, sig, zero)
 	}
 	if e.constantRead(m, sc, recv, sig, q) {
 		return
@@ -409,16 +409,17 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	}
 }
 
-// inTransaction writes the check that m, which locks rows, runs on what can hold a lock: a transaction, which alone has
-// a Commit among what DBTX is implemented by.
-func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv string, sig signature, zero string) {
-	commit, tx := "Commit() error", "*sql.Tx"
+// inTransaction writes the check that m, which locks the rows it reads, runs in a transaction: what it runs on is one,
+// or wraps one, as the runtime's InTransaction tells.
+func (e repoEmitter) inTransaction(m repoMethod, recv string, sig signature, zero string) {
+	path, name, tx := stdlibPath, "stdlib", "*sql.Tx"
 	if e.drv == driverPgx {
-		commit, tx = "Commit("+e.f.Import("context", "context")+".Context) error", "pgx.Tx"
+		path, name, tx = pgxPath, "ormpgx", "pgx.Tx"
 	}
-	e.printf("if _, %[1]s := %[2]s.db.dbtx.(interface{ %[3]s }); !%[1]s {\nreturn %[4]s, %[5]s\n}\n",
-		sc.Name("ok"), recv, commit, zero, sig.mapped(e.fmtPkg()+".Errorf("+
-			strconv.Quote("orm: "+m.name+" needs a transaction to hold its lock: give the repository a "+tx)+")"))
+	pkg := e.f.Import(path, name)
+	e.printf("if !%s.InTransaction(%s.db.dbtx) {\nreturn %s, %s\n}\n", pkg, recv, zero,
+		sig.mapped(e.fmtPkg()+".Errorf("+strconv.Quote("orm: "+m.name+" needs a transaction to hold its lock: give the "+
+			"repository a "+tx+", or a DBTX wrapping one with an Unwrap method returning it")+")"))
 }
 
 // orderKey is the primary key of t as Render takes it, for an order to end in.
@@ -1128,7 +1129,7 @@ func (e repoEmitter) pluckRead(m repoMethod, sc gofile.Scope, recv string, sig s
 		e.printf("var %s %s\n", zero, typ)
 	}
 	if m.lock != "" {
-		e.inTransaction(m, sc, recv, sig, zero)
+		e.inTransaction(m, recv, sig, zero)
 	}
 	e.printf("if %[1]s := %[2]s.ProjectionOnly(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,
 		sig.mapped(err))

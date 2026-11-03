@@ -998,7 +998,9 @@ once instead, and `skip-locked` has it pass those rows over.
 - The lock belongs to the method, not to its scopes: they narrow, order, and page the rows as ever, and no caller can
   leave the lock out or change it.
 - A lock lasts as long as its transaction, so a method with one returns an error on anything else. It tells by whether
-  what it runs on has a `Commit`, so a `DBTX` of your own wrapping a transaction needs one too.
+  what it runs on has a `Commit`, or wraps what has one: a `DBTX` of your own wrapping a transaction says so by an
+  `Unwrap` returning it, as `Unwrap() pgx.DBTX` of `orm/pgx`, or `Unwrap() stdlib.DBTX` on `database/sql`, however
+  many wrappers deep.
 - A lock not given, by `nowait`, a timeout, or a deadlock, comes back as the database's error, wrapped, never as
   `orm.ErrNotFound`. Retrying is yours to do.
 - With `skip-locked`, `orm.ErrNotFound` from a `First` says that no free row matches, not that no row does. A `Get` or `Find`

@@ -620,8 +620,8 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 }
 
 func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR UPDATE`
 	rows, err := queryOrders(ctx, r.db, q, id)
@@ -635,8 +635,8 @@ func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (mo
 }
 
 func (r OrderRepository) GetForNoKeyUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: GetForNoKeyUpdate needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: GetForNoKeyUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR NO KEY UPDATE`
 	rows, err := queryOrders(ctx, r.db, q, id)
@@ -650,8 +650,8 @@ func (r OrderRepository) GetForNoKeyUpdate(ctx context.Context, id model.OrderID
 }
 
 func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR SHARE`
 	rows, err := queryOrders(ctx, r.db, q, id)
@@ -665,8 +665,8 @@ func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (mod
 }
 
 func (r OrderRepository) GetForKeyShare(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: GetForKeyShare needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: GetForKeyShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR KEY SHARE`
 	rows, err := queryOrders(ctx, r.db, q, id)
@@ -680,8 +680,8 @@ func (r OrderRepository) GetForKeyShare(ctx context.Context, id model.OrderID) (
 }
 
 func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: GetNoWait needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: GetNoWait needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
@@ -703,8 +703,8 @@ func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...s
 }
 
 func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return model.Order{}, fmt.Errorf("orm: FirstUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return model.Order{}, fmt.Errorf("orm: FirstUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
@@ -723,8 +723,8 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (
 }
 
 func (r OrderRepository) ListUnlocked(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
-	if _, ok := r.db.dbtx.(interface{ Commit() error }); !ok {
-		return nil, fmt.Errorf("orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx")
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return nil, fmt.Errorf("orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
