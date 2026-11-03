@@ -703,6 +703,11 @@ func (s Order) Open() Order {
 	return Order{s.q.Where(`status <> 'closed'`)}
 }
 
+// Tagged narrows the scope as order_scopes.sql writes it.
+func (s Order) Tagged(tags ...string) Order {
+	return Order{s.q.Where(`id IN (SELECT order_id FROM order_tags WHERE tag IN (`, impl.List(tags), `))`)}
+}
+
 // Limit keeps the first n rows.
 func (s Order) Limit(n int) Order {
 	return Order{s.q.Limit(n)}
