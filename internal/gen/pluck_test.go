@@ -96,6 +96,22 @@ func TestCommand_PluckMistakes(t *testing.T) {
 	}
 }
 
+// The plural after List is made as that of a table's name, and with an s only of a field ending in an acronym.
+func TestRepositories_PluckPlurals(t *testing.T) {
+	t.Parallel()
+	for method, want := range map[string]string{
+		"\tListStatuses(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "",
+		"\tListCustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)\n":          "",
+		"\tListStatuss(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "repository.go:24:2: " +
+			"error: ListStatuss: it returns the values of a column, but model.Order has no field Statuss is the plural " +
+			"of\n  name it ListStatuses: the plural of Status is made as that of a table's name",
+	} {
+		if _, ds := repositories(t, snapshot.PostgreSQL, method, "", nil); ds != want {
+			t.Errorf("Repositories of %q reports\n%s\nwant\n%s", method, ds, want)
+		}
+	}
+}
+
 // A Find of the values of a column that may be NULL is told so as one written by hand is, and (**T, error) tells no
 // row and NULL apart.
 func TestCommand_PluckFindOfNull(t *testing.T) {

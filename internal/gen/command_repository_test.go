@@ -272,6 +272,13 @@ func (r *orderRepository) ReopenNew(ctx context.Context) (int64, error) {
 
 // ListStatuses runs SQL of its own: kanna-orm could write no helper for it, and it calls none.
 func (r *orderRepository) ListStatuses(ctx context.Context) ([]string, error) { return nil, nil }
+
+// statuses selects a listStatuses of its own, which is no helper of the repository's.
+type statuses struct{}
+
+func (statuses) listStatuses() {}
+
+func warm(s statuses) { s.listStatuses() }
 `
 			archive = strings.Replace(archive, "\tReopenNew(ctx context.Context) (int64, error)\n",
 				"\tReopenNew(ctx context.Context) (int64, error)\n\tListStatuses(ctx context.Context) ([]string, error)\n", 1)
@@ -297,6 +304,10 @@ func (r *orderRepository) ListStatuses(ctx context.Context) ([]string, error) { 
 			}
 			if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
 				t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+			}
+			src, err := os.ReadFile(filepath.Join(repository, "repository_gen.go")) //nolint:gosec // written above
+			if err != nil || strings.Contains(string(src), ") listStatuses(") {
+				t.Fatalf("a helper of ListStatuses, which only another type selects: %v\n%s", err, src)
 			}
 			cmd := exec.CommandContext(t.Context(), "go", "test", "-mod=mod", "./...")
 			cmd.Dir = dir

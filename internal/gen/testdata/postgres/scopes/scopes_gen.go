@@ -1351,6 +1351,9 @@ func (s OrderLine) AfterCursor(cursor string) (OrderLine, error) {
 }
 
 // Tags returns a scope over all the rows of tags.
+//
+// It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary key:
+// tags has no primary key.
 func Tags() Tag { return Tag{} }
 
 // Of returns the scope as a repository reads it.
@@ -1475,6 +1478,9 @@ func (s Tag) Not(other Tag) Tag {
 }
 
 // LineNotes returns a scope over all the rows of line_notes.
+//
+// It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary key:
+// line_notes has no primary key.
 func LineNotes() LineNote { return LineNote{} }
 
 // Of returns the scope as a repository reads it.

@@ -290,7 +290,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	implementation := repo.implementation()
 	var called map[string]bool
 	if r.local {
-		called = r.selected()
+		called = r.selected(implementation)
 	}
 	for _, fn := range methods {
 		_, overridden := r.skip[implementation][fn.Name()]
@@ -333,19 +333,37 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	return repo, ds
 }
 
-// selected names what the files of the package written by hand select, as r.upsert selects upsert.
-func (r repoReader) selected() map[string]bool {
+// selected names what the methods written by hand on implementation select on their receiver, as r.upsert does upsert
+// in func (r *category) Upsert: the helpers they call. A selector on anything else, as on a value of another type, is
+// none of them.
+func (r repoReader) selected(implementation string) map[string]bool {
 	names := map[string]bool{}
 	for _, f := range r.pkg.Syntax {
 		if filepath.Base(r.pkg.Fset.Position(f.Pos()).Filename) == repositoryOutputName {
 			continue
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			if s, ok := n.(*ast.SelectorExpr); ok {
-				names[s.Sel.Name] = true
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || fn.Recv == nil || len(fn.Recv.List) != 1 || len(fn.Recv.List[0].Names) != 1 {
+				continue
 			}
-			return true
-		})
+			t := fn.Recv.List[0].Type
+			if star, ok := t.(*ast.StarExpr); ok {
+				t = star.X
+			}
+			if id, ok := t.(*ast.Ident); !ok || id.Name != implementation {
+				continue
+			}
+			recv := fn.Recv.List[0].Names[0].Name
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if s, ok := n.(*ast.SelectorExpr); ok {
+					if x, ok := s.X.(*ast.Ident); ok && x.Name == recv {
+						names[s.Sel.Name] = true
+					}
+				}
+				return true
+			})
+		}
 	}
 	return names
 }
@@ -984,10 +1002,13 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 		t = t.(*types.Pointer).Elem() //nolint:forcetypeassert // plucks saw a pointer
 	}
 	rest := strings.TrimPrefix(m.name, string(m.verb))
+	misspelled := ""
 	for _, c := range m.columns {
 		field := c.path[len(c.path)-1]
-		if m.verb == verbList && rest != field+"s" && decl.SnakeCase(rest) != decl.Plural(field) ||
-			m.verb != verbList && rest != field {
+		if m.verb == verbList && rest == field+"s" && !endsInAcronym(field) {
+			misspelled = field
+		}
+		if m.verb == verbList && !pluralOf(rest, field) || m.verb != verbList && rest != field {
 			continue
 		}
 		if p, ok := c.typ.(*types.Pointer); ok && m.optional && types.Identical(t, p.Elem()) {
@@ -1005,8 +1026,30 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 	if m.verb == verbList {
 		field = rest + " is the plural of"
 	}
+	hint := "name it after a field, as in " + pluckShape + ", which reads ID"
+	if misspelled != "" {
+		var plural strings.Builder
+		for word := range strings.SplitSeq(decl.Plural(misspelled), "_") {
+			plural.WriteString(strings.ToUpper(word[:1]) + word[1:])
+		}
+		hint = fmt.Sprintf("name it List%s: the plural of %s is made as that of a table's name", plural.String(),
+			misspelled)
+	}
 	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s has no field %s", m.name,
-		typeName(m.model), field).WithHints("name it after a field, as in " + pluckShape + ", which reads ID")}
+		typeName(m.model), field).WithHints(hint)}
+}
+
+// pluralOf reports whether name, what follows List in the name of a method reading the values of a column, is the
+// plural of field: made as that of a table's name is, as Categories of Category, or, of a field ending in an acronym,
+// whose words that rule cannot tell, with an s, as CustomerIDs of CustomerID.
+func pluralOf(name, field string) bool {
+	return decl.SnakeCase(name) == decl.Plural(field) || endsInAcronym(field) && name == field+"s"
+}
+
+// endsInAcronym reports whether name ends in two capitals or more, as CustomerID and URL do.
+func endsInAcronym(name string) bool {
+	r := []rune(name)
+	return len(r) >= 2 && unicode.IsUpper(r[len(r)-1]) && unicode.IsUpper(r[len(r)-2])
 }
 
 func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Named) ([]*types.Named, bool) {
