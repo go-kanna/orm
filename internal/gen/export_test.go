@@ -143,7 +143,7 @@ func Reserved(d snapshot.Dialect) []string {
 	return slices.Sorted(maps.Keys(reserved[d]))
 }
 
-// Emit generates orm_gen.go for pkg from s, or reports why it cannot.
+// Emit generates scopes_gen.go for pkg from s, or reports why it cannot.
 func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, error) {
 	dir := filepath.Dir(pkg.GoFiles[0])
 	idx, err := readIndex(dir, s.Tables)
@@ -156,7 +156,7 @@ func Emit(pkg *packages.Package, s snapshot.Snapshot) ([]byte, []diag.Diag, erro
 	if ds = append(ds, pds...); diag.HasErrors(ds) {
 		return nil, ds, nil
 	}
-	declared := slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkg.Name)))
+	declared := slices.Sorted(maps.Keys(output.DeclaredNames(dir, scopesOutputName, pkg.Name)))
 	src, _, err := emit(pkg, s.Dialect, plans, declared)
 	return src, ds, err
 }
@@ -267,7 +267,7 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 	return got, ds, nil
 }
 
-// EmitRepositories generates orm_gen.go for the destination, the package in destDir, from the repositories of the
+// EmitRepositories generates scopes_gen.go for the destination, the package in destDir, from the repositories of the
 // package at repoPath among pkgs, running on drv, or reports why it cannot.
 func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snapshot, drv, destDir string) (
 	[]byte, []diag.Diag, error,

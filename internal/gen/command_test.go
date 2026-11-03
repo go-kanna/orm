@@ -88,7 +88,7 @@ func TestCommand(t *testing.T) {
 	describeShop(t, dir)
 	scopes := filepath.Join(dir, "scopes")
 
-	if code, out, errOut := run(t, scopes, "-v"); code != cli.ExitOK || out != "wrote ./orm_gen.go\n" || errOut != "" {
+	if code, out, errOut := run(t, scopes, "-v"); code != cli.ExitOK || out != "wrote ./scopes_gen.go\n" || errOut != "" {
 		t.Fatalf("kanna-orm -v = %d\n%s%s", code, out, errOut)
 	}
 	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
@@ -102,7 +102,7 @@ func TestCommand(t *testing.T) {
 	if code, _, errOut := run(t, scopes, "-check"); code != cli.ExitOK {
 		t.Errorf("kanna-orm -check right after generating = %d\n%s", code, errOut)
 	}
-	path := filepath.Join(scopes, "orm_gen.go")
+	path := filepath.Join(scopes, "scopes_gen.go")
 	src, err := os.ReadFile(path) //nolint:gosec // the file written above
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestCommand(t *testing.T) {
 	if err := os.WriteFile(path, bytes.Replace(src, []byte("status"), []byte("state"), 1), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, errOut := run(t, scopes, "-check"); code != cli.ExitFailure || !strings.Contains(errOut, "orm_gen.go") {
+	if code, _, errOut := run(t, scopes, "-check"); code != cli.ExitFailure || !strings.Contains(errOut, "scopes_gen.go") {
 		t.Errorf("kanna-orm -check of a file changed since = %d\n%s", code, errOut)
 	}
 }
@@ -131,12 +131,12 @@ func TestCommand_RemovesWhatNoDeclarationNeeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, errOut := run(t, scopes, "-v")
-	if code != cli.ExitOK || out != "removed ./orm_gen.go\n" ||
+	if code != cli.ExitOK || out != "removed ./scopes_gen.go\n" ||
 		errOut != "warning: no type is marked //kanna:scope or //kanna:repository in example.com/shop/scopes\n" {
 		t.Errorf("kanna-orm -v = %d\n%s%s", code, out, errOut)
 	}
-	if _, err := os.Stat(filepath.Join(scopes, "orm_gen.go")); !os.IsNotExist(err) {
-		t.Errorf("orm_gen.go is still there: %v", err)
+	if _, err := os.Stat(filepath.Join(scopes, "scopes_gen.go")); !os.IsNotExist(err) {
+		t.Errorf("scopes_gen.go is still there: %v", err)
 	}
 }
 
@@ -214,8 +214,8 @@ func TestCommand_KeepsWhatCodeStillCalls(t *testing.T) {
 		"./scopes.go:16:9: error: undefined: Orders\n"; code != cli.ExitFailure || errOut != want {
 		t.Errorf("kanna-orm = %d\n%s\nwant %d\n%s", code, errOut, cli.ExitFailure, want)
 	}
-	if _, err := os.Stat(filepath.Join(scopes, "orm_gen.go")); err != nil {
-		t.Errorf("orm_gen.go is gone: %v", err)
+	if _, err := os.Stat(filepath.Join(scopes, "scopes_gen.go")); err != nil {
+		t.Errorf("scopes_gen.go is gone: %v", err)
 	}
 }
 

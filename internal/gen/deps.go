@@ -54,12 +54,12 @@ func reportDeps(dir string, cfg config, patterns []string) (deps.Report, error) 
 	}
 	for _, pkg := range p.roots {
 		if len(p.plans[pkg]) > 0 {
-			r.Writes = append(r.Writes, filepath.Join(filepath.Dir(pkg.GoFiles[0]), outputName))
+			r.Writes = append(r.Writes, filepath.Join(filepath.Dir(pkg.GoFiles[0]), scopesOutputName))
 		}
 	}
 	declares := generatedNames(p.plans, p.s.Dialect)
 	if len(p.repo.repos) > 0 {
-		r.Writes = append(r.Writes, filepath.Join(dest.dir, outputName))
+		r.Writes = append(r.Writes, filepath.Join(dest.dir, repositoryOutputName))
 		for _, pkg := range p.repoPkgs {
 			maps.Copy(declares, repositoryNames(pkg, dest.pkgPath))
 		}

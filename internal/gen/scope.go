@@ -23,8 +23,9 @@ import (
 const (
 	// ormPath is the import path of the package the generated code runs on.
 	ormPath = "github.com/go-kanna/orm"
-	// outputName is the file kanna-orm writes into each package it generates for.
-	outputName = "orm_gen.go"
+	// Output files are named for the declarations they implement.
+	scopesOutputName     = "scopes_gen.go"
+	repositoryOutputName = "repository_gen.go"
 )
 
 // scope is a //kanna:scope type.
@@ -249,7 +250,7 @@ func declared(pkg *packages.Package, name string) (token.Position, bool) {
 		return token.Position{}, false
 	}
 	pos := pkg.Fset.Position(obj.Pos())
-	if filepath.Base(pos.Filename) == outputName && packages.GeneratedFiles(pkg)[pos.Filename] {
+	if filepath.Base(pos.Filename) == scopesOutputName && packages.GeneratedFiles(pkg)[pos.Filename] {
 		return token.Position{}, false
 	}
 	return pos, true

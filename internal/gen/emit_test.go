@@ -122,7 +122,7 @@ func TestEmit(t *testing.T) {
 		t.Run(dir, func(t *testing.T) {
 			t.Parallel()
 
-			set, err := packages.Load([]string{"./testdata/" + dir}, packages.Config{Regenerated: []string{"orm_gen.go"}})
+			set, err := packages.Load([]string{"./testdata/" + dir}, packages.Config{Regenerated: []string{"scopes_gen.go"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -137,7 +137,7 @@ func TestEmit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Emit: %v\n%s", err, got)
 			}
-			pkgtest.Golden(t, filepath.Join("testdata", dir, "orm_gen.go"), got)
+			pkgtest.Golden(t, filepath.Join("testdata", dir, "scopes_gen.go"), got)
 
 			// The names checked against those of the methods written by hand are those of the methods written.
 			methods, err := gen.Methods(set.Packages[0], s)
@@ -145,13 +145,13 @@ func TestEmit(t *testing.T) {
 				t.Fatal(err)
 			}
 			if written := generatedMethods(set.Packages[0]); !reflect.DeepEqual(methods, written) {
-				t.Errorf("Methods =\n%v\nbut orm_gen.go declares\n%v", methods, written)
+				t.Errorf("Methods =\n%v\nbut scopes_gen.go declares\n%v", methods, written)
 			}
 		})
 	}
 }
 
-// generatedMethods names the methods orm_gen.go declares on each type of pkg, sorted.
+// generatedMethods names the methods scopes_gen.go declares on each type of pkg, sorted.
 func generatedMethods(pkg *packages.Package) map[string][]string {
 	methods := map[string][]string{}
 	for _, name := range pkg.Types.Scope().Names() {
@@ -160,7 +160,7 @@ func generatedMethods(pkg *packages.Package) map[string][]string {
 			continue
 		}
 		for m := range named.Methods() {
-			if filepath.Base(pkg.Fset.Position(m.Pos()).Filename) == "orm_gen.go" {
+			if filepath.Base(pkg.Fset.Position(m.Pos()).Filename) == "scopes_gen.go" {
 				methods[name] = append(methods[name], m.Name())
 			}
 		}
@@ -346,7 +346,7 @@ func TestEmitRepositories(t *testing.T) {
 			if err != nil {
 				t.Fatalf("EmitRepositories: %v\n%s", err, got)
 			}
-			pkgtest.Golden(t, filepath.Join("testdata", tt.dest, "orm_gen.go"), got)
+			pkgtest.Golden(t, filepath.Join("testdata", tt.dest, "repository_gen.go"), got)
 		})
 	}
 }

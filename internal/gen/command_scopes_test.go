@@ -61,7 +61,7 @@ func TestCommand_ImpliedScopes(t *testing.T) {
 
 	tests := []struct {
 		name, extra string
-		// declared and missing are what orm_gen.go of scopes declares, and does not.
+		// declared and missing are what scopes_gen.go of scopes declares, and does not.
 		declared, missing []string
 	}{
 		{"implied alone", "", []string{"type Order struct", "type OrderLine struct", "func OrderLines()"},
@@ -92,7 +92,7 @@ type Line struct{ q orm.Of[model.OrderLine] }
 			if code, _, errOut := run(t, repository, args...); code != cli.ExitOK {
 				t.Fatalf("kanna-orm in repository = %d\n%s", code, errOut)
 			}
-			if code, out, errOut := run(t, scopes, "-v"); code != cli.ExitOK || out != "wrote ./orm_gen.go\n" {
+			if code, out, errOut := run(t, scopes, "-v"); code != cli.ExitOK || out != "wrote ./scopes_gen.go\n" {
 				t.Fatalf("kanna-orm -v in scopes = %d\n%s%s", code, out, errOut)
 			}
 			set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
@@ -102,18 +102,18 @@ type Line struct{ q orm.Of[model.OrderLine] }
 			if len(set.Diags) > 0 {
 				t.Fatalf("the module does not compile once generated: %v", set.Diags)
 			}
-			src, err := os.ReadFile(filepath.Join(scopes, "orm_gen.go")) //nolint:gosec // the file written above
+			src, err := os.ReadFile(filepath.Join(scopes, "scopes_gen.go")) //nolint:gosec // the file written above
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, d := range tt.declared {
 				if !strings.Contains(string(src), d) {
-					t.Errorf("orm_gen.go lacks %q", d)
+					t.Errorf("scopes_gen.go lacks %q", d)
 				}
 			}
 			for _, m := range tt.missing {
 				if strings.Contains(string(src), m) {
-					t.Errorf("orm_gen.go has %q", m)
+					t.Errorf("scopes_gen.go has %q", m)
 				}
 			}
 			for _, at := range []string{repository, scopes} {

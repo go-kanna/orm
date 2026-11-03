@@ -116,7 +116,7 @@ func checkNames(pkg *packages.Package, plans []scopePlan, d snapshot.Dialect) []
 		}
 		for m := range t.Methods() {
 			pos := pkg.Fset.Position(m.Pos())
-			if filepath.Base(pos.Filename) == outputName && generatedFiles[pos.Filename] {
+			if filepath.Base(pos.Filename) == scopesOutputName && generatedFiles[pos.Filename] {
 				continue
 			}
 			if why, ok := named[m.Name()]; ok {
@@ -142,7 +142,7 @@ func checkChangeNames(pkg *packages.Package, p scopePlan) []diag.Diag {
 	var ds []diag.Diag
 	for method := range t.Methods() {
 		pos := pkg.Fset.Position(method.Pos())
-		if filepath.Base(pos.Filename) == outputName && generatedFiles[pos.Filename] {
+		if filepath.Base(pos.Filename) == scopesOutputName && generatedFiles[pos.Filename] {
 			continue
 		}
 		for _, generated := range changeMethods(p) {

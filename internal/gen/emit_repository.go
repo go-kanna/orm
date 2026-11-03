@@ -35,7 +35,7 @@ type repoEmitter struct {
 	names  map[string]string
 }
 
-// emitRepositories writes orm_gen.go into the destination, the package pkgName at pkgPath: the implementation of each
+// emitRepositories writes repository_gen.go into the destination package pkgName at pkgPath: the implementation of each
 // of repos on a database of d through drv, reading the whole rows of models. declared names what the destination
 // declares besides.
 func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, repos []repository,
