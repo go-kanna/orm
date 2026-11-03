@@ -95,6 +95,9 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name, phone = COALES
 func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
 	var q scope.Of[model.Customer]
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("Get"); err != nil {
+		return model.Customer{}, err
+	}
 	rows, err := selectCustomers(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Customer{}, err
@@ -308,6 +311,9 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	}
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("Get"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Order{}, err
@@ -595,6 +601,9 @@ func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderI
 	}
 	var q scope.Of[model.Order]
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("GetForUpdate"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE`)
 	if err != nil {
 		return model.Order{}, err
@@ -614,7 +623,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	q = q.Limit(1)
+	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return model.Order{}, err
