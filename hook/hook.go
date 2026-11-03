@@ -27,8 +27,8 @@ type Execution struct {
 // repository is given, those given first enclose the others: their Before runs first, and their After last. Calls from
 // concurrent statements may overlap.
 type Hook struct {
-	// Before is called as a statement starts. The statement runs with the context it returns, the one the next Before
-	// receives: return ctx itself to leave it as it was.
+	// Before is called as a statement starts. It returns ctx, or a context derived from it: the statement runs with that
+	// context, its cancellation and deadline included, and the next Before receives it.
 	Before func(ctx context.Context, q Query) context.Context
 	// After is called once the statement has run and its results have been read, or it has failed. It receives the
 	// context its own Before returned, or, without a Before, the one that Before would have received.
