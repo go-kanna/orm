@@ -774,7 +774,30 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールド名または対応するカラム名で元モデルのフィールドに結び付け、カラム名のタグと `nullzero` の扱いを引き継ぎます。別の Go フィールド名で受け取る場合は `orm` カラムタグを指定できます。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。集計・式・JOIN は従来どおり手書き SQL と DTO で表現できます。
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールド名または対応するカラム名で元モデルのフィールドに結び付け、カラム名のタグと `nullzero` の扱いを引き継ぎます。別の Go フィールド名で受け取る場合は `orm` カラムタグを指定できます。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。集計・式は従来どおり手書き SQL と DTO で表現できます。
+
+
+### JOIN する projection
+
+scope で JOIN 先を指定すると、専用の返却型へ関連テーブルの列を取得できます。元モデルに関連フィールドを足す必要はありません。
+
+```go
+type MembershipSummary struct {
+    UserID      uuid.UUID
+    Role        Role
+    DisplayName string // 元モデルに対応列がなければ users.display_name から推論
+}
+
+GetSummary(ctx context.Context, userID uuid.UUID, s ...scopes.Membership) (MembershipSummary, error)
+
+summary, err := repo.GetSummary(ctx, userID, scopes.Memberships().JoinUsers())
+```
+
+一意に定まる直接の外部キーから型付きの `Join<Table>()` メソッドを生成します。`JoinUsers()` は元テーブルから `users` への外部キーを使って INNER JOIN を生成し、複合キーにも対応します。文字列の `Join("users")` も同じ外部キーを利用できます。FK がない場合は `Join("users", join.On("user_id", "id"))` のように等値条件を明示します。`github.com/go-kanna/orm/join` を import し、`join.On` には元テーブルの列、JOIN 先の列の順に渡します。複合条件は複数の `join.On` を渡します。テーブルと列は SQL 実行前にスナップショットと照合します。条件の明示により、複数の外部キーがある場合や逆向きの JOIN にも対応できます。直接の外部キーがないテーブルの取得列には `orm:"users.display_name"` のように修飾タグを指定します。自己 JOIN・別名・任意の ON 式は手書き SQL を使います。専用の読み取り projection が対象で、通常モデルの取得・関連取得 scope・書き込み・Count・Exists では JOIN を拒否します。
+
+元モデルのフィールド対応と型の要件は維持します。追加フィールドは参照先テーブルの一意なカラムから推論し、DB の型と nullable を検証します。取得元を明示する場合は `orm:"users.display_name"` のようにテーブル付きの列名を指定します。指定した JOIN によって同名列が増える場合も、`orm:"memberships.id"` のように取得元を明示します。必要な JOIN の不足や取得列の曖昧さは SQL 実行前にエラー、存在しないフィールドや参照先を特定できないフィールドは生成時エラーです。nullable な JOIN 先の列は nullable なフィールド、または文字列への明示した `nullzero` で受け取ります。
+
+元テーブルの scope で絞り込み・並び順・カーソルを指定できます。条件は元テーブルの名前空間で評価し、並び順とページングは JOIN 後に適用します。JOIN 時の並び順には元テーブルの列を指定します。レンダラーは結果・結合・並び順に必要な列を選び、絞り込み済みの元テーブルを派生テーブルにする場合があります。別途 Preload せず、1本の SQL で取得します。両 DB の example に注文の summary へ顧客名を取得する例があります。
 
 ## 手書きの SQL
 
@@ -877,7 +900,7 @@ ORDER BY 1`
 - リレーションの書き込み。行を参照先と一緒に保存するときの順序は、トランザクションの中で自分で組み立てます。
 - 変更の追跡、アイデンティティマップの保持、遅延読み込み。
 - マイグレーションの作成や適用。goose などのツールを使い、その結果を `describe` してください。
-- スコープの中でのクエリの結合、グループ化、ネスト。そのようなクエリは手で書いてください。
+- 任意の JOIN・グループ化・ネストするクエリを scope から組み立てること。読み取り projection の外部キーまたは明示した列の等値条件による INNER JOIN に対応し、それ以外は手書き SQL を使います。
 - `created_at` と `updated_at` の設定、ゼロ値をカラムのデフォルト値とみなすこと。
 - NULL になりうるカラムでのページング。
 - pgx 経由での複数行の COPY。

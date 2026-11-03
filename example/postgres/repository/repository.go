@@ -42,6 +42,7 @@ type OrderRepository interface { //nolint:interfacebloat // demonstrates order r
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	FindApproval(ctx context.Context, id model.OrderID) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+	ListSummaries(ctx context.Context, s ...scopes.Order) ([]OrderSummary, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
@@ -88,4 +89,10 @@ type ProductSummary struct {
 type DeletedOrder struct {
 	ID         model.OrderID
 	CustomerID model.CustomerID
+}
+
+type OrderSummary struct {
+	ID           model.OrderID `orm:"orders.id"`
+	CustomerName string        `orm:"customers.name"`
+	Status       model.OrderStatus
 }

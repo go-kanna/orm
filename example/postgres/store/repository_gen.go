@@ -175,11 +175,11 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	rd, err := q.Render(orm.Postgres, 1)
+	text, args, reversed, err := q.RenderProjection(orm.Postgres, "products", []orm.SelectColumn{{Table: "products", Column: "name", Name: "name"}, {Table: "products", Column: "price", Name: "price"}}, []orm.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.executor.Query(ctx, `SELECT name, price FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+"", rd.Args()...)
+	rows, err := r.executor.Query(ctx, text+"", args...)
 	if err != nil {
 		return nil, fmt.Errorf("project products: %w", err)
 	}
@@ -195,7 +195,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("project products: %w", err)
 	}
-	if rd.Reversed() {
+	if reversed {
 		slices.Reverse(out)
 	}
 	return out, nil
@@ -255,6 +255,7 @@ const orderRepositoryOperationFind orderRepositoryOperation = "Find"
 const orderRepositoryOperationGet orderRepositoryOperation = "Get"
 const orderRepositoryOperationFindApproval orderRepositoryOperation = "FindApproval"
 const orderRepositoryOperationList orderRepositoryOperation = "List"
+const orderRepositoryOperationListSummaries orderRepositoryOperation = "ListSummaries"
 const orderRepositoryOperationCount orderRepositoryOperation = "Count"
 const orderRepositoryOperationInsert orderRepositoryOperation = "Insert"
 const orderRepositoryOperationInsertLines orderRepositoryOperation = "InsertLines"
@@ -366,6 +367,46 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []
 	}
 	q := orm.Join(qs...)
 	return selectOrders(ctx, r.executor, q, "")
+}
+
+func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (result []repository.OrderSummary, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationListSummaries, resultErr)
+		}
+	}()
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	if err := q.ProjectionOnly("ListSummaries"); err != nil {
+		return nil, err
+	}
+	text, args, reversed, err := q.RenderProjection(orm.Postgres, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: ""}, {Table: "orders", Column: "status", Name: "status"}}, []orm.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.executor.Query(ctx, text+"", args...)
+	if err != nil {
+		return nil, fmt.Errorf("project orders: %w", err)
+	}
+	defer rows.Close()
+	out := []repository.OrderSummary{}
+	for rows.Next() {
+		var row repository.OrderSummary
+		if err := rows.Scan(&row.ID, &row.CustomerName, &row.Status); err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("project orders: %w", err)
+	}
+	if reversed {
+		slices.Reverse(out)
+	}
+	return out, nil
 }
 
 func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {

@@ -30,6 +30,7 @@ type Of[M any] struct {
 	preloads            []preload
 	projections         []projectionField
 	batches             []batchField
+	joins               []tableJoin
 	parent              *parentContext
 	parentPrefix        string
 	seek                seek
@@ -153,6 +154,9 @@ func Join[M any](qs ...Of[M]) Of[M] {
 			q.preloads = addPreload(q.preloads, p)
 		}
 		q.projections = slices.Concat(q.projections, s.projections)
+		for _, join := range s.joins {
+			q = q.JoinTable(join.table, join.on...)
+		}
 		for _, batch := range s.batches {
 			q.batches = addBatch(q.batches, batch)
 		}
@@ -171,6 +175,8 @@ func (q Of[M]) ConditionsOnly(what string) error {
 	switch {
 	case q.err != nil:
 		return q.err
+	case len(q.joins) > 0:
+		return fmt.Errorf("orm: %s takes conditions alone, but its scope joins tables", what)
 	case len(q.orders) > 0:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope orders the rows", what)
 	case q.hasLimit || q.hasOffset || q.seeking:
@@ -225,13 +231,13 @@ func List[T any](vs []T) any {
 
 type list []any
 
-// ProjectionOnly rejects relation loading in a single-table projection. Filters, ordering, and pagination remain valid.
+// ProjectionOnly rejects relation loading in a projection. Filters, ordering, and pagination remain valid.
 func (q Of[M]) ProjectionOnly(what string) error {
 	if q.err != nil {
 		return q.err
 	}
 	if len(q.preloads) > 0 || len(q.projections) > 0 || len(q.batches) > 0 {
-		return fmt.Errorf("orm: %s is a single-table projection, but its scope loads relations", what)
+		return fmt.Errorf("orm: %s is a projection, but its scope loads relations", what)
 	}
 	return nil
 }

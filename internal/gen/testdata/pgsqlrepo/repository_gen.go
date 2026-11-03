@@ -110,6 +110,179 @@ func (r OrderRepository) List(ctx context.Context, s ...postgres.Order) ([]model
 	return selectOrders(ctx, r.executor, q, "")
 }
 
+func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s ...postgres.Order) (model.OrderTagSummary, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Where(`id = `, id)
+	read := func() ([]model.OrderTagSummary, error) {
+		if err := q.ProjectionOnly("GetTagSummary"); err != nil {
+			return nil, err
+		}
+		text, args, reversed, err := q.RenderProjection(orm.Postgres, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: "id"}, {Table: "tags", Column: "name", Name: ""}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := r.executor.QueryContext(ctx, text+"", args...)
+		if err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		defer rows.Close()
+		out := []model.OrderTagSummary{}
+		for rows.Next() {
+			var row model.OrderTagSummary
+			if err := rows.Scan(&row.ID, &row.TagName); err != nil {
+				return nil, fmt.Errorf("project orders: %w", err)
+			}
+			out = append(out, row)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		if reversed {
+			slices.Reverse(out)
+		}
+		return out, nil
+	}
+	out, err := read()
+	if err != nil {
+		return model.OrderTagSummary{}, err
+	}
+	if len(out) == 0 {
+		return model.OrderTagSummary{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return out[0], nil
+}
+
+func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...postgres.Order) (model.OrderSummary, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Where(`id = `, id)
+	read := func() ([]model.OrderSummary, error) {
+		if err := q.ProjectionOnly("GetSummary"); err != nil {
+			return nil, err
+		}
+		text, args, reversed, err := q.RenderProjection(orm.Postgres, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := r.executor.QueryContext(ctx, text+"", args...)
+		if err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		defer rows.Close()
+		out := []model.OrderSummary{}
+		for rows.Next() {
+			var row model.OrderSummary
+			if err := rows.Scan(&row.ID, &row.Name, &row.Total, &row.Memo); err != nil {
+				return nil, fmt.Errorf("project orders: %w", err)
+			}
+			out = append(out, row)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		if reversed {
+			slices.Reverse(out)
+		}
+		return out, nil
+	}
+	out, err := read()
+	if err != nil {
+		return model.OrderSummary{}, err
+	}
+	if len(out) == 0 {
+		return model.OrderSummary{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return out[0], nil
+}
+
+func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ...postgres.Order) (*model.OrderSummary, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	q = q.Where(`id = `, id)
+	read := func() ([]model.OrderSummary, error) {
+		if err := q.ProjectionOnly("FindSummary"); err != nil {
+			return nil, err
+		}
+		text, args, reversed, err := q.RenderProjection(orm.Postgres, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := r.executor.QueryContext(ctx, text+"", args...)
+		if err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		defer rows.Close()
+		out := []model.OrderSummary{}
+		for rows.Next() {
+			var row model.OrderSummary
+			if err := rows.Scan(&row.ID, &row.Name, &row.Total, &row.Memo); err != nil {
+				return nil, fmt.Errorf("project orders: %w", err)
+			}
+			out = append(out, row)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		if reversed {
+			slices.Reverse(out)
+		}
+		return out, nil
+	}
+	out, err := read()
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return &out[0], nil
+}
+
+func (r OrderRepository) ListSummaries(ctx context.Context, s ...postgres.Order) ([]model.OrderSummary, error) {
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	if err := q.ProjectionOnly("ListSummaries"); err != nil {
+		return nil, err
+	}
+	text, args, reversed, err := q.RenderProjection(orm.Postgres, "orders", []orm.SelectColumn{{Table: "orders", Column: "id", Name: ""}, {Table: "customers", Column: "name", Name: "name"}, {Table: "orders", Column: "total", Name: "total"}, {Table: "orders", Column: "note", Name: "memo"}}, []orm.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.executor.QueryContext(ctx, text+"", args...)
+	if err != nil {
+		return nil, fmt.Errorf("project orders: %w", err)
+	}
+	defer rows.Close()
+	out := []model.OrderSummary{}
+	for rows.Next() {
+		var row model.OrderSummary
+		if err := rows.Scan(&row.ID, &row.Name, &row.Total, &row.Memo); err != nil {
+			return nil, fmt.Errorf("project orders: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("project orders: %w", err)
+	}
+	if reversed {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
 func (r OrderRepository) ListByCustomer(ctx context.Context, customerID int64, s ...postgres.Order) ([]model.Order, error) {
 	qs := make([]orm.Of[model.Order], len(s))
 	for i, x := range s {
