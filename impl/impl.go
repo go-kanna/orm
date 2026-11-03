@@ -155,7 +155,7 @@ func Combine[M any](qs ...Of[M]) Of[M] {
 			q = q.JoinTable(join.table, join.on...)
 		}
 		for _, batch := range s.batches {
-			q.batches = addBatch(q.batches, batch)
+			q = q.addBatch(batch)
 		}
 		if s.seeking {
 			q.seek, q.seeking = s.seek, true

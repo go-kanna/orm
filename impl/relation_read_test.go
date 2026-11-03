@@ -1,6 +1,7 @@
 package impl_test
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -119,17 +120,60 @@ func TestCombineDuplicateCollection(t *testing.T) {
 	t.Parallel()
 	parent := impl.NewParent()
 	q := impl.PreloadMany(impl.Of[projectionParent]{}, "Children", parent, impl.Of[projectionChild]{}.Many())
-	child, token, ok := impl.PreloadedMany[projectionChild](impl.Combine(q, q), "Children")
-	if !ok {
-		t.Fatal("collection was lost")
+	if _, err := impl.Combine(q, q).Render(impl.Postgres, 1); err == nil || !strings.Contains(err.Error(),
+		"Children is preloaded twice") {
+		t.Fatalf("duplicate collection: %v", err)
 	}
-	_, _, err := child.RenderBatch(impl.Postgres, impl.Batch{
-		ParentTable: "parents", Table: "children", ParentKeys: []string{"id"}, ChildKeys: []string{"parent_id"},
-	}, token, []string{"id"}, [][]any{{int64(1)}})
-	if err == nil {
-		t.Fatal("duplicate collection was silently accepted")
+	if _, err := q.Render(impl.Postgres, 1); err != nil {
+		t.Fatalf("original scope changed: %v", err)
 	}
-	if _, _, err := impl.PreloadedMany[projectionChild](q, "Children"); !err {
-		t.Fatal("original scope changed")
+}
+
+func TestPreloadManyChecksAtOnce(t *testing.T) {
+	t.Parallel()
+	child := impl.Of[projectionChild]{}
+	for _, tt := range []struct {
+		name string
+		m    impl.Many[projectionChild]
+		want string
+	}{
+		{"a limit without an order", child.Limit(3).Many(), "Children keeps some of the rows of each parent"},
+		{"an offset without an order", child.Offset(1).Many(), "Children keeps some of the rows of each parent"},
+		{"a cursor", child.OrderBy("id", false).After([]string{"id"}, map[string]any{"id": 1}).Many(),
+			"Children does not accept a cursor"},
+		{"an overflowing page", child.OrderBy("id", false).Offset(math.MaxInt).Limit(1).Many(), "page of Children overflows"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// The parent's own scope fails, before any rows of Children are read: there may be no parent row to read
+			// them for.
+			q := impl.PreloadMany(impl.Of[projectionParent]{}, "Children", impl.NewParent(), tt.m)
+			if _, err := q.Render(impl.Postgres, 1); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Render = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestWithAndPreloadOfOneField(t *testing.T) {
+	t.Parallel()
+	children := impl.Of[projectionChild]{}
+	with := impl.Preload(impl.Of[projectionParent]{}, "Children", children)
+	preload := impl.PreloadMany(impl.Of[projectionParent]{}, "Children", impl.NewParent(), children.Many())
+	for name, q := range map[string]impl.Of[projectionParent]{
+		"With then Preload": impl.PreloadMany(with, "Children", impl.NewParent(), children.Many()),
+		"Preload then With": impl.Preload(preload, "Children", children),
+		"combined":          impl.Combine(with, preload),
+	} {
+		_, err := q.Render(impl.Postgres, 1)
+		if want := "Children is loaded by both WithChildren and PreloadChildren"; err == nil ||
+			!strings.Contains(err.Error(), want) {
+			t.Errorf("%s: Render = %v, want %q", name, err, want)
+		}
+	}
+	for name, q := range map[string]impl.Of[projectionParent]{"With": with, "Preload": preload} {
+		if _, err := q.Render(impl.Postgres, 1); err != nil {
+			t.Errorf("%s alone: %v", name, err)
+		}
 	}
 }
