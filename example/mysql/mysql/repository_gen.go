@@ -77,9 +77,13 @@ func (d ormDatabase) queryRow(ctx context.Context, query string, args ...any) im
 // CustomerRepository implements repository.CustomerRepository on MySQL through database/sql.
 type CustomerRepository struct{ db ormDatabase }
 
-// NewCustomerRepository returns a CustomerRepository running on db.
-func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
+func newCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
 	return CustomerRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewCustomerRepository returns CustomerRepository running on db.
+func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
+	return newCustomerRepository(db, opts...)
 }
 
 var _ repository.CustomerRepository = CustomerRepository{}
@@ -168,9 +172,13 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 // ProductRepository implements repository.ProductRepository on MySQL through database/sql.
 type ProductRepository struct{ db ormDatabase }
 
-// NewProductRepository returns a ProductRepository running on db.
-func NewProductRepository(db DBTX, opts ...option.Option) ProductRepository {
+func newProductRepository(db DBTX, opts ...option.Option) ProductRepository {
 	return ProductRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewProductRepository returns ProductRepository running on db.
+func NewProductRepository(db DBTX, opts ...option.Option) ProductRepository {
+	return newProductRepository(db, opts...)
 }
 
 var _ repository.ProductRepository = ProductRepository{}
@@ -294,9 +302,13 @@ VALUES (?)`+strings.Repeat(`, (?)`, len(chunk)-1), args...); err != nil {
 // OrderRepository implements repository.OrderRepository on MySQL through database/sql.
 type OrderRepository struct{ db ormDatabase }
 
-// NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+func newOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 	return OrderRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewOrderRepository returns OrderRepository running on db.
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+	return newOrderRepository(db, opts...)
 }
 
 var _ repository.OrderRepository = OrderRepository{}
@@ -571,9 +583,13 @@ ORDER BY 1`
 // FulfillmentRepository implements repository.FulfillmentRepository on MySQL through database/sql.
 type FulfillmentRepository struct{ db ormDatabase }
 
-// NewFulfillmentRepository returns a FulfillmentRepository running on db.
-func NewFulfillmentRepository(db DBTX, opts ...option.Option) FulfillmentRepository {
+func newFulfillmentRepository(db DBTX, opts ...option.Option) FulfillmentRepository {
 	return FulfillmentRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewFulfillmentRepository returns FulfillmentRepository running on db.
+func NewFulfillmentRepository(db DBTX, opts ...option.Option) FulfillmentRepository {
+	return newFulfillmentRepository(db, opts...)
 }
 
 var _ repository.FulfillmentRepository = FulfillmentRepository{}

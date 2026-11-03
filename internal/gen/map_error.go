@@ -16,12 +16,8 @@ func mapErrorSignature(repo repository, implementation string, m handMethod) []d
 	if isError(m.typ.Params) && isError(m.typ.Results) {
 		return nil
 	}
-	receiver := implementation
-	if repo.local {
-		receiver = "*" + receiver
-	}
 	return []diag.Diag{diag.Errorf(m.pos, "%s.%s: the errors of %s go through it, so it takes an error and returns one",
-		implementation, mapErrorName, repo.name).WithHints("as in func (" + receiver + ") " + mapErrorName +
+		implementation, mapErrorName, repo.name).WithHints("as in func (" + implementation + ") " + mapErrorName +
 		"(err error) error")}
 }
 

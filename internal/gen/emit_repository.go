@@ -127,21 +127,18 @@ func (e repoEmitter) repository(repo repository) {
 	e.printf("// %[1]s implements %[2]s on %[3]s through %[4]s.\n"+
 		"type %[1]s struct{ db %[5]s }\n\n", name, iface,
 		database, e.drv, e.database)
-	if repo.local {
-		e.printf("func %s(db DBTX, opts ...%s) *%s { return &%s{db: %s{dbtx: db, options: %s(opts...)}} }\n\n",
-			constructor, e.ref("Option"), name, name, e.database, e.ref("NewOptions"))
-		if repo.publicConstructor {
-			e.printf("// New%[1]s returns %[1]s running on db.\n"+
-				"func New%[1]s(db DBTX, opts ...%[3]s) %[1]s { return %[2]s(db, opts...) }\n\n",
-				repo.name, constructor, e.ref("Option"))
+	e.printf("func %[1]s(db DBTX, opts ...%[2]s) %[3]s { return %[3]s{db: %[4]s{dbtx: db, options: %[5]s(opts...)}} }\n\n",
+		constructor, e.ref("Option"), name, e.database, e.ref("NewOptions"))
+	if repo.publicConstructor {
+		// A same-package implementation is unexported, and so the constructor returns the interface.
+		result := name
+		if repo.local {
+			result = repo.name
 		}
-		e.printf("var _ %s = (*%s)(nil)\n\n", iface, name)
-	} else {
-		e.printf("// New%[1]s returns %[2]s %[1]s running on db.\n"+
-			"func New%[1]s(db DBTX, opts ...%[3]s) %[1]s { return %[1]s{db: %[4]s{dbtx: db, options: %[5]s(opts...)}} }\n\n",
-			repo.name, article(repo.name), e.ref("Option"), e.database, e.ref("NewOptions"))
-		e.printf("var _ %s = %s{}\n\n", iface, repo.name)
+		e.printf("// New%[1]s returns %[2]s running on db.\nfunc New%[1]s(db DBTX, opts ...%[4]s) %[2]s { "+
+			"return %[3]s(db, opts...) }\n\n", repo.name, result, constructor, e.ref("Option"))
 	}
+	e.printf("var _ %s = %s{}\n\n", iface, name)
 	for _, m := range repo.methods {
 		e.method(repo, m)
 	}
@@ -154,11 +151,10 @@ func (r repository) implementation() string {
 	return r.name
 }
 
+// constructor is the unexported function returning the implementation, which New<Repository> calls, and a New of
+// the repository written by hand can.
 func (r repository) constructor() string {
-	if r.local {
-		return "new" + r.name
-	}
-	return "New" + r.name
+	return "new" + r.name
 }
 
 // signature is the signature of a method as written, with the names of its parameters in the body.
@@ -255,11 +251,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	if m.query != nil {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
 	}
-	receiver := repo.implementation()
-	if repo.local {
-		receiver = "*" + receiver
-	}
-	e.printf("func (%s %s) %s%s {\n", recv, receiver, m.name, sig.text)
+	e.printf("func (%s %s) %s%s {\n", recv, repo.implementation(), m.name, sig.text)
 	if m.bind != nil {
 		input := sig.ctx
 		if m.bind.accessor {

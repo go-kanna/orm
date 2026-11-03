@@ -67,9 +67,13 @@ func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) pg
 // OrderRepository implements repository.OrderRepository on PostgreSQL through pgx.
 type OrderRepository struct{ db ormDatabase }
 
-// NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+func newOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 	return OrderRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewOrderRepository returns OrderRepository running on db.
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+	return newOrderRepository(db, opts...)
 }
 
 var _ repository.OrderRepository = OrderRepository{}

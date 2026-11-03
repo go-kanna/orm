@@ -64,9 +64,13 @@ func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) pg
 // CustomerRepository implements repository.CustomerRepository on PostgreSQL through pgx.
 type CustomerRepository struct{ db ormDatabase }
 
-// NewCustomerRepository returns a CustomerRepository running on db.
-func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
+func newCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
 	return CustomerRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewCustomerRepository returns CustomerRepository running on db.
+func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
+	return newCustomerRepository(db, opts...)
 }
 
 var _ repository.CustomerRepository = CustomerRepository{}
@@ -101,9 +105,13 @@ RETURNING id, email, name, created_at`
 // OrderRepository implements repository.OrderRepository on PostgreSQL through pgx.
 type OrderRepository struct{ db ormDatabase }
 
-// NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+func newOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 	return OrderRepository{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+}
+
+// NewOrderRepository returns OrderRepository running on db.
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
+	return newOrderRepository(db, opts...)
 }
 
 var _ repository.OrderRepository = OrderRepository{}

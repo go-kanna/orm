@@ -149,6 +149,61 @@ func TestCommand_Repositories(t *testing.T) {
 	}
 }
 
+// A separate-package implementation does what a same-package one does: it binds a transaction, writes the helper of a
+// method written by hand that calls it, and leaves New to one written by hand, which calls new.
+func TestCommand_RepositoriesElsewhereAsInOwnPackage(t *testing.T) {
+	t.Parallel()
+
+	archive := strings.Replace(repositoryShop, "\tArchive(ctx context.Context, id int64) error\n",
+		"\tArchive(ctx context.Context, id int64) error\n\tBind(db stdlib.DBTX) OrderRepository\n", 1)
+	archive = strings.Replace(archive, "\t\"example.com/shop/scopes\"\n)",
+		"\t\"example.com/shop/scopes\"\n\t\"github.com/go-kanna/orm/stdlib\"\n)", 1)
+	archive += `
+-- postgres/custom.go --
+package postgres
+
+import (
+	"context"
+	"errors"
+
+	"example.com/shop/model"
+)
+
+func NewOrderRepository(db DBTX) OrderRepository { return newOrderRepository(db) }
+
+// Insert checks the row before the helper writes it.
+func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+	if o.Status == "" {
+		return model.Order{}, errors.New("an order needs a status")
+	}
+	return r.insert(ctx, o)
+}
+`
+	dir := writeModule(t, archive)
+	describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+	args := []string{"-destination", "../postgres", "-driver", "database/sql"}
+	if code, _, errOut := run(t, filepath.Join(dir, "repository"), args...); code != cli.ExitOK {
+		t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+	}
+	if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+		t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+	}
+	src, err := os.ReadFile(filepath.Join(dir, "postgres", "repository_gen.go")) //nolint:gosec // written above
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{") Bind(db stdlib.DBTX) repository.OrderRepository {", ") insert(ctx context.Context",
+		"func newOrderRepository(db DBTX"} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("repository_gen.go has no %q:\n%s", want, src)
+		}
+	}
+	if strings.Contains(string(src), "func NewOrderRepository(") {
+		t.Errorf("repository_gen.go declares NewOrderRepository, which the destination declares by hand:\n%s", src)
+	}
+	moduleCommand(t, dir, "vet", "-mod=mod", "./...")
+}
+
 func TestCommand_RepositoriesWithoutRowReads(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +302,7 @@ func TestCommand_RepositoriesInOwnPackage(t *testing.T) {
 
 			archive := strings.ReplaceAll(repositoryShop, "postgres/", "repository/")
 			archive = strings.ReplaceAll(archive, "package postgres", "package repository")
-			archive = strings.ReplaceAll(archive, "(r OrderRepository)", "(r *orderRepository)")
+			archive = strings.ReplaceAll(archive, "(r OrderRepository)", "(r orderRepository)")
 			if driver == "pgx" {
 				archive = strings.ReplaceAll(archive, "r.db.ExecContext(", "r.db.Exec(")
 			}
@@ -262,16 +317,16 @@ import (
 
 func NewOrderRepository(db DBTX) OrderRepository { return newOrderRepository(db) }
 
-func (r *orderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
+func (r orderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
 	return r.insert(ctx, o)
 }
 
-func (r *orderRepository) ReopenNew(ctx context.Context) (int64, error) {
+func (r orderRepository) ReopenNew(ctx context.Context) (int64, error) {
 	return r.reopenNew(ctx)
 }
 
 // ListStatuses runs SQL of its own: kanna-orm could write no helper for it, and it calls none.
-func (r *orderRepository) ListStatuses(ctx context.Context) ([]string, error) { return nil, nil }
+func (r orderRepository) ListStatuses(ctx context.Context) ([]string, error) { return nil, nil }
 
 // statuses selects a listStatuses of its own, which is no helper of the repository's.
 type statuses struct{}
@@ -324,7 +379,7 @@ import (
 	"context"
 	"example.com/shop/model"
 )
-func (r *orderRepository) insert(ctx context.Context, o model.Order) (model.Order, error) { return o, nil }
+func (r orderRepository) insert(ctx context.Context, o model.Order) (model.Order, error) { return o, nil }
 `)
 			if err := os.WriteFile(filepath.Join(repository, "collision.go"), collision, 0o600); err != nil {
 				t.Fatal(err)

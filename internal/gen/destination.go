@@ -68,6 +68,52 @@ func generatedFile(path string) bool {
 	return err == nil && ast.IsGenerated(f)
 }
 
+// receiverCalls finds what the methods the files of d other than the output declare select on their receiver, as
+// r.upsert does upsert in func (r category) Upsert, by the type they are declared on: the helpers they call. A selector
+// on anything else, as on a value of another type, is none of them. They are read from the syntax alone, as the type
+// is not declared before the first generation.
+func (d destination) receiverCalls() map[string]map[string]bool {
+	names, _ := filepath.Glob(filepath.Join(d.dir, "*.go"))
+	calls := map[string]map[string]bool{}
+	fset := token.NewFileSet()
+	for _, name := range names {
+		if filepath.Base(name) == repositoryOutputName || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil || f.Name.Name != d.name {
+			continue
+		}
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || fn.Recv == nil || len(fn.Recv.List) != 1 || len(fn.Recv.List[0].Names) != 1 {
+				continue
+			}
+			t := fn.Recv.List[0].Type
+			if star, ok := t.(*ast.StarExpr); ok {
+				t = star.X
+			}
+			id, ok := t.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			if calls[id.Name] == nil {
+				calls[id.Name] = map[string]bool{}
+			}
+			recv := fn.Recv.List[0].Names[0].Name
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if s, ok := n.(*ast.SelectorExpr); ok {
+					if x, ok := s.X.(*ast.Ident); ok && x.Name == recv {
+						calls[id.Name][s.Sel.Name] = true
+					}
+				}
+				return true
+			})
+		}
+	}
+	return calls
+}
+
 // handMethod is a method declared by hand: where it is, and its parameters and results.
 type handMethod struct {
 	pos token.Position
@@ -121,6 +167,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
 		imported: importedPackages(pkgs), local: dest.holds(pkg),
 		driver:   drv,
+		calls:    dest.receiverCalls(),
 		declared: output.DeclaredNames(dest.dir, repositoryOutputName, dest.name),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
