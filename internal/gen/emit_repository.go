@@ -320,7 +320,11 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	table := sqlName(e.d, m.target.table)
 	q := sc.Name("q")
 	if m.lock != "" {
-		e.inTransaction(m, sc, recv, model)
+		resultModel := model
+		if m.projection != nil {
+			resultModel = types.TypeString(m.projection.model, e.f.Qualifier)
+		}
+		e.inTransaction(m, sc, recv, resultModel)
 	}
 	if m.scoped {
 		qs, i, x := sc.Name("qs"), sc.Name("i"), sc.Name("x")
@@ -340,6 +344,10 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
 	notFound := e.notFound(m.target.table, names, args)
+	if m.projection != nil {
+		e.projectedRead(m, sc, recv, sig, q, notFound)
+		return
+	}
 	rd, err := sc.Name("rd"), sc.Name("err")
 	render := func(zero string) {
 		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\nif %[2]s != nil {\nreturn %[5]s%[2]s\n}\n", rd, err, q,

@@ -224,3 +224,14 @@ func List[T any](vs []T) any {
 }
 
 type list []any
+
+// ProjectionOnly rejects relation loading in a single-table projection. Filters, ordering, and pagination remain valid.
+func (q Of[M]) ProjectionOnly(what string) error {
+	if q.err != nil {
+		return q.err
+	}
+	if len(q.preloads) > 0 || len(q.projections) > 0 || len(q.batches) > 0 {
+		return fmt.Errorf("orm: %s is a single-table projection, but its scope loads relations", what)
+	}
+	return nil
+}

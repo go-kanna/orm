@@ -744,6 +744,22 @@ return tx.Commit(ctx)
 - `//kanna:lock` を対象のメソッドのすぐ上以外に書くと、メソッドがロックなしで生成されないように、生成を止めます。[手書きのクエリ](#手書きの-sql)や手書きのコードだけで実装するメソッドに付けた場合も同じです。ロックはそちらに書いてください。同一パッケージで生成ヘルパーを呼ぶメソッドでは、そのヘルパーにロックを引き継ぎます。
 - `GetForUpdate` のようにロックしそうな名前の `Get`、`Find`、`First`、`List` に `//kanna:lock` がないと、警告が出ます。
 
+### 専用の型へ読み込む projection
+
+`Get...`・`Find...`・`First...`・`List...` は、元モデルの scope を受け取りながら別の名前付き構造体を返せます。戻り値型のフィールドから取得列を決めるため、専用型に scope は不要です。
+
+```go
+type ProductSummary struct {
+    Name  string
+    Price int64
+}
+
+// //kanna:repository の interface 内に宣言
+ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
+```
+
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールド名または対応するカラム名で元モデルのフィールドに結び付け、カラム名のタグと `nullzero` の扱いを引き継ぎます。別の Go フィールド名で受け取る場合は `orm` カラムタグを指定できます。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。集計・式・JOIN は従来どおり手書き SQL と DTO で表現できます。
+
 ## 手書きの SQL
 
 メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前のリポジトリのメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。`-destination .` なら、インターフェースと同じディレクトリです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。

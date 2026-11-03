@@ -138,6 +138,41 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 	return selectProducts(ctx, r.db, q, "")
 }
 
+func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
+	qs := make([]orm.Of[model.Product], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	if err := q.ProjectionOnly("ListSummaries"); err != nil {
+		return nil, err
+	}
+	rd, err := q.Render(orm.MySQL, 1)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT name, price FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+"", rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("project products: %w", err)
+	}
+	defer rows.Close()
+	out := []repository.ProductSummary{}
+	for rows.Next() {
+		var row repository.ProductSummary
+		if err := rows.Scan(&row.Name, &row.Price); err != nil {
+			return nil, fmt.Errorf("project products: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("project products: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
 func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]string, error) {
 	qs := make([]orm.Of[model.Product], len(s))
 	for i, x := range s {

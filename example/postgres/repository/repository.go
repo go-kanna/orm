@@ -30,6 +30,7 @@ type ProductRepository interface {
 	//kanna:conflict sku keep=currency
 	UpsertAll(ctx context.Context, products []model.Product) error
 	List(ctx context.Context, s ...scopes.Product) ([]model.Product, error)
+	ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 	//kanna:pluck name
 	Names(ctx context.Context, s ...scopes.Product) ([]string, error)
 	InsertTags(ctx context.Context, tags []model.Tag) error
@@ -75,4 +76,10 @@ type MonthSales struct {
 // TagInput supplies :tag; :orderID comes from the method parameter.
 type TagInput struct {
 	Tag string
+}
+
+// ProductSummary is the part of a product shown in a price list.
+type ProductSummary struct {
+	Name  string
+	Price int64
 }

@@ -198,3 +198,28 @@ func TestConditionsOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectionOnly(t *testing.T) {
+	t.Parallel()
+	var q orm.Of[order]
+	parent := orm.NewParent()
+	for _, tt := range []struct {
+		name      string
+		q         orm.Of[order]
+		wantError bool
+	}{
+		{"filters and pagination", q.Where("id > ", 1).OrderBy("id", false).Limit(2).Offset(1), false},
+		{"preload", orm.Preload(q, "Customer", q), true},
+		{"scalar", orm.Select(q, "Name", "customers", "name", parent,
+			[]string{"customer_id"}, []string{"id"}, q.One()), true},
+		{"batch", orm.PreloadMany(q, "Lines", parent, q.Many()), true},
+		{"invalid scope", q.Limit(-1), true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := tt.q.ProjectionOnly("ListCards"); (err != nil) != tt.wantError {
+				t.Fatalf("ProjectionOnly = %v, want error %t", err, tt.wantError)
+			}
+		})
+	}
+}

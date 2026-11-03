@@ -922,6 +922,22 @@ once instead, and `skip-locked` has it pass those rows over.
   A same-package method delegating to a generated helper keeps its lock on that helper.
 - A `Get`, a `Find`, a `First`, or a `List` named as if it locked, such as `GetForUpdate`, gets a warning without `//kanna:lock`.
 
+### Reading a projection
+
+A `Get...`, `Find...`, `First...`, or `List...` method may return a different named struct while taking the original model's scopes. The result type selects the columns; it needs no scope of its own:
+
+```go
+type ProductSummary struct {
+    Name  string
+    Price int64
+}
+
+// Inside a //kanna:repository interface:
+ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
+```
+
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. Fields match the original model's field names or mapped column names; column tags and `nullzero` handling are inherited. A projection field can use an `orm` column tag to choose a source column under another Go name. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Projection methods are read-only; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates, expressions, and joins can still use hand-written SQL returning a DTO.
+
 ## Hand-written SQL
 
 What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
