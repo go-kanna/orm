@@ -251,6 +251,7 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 | `orm:"-"` | カラムではない。kanna-orm はこのフィールドを読み書きしない |
 | `orm:"fk=order_id"` | [リレーション](#リレーション)で、候補が複数あるときにたどる外部キー |
 | `orm:"fk=order_lines.order_id"` | 同上。カラムだけでは特定できない場合のために、テーブルも指定する |
+| `orm:"relation=device_topics,column=topic"` | 関連する行の 1 カラムの値のスライス。[スカラーのリレーション](#スカラーのリレーション) |
 
 カラムのないフィールド、nil になれないフィールドが保持する NULL になりうるカラム、そして insert されるテーブルで、データベースが値を必須とするのにモデルにフィールドがないカラムは、いずれも生成を止めます。それ以外の場合、モデルにフィールドがないカラムには何もしません。
 
@@ -372,7 +373,7 @@ PostgreSQL では、リレーションのクエリは、行がいくつあって
 
 ### ページング
 
-`Limit` と `Offset` は SQL と同じようにページングします。行が増減してもずれないページにするには、ページの最後の行を `After` に渡します。スコープの順序でその続きから読み込みます:
+`Limit` と `Offset` は SQL と同じようにページングします。順序のない `Limit` や `Offset` は、SQL と同じく、データベースが読んだ順の行を残します。ページにどの行が入るかを決めるには、スコープで並べてください。行が増減してもずれないページにするには、ページの最後の行を `After` に渡します。スコープの順序でその続きから読み込みます:
 
 ```go
 s := scopes.Orders().Open().PlacedAtDesc().Limit(20)
@@ -422,7 +423,7 @@ DI に具体的な引数型を渡すには、`-constructor-db` で公開コン�
 
 これで `NewCategory(db *db.Reader) Category` が生成され、Bind では引き続きトランザクションの DBTX を使えます。フラグには公開型の完全なインポートパスと名前を指定し、必要なら先頭に `*` を付けます。生成器がそのパッケージを読み込み、選択したドライバの DBTX を実装しているか検証します。同一パッケージへの生成に限り指定できます。コンストラクタや Bind を手書きでラップする必要はありません。
 
-アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` から `r.upsert` を呼び、そのエラーを対応づけられます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
+アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` は、行を確かめてから `r.upsert` を呼べます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
 
 このヘルパーの生成は同一パッケージへの出力に限ります。ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
 
@@ -436,7 +437,10 @@ type Category interface {
 }
 
 func (r *category) Upsert(ctx context.Context, c model.Category) error {
-	return translateError(r.upsert(ctx, c))
+	if c.Name == "" {
+		return errors.New("a category needs a name")
+	}
+	return r.upsert(ctx, c)
 }
 ```
 
@@ -483,31 +487,17 @@ func NewOrderRepository(db DBTX) OrderRepository
 | 動詞 | 宣言 | 動作 |
 |---|---|---|
 | `Get` | `Get(ctx, id model.OrderID, s ...scopes.Order) (model.Order, error)` | パラメータで指定したキーの行を読み込む。なければ `orm.ErrNotFound` を返す |
-| `Find` | `Find(ctx, id model.OrderID, s ...scopes.Order) (*model.Order, error)` | 一意キーで任意の行を読み込む。なければ `nil, nil` を返す |
+| `Find` | `Find(ctx, id model.OrderID, s ...scopes.Order) (*model.Order, error)` | パラメータで指定したキーの行を読み込む。なければ `nil, nil` を返す |
 | `First` | `First(ctx, s ...scopes.Order) (model.Order, error)` | スコープにマッチする最初の行を読み込む。なければ `orm.ErrNotFound` を返す |
 | `List` | `List(ctx, s ...scopes.Order) ([]model.Order, error)` | スコープにマッチするすべての行を読み込む |
 | `Count` | `Count(ctx, s ...scopes.Order) (int64, error)` | スコープにマッチする行を数える |
 | `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)` | マッチする行があるかどうかを返す |
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`、または `error` のみを返す形 | 行を 1 つ、または[複数](#複数行の書き込み)書き込む |
-| `Update` | `Update(ctx, o model.Order) error` | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
+| `Update` | `Update(ctx, o model.Order) error`、または[変更セット](#指定したカラムだけを更新する)を受け取る形 | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
 | `Upsert` | `Upsert(ctx, o model.Order) error` | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
-| `Delete` | `Delete(ctx, id model.OrderID) error`、または `Delete(ctx, s ...scopes.Order) (int64, error)` | そのキーの行、またはスコープにマッチする行を削除する |
+| `Delete` | `Delete(ctx, id model.OrderID) error`、または[スコープを受け取る形](#スコープで削除対象を選ぶ) | そのキーの行、またはスコープにマッチする行を削除する |
 
 `Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたはユニークキーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。ただし、`Limit`、`Offset`、`After`、`Before` で行の一部だけを残すスコープは、キーが指す行そのものを外しうるのでエラーになります。キー引数はポインタではなく値を受け取ります。nil は何にもマッチしない `= NULL` で比べることになるので、ポインタのキー引数は生成を止めます。NULL の行はスコープの `IsNull` で絞り込みます。複数行の候補から一つ選ぶ場合は `First` を使います。スコープの順序で先頭の行を、スコープに順序がなければ主キーの順で先頭の行を返します。ポインタを返す `Find...` は、結果の構造体へのポインタでもスカラーへのポインタでも、同じ不在時の契約を保ったまま手書き SQL でも実装できます。スカラーの場合は nil が「行がない」を表すので、NULL にならない列を読みます。
-
-行ではなくカラムの値を返す `Get`・`First`・`Find`・`List` は、そのカラムを読みます。読むのは、名前の動詞の後ろが表すフィールドのカラムで、`GetName` なら `Name` です。`List` では複数形で、`ListNames` なら `Name`、`ListCustomerIDs` なら `CustomerID` です。戻り値は projection と同じく、フィールドの型の値、`Find` ならそのポインタ、`List` ならそのスライスです。名前が言うのは何を読むかだけです。どの行かはいつもどおりキーとスコープで言うので、`ListNamesByPrice` のような名前は生成を止めます。条件・並び順・件数制限・オフセット・カーソル・`//kanna:lock` は行を読むときと同じように使えます。関連を読み込むスコープは、読み込む先の行がないのでエラーです。重複値は保持し、該当行がなければ空のスライスを返します。
-
-```go
-ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
-```
-
-```go
-names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
-```
-
-両 DB の example では、このメソッドで価格を絞った商品名を取得し、モデル全体を読み込まずに値の一覧を返します。
-
-
 
 ```go
 // customerID is customer_id: the orders of one customer.
@@ -615,7 +605,7 @@ PostgreSQL では、モデルを返すメソッドが RETURNING で DB の値を
 
 UPDATE では、タグを指定した非キーのフィールドもモデルの値を書き込みます。Upsert は競合時に、タグを指定したカラムの保存済みの値を DB のデフォルト値に戻さずに保持します。`keep=` を指定する必要はありません。`updated_at` のようなカラムも競合時に更新しないので、トリガーで代入してください。
 
-**MySQL の制約:** RETURNING の代替処理や、一意キーを自動で探す処理は追加しません。従来の AUTO_INCREMENT、入力済みの主キー、Upsert に明示した競合キーによる読み戻しを使います。`default` がその読み戻しに必要なキーを省略する場合、モデルを返すメソッドは生成エラーになります。`error` のみを返すメソッドは読み戻しが不要なので省略できます。一括書き込みからモデルを返せない既存の制約も維持します。
+**MySQL では**、RETURNING がないので、モデルを返すメソッドは、AUTO_INCREMENT、書き込んだ主キー、または Upsert の衝突キーで行を読み戻します。その読み戻しに要るキーを `default` が省くと、モデルを返すメソッドは生成を止めます。`error` だけを返すメソッドは読み戻さないので、省いても構いません。MySQL の一括書き込みはモデルを返しません。
 
 ### Upsert
 
@@ -686,6 +676,74 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
 - `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込んでください。
+
+### 指定したカラムだけを更新する
+
+各 scope に型付きの変更セットを生成します。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
+
+```go
+changes := scopes.CustomerChanges().
+    SetName("Ann Lee").
+    SetPhone(nil)
+```
+
+setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込み、同じカラムを再指定した場合は最後の値を使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・関連フィールドには setter を生成しません。空の変更セットはエラーになります。
+
+対象の一意キーを更新値と分けて宣言し、通常の条件スコープを追加します。
+
+```go
+UpdatePhone(ctx context.Context, id model.CustomerID,
+    c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error)
+
+updated, err := repo.UpdatePhone(ctx, customerID,
+    scopes.CustomerChanges().SetPhone(new("050-1234-5678")),
+    scopes.Customers().PhoneIsNull())
+```
+
+change set の Update は、書き換える行をキーか scope（または両方）で選びます。どちらも受け取らない宣言は、全行を書き換えるのではなく生成時エラーにします。PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。従来のモデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値や preload は読み込みません。
+
+複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。WHERE 条件のない更新、並び順、ページング、関連取得のスコープは拒否します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言は生成エラーとし、別 SELECT による読み戻しは行いません。
+
+両 DB の example は、この方法で顧客の電話番号を更新し、`SetPhone(nil)` で消します。
+
+
+### スコープで削除対象を選ぶ
+
+スコープを受け取る `Delete` は、削除した行数を返します。どの行かは、条件・並び順・ページングで言います。
+
+```go
+Delete(ctx context.Context, s ...scopes.Order) (int64, error)
+
+n, err := repo.Delete(ctx, scopes.Orders().
+    Open().
+    PlacedAtLt(before).
+    PlacedAtAsc().
+    IDAsc().
+    Limit(batch))
+```
+
+ページングがなければ条件に一致する全行を削除します。Limit・Offset がある場合はサブクエリで対象のキーを選び、1つの文でその行を削除します。PostgreSQL／MySQL の両方で、複合主キーと NULL を許さない一意キーに対応します。どちらのキーもないテーブルでは通常の条件付き削除は利用できますが、ページングによる削除は利用できません。
+
+Limit があっても WHERE 条件は必須です。ページングには明示した並び順が必要で、同じ値の行を安定して選ぶには `IDAsc()` のように一意キーで順序を確定させます。`After` や `Before` で続けるページでも対象を選べます。Limit・Offset・カーソルのない並び順や、関連取得のスコープは無視せずエラーにします。`Limit(0)` や該当行なしは `orm.ErrNotFound` ではなく削除件数 0 を返します。
+
+キーで削除する `Delete(ctx, id) error` は、そのキーの行がなければ `orm.ErrNotFound` を返します。2 つを区別するのは、名前ではなくメソッドの形です。両 DB の example では、条件に合う注文を古い順に件数を制限して削除します。
+
+PostgreSQL ではスライスを返すと `DELETE … RETURNING` を生成し、削除した行を同じ SQL で返します。
+
+```go
+DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
+
+type DeletedOrder struct {
+    ID         model.OrderID
+    CustomerID model.CustomerID
+}
+
+deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
+    Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
+```
+
+元モデルと、読み取りの projection と同じフィールド対応・型の規則に従う専用の型を返せます。`RETURNING` には返却型のカラムだけを指定し、関連は取得しません。キー引数と scope も併用できます。条件やページングの要件は上記と同じです。該当行なしと `Limit(0)` は `orm.ErrNotFound` ではなく空の非 nil スライスを返します。並び順は削除対象の選択に使い、返却行の順序は保証しません。MySQL は `DELETE RETURNING` を持たないため、スライスを返す宣言は生成時にエラーにします。
 
 ### 行ロック
 
@@ -759,6 +817,20 @@ repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuer
 Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
 フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。pgx では、`r.db.Exec`、`r.db.Query`、`r.db.QueryRow` は DBTX と同じです。`database/sql` では、`r.db.ExecContext` は同じで、`r.db.QueryContext` と `r.db.QueryRowContext` は `*sql.Rows` と `*sql.Row` の代わりに `impl.Rows` と `impl.Row` を返します。`Next`、`Scan`、`Err`、`Close` で同じように読めます。フックが行を読み終えたことを知るために包んでいます。両 DB の example に、実行した文を出す After を渡す例があります。
+
+### カラムの値を読む
+
+行ではなくカラムの値を返す `Get`・`First`・`Find`・`List` は、そのカラムを読みます。読むのは、名前の動詞の後ろが表すフィールドのカラムで、`GetName` なら `Name` です。`List` では複数形で、`ListNames` なら `Name`、`ListCustomerIDs` なら `CustomerID` です。戻り値は projection と同じく、フィールドの型の値、`Find` ならそのポインタ、`List` ならそのスライスです。名前が言うのは何を読むかだけです。どの行かはいつもどおりキーとスコープで言うので、`ListNamesByPrice` のような名前は生成を止めます。条件・並び順・件数制限・オフセット・カーソル・`//kanna:lock` は行を読むときと同じように使えます。関連を読み込むスコープは、読み込む先の行がないのでエラーです。重複値は保持し、該当行がなければ空のスライスを返します。
+
+```go
+ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
+```
+
+```go
+names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+```
+
+両 DB の example は、この方法で手ごろな価格の商品名を読みます。
 
 ### 専用の型へ読み込む projection
 
@@ -1012,76 +1084,6 @@ make bench      # run the benchmarks in a container next to the PostgreSQL of db
 ```
 
 [`bench/postgres`](bench/postgres) は、kanna-orm を pgx 単体、sqlc、GORM、bun、ent と比較して計測します。結果と計測方法は、その README にあります。
-
-
-
-### 指定したカラムだけを更新する
-
-各 scope に型付きの変更セットを生成します。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
-
-```go
-changes := scopes.CustomerChanges().
-    SetName("Ann Lee").
-    SetPhone(nil)
-```
-
-setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込み、同じカラムを再指定した場合は最後の値を使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・関連フィールドには setter を生成しません。空の変更セットはエラーになります。
-
-対象の一意キーを更新値と分けて宣言し、通常の条件スコープを追加します。
-
-```go
-UpdatePhone(ctx context.Context, id model.CustomerID,
-    c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error)
-
-updated, err := repo.UpdatePhone(ctx, customerID,
-    scopes.CustomerChanges().SetPhone(new("050-1234-5678")),
-    scopes.Customers().PhoneIsNull())
-```
-
-change set の Update は、書き換える行をキーか scope（または両方）で選びます。どちらも受け取らない宣言は、全行を書き換えるのではなく生成時エラーにします。PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。従来のモデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値や preload は読み込みません。
-
-複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。WHERE 条件のない更新、並び順、ページング、関連取得のスコープは拒否します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言は生成エラーとし、別 SELECT による読み戻しは行いません。
-
-PostgreSQL／MySQL の example では、電話番号だけの更新、`SetPhone(nil)` による NULL 設定、未指定フィールドの保持、条件不一致時のエラーを実行して確認します。
-
-
-### スコープで削除対象を選ぶ
-
-スコープを受け取る `Delete` は削除件数を返します。`All` や `Batch` という接尾辞は不要で、条件・並び順・ページングで対象を指定します。
-
-```go
-Delete(ctx context.Context, s ...scopes.Order) (int64, error)
-
-n, err := repo.Delete(ctx, scopes.Orders().
-    Open().
-    PlacedAtLt(before).
-    PlacedAtAsc().
-    IDAsc().
-    Limit(batch))
-```
-
-ページングがなければ条件に一致する全行を削除します。Limit・Offset がある場合はサブクエリで対象のキーを選び、1つの文でその行を削除します。PostgreSQL／MySQL の両方で、複合主キーと NULL を許さない一意キーに対応します。どちらのキーもないテーブルでは通常の条件付き削除は利用できますが、ページングによる削除は利用できません。
-
-Limit があっても WHERE 条件は必須です。ページングには明示した並び順が必要で、同じ値の行を安定して選ぶには `IDAsc()` のように一意キーで順序を確定させます。既存のキーセットカーソルでも対象を選べます。Limit・Offset・カーソルのない並び順や、関連取得のスコープは無視せずエラーにします。`Limit(0)` や該当行なしは `orm.ErrNotFound` ではなく削除件数 0 を返します。
-
-従来の `Delete(ctx, id) error` は、該当行なしをエラーにする挙動を維持します。単一行の削除とスコープによる削除の区別は `All` という接尾辞ではなくメソッドの型で行います。両 DB の example では、条件に合う注文を古い順に件数を制限して削除します。
-
-PostgreSQL ではスライスを返すと `DELETE … RETURNING` を生成し、削除した行を同じ SQL で返します。
-
-```go
-DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
-DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
-
-type DeletedOrder struct {
-    ID         model.OrderID
-    CustomerID model.CustomerID
-}
-
-deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
-    Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
-```
-
-元モデルと、読み取りの projection と同じフィールド対応・型の規則に従う専用の型を返せます。`RETURNING` には返却型のカラムだけを指定し、関連は取得しません。キー引数と scope も併用できます。条件やページングの要件は上記と同じです。該当行なしと `Limit(0)` は `orm.ErrNotFound` ではなく空の非 nil スライスを返します。並び順は削除対象の選択に使い、返却行の順序は保証しません。MySQL は `DELETE RETURNING` を持たないため、スライスを返す宣言は生成時にエラーにします。PostgreSQL の example では削除した注文を projection で返します。
 
 ## ライセンス
 

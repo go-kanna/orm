@@ -288,6 +288,7 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
 | `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
 | `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
+| `orm:"relation=device_topics,column=topic"` | a slice of the values of a column of the related rows: a [scalar relation](#scalar-relations) |
 
 A field with no column, a column that may be NULL held by a field that cannot be nil, and, on a table something inserts
 into, a column the database requires a value for and the model has no field for, all stop generation. A column the
@@ -469,6 +470,8 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 // ORDER BY placed_at DESC, id DESC LIMIT 20
 ```
 
+- A `Limit` or an `Offset` with no order keeps rows in whatever order the database reads them, as SQL does: order a
+  page by the scopes for it to say which rows it holds.
 - When the order does not end in the primary key, it gets the key, in the direction of its last column, on the first
   page as on those `After` and `Before` continue to, so that rows equal in the order come in one, the same on every
   page. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
@@ -527,8 +530,8 @@ binding wrapper of your own.
 
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
 other than `Bind` is left to your implementation. When you implement a method with a recognized verb or SQL query,
-kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can call `r.upsert`
-before mapping its error. kanna-orm writes the helper only when the package calls it, so a method running SQL of
+kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can check its row
+before calling `r.upsert`. kanna-orm writes the helper only when the package calls it, so a method running SQL of
 its own needs none. This helper behavior applies only to same-package generation. The helper has the same
 signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
 already be declared. Queries belong in the destination's
@@ -544,7 +547,10 @@ type Category interface {
 }
 
 func (r *category) Upsert(ctx context.Context, c model.Category) error {
-	return translateError(r.upsert(ctx, c))
+	if c.Name == "" {
+		return errors.New("a category needs a name")
+	}
+	return r.upsert(ctx, c)
 }
 ```
 
@@ -602,34 +608,20 @@ tell the rest: a parameter of a model type is a row to write, the scopes say how
 named after a field of the model, as `customerID` after `CustomerID`, and the rows must equal it in the field's column.
 The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not name a parameter: `memo` does.
 
-| Verb     | Declared as                                                                                    | Does                                                                                  |
-|----------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
-| `Get`    | `Get(ctx, id model.OrderID, s ...scopes.Order) (model.Order, error)`                           | reads the row whose key the parameters give, or returns `orm.ErrNotFound`             |
-| `Find` | `Find(ctx, id model.OrderID, s ...scopes.Order) (*model.Order, error)` | reads an optional row by a unique key; returns `nil, nil` when absent |
-| `First`  | `First(ctx, s ...scopes.Order) (model.Order, error)`                                           | reads the first row the scopes match, or returns `orm.ErrNotFound`                    |
-| `List`   | `List(ctx, s ...scopes.Order) ([]model.Order, error)`                                          | reads every row the scopes match                                                      |
-| `Count`  | `Count(ctx, s ...scopes.Order) (int64, error)`                                                 | counts the rows the scopes match                                                      |
-| `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)`                                                 | reports whether any row matches                                                       |
-| `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`, or with `error` alone                       | writes a row, or [many](#writing-many-rows)                                           |
-| `Update` | `Update(ctx, o model.Order) error`                                                             | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
-| `Upsert` | `Upsert(ctx, o model.Order) error`                                                             | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
-| `Delete` | `Delete(ctx, id model.OrderID) error`, or `Delete(ctx, s ...scopes.Order) (int64, error)` | deletes the row with the key, or the rows the scopes match                            |
+| Verb     | Declared as                                                                            | Does                                                                                  |
+|----------|----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| `Get`    | `Get(ctx, id model.OrderID, s ...scopes.Order) (model.Order, error)`                   | reads the row whose key the parameters give, or returns `orm.ErrNotFound`             |
+| `Find`   | `Find(ctx, id model.OrderID, s ...scopes.Order) (*model.Order, error)`                 | reads the row whose key the parameters give, or returns `nil, nil`                    |
+| `First`  | `First(ctx, s ...scopes.Order) (model.Order, error)`                                   | reads the first row the scopes match, or returns `orm.ErrNotFound`                    |
+| `List`   | `List(ctx, s ...scopes.Order) ([]model.Order, error)`                                  | reads every row the scopes match                                                      |
+| `Count`  | `Count(ctx, s ...scopes.Order) (int64, error)`                                         | counts the rows the scopes match                                                      |
+| `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)`                                         | reports whether any row matches                                                       |
+| `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`, or with `error` alone               | writes a row, or [many](#writing-many-rows)                                           |
+| `Update` | `Update(ctx, o model.Order) error`, or with a [change set](#updating-selected-columns) | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
+| `Upsert` | `Upsert(ctx, o model.Order) error`                                                     | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
+| `Delete` | `Delete(ctx, id model.OrderID) error`, or [with scopes](#selecting-rows-to-delete)     | deletes the row with the key, or the rows the scopes match                            |
 
 `Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, with the same absence contract; a scalar one reads a column that is never NULL, as its nil means no row.
-
-A `Get`, a `First`, a `Find`, or a `List` returning the values of a column rather than rows reads that column: the one of the field its name says after the verb, as `GetName` reads `Name`, or, of a `List`, the plural of, as `ListNames` reads `Name` and `ListCustomerIDs` reads `CustomerID`. It returns a value of the field's type, a pointer to one of a `Find`, or a slice of them of a `List`, as a projection does. The name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering, limits, offsets, cursors, and `//kanna:lock` work as for rows; a scope loading a relation is an error, as there is no row to load it into. Duplicate values are preserved and no matching rows returns an empty slice.
-
-```go
-ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
-```
-
-```go
-names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
-```
-
-Both database examples use this method to read the affordable product names without loading whole products.
-
-
 
 ```go
 // customerID is customer_id: the orders of one customer.
@@ -781,11 +773,10 @@ UPDATE keeps writing the model's values for tagged non-key fields. An upsert kee
 conflict rather than reset it to its database default, with no `keep=` needed. It does not refresh a column such as
 `updated_at` on a conflict either: let a trigger assign one.
 
-**MySQL limitation:** this option does not add a RETURNING substitute or a new unique-key discovery mechanism.
-Existing readback through AUTO_INCREMENT, a supplied primary key, or an upsert's explicit conflict key continues to
-work. If `default` omits a key needed by that existing readback, generation fails for a model-returning method.
-An error-only method needs no readback and can still omit the column. MySQL's existing restriction on returning
-models from bulk writes also remains in place.
+**On MySQL**, which has no RETURNING, a method returning the model reads its row back by AUTO_INCREMENT, by a primary
+key it writes, or by an upsert's conflict key. When `default` leaves out the key that read needs, generation stops at a
+method returning the model; one returning `error` alone reads nothing back and may leave it out. A bulk write returns
+no model on MySQL.
 
 ### Upserting
 
@@ -867,6 +858,74 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
   one by one.
 
+### Updating selected columns
+
+Each scope generates a typed change set. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
+
+```go
+changes := scopes.CustomerChanges().
+    SetName("Ann Lee").
+    SetPhone(nil)
+```
+
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. Setting the same column again replaces its earlier value. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, and relations have no setters. An empty change set is an error.
+
+Declare the unique key separately from the assigned values and add ordinary condition scopes:
+
+```go
+UpdatePhone(ctx context.Context, id model.CustomerID,
+    c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error)
+
+updated, err := repo.UpdatePhone(ctx, customerID,
+    scopes.CustomerChanges().SetPhone(new("050-1234-5678")),
+    scopes.Customers().PhoneIsNull())
+```
+
+An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes too, and may return the updated model. Returned models contain mapped table columns; related values and preloads are not loaded by an update.
+
+For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. The generated method requires at least one WHERE condition and rejects ordering, pagination, and relation-loading scopes. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
+
+Both database examples update a customer's phone this way, and clear it with `SetPhone(nil)`.
+
+
+### Selecting rows to delete
+
+A `Delete` taking scopes returns the number of rows it deleted. Its conditions, order, and page say which rows:
+
+```go
+Delete(ctx context.Context, s ...scopes.Order) (int64, error)
+
+n, err := repo.Delete(ctx, scopes.Orders().
+    Open().
+    PlacedAtLt(before).
+    PlacedAtAsc().
+    IDAsc().
+    Limit(batch))
+```
+
+Without pagination, the method deletes all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and deletes those rows in one statement. Composite primary keys and non-null unique keys are supported, on PostgreSQL and MySQL. A table without either kind of key can still use an ordinary condition-based delete, but cannot use paged deletion.
+
+A WHERE condition is required even when a limit is supplied. Paged deletion requires an explicit order; end it in a unique key, such as `IDAsc()`, to choose consistently among equal sort values. A page continued by `After` or `Before` selects them too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
+
+A `Delete(ctx, id) error` by a key returns `orm.ErrNotFound` when no row has it; the shape of the method, not its name, tells the two apart. Both database examples delete the oldest matching order with a limit.
+
+On PostgreSQL, a slice result generates `DELETE … RETURNING` to return the deleted rows in the same statement:
+
+```go
+DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
+
+type DeletedOrder struct {
+    ID         model.OrderID
+    CustomerID model.CustomerID
+}
+
+deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
+    Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
+```
+
+The result can be the original model or a dedicated projection type with the same field mapping and type rules as read projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty, non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed order. MySQL has no `DELETE RETURNING`, so a slice result is rejected during generation.
+
 ### Locking rows
 
 `//kanna:lock` has a `Get`, a `Find`, a `First`, or a `List` lock the rows it reads until the transaction ends, so that what was
@@ -947,7 +1006,21 @@ repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuer
 
 A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
 
-Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation: On pgx, `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` are those of DBTX. On `database/sql`, `r.db.ExecContext` is, and `r.db.QueryContext` and `r.db.QueryRowContext` return `impl.Rows` and `impl.Row` in place of `*sql.Rows` and `*sql.Row`, read by `Next`, `Scan`, `Err`, and `Close` as those are, for the hooks to see the rows read to the end. Both database examples give an After that prints each statement.
+Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. On pgx, `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` are those of DBTX. On `database/sql`, `r.db.ExecContext` is, and `r.db.QueryContext` and `r.db.QueryRowContext` return `impl.Rows` and `impl.Row` in place of `*sql.Rows` and `*sql.Row`, read by `Next`, `Scan`, `Err`, and `Close` as those are, for the hooks to see the rows read to the end. Both database examples give an After that prints each statement.
+
+### Reading the values of a column
+
+A `Get`, a `First`, a `Find`, or a `List` returning the values of a column rather than rows reads that column: the one of the field its name says after the verb, as `GetName` reads `Name`, or, of a `List`, the plural of, as `ListNames` reads `Name` and `ListCustomerIDs` reads `CustomerID`. It returns a value of the field's type, a pointer to one of a `Find`, or a slice of them of a `List`, as a projection does. The name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering, limits, offsets, cursors, and `//kanna:lock` work as for rows; a scope loading a relation is an error, as there is no row to load it into. Duplicate values are preserved and no matching rows returns an empty slice.
+
+```go
+ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
+```
+
+```go
+names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc())
+```
+
+Both database examples read the affordable product names this way.
 
 ### Reading a projection
 
@@ -1261,76 +1334,6 @@ make bench      # run the benchmarks in a container next to the PostgreSQL of db
 
 [`bench/postgres`](bench/postgres) measures kanna-orm against pgx alone, sqlc, GORM, bun, and ent; its README has the
 results, and how they were taken.
-
-
-
-### Updating selected columns
-
-Each scope generates a typed change set. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
-
-```go
-changes := scopes.CustomerChanges().
-    SetName("Ann Lee").
-    SetPhone(nil)
-```
-
-Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. Setting the same column again replaces its earlier value. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, and relations have no setters. An empty change set is an error.
-
-Declare the unique key separately from the assigned values and add ordinary condition scopes:
-
-```go
-UpdatePhone(ctx context.Context, id model.CustomerID,
-    c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error)
-
-updated, err := repo.UpdatePhone(ctx, customerID,
-    scopes.CustomerChanges().SetPhone(new("050-1234-5678")),
-    scopes.Customers().PhoneIsNull())
-```
-
-An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. Existing whole-model updates also accept additional condition scopes and may return the updated model. Returned models contain mapped table columns; related values and preloads are not loaded by an update.
-
-For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. The generated method requires at least one WHERE condition and rejects ordering, pagination, and relation-loading scopes. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
-
-The PostgreSQL and MySQL examples update a customer's phone, clear it with `SetPhone(nil)`, verify untouched fields, and reject a failed condition.
-
-
-### Selecting rows to delete
-
-A scope-based `Delete` returns the deleted row count. No `All` or `Batch` suffix is required; conditions, ordering, and pagination describe the target rows:
-
-```go
-Delete(ctx context.Context, s ...scopes.Order) (int64, error)
-
-n, err := repo.Delete(ctx, scopes.Orders().
-    Open().
-    PlacedAtLt(before).
-    PlacedAtAsc().
-    IDAsc().
-    Limit(batch))
-```
-
-Without pagination, the method deletes all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and deletes those rows in one statement. Composite primary keys and non-null unique keys are supported, on PostgreSQL and MySQL. A table without either kind of key can still use an ordinary condition-based delete, but cannot use paged deletion.
-
-A WHERE condition is required even when a limit is supplied. Paged deletion requires an explicit order; end it in a unique key, such as `IDAsc()`, to choose consistently among equal sort values. Existing keyset cursor scopes can select targets too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
-
-The existing `Delete(ctx, id) error` form retains its missing-row error behavior. Method shape, rather than an `All` suffix, distinguishes it from the scoped count-returning form. Both database examples use the scoped `Delete` to remove the oldest matching order with a limit.
-
-On PostgreSQL, a slice result generates `DELETE … RETURNING` to return the deleted rows in the same statement:
-
-```go
-DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
-DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
-
-type DeletedOrder struct {
-    ID         model.OrderID
-    CustomerID model.CustomerID
-}
-
-deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
-    Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
-```
-
-The result can be the original model or a dedicated projection type with the same field mapping and type rules as read projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty, non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed order. MySQL has no `DELETE RETURNING`, so a slice result is rejected during generation. The PostgreSQL example returns a projection of each deleted order.
 
 ## License
 
