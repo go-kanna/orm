@@ -1090,7 +1090,7 @@ func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
 
 // CustomersOf runs the query of its name in queries.sql.
 func (r OrderRepository) CustomersOf(ctx context.Context, ids []model.OrderID) ([]int64, error) {
-	q, args := impl.Expand([]string{`SELECT customer_id FROM orders WHERE id IN (`, `) ORDER BY id`}, impl.List(ids))
+	q, args := impl.Expand([]string{`SELECT customer_id FROM orders WHERE id IN (`, `) ORDER BY id`}, impl.InList(ids))
 	rows, err := r.db.query(ctx, q, args...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))

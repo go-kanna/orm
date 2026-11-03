@@ -21,6 +21,8 @@ var CastType = castType
 
 var OuterOrderWithoutLimit = outerOrderWithoutLimit
 
+var ListOf = listOf
+
 // Readable is readable, for a Go type named by its basic kind.
 func Readable(kind types.BasicKind, dbType string) (string, bool) {
 	return readable(types.Typ[kind], dbType)

@@ -837,7 +837,7 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 		values := args[2:]
 		for i, a := range m.query.args {
 			if expands(a.typ) {
-				values[i] = e.ref("List") + "(" + values[i] + ")"
+				values[i] = e.ref(listOf(m.query.pieces[i], m.query.pieces[i+1])) + "(" + values[i] + ")"
 			}
 		}
 		pieces := make([]string, 0, len(m.query.pieces))

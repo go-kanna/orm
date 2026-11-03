@@ -241,7 +241,7 @@ func (e emitter) written(w sqlScope) {
 	parts := []string{goString(w.pieces[0])}
 	for i, a := range w.args {
 		if e.d == snapshot.MySQL && expands(typeOf[a]) {
-			parts = append(parts, e.ref("List")+"("+locals[a]+")")
+			parts = append(parts, e.ref(listOf(w.pieces[i], w.pieces[i+1]))+"("+locals[a]+")")
 		} else {
 			parts = append(parts, locals[a])
 		}

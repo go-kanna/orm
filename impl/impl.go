@@ -230,19 +230,29 @@ func (c *cond) append(d cond) {
 
 // List is an argument standing for each of vs in turn, so that a condition can say IN (...) of it: it renders as a
 // placeholder for each, and as NULL, which matches nothing, when there are none.
-func List[T any](vs []T) any {
-	l := make(list, len(vs))
+func List[T any](vs []T) any { return newList(vs, "NULL") }
+
+// InList is List as IN (...) takes it, right between the parentheses: with no values, it renders as a subquery of no
+// rows, so that IN of it matches no row, and NOT IN of it every row, as of the empty set.
+func InList[T any](vs []T) any { return newList(vs, "SELECT NULL FROM DUAL WHERE FALSE") }
+
+// list is the values of a List or an InList, and what it renders as when there are none.
+type list struct {
+	values []any
+	none   string
+}
+
+func newList[T any](vs []T, none string) list {
+	l := list{values: make([]any, len(vs)), none: none}
 	for i, v := range vs {
-		l[i] = v
+		l.values[i] = v
 	}
 	return l
 }
 
-type list []any
-
 // Expand writes a statement of MySQL from pieces, the SQL around its parameters, and args, one for each: a ? for an
-// argument, and a ? for each of the values of a List, or NULL when it has none, with the arguments of the statement in
-// their order.
+// argument, and a ? for each of the values of a List or an InList, or what it renders as when it has none, with the
+// arguments of the statement in their order.
 func Expand(pieces []string, args ...any) (string, []any) {
 	var (
 		b   strings.Builder
@@ -255,11 +265,11 @@ func Expand(pieces []string, args ...any) (string, []any) {
 		case !ok:
 			b.WriteByte('?')
 			out = append(out, arg)
-		case len(l) == 0:
-			b.WriteString("NULL")
+		case len(l.values) == 0:
+			b.WriteString(l.none)
 		default:
-			b.WriteString(strings.Repeat("?, ", len(l)-1) + "?")
-			out = append(out, l...)
+			b.WriteString(strings.Repeat("?, ", len(l.values)-1) + "?")
+			out = append(out, l.values...)
 		}
 		b.WriteString(pieces[i+1])
 	}

@@ -352,7 +352,7 @@ func (r OrderRepository) ListApprovers(ctx context.Context, ids []model.OrderID)
 FROM orders AS o
 LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
 WHERE o.id IN (`, `)
-ORDER BY o.id`}, impl.List(ids))
+ORDER BY o.id`}, impl.InList(ids))
 	rows, err := r.db.query(ctx, q, args...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))

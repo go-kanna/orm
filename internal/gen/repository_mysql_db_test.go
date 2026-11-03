@@ -14,6 +14,7 @@ import (
 	gomysql "github.com/go-sql-driver/mysql"
 
 	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
 	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
@@ -408,6 +409,23 @@ func TestGeneratedRepository_MySQLSliceArgument(t *testing.T) {
 		got, err := repo.CustomersOf(ctx, tt.ids)
 		if err != nil || !slices.Equal(got, tt.want) {
 			t.Errorf("CustomersOf(%v) = %v, %v; want %v", tt.ids, got, err, tt.want)
+		}
+	}
+}
+
+// A list of no values right in IN (...) is the empty set on MySQL: IN of it matches no row, and NOT IN of it every
+// row.
+func TestInList_MySQL(t *testing.T) {
+	t.Parallel()
+	db := mysqlDB(t)
+	for head, want := range map[string]int{
+		"SELECT count(*) FROM (SELECT 1 AS id) AS t WHERE id IN (":     0,
+		"SELECT count(*) FROM (SELECT 1 AS id) AS t WHERE id NOT IN (": 1,
+	} {
+		q, args := impl.Expand([]string{head, ")"}, impl.InList([]int(nil)))
+		var n int
+		if err := db.QueryRowContext(t.Context(), q, args...).Scan(&n); err != nil || n != want {
+			t.Errorf("%s = %d, %v; want %d", q, n, err, want)
 		}
 	}
 }
