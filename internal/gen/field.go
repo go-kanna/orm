@@ -130,6 +130,11 @@ func (m *matcher) match(st *types.Struct, path []string) {
 					label, written, f.Name()).WithHints(`name the foreign key it follows with orm:"fk=<column>"`))
 				continue
 			}
+			if tag.nullzero || tag.insertDefault {
+				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is for a column, and %s is a relation`,
+					label, written, f.Name()))
+				continue
+			}
 			m.relations = append(m.relations, relation{path: fpath, typ: t, fk: tag.fk, pos: pos})
 		default:
 			typ := types.TypeString(t, relativeTo(f.Pkg()))

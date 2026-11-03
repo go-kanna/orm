@@ -523,6 +523,18 @@ func TestRepositories_QueryMistakes(t *testing.T) {
 			"error)\n", monthCounts, described,
 			header + "error: -- query: MonthCounts: struct{Month time.Time} has no field for the column count\n" +
 				"  give struct{Month time.Time} a field for it, or name the column after one with AS"},
+		{"a field neither a column nor a relation", "\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ " +
+			"Month time.Time; Count int64; Meta map[string]int }, error)\n", monthCounts, described,
+			"repository.go:24:93: error: Meta: map[string]int is neither a column nor a relation\n" +
+				`  hold the column in a type with a Scan method, or leave the field out with orm:"-"`},
+		{"a pointer embedded", "\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ *model.Order; " +
+			"Month time.Time; Count int64 }, error)\n", monthCounts, described,
+			"repository.go:24:70: error: Order: an embedded pointer may be nil, and so cannot be read into\n" +
+				`  embed Order itself, or leave it out with orm:"-"`},
+		{"a tag on an embedded struct", "\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ model.Order " +
+			"`orm:\"order\"`; Month time.Time; Count int64 }, error)\n", monthCounts, described,
+			`repository.go:24:69: error: Order: orm:"order" is on an embedded struct, whose fields hold the columns` +
+				"\n  tag those fields instead"},
 		{"a field of no column", "\tMonthCounts(ctx context.Context, since time.Time) ([]struct{ Month time.Time; " +
 			"Count int64; Total int64 }, error)\n", monthCounts, described,
 			header + "error: -- query: MonthCounts: the query returns no column total for struct{Month time.Time; " +

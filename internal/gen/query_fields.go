@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"go/token"
 	"go/types"
 	"reflect"
@@ -28,8 +29,16 @@ func queryColumns(fset *token.FileSet, row types.Type) ([]column, []diag.Diag) {
 			case !f.Exported():
 				ds = append(ds, diag.Errorf(pos, "%s: the code kanna-orm writes cannot reach an unexported field",
 					strings.Join(p, ".")).WithHints(`export it, or leave it out with orm:"-"`))
-			case f.Embedded() && isModel(t) && reflect.StructTag(st.Tag(i)).Get("orm") == "":
+			case f.Embedded() && isModel(t):
+				if written := reflect.StructTag(st.Tag(i)).Get("orm"); written != "" {
+					ds = append(ds, diag.Errorf(pos, `%s: orm:%q is on an embedded struct, whose fields hold the columns`,
+						strings.Join(p, "."), written).WithHints("tag those fields instead"))
+					continue
+				}
 				walk(t.Underlying().(*types.Struct), p) //nolint:forcetypeassert // isModel checks it
+			case f.Embedded() && isPointerTo(t, isModel):
+				ds = append(ds, diag.Errorf(pos, "%s: an embedded pointer may be nil, and so cannot be read into",
+					strings.Join(p, ".")).WithHints(fmt.Sprintf(`embed %s itself, or leave it out with orm:"-"`, f.Name())))
 			case holdsColumn(t):
 				name := tag.column
 				if name == "" {
@@ -41,6 +50,12 @@ func queryColumns(fset *token.FileSet, row types.Type) ([]column, []diag.Diag) {
 				}
 				columns = append(columns, column{path: p, typ: t, pos: pos,
 					col: snapshot.Column{Name: name}, nullzero: tag.nullzero, relationValue: tag.relation != ""})
+			case holdsModels(t):
+				// A relation, which the query does not read and With loads.
+			default:
+				ds = append(ds, diag.Errorf(pos, "%s: %s is neither a column nor a relation", strings.Join(p, "."),
+					types.TypeString(t, relativeTo(f.Pkg())),
+				).WithHints(`hold the column in a type with a Scan method, or leave the field out with orm:"-"`))
 			}
 		}
 	}
