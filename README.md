@@ -309,6 +309,11 @@ Their [readMemos step](example/postgres/memos.go) selects orders with `MemoIsNul
 stored as SQL NULL and read back as empty strings, while a non-empty memo remains unchanged. `note` is explicit here
 because the field is named `Memo`; a field named `Note` would need only `orm:",nullzero"`.
 
+What `nullzero` costs is the difference between NULL and `''`: an empty string is written as NULL, and both NULL and a
+`''` already in the table are read as the empty string. So a value read back may not find its row: `MemoEq("")`
+compares by `= ''`, which matches no NULL. Narrow to the absent ones with `MemoIsNull()`, and hold the column in a
+`*string` when NULL and `''` say different things.
+
 A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text`,
 `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a string for
 `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of. A type with `Scan` and `Value` methods
