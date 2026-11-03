@@ -78,6 +78,9 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	}
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("Get"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Order{}, err
@@ -94,7 +97,7 @@ func (r OrderRepository) First(ctx context.Context, s ...scopes.Order) (model.Or
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	q = q.Limit(1)
+	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Order{}, err
@@ -123,6 +126,9 @@ func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s 
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderTagSummary, error) {
 		if err := q.ProjectionOnly("GetTagSummary"); err != nil {
+			return nil, err
+		}
+		if err := q.Unpaged("GetTagSummary"); err != nil {
 			return nil, err
 		}
 		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "tags", Column: "name"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`, []string{`id`})
@@ -171,6 +177,9 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 		if err := q.ProjectionOnly("GetSummary"); err != nil {
 			return nil, err
 		}
+		if err := q.Unpaged("GetSummary"); err != nil {
+			return nil, err
+		}
 		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
 		if err != nil {
 			return nil, err
@@ -215,6 +224,9 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 	q = q.Where(`id = `, id)
 	read := func() ([]model.OrderSummary, error) {
 		if err := q.ProjectionOnly("FindSummary"); err != nil {
+			return nil, err
+		}
+		if err := q.Unpaged("FindSummary"); err != nil {
 			return nil, err
 		}
 		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
@@ -425,6 +437,9 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 	var q scope.Of[model.OrderLine]
 	q = q.Where(`order_id = `, orderID)
 	q = q.Where(`line_no = `, lineNo)
+	if err := q.Unpaged("GetLine"); err != nil {
+		return model.OrderLine{}, err
+	}
 	rows, err := selectOrderLines(ctx, r.executor, q, "")
 	if err != nil {
 		return model.OrderLine{}, err
@@ -441,6 +456,9 @@ func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (mo
 	}
 	var q scope.Of[model.Order]
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("GetForUpdate"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE`)
 	if err != nil {
 		return model.Order{}, err
@@ -457,6 +475,9 @@ func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (mod
 	}
 	var q scope.Of[model.Order]
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("GetForShare"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR SHARE`)
 	if err != nil {
 		return model.Order{}, err
@@ -477,6 +498,9 @@ func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...s
 	}
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("GetNoWait"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE NOWAIT`)
 	if err != nil {
 		return model.Order{}, err
@@ -496,7 +520,7 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (
 		qs[i] = x.Of()
 	}
 	q := impl.Combine(qs...)
-	q = q.Limit(1)
+	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return model.Order{}, err

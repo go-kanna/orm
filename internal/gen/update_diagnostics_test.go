@@ -17,7 +17,7 @@ func TestCommand_UpdateChangesDiagnostics(t *testing.T) {
 		name, method, want string
 		dialect            snapshot.Dialect
 	}{
-		{"missing unique key", "UpdateFields(ctx context.Context, ownerID *int64, c scopes.RecordChangeSet) error",
+		{"missing unique key", "UpdateFields(ctx context.Context, ownerID int64, c scopes.RecordChangeSet) error",
 			"single-row Update requires a unique key", snapshot.PostgreSQL},
 		{"neither keys nor scopes", "UpdateEvery(ctx context.Context, c scopes.RecordChangeSet) (int64, error)",
 			"an Update of a change set writes the rows its keys or scopes select, but it takes neither", snapshot.PostgreSQL},

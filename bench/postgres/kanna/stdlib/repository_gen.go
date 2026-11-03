@@ -111,6 +111,9 @@ var _ repository.OrderRepository = OrderRepository{}
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
 	var q scope.Of[model.Order]
 	q = q.Where(`id = `, id)
+	if err := q.Unpaged("Get"); err != nil {
+		return model.Order{}, err
+	}
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Order{}, err
