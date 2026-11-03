@@ -1019,6 +1019,23 @@ Limit があっても WHERE 条件は必須です。ページングには明示�
 
 従来の `Delete(ctx, id) error` は、該当行なしをエラーにする挙動を維持します。単一行の削除とスコープによる削除の区別は `All` という接尾辞ではなくメソッドの型で行います。両 DB の example では、条件に合う注文を古い順に件数を制限して削除します。
 
+PostgreSQL ではスライスを返すと `DELETE … RETURNING` を生成し、削除した行を同じ SQL で返します。
+
+```go
+DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
+
+type DeletedOrder struct {
+    ID         model.OrderID
+    CustomerID model.CustomerID
+}
+
+deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
+    Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
+```
+
+元モデルと、読み取りの projection と同じフィールド対応・型の規則に従う専用の型を返せます。`RETURNING` には返却型のカラムだけを指定し、関連は取得しません。キー引数と scope も併用できます。条件やページングの要件は上記と同じです。該当行なしと `Limit(0)` は `orm.ErrNotFound` ではなく空の非 nil スライスを返します。並び順は削除対象の選択に使い、返却行の順序は保証しません。MySQL は `DELETE RETURNING` を持たないため、スライスを返す宣言は生成時にエラーにします。PostgreSQL の example では削除した注文を projection で返します。
+
 ## ライセンス
 
 [MIT](./LICENSE)

@@ -2,6 +2,7 @@ package gen_test
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/go-kanna/orm"
@@ -11,6 +12,45 @@ import (
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres"
 	"github.com/go-kanna/orm/internal/gen/testdata/repository"
 )
+
+func TestDeleteReturning_Postgres(t *testing.T) {
+	t.Parallel()
+	onPostgres(t, func(t *testing.T, repo repository.OrderRepository) {
+		ctx := t.Context()
+		targets := postgres.Orders().IDIn(2, 3).TotalAsc().IDAsc()
+		if rows, err := repo.DeleteSummaries(ctx, targets.Limit(0)); err != nil || rows == nil || len(rows) != 0 {
+			t.Fatalf("zero limit: %+v, %v", rows, err)
+		}
+		for _, scope := range []postgres.Order{postgres.Orders(), targets.Limit(1).WithTags()} {
+			if _, err := repo.DeleteSummaries(ctx, scope); err == nil {
+				t.Fatal("unsafe or relation-loading deletion accepted")
+			}
+		}
+		before, err := repo.Get(ctx, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := repo.DeleteReturning(ctx, targets.Offset(1).Limit(1))
+		if err != nil || !reflect.DeepEqual(rows, []model.Order{before}) {
+			t.Fatalf("full deleted row: %+v, %v; want %+v", rows, err, before)
+		}
+		if _, err := repo.Get(ctx, 3); !errors.Is(err, orm.ErrNotFound) {
+			t.Fatalf("returned row still exists: %v", err)
+		}
+		before, err = repo.Get(ctx, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		summaries, err := repo.DeleteByCustomer(ctx, before.CustomerID, targets.Limit(1))
+		want := []repository.DeletedOrder{{ID: before.ID, Memo: before.Memo}}
+		if err != nil || !reflect.DeepEqual(summaries, want) {
+			t.Fatalf("projected deleted row: %+v, %v; want %+v", summaries, err, want)
+		}
+		if rows, err := repo.DeleteSummaries(ctx, targets.Limit(1)); err != nil || rows == nil || len(rows) != 0 {
+			t.Fatalf("empty batch: %+v, %v", rows, err)
+		}
+	})
+}
 
 func TestDeletePage_Postgres(t *testing.T) {
 	t.Parallel()

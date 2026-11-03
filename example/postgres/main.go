@@ -383,11 +383,12 @@ func (ex *example) shipNext(ctx context.Context) error {
 // deleteStale deletes the rows a scope matches.
 func (ex *example) deleteStale(ctx context.Context) error {
 	before := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
-	deleted, err := ex.orders.Delete(ctx, scopes.Orders().Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(1))
+	deleted, err := ex.orders.DeleteSummaries(ctx, scopes.Orders().Open().
+		PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(1))
 	if err != nil {
 		return fmt.Errorf("the open orders before March 5: %w", err)
 	}
-	fmt.Fprintf(ex.w, "deleted the open orders before March 5: %d\n", deleted)
+	fmt.Fprintf(ex.w, "deleted the open orders before March 5: %d (%v)\n", len(deleted), deleted)
 	return nil
 }
 

@@ -344,7 +344,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
 	notFound := e.notFound(m.target.table, names, args)
-	if m.projection != nil {
+	if m.projection != nil && m.verb != verbDelete {
 		e.projectedRead(m, sc, recv, sig, q, notFound)
 		return
 	}
@@ -391,6 +391,10 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("return %s, %s.Errorf(%q, %s)\n}\nreturn %s, nil\n", zero, e.fmtPkg(),
 			strings.ToLower(string(m.verb))+" "+m.target.table+": %w", err, n)
 	case verbDelete:
+		if m.result == resultRows {
+			e.deleteReturning(m, sc, recv, sig, q)
+			return
+		}
 		if m.result == resultCount {
 			e.deleteSelected(m, sc, recv, sig, q)
 			return

@@ -47,6 +47,7 @@ type OrderRepository interface { //nolint:interfacebloat // demonstrates order r
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	InsertApprovals(ctx context.Context, approvals []model.Approval) error
 	Delete(ctx context.Context, s ...scopes.Order) (int64, error)
+	DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
 
 	Tag(ctx context.Context, orderID model.OrderID, input TagInput) error
 	MonthlySales(ctx context.Context, since time.Time) ([]MonthSales, error)
@@ -82,4 +83,9 @@ type TagInput struct {
 type ProductSummary struct {
 	Name  string
 	Price int64
+}
+
+type DeletedOrder struct {
+	ID         model.OrderID
+	CustomerID model.CustomerID
 }

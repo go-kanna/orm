@@ -227,6 +227,7 @@ const orderRepositoryOperationInsert orderRepositoryOperation = "Insert"
 const orderRepositoryOperationInsertLines orderRepositoryOperation = "InsertLines"
 const orderRepositoryOperationInsertApprovals orderRepositoryOperation = "InsertApprovals"
 const orderRepositoryOperationDelete orderRepositoryOperation = "Delete"
+const orderRepositoryOperationDeleteSummaries orderRepositoryOperation = "DeleteSummaries"
 const orderRepositoryOperationTag orderRepositoryOperation = "Tag"
 const orderRepositoryOperationMonthlySales orderRepositoryOperation = "MonthlySales"
 
@@ -450,6 +451,40 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 		return 0, fmt.Errorf(`delete from orders: %w`, err2)
 	}
 	return tag.RowsAffected(), nil
+}
+
+func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order) (result []repository.DeletedOrder, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = translateOrderError(orderRepositoryOperationDeleteSummaries, resultErr)
+		}
+	}()
+	qs := make([]orm.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := orm.Join(qs...)
+	text, args, err2 := q.RenderDelete(orm.Postgres, "orders", []string{"id"})
+	if err2 != nil {
+		return nil, err2
+	}
+	rows, err2 := r.db.Query(ctx, text+` RETURNING id, customer_id`, args...)
+	if err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	defer rows.Close()
+	out := []repository.DeletedOrder{}
+	for rows.Next() {
+		var row repository.DeletedOrder
+		if err2 := rows.Scan(&row.ID, &row.CustomerID); err2 != nil {
+			return nil, fmt.Errorf(`delete from orders: %w`, err2)
+		}
+		out = append(out, row)
+	}
+	if err2 := rows.Err(); err2 != nil {
+		return nil, fmt.Errorf(`delete from orders: %w`, err2)
+	}
+	return out, nil
 }
 
 // Tag runs the query of its name in queries.sql.
