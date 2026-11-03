@@ -53,7 +53,7 @@ package scopes
 
 //go:generate go tool kanna-orm
 
-//kanna:scopes ../model
+//kanna:scopes model-package=../model
 ```
 
 and the repository the rest of your code depends on:
@@ -238,18 +238,20 @@ A scope type is a struct whose only field is an unexported `scope.Of[M]`, `M` be
 into, so that nothing but its methods narrows it. Each table kanna-orm reads or writes has one, and each model belongs
 to one table: the scope type is the only place where the two are tied together.
 
-`//kanna:scopes`, followed by packages of the module, by their import paths or by paths relative to the file, as
-`../model`, declares one, in `scopes_gen.go`, for each struct of those packages that a table of the snapshot is named
-after: the struct's name in snake case with its last word made plural, as `order_lines` for `OrderLine`, `categories`
-for `Category`, and `people` for `Person`, or else as it is. A struct no table is named after, such as a value type,
-gets none, and neither does a table no struct is named after, such as one between two others. Methods of your own are
-written on the type as on any other, in another file of the package.
+`//kanna:scopes model-package=../model` declares one, in `scopes_gen.go`, for each struct of the package of the
+models that a table of the snapshot is named after: the struct's name in snake case with its last word made plural, as
+`order_lines` for `OrderLine`, `categories` for `Category`, and `people` for `Person`. `model-package=` takes an import
+path of the module or a path relative to the file, and more than one separated by commas, as
+`model-package=../model,../billing`. A struct no table is named after, such as a value type, gets none, and neither does
+a table no struct is named after, such as one between two others. So a struct of those packages becomes a model once a
+table of its name is made: keep the structs that are not, such as those a query returns, in a package of their own.
+Methods of your own are written on the type as on any other, in another file of the package.
 
-A table named otherwise, or a scope type of a name of your own, is declared by hand, and wins over the one
-`//kanna:scopes` would imply of its model or its table:
+A table named otherwise, as one in the singular, or a scope type of a name of your own, is declared by hand, and wins
+over the one `//kanna:scopes` would imply of its model or its table:
 
 ```go
-//kanna:scope table=people
+//kanna:scope table=person func=People
 type Person struct{ q scope.Of[model.Person] }
 ```
 
