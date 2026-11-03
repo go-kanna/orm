@@ -128,17 +128,6 @@ func NewProductRepository(db DBTX, opts ...option.Option) ProductRepository {
 
 var _ repository.ProductRepository = ProductRepository{}
 
-func (r ProductRepository) Insert(ctx context.Context, p model.Product) (int64, error) {
-	const q = `INSERT INTO products (sku, name, price)
-VALUES ($1, $2, $3)
-ON CONFLICT (sku) DO NOTHING`
-	tag, err := r.executor.Exec(ctx, q, p.SKU, p.Name, p.Price)
-	if err != nil {
-		return 0, fmt.Errorf("insert into products: %w", err)
-	}
-	return tag.RowsAffected(), nil
-}
-
 func (r ProductRepository) UpsertAll(ctx context.Context, products []model.Product) error {
 	if len(products) == 0 {
 		return nil

@@ -610,22 +610,6 @@ UPDATE では、タグを指定した非キーのフィールドもモデルの�
 
 **MySQL の制約:** RETURNING の代替処理や、一意キーを自動で探す処理は追加しません。従来の AUTO_INCREMENT、入力済みの主キー、Upsert に明示した競合キーによる読み戻しを使います。`default` がその読み戻しに必要なキーを省略する場合、モデルを返すメソッドは生成エラーになります。`error` のみを返すメソッドは読み戻しが不要なので省略できます。一括書き込みからモデルを返せない既存の制約も維持します。
 
-### INSERT の競合を無視する
-
-`//kanna:insert` を付けると、`Use` のようなドメインに合わせたメソッド名でも INSERT を生成できます。このディレクティブは引数を取らず、手書き SQL や `//kanna:pluck` とは併用できません。
-
-PostgreSQL では、Insert の `//kanna:conflict` に `do=nothing` を指定できます。カラムには主キーまたはユニークキーを指定します。そのキーでの競合だけを無視し、それ以外の制約違反はエラーを返します。
-
-```go
-//kanna:insert
-//kanna:conflict token_hash do=nothing
-Use(ctx context.Context, token model.UsedIDToken) (int64, error)
-```
-
-戻り値は挿入件数で、新しいトークンなら 1、既存のトークンなら 0 です。`error` のみを返すメソッドは、競合を無視した場合も成功します。モデルを返すメソッドは RETURNING を使い、競合で挿入されなければ `orm.ErrNotFound` を返します。一括 INSERT は挿入件数または新しく挿入した行のスライスを返せます。既存の行は結果に含めません。
-
-`do=nothing` は `keep=`・`coalesce=` と併用できず、Upsert にも指定できません。MySQL では生成エラーになります。`INSERT IGNORE` は指定したキーだけに競合処理を限定できず、無関係なエラーも抑制するためです。通常の単一行 Insert も `(int64, error)` で挿入件数を返せます。
-
 ### Upsert
 
 `Upsert` は、主キーで既存の行と突き合わせます。別のユニークキーで突き合わせるには、`//kanna:conflict` でそのカラムを指定し、`keep=` で変更しないカラムを指定します:
@@ -692,7 +676,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 - PostgreSQL では、戻り値が `([]model.OrderLine, error)` なら `RETURNING` で行を読み戻します。
 - MySQL では、行を `VALUES (?, ?, ?), (?, ?, ?), ...` で送り、1 つの文に入るプレースホルダの数を超える場合は複数の文に分割します。すべて成功するかすべて失敗するかにしたい場合は、コンストラクタにトランザクションを渡してください。
-- MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。ただし `(int64, error)` を返す `Insert` は、各文が書き込んだ行数の合計を返します。
+- MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
 - `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込んでください。
 

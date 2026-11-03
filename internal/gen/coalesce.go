@@ -10,21 +10,13 @@ func (m *repoMethod) conflictOptions(options []string) error {
 	seen := map[string]bool{}
 	for _, option := range options {
 		key, value, ok := strings.Cut(option, "=")
-		if !ok || value == "" || key != "keep" && key != "coalesce" && key != "do" {
-			return fmt.Errorf("//kanna:conflict takes keep= or coalesce= or do=nothing after the columns of the key, not %q",
-				option)
+		if !ok || value == "" || key != "keep" && key != "coalesce" {
+			return fmt.Errorf("//kanna:conflict takes keep= or coalesce= after the columns of the key, not %q", option)
 		}
 		if seen[key] {
 			return fmt.Errorf("//kanna:conflict gives %s= twice", key)
 		}
 		seen[key] = true
-		if key == "do" {
-			if value != "nothing" {
-				return fmt.Errorf("do= supports only nothing, not %q", value)
-			}
-			m.doNothing = true
-			continue
-		}
 		columns := strings.Split(value, ",")
 		unique := map[string]bool{}
 		for _, name := range columns {

@@ -542,9 +542,6 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		query.WriteString(" DEFAULT VALUES")
 	case m.many:
 		none := "nil"
-		if m.returns == returnsCount {
-			none = "0, nil"
-		}
 		if m.returns == returnsRows {
 			none = "[]" + model + "{}, nil"
 		}
@@ -591,13 +588,6 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		}
 		fmt.Fprintf(&query, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))
 	}
-	if m.doNothing {
-		key := make([]string, 0, len(m.conflict))
-		for _, name := range m.conflict {
-			key = append(key, sqlName(e.d, name))
-		}
-		fmt.Fprintf(&query, "\nON CONFLICT (%s) DO NOTHING", strings.Join(key, ", "))
-	}
 	if m.returns == returnsRow || m.returns == returnsRows {
 		fmt.Fprintf(&query, "\nRETURNING %s", e.columnList(m.columns))
 	}
@@ -611,19 +601,8 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		row := sc.Name("row")
 		e.printf("var %s %s\n", row, model)
 		dests, assignments := e.scanTargets(sc, row, m.columns)
-		e.printf("%[1]s := %[2]s.executor.%[3]s(%[4]s).\nScan(%[5]s)\n",
-			err, recv, e.queryRow, call, strings.Join(dests, ", "))
-		if m.doNothing {
-			var pkg string
-			if e.drv == driverPgx {
-				pkg = e.f.Import("github.com/jackc/pgx/v5", "pgx")
-			} else {
-				pkg = e.f.Import("database/sql", "sql")
-			}
-			e.printf("if %s.Is(%s, %s.ErrNoRows) { return %s{}, %s.Errorf(%q, %s) }\n",
-				e.f.Import("errors", "errors"), err, pkg, model, e.fmtPkg(), what+": %w", e.ref("ErrNotFound"))
-		}
-		e.printf("if %s != nil { return %s{}, %s }\n", err, model, wrap)
+		e.printf("%[1]s := %[2]s.executor.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
+			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, wrap)
 		e.assignScanned(assignments)
 		e.printf("return %s, nil\n", row)
 	case returnsRows:
@@ -635,12 +614,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	case returnsNone:
 		e.printf("if _, %[1]s := %[2]s.executor.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
 			e.exec, call, wrap)
-	case returnsCount:
-		res := e.execResult(sc)
-		e.printf("%s, %s := %s.executor.%s(%s)\nif %s != nil { return 0, %s }\n", res, err, recv, e.exec, call, err, wrap)
-		affected := e.rowsAffected(sc, res, err, "0, ", wrap)
-		e.printf("return %s, nil\n", affected)
-	case returnsBool, returnsScalar: // shaped turns them down for a write
+	case returnsCount, returnsBool, returnsScalar: // shaped turns them down for a write
 	}
 }
 
@@ -732,26 +706,11 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		if tail != "" {
 			query += "+" + goString(tail)
 		}
-		zero, total := "", ""
-		if m.returns == returnsCount {
-			zero, total = "0, ", sc.Name("total")
-		}
-		e.printf("if len(%s) == 0 {\nreturn %snil\n}\n", sig.row, zero)
-		if total != "" {
-			e.printf("var %s int64\n", total)
-		}
+		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
 		e.printf("// As many rows to a statement as its 65,535 placeholders take.\n")
 		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, %[6]s)\n"+
 			"for %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.f.Import("slices", "slices"), sig.row,
 			65535/len(inserted), args, capacity, i, strings.Join(fields, ", "))
-		if total != "" {
-			// MySQL counts the rows each statement writes, which add up to those of the call.
-			res := e.execResult(sc)
-			e.printf("%[1]s, %[2]s := %[3]s.executor.%[4]s(%[5]s, %[6]s, %[7]s...)\nif %[2]s != nil {\nreturn 0, %[8]s\n}\n",
-				res, err, recv, e.exec, sig.ctx, query, args, wrap)
-			e.printf("%s += %s\n}\nreturn %s, nil\n", total, e.rowsAffected(sc, res, err, "0, ", wrap), total)
-			return
-		}
 		e.printf("if _, %[1]s := %[2]s.executor.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n"+
 			"return nil\n", err, recv, e.exec, sig.ctx, query, args, wrap)
 		return
@@ -765,13 +724,6 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 	call := strings.Join(args, ", ")
 	e.printf("const %s = %s\n", q, goString(head+tail))
-	if m.returns == returnsCount {
-		res := e.execResult(sc)
-		e.printf("%s, %s := %s.executor.%s(%s)\nif %s != nil { return 0, %s }\n", res, err, recv, e.exec, call, err, wrap)
-		affected := e.rowsAffected(sc, res, err, "0, ", wrap)
-		e.printf("return %s, nil\n", affected)
-		return
-	}
 	if m.returns != returnsRow {
 		e.printf("if _, %[1]s := %[2]s.executor.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
 			e.exec, call, wrap)

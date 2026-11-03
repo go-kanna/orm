@@ -105,20 +105,6 @@ func (ex *example) catalog(ctx context.Context) error {
 	if err := ex.products.InsertTags(ctx, []model.Tag{{Name: "gift"}, {Name: "rush"}}); err != nil {
 		return fmt.Errorf("the tags: %w", err)
 	}
-	n, err := ex.products.Insert(ctx, model.Product{SKU: "TEA", Name: "Ignored", Price: 1})
-	if err != nil {
-		return fmt.Errorf("insert existing product: %w", err)
-	}
-	if n != 0 {
-		return fmt.Errorf("existing product inserted: %d", n)
-	}
-	n, err = ex.products.Insert(ctx, model.Product{SKU: "SPOON", Name: "Tea spoon", Price: 2500})
-	if err != nil {
-		return fmt.Errorf("insert new product: %w", err)
-	}
-	if n != 1 {
-		return fmt.Errorf("new product inserted: %d", n)
-	}
 	cheap, err := ex.products.List(ctx, scopes.Products().PriceLt(1000))
 	if err != nil {
 		return fmt.Errorf("the cheap products: %w", err)
