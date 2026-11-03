@@ -143,6 +143,9 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 	declared, ambiguous, ads := queryArguments(r.pkg.Fset, params)
 	ds = append(ds, ads...)
 	for _, p := range described.Params {
+		if ambiguous[p.Name] {
+			continue
+		}
 		if arg, ok := declared[p.Name]; ok {
 			if want, ok := fits(arg.typ, p.Type); !ok {
 				typ := typeName(arg.typ)
@@ -159,7 +162,8 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement) [
 				n).WithHints(fmt.Sprintf("declare it: %s(ctx context.Context, %s ...)", m.name, n))}
 		}
 		if ambiguous[n] {
-			return errorf(st.Header, ":%s matches fields of multiple parameters; declare it as its own parameter", n)
+			return errorf(st.Header, ":%s matches multiple arguments or struct fields; "+
+				"give them distinct names (including orm tags)", n)
 		}
 		q.args = append(q.args, arg)
 		used[arg.parameter] = true

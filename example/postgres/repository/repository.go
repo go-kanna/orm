@@ -47,7 +47,7 @@ type OrderRepository interface { //nolint:interfacebloat // demonstrates order r
 	InsertApprovals(ctx context.Context, approvals []model.Approval) error
 	Delete(ctx context.Context, s ...scopes.Order) (int64, error)
 
-	Tag(ctx context.Context, orderID model.OrderID, tag string) error
+	Tag(ctx context.Context, orderID model.OrderID, input TagInput) error
 	MonthlySales(ctx context.Context, since time.Time) ([]MonthSales, error)
 }
 
@@ -70,4 +70,9 @@ type MonthSales struct {
 	Month   time.Time
 	Orders  int64
 	Revenue int64
+}
+
+// TagInput supplies :tag; :orderID comes from the method parameter.
+type TagInput struct {
+	Tag string
 }

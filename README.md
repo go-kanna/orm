@@ -985,8 +985,7 @@ ORDER BY 1`
   starts none, so a cast such as `::int` and a slice such as `arr[1:n]` are left alone, as is anything in a string, a
   quoted name, a comment, or a dollar-quoted body. `describe` prepares what results, so a misreading shows there.
 - A query's parameters take their types from the method. A struct argument can provide parameters through its exported
-  fields, by column name (including tags) or lower-camel field name. Explicit method parameters take precedence; fields
-  of multiple structs matching the same used name stop generation. This lets a model be written without a separate
+  fields, by column name (including tags) or lower-camel field name. A name used by SQL must match exactly one argument or struct field; collisions stop generation, including those between an explicit parameter and a field. Use distinct parameter and field names, including `orm` tags. A field remains addressable by its lower-camel name even when it has a tag. This lets a model be written without a separate
   parameter DTO. The `nullzero` option also applies to these field arguments.
 - Result columns go directly into model fields by column name and tag. A one-column result can instead be a scalar
   or enum, and `[]T` can collect those values directly. `T` returns one row or `orm.ErrNotFound`; `[]T` returns every

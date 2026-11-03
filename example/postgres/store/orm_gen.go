@@ -418,7 +418,7 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 }
 
 // Tag runs the query of its name in queries.sql.
-func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, tag string) (resultErr error) {
+func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) (resultErr error) {
 	defer func() {
 		if resultErr != nil {
 			resultErr = translateOrderError(orderRepositoryOperationTag, resultErr)
@@ -426,7 +426,7 @@ func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, tag str
 	}()
 	const q = `INSERT INTO order_tags (order_id, tag) VALUES ($1, $2)
 ON CONFLICT DO NOTHING`
-	if _, err := r.db.Exec(ctx, q, orderID, tag); err != nil {
+	if _, err := r.db.Exec(ctx, q, orderID, input.Tag); err != nil {
 		return fmt.Errorf("query Tag: %w", err)
 	}
 	return nil
