@@ -14,7 +14,7 @@ type order struct{}
 func query(t *testing.T, q impl.Of[order], d impl.Dialect, first int) (string, []any) {
 	t.Helper()
 
-	r, err := q.Render(d, first)
+	r, err := q.Render(d, first, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestRender_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := tt.q.Render(impl.Postgres, 1); err == nil || err.Error() != tt.want {
+			if _, err := tt.q.Render(impl.Postgres, 1, nil); err == nil || err.Error() != tt.want {
 				t.Errorf("Render error = %v, want %q", err, tt.want)
 			}
 		})
@@ -131,7 +131,7 @@ func TestOr_ChecksEveryAlternative(t *testing.T) {
 			t.Parallel()
 
 			for _, alternatives := range [][]impl.Of[order]{{q, tt.bad}, {tt.bad, q}} {
-				if _, err := q.Or(alternatives...).Render(impl.Postgres, 1); err == nil || err.Error() != tt.want {
+				if _, err := q.Or(alternatives...).Render(impl.Postgres, 1, nil); err == nil || err.Error() != tt.want {
 					t.Errorf("Render error = %v, want %q", err, tt.want)
 				}
 			}

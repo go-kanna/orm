@@ -31,7 +31,7 @@ func (e repoEmitter) preloadScalarComposite(lk link, n preloadNames, c composite
 	condition := e.inKeys(columns, dbTypes, n.chunk, lk.keys, c.arrays, c)
 	e.printf("var %s %s[%s]\n", n.sub, e.ref("Of"), valueType)
 	e.printf("%s = %s.Where(%s).OrderBy(%q, false)\n", n.sub, n.sub, condition, sqlName(e.d, lk.scalar.col.Name))
-	e.printf("rd, %s := %s.Render(%s, 1)\nif %s != nil { return %s }\n", n.err, n.sub, e.dialect(), n.err, n.err)
+	e.printf("rd, %s := %s.Render(%s, 1, nil)\nif %s != nil { return %s }\n", n.err, n.sub, e.dialect(), n.err, n.err)
 	query := "SELECT " + strings.Join(columns, ", ") + ", " + sqlName(e.d, lk.scalar.col.Name) +
 		" FROM " + sqlName(e.d, lk.target.table)
 	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "load "+field+": %w") + ", " + n.err + ")"

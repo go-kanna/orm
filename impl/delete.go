@@ -12,7 +12,7 @@ func (q Of[M]) RenderDelete(d Dialect, table string, key []string) (string, []an
 	if len(q.preloads) > 0 || len(q.projections) > 0 || len(q.batches) > 0 {
 		return "", nil, errors.New("orm: Delete cannot load relations")
 	}
-	rd, err := q.Render(d, 1)
+	rd, err := q.Render(d, 1, nil)
 	if err != nil {
 		return "", nil, err
 	}

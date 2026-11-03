@@ -16,8 +16,9 @@ type Rendered struct {
 }
 
 // Render writes q as SQL for d, numbering the placeholders of PostgreSQL from first, so that they can follow those of
-// the query it goes into.
-func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
+// the query it goes into. key is the primary key of the table, which an order is made to end in, so that rows equal in
+// the order come in one, the same on the first page as on those After continues to; it is nil for a table without one.
+func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 	if q.err != nil {
 		return Rendered{}, q.err
 	}
@@ -30,6 +31,9 @@ func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
 
 	var r Rendered
 	conds, orders := q.conds, q.orders
+	if len(orders) > 0 {
+		orders = q.ordersWith(key)
+	}
 	if q.seeking {
 		orders = q.ordersWith(q.seek.key)
 		c, err := q.seek.cond(orders, d)

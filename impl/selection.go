@@ -61,7 +61,7 @@ func (p scalarProjection[M]) render(d Dialect, first int, alias string) (string,
 	for i, key := range p.keys {
 		q = q.Where(quoted(d, p.foreign[i])+" = ", columnReference{p.parent, key})
 	}
-	rd, err := q.Render(d, first)
+	rd, err := q.Render(d, first, nil)
 	if err != nil {
 		return "", nil, err
 	}
@@ -102,8 +102,11 @@ type Projection struct {
 	Optional      bool
 }
 
-// RenderSelect renders a model read, including correlated scalar values before the root placeholders.
-func (q Of[M]) RenderSelect(d Dialect, table string, columns []string, fields []Projection) (string, []any, error) {
+// RenderSelect renders a model read, including correlated scalar values before the root placeholders. key is as Render
+// takes it.
+func (q Of[M]) RenderSelect(d Dialect, table string, columns []string, fields []Projection,
+	key []string,
+) (string, []any, error) {
 	names := make([]string, 0, len(columns)+len(fields))
 	for _, name := range columns {
 		names = append(names, qualified(d, "orm_parent", name))
@@ -113,7 +116,7 @@ func (q Of[M]) RenderSelect(d Dialect, table string, columns []string, fields []
 		return "", nil, err
 	}
 	names = append(names, projected...)
-	rd, err := q.Render(d, len(args)+1)
+	rd, err := q.Render(d, len(args)+1, key)
 	if err != nil {
 		return "", nil, err
 	}

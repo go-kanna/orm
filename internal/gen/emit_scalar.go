@@ -23,7 +23,7 @@ func (e repoEmitter) preloadScalar(lk link, n preloadNames) {
 	e.printf("var %s %s[%s]\n", n.sub, e.ref("Of"), valueType)
 	e.printf("%s = %s.Where(%q, %s(%s), %q).OrderBy(%q, false)\n", n.sub, n.sub,
 		sqlName(e.d, other.col.Name)+" IN (", e.ref("List"), n.chunk, ")", sqlName(e.d, lk.scalar.col.Name))
-	e.printf("rd, %s := %s.Render(%s, 1)\nif %s != nil { return %s }\n", n.err, n.sub, e.dialect(), n.err, n.err)
+	e.printf("rd, %s := %s.Render(%s, 1, nil)\nif %s != nil { return %s }\n", n.err, n.sub, e.dialect(), n.err, n.err)
 	query := "SELECT " + sqlName(e.d, other.col.Name) + ", " + sqlName(e.d, lk.scalar.col.Name) +
 		" FROM " + sqlName(e.d, lk.target.table)
 	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "load "+field+": %w") + ", " + n.err + ")"

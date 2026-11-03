@@ -359,7 +359,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	}
 	rd, err := sc.Name("rd"), sc.Name("err")
 	render := func(zero string) {
-		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\nif %[2]s != nil {\nreturn %[5]s%[2]s\n}\n", rd, err, q,
+		e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, nil)\nif %[2]s != nil {\nreturn %[5]s%[2]s\n}\n", rd, err, q,
 			e.dialect(), zero)
 	}
 	conditionsOnly := func(zero string) {
@@ -435,6 +435,18 @@ func (e repoEmitter) inTransaction(m repoMethod, sc gofile.Scope, recv, model st
 		"orm: "+m.name+" needs a transaction to hold its lock: give the repository a "+tx)
 }
 
+// orderKey is the primary key of t as Render takes it, for an order to end in.
+func (e repoEmitter) orderKey(t snapshot.Table) string {
+	if len(t.PrimaryKey) == 0 {
+		return "nil"
+	}
+	names := make([]string, 0, len(t.PrimaryKey))
+	for _, name := range t.PrimaryKey {
+		names = append(names, goString(sqlName(e.d, name)))
+	}
+	return "[]string{" + strings.Join(names, ", ") + "}"
+}
+
 // lockClause is the locking clause of m, as the argument of select<table>.
 func lockClause(m repoMethod) string {
 	if m.lock == "" {
@@ -463,17 +475,18 @@ func (e repoEmitter) selectRows(rm readModel) {
 	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s %[9]s, %[5]s %[6]s[%[7]s], %[8]s string) ([]%[7]s, error) {\n",
 		name,
 		ctx, e.f.Import("context", "context"), db, q, e.ref("Of"), model, lock, e.database)
-	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\n"+
-		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
+	key := e.orderKey(rm.table)
+	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, %[5]s)\n"+
+		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect(), key)
 	if len(rm.projections) > 0 {
 		manifests := make([]string, 0, len(rm.projections))
 		for _, c := range rm.projections {
 			manifests = append(manifests, fmt.Sprintf("{Field:%q,Column:%q,Optional:%t}", fieldPath(c), c.col.Name,
 				nilable(c.typ)))
 		}
-		e.printf("text,args,%s := %s.RenderSelect(%s,%q,%s,[]%s{%s})\nif %s!=nil{return"+
+		e.printf("text,args,%s := %s.RenderSelect(%s,%q,%s,[]%s{%s},%s)\nif %s!=nil{return"+
 			" nil,%s}\n", err, q, e.dialect(), rm.target.table, columnNamesLiteral(rm.columns),
-			e.ref("Projection"), strings.Join(manifests, ","), err, err)
+			e.ref("Projection"), strings.Join(manifests, ","), key, err, err)
 		e.printf("%s,%s := %s.%s(%s,text+%s,args...)\n", rows, err, db, e.query, ctx, lock)
 	} else {
 		e.printf("%[1]s, %[2]s := %[3]s.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
@@ -1080,7 +1093,8 @@ func (e repoEmitter) pluckRows(m repoMethod, sc gofile.Scope, recv string, sig s
 	query := "SELECT " + sqlName(e.d, column.col.Name) + " FROM " + sqlName(e.d, m.target.table)
 	what := fmt.Sprintf("%q", "pluck "+m.target.table+"."+column.col.Name+": %w")
 	wrap := e.fmtPkg() + ".Errorf(" + what + ", " + err + ")"
-	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect())
+	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, %[5]s)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q,
+		e.dialect(), e.orderKey(m.table))
 	e.printf("%[1]s, %[2]s := %[3]s.executor.%[4]s(%[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit(), "+
 		"%[7]s.Args()...)\n", rows, err, recv, e.query, sig.ctx, goString(query), rd)
 	e.printf("if %s != nil {\nreturn nil, %s\n}\ndefer %s.Close()\n", err, wrap, rows)

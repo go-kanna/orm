@@ -158,6 +158,14 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 		!slices.Equal(ids(before), []model.OrderID{3}) {
 		t.Errorf("the page before = %v, %v; want [3]", ids(before), err)
 	}
+	// Orders 1 and 2 are both customer 10's, so the first page ends between two rows equal in the order.
+	tied := mscopes.Orders().CustomerIDDesc().Limit(2)
+	if first, err = repo.List(ctx, tied); err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
+		t.Fatalf("the first page ending among equal rows = %v, %v; want [3 2]", ids(first), err)
+	}
+	if next, err := repo.List(ctx, tied.After(first[1])); err != nil || !slices.Equal(ids(next), []model.OrderID{1}) {
+		t.Errorf("the page after one among equal rows = %v, %v; want [1]", ids(next), err)
+	}
 
 	if n, err := repo.Count(ctx, mscopes.Orders().StatusEq("open")); err != nil || n != 2 {
 		t.Errorf("Count of the open orders = %d, %v; want 2", n, err)

@@ -23,7 +23,7 @@ func TestRenderJoinedProjection(t *testing.T) {
 	for _, d := range []impl.Dialect{impl.Postgres, impl.MySQL} {
 		q := impl.Of[int]{}.Where("version > ", int64(7)).OrderBy("id", false).Limit(2).JoinTable("users")
 		text, args, reversed, err := q.RenderProjection(d, "memberships", joinedColumns, []impl.TableJoin{joinUsers},
-			[]string{"id", "user_id", "version"}, "unused")
+			[]string{"id", "user_id", "version"}, "unused", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -36,6 +36,20 @@ func TestRenderJoinedProjection(t *testing.T) {
 		if text != want || !reflect.DeepEqual(args, []any{int64(7)}) || reversed {
 			t.Fatalf("got %s, %v, reversed=%v; want %s", text, args, reversed, want)
 		}
+	}
+}
+
+func TestRenderJoinedProjection_EndsAnOrderInTheKey(t *testing.T) {
+	t.Parallel()
+
+	q := impl.Of[int]{}.OrderBy("version", true).Limit(2).JoinTable("users")
+	text, _, _, err := q.RenderProjection(impl.Postgres, "memberships", joinedColumns, []impl.TableJoin{joinUsers},
+		[]string{"id", "user_id", "version"}, "unused", []string{"id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := ` ORDER BY "memberships"."version" DESC, "memberships"."id" DESC LIMIT 2`; !strings.HasSuffix(text, want) {
+		t.Errorf("got %s; want it to end in %s", text, want)
 	}
 }
 
@@ -58,7 +72,7 @@ func TestJoinedProjectionRefusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, _, err := tc.q.RenderProjection(impl.Postgres, "memberships", tc.columns, tc.joins,
-				[]string{"id"}, "unused")
+				[]string{"id"}, "unused", nil)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got %v; want %s", err, tc.want)
 			}
@@ -70,10 +84,10 @@ func TestJoinScopesRemainImmutableAndRequireProjections(t *testing.T) {
 	t.Parallel()
 	base := impl.Of[int]{}.Where("id = ", 1)
 	joined := base.JoinTable("users")
-	if _, err := base.Render(impl.Postgres, 1); err != nil {
+	if _, err := base.Render(impl.Postgres, 1, nil); err != nil {
 		t.Fatal("joining modified the original scope", err)
 	}
-	if _, err := joined.Render(impl.Postgres, 1); err == nil {
+	if _, err := joined.Render(impl.Postgres, 1, nil); err == nil {
 		t.Fatal("ordinary reads silently ignored a join")
 	}
 	if err := joined.ConditionsOnly("Count"); err == nil {
@@ -84,7 +98,7 @@ func TestJoinScopesRemainImmutableAndRequireProjections(t *testing.T) {
 	}
 	combined := impl.Combine(joined, joined)
 	text, _, _, err := combined.RenderProjection(impl.Postgres, "memberships", joinedColumns,
-		[]impl.TableJoin{joinUsers}, []string{"id"}, "unused")
+		[]impl.TableJoin{joinUsers}, []string{"id"}, "unused", nil)
 	if err != nil || strings.Count(text, " INNER JOIN ") != 1 {
 		t.Fatalf("duplicate joined scopes: %s, %v", text, err)
 	}
@@ -99,7 +113,7 @@ func TestExplicitJoinConditions(t *testing.T) {
 		conditions[0] = join.On("missing", "id")
 		q = impl.Combine(q, impl.Of[int]{}.JoinTable("users", join.On("user_id", "id"), join.On("tenant_id", "tenant_id")))
 		text, args, _, err := q.RenderProjection(d, "memberships", joinedColumns, metadata,
-			[]string{"id", "user_id", "tenant_id", "version"}, "unused")
+			[]string{"id", "user_id", "tenant_id", "version"}, "unused", nil)
 		want := `SELECT "memberships"."id", "users"."display_name" FROM ` +
 			`(SELECT "id", "user_id", "tenant_id" FROM "memberships" WHERE (version > $1)) AS "memberships" ` +
 			`INNER JOIN "users" ON "memberships"."user_id" = "users"."id" AND "memberships"."tenant_id" = "users"."tenant_id"`
@@ -130,7 +144,8 @@ func TestExplicitJoinRefusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, _, err := tc.q.RenderProjection(impl.Postgres, "memberships", joinedColumns,
-				[]impl.TableJoin{{Table: "users", Fields: []string{"id", "display_name"}}}, []string{"id", "user_id"}, "unused")
+				[]impl.TableJoin{{Table: "users", Fields: []string{"id", "display_name"}}}, []string{"id", "user_id"}, "unused",
+				nil)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got %v; want %s", err, tc.want)
 			}
@@ -144,7 +159,7 @@ func TestExplicitJoinResolvesAmbiguousForeignKeys(t *testing.T) {
 	second.ParentColumns = []string{"creator_id"}
 	q := impl.Of[int]{}.JoinTable("users", join.On("user_id", "id"))
 	text, _, _, err := q.RenderProjection(impl.Postgres, "memberships", joinedColumns,
-		[]impl.TableJoin{joinUsers, second}, []string{"id", "user_id", "creator_id"}, "unused")
+		[]impl.TableJoin{joinUsers, second}, []string{"id", "user_id", "creator_id"}, "unused", nil)
 	if err != nil || !strings.Contains(text, `ON "memberships"."user_id" = "users"."id"`) {
 		t.Fatalf("explicit foreign key choice: %s, %v", text, err)
 	}
