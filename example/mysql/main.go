@@ -241,6 +241,20 @@ func (ex *example) openOrders(ctx context.Context) error {
 		}
 		fmt.Fprintf(ex.w, "open order %d of %s:%s, tagged %v\n", o.ID, o.Customer.Name, lines.String(), tags)
 	}
+	found, err := ex.orders.Find(ctx, 1, scopes.Orders().WithCustomer().WithLines())
+	if err != nil {
+		return fmt.Errorf("find order 1: %w", err)
+	}
+	if found == nil || found.Customer == nil || len(found.Lines) == 0 {
+		return errors.New("order 1 or its relations were not loaded")
+	}
+	missing, err := ex.orders.Find(ctx, 99)
+	if err != nil {
+		return fmt.Errorf("find order 99: %w", err)
+	}
+	if missing != nil {
+		return errors.New("order 99 unexpectedly exists")
+	}
 	shipped, err := ex.orders.Get(ctx, 1, scopes.Orders().WithShipment())
 	if err != nil {
 		return fmt.Errorf("order 1: %w", err)

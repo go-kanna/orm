@@ -274,6 +274,26 @@ func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository {
 
 var _ repository.OrderRepository = OrderRepository{}
 
+func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
+	qs := make([]scope.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = x.Of()
+	}
+	q := impl.Combine(qs...)
+	q = q.Where(`id = `, id)
+	if err := q.Unpaged("Find"); err != nil {
+		return nil, r.mapError(err)
+	}
+	rows, err := selectOrders(ctx, r.db, q, "")
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
 func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
 	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {

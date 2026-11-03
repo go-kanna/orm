@@ -33,6 +33,7 @@ type ProductRepository interface {
 
 //kanna:repository
 type OrderRepository interface { //nolint:interfacebloat // demonstrates order reads and writes together
+	Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	ListApprovers(ctx context.Context, ids []model.OrderID) ([]OrderApprover, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
