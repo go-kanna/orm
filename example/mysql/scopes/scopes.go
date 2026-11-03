@@ -6,7 +6,7 @@ import "github.com/go-kanna/orm/example/mysql/model"
 
 //go:generate go tool kanna-orm
 
-//kanna:scopes ../model
+//kanna:scopes model-package=../model
 
 // Open narrows to the orders neither shipped nor canceled.
 func (s Order) Open() Order {
