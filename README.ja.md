@@ -19,14 +19,13 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 
 生成コードは `github.com/go-kanna/orm` のパッケージをインポートします。これは上のコマンドで依存に追加されます。これらのパッケージは標準ライブラリ以外には依存しません。ドライバは自分で用意します。手書きのコードが使うのは次のパッケージです。
 
-| パッケージ     | 用途                                                                                            |
-|----------------|-------------------------------------------------------------------------------------------------|
-| `orm`          | repository が返すエラー `ErrNotFound` と `ErrRequiredRelation`                                  |
-| `orm/scope`    | 手書きで宣言するスコープ型のフィールド `Of`                                                     |
-| `orm/relation` | `Select<Field>` と `Preload<Field>` に渡すクロージャが返す・受け取る `Single`、`Many`、`Column` |
-| `orm/join`     | 結合した projection の明示的な条件 `On`                                                         |
-| `orm/option`   | repository の constructor に渡す option `WithHook`                                              |
-| `orm/hook`     | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution`                     |
+| パッケージ   | 用途                                                                        |
+|--------------|-----------------------------------------------------------------------------|
+| `orm`        | repository が返すエラー `ErrNotFound`                                       |
+| `orm/scope`  | 手書きで宣言するスコープ型のフィールド `Of`                                 |
+| `orm/join`   | 結合した projection の明示的な条件 `On`                                     |
+| `orm/option` | repository の constructor に渡す option `WithHook`                          |
+| `orm/hook`   | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution` |
 
 `orm/change` の `Set` は、生成される change set の `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
 
@@ -361,7 +360,8 @@ PostgreSQL では、リレーションのクエリは、行がいくつあって
 
 - 読み込まれたスライスは決して nil になりません。関連する行がなければ空になります。nil のスライスは読み込まれていません。
 - ポインタは、読み込まれていないときも関連する行がないときも nil です。この 2 つを区別するには、モデルに kanna-orm の型を持ち込むことになります。
-- 関連する行に対する limit や offset は、行ごとではなく関連する行全体を数えてしまうので、limit や offset を持つスコープを `With` メソッドに渡すと、クエリはエラーを返します。行ごとに先頭の数件を読み込むには、[`Preload<Field>`](#親カラムを参照する単一値の取得と親ごとの関連取得) を使ってください。
+- 関連する行に対する limit や offset は、SQL の `LATERAL` サブクエリと同じく、行ごとにページを切ります。`WithApprovals(scopes.Approvals().ApprovedAtDesc().IDDesc().Limit(3))` は、注文ごとに最新の承認を 3 件読み込みます。各行に関連する行に、スコープの順序（関連先のテーブルの主キーで終わる順序。スコープに順序がなければ主キーだけ）で `ROW_NUMBER()` の番号を振り、ページに入る行を残します。このとき、中間テーブルを経由するリレーションは 1 回のクエリで読み込みます。ページは `Offset` で進めます。`After` と `Before` を渡すと、クエリはエラーを返します。主キーのないテーブルでは、スコープに順序が必要です。
+- 外部キー以外のカラムで関連する値（注文の現在の版を承認した担当者など）は、自分で書くクエリで読み込みます。[手書きの SQL](#手書きの-sql) を参照してください。
 - リレーションは読み込むだけで、決して書き込みません。`Insert` と `Update` が書き込むのはその行自身のカラムで、読み戻した行もそれらのカラムだけを保持します。
 - 複数カラムの外部キーによるリレーションは、それらのカラムを行として扱って読み込みます。PostgreSQL では `(a, b) IN (SELECT * FROM unnest($1, $2))`、MySQL では `(a, b) IN ((?, ?), ...)` です。
 
@@ -950,56 +950,6 @@ make bench      # run the benchmarks in a container next to the PostgreSQL of db
 [`bench/postgres`](bench/postgres) は、kanna-orm を pgx 単体、sqlc、GORM、bun、ent と比較して計測します。結果と計測方法は、その README にあります。
 
 
-
-### 親カラムを参照する単一値の取得と、親ごとの関連取得
-
-取得先フィールドに値の取得元を宣言します。たとえば注文の現在版を承認した担当者を、承認履歴から読み込めます。
-
-```go
-type Order struct {
-    ID OrderID
-    Approver *string `orm:"relation=approvals"`
-    Approvals []Approval
-}
-```
-
-`column` を省略すると、通常の snake_case の命名規則でフィールド名から取得元のカラム名を推論します（`Approver` → `approver`）。`CurrentApprover` のように名前が異なる場合は `column=approver` を指定します。取得元のカラムが存在しなければ生成時にエラーになります。
-
-関連先のモデルには通常の scope を宣言します。生成される `<Scope>Columns` は型付きのカラム参照で、`EqColumn`・`NeColumn`・大小比較と組み合わせられます。親の Go オブジェクトの値ではなく、SQL のカラムを表します。注文の `revision` のようにモデルに含めないカラムも、対応する DB 型が分かる場合は生成します。モデルにあるカラムはその Go 型を使います。
-
-```go
-func (s Order) WithCurrentApprover() Order {
-    return s.SelectApprover(func(parent OrderColumns) relation.Single[model.Approval] {
-        return Approvals().RevisionEqColumn(parent.Revision).RevokedAtIsNull().One()
-    })
-}
-
-func (s Order) WithLatestApprover() Order {
-    return s.SelectApprover(func(_ OrderColumns) relation.Single[model.Approval] {
-        return Approvals().RevokedAtIsNull().ApprovedAtDesc().IDDesc().First()
-    })
-}
-
-func (s Order) WithRecentApprovals() Order {
-    return s.PreloadApprovals(func(_ OrderColumns) relation.Many[model.Approval] {
-        return Approvals().ApprovedAtDesc().IDDesc().Limit(3).Many()
-    })
-}
-
-orders, err := repo.List(ctx, scopes.Orders().IDAsc().Limit(20).
-    WithCurrentApprover().WithRecentApprovals())
-```
-
-外部キーから基本の親子条件を生成し、コールバックで親カラムとの比較などの条件を追加します。比較するカラムの Go 型は一致する必要があります。他のコールバックから持ち出したカラム参照や、親クエリの外で使った参照はレンダリング時にエラーになります。値はバインド引数として渡し、カラム名は別にクォートします。
-
-- `One` は一致行が最大1件であることを要求します。0件は SQL NULL、複数件は DB の cardinality エラーになります。Limit・Offset・カーソルで複数件一致を隠す指定は拒否します。
-- `First` は並び順を必須とし、先頭1件を選びます。Offset で先頭を飛ばせます。Limit は自動設定するため別途指定しません。日時の後に ID を指定するなど、順序が一意になる条件を使ってください。
-- `One().Required()` と `First().Required()` は一致なし・NULL を `orm.ErrRequiredRelation` として返します。NULL を保持できない格納先には Required が必要です。未選択の nullable なフィールドは nil のままです。
-- `Many` は対象の親だけに絞って関連を一括取得します。Limit・Offset は親ごとに適用し、必要な場合は `ROW_NUMBER()` を使います。親別のページングには並び順が必要です。関連が0件なら空スライスを返します。関連側のカーソルは拒否するため、親はカーソル、関連は Offset でページングします。
-
-`Select<Field>` は親と同じ SELECT に単一値のサブクエリを追加し、親の行数・ページングを維持します。複数の値を選択しても条件とプレースホルダーはそれぞれ管理します。`Preload<Field>` は別クエリによる一括読み込みで、複合外部キー・中間テーブル・読み込んだ子の関連取得にも対応します。親と関連の通常の読み取りを同じスナップショットにしたい場合は Repeatable Read のトランザクションを利用します。ロックと分離レベルは呼び出し側で明示します。1 つのフィールドは `With<Field>` か `Preload<Field>` のどちらかで読み込みます。両方を指定した scope は、読み込むときにエラーになります。
-
-単一値の関連は読み込み専用で、INSERT・UPDATE の対象から除外します。手書き SQL に差し替える場合も、`a.approver AS approver` のようにフィールドのカラム名で返せば同じモデルへ読み込めます。PostgreSQL／MySQL の example では、現在・最新の承認者、親別の件数制限・Offset、一致なし・必須値なし・複数件一致、手書き SQL への差し替えを実行して確認します。
 
 ### 指定したカラムだけを更新する
 

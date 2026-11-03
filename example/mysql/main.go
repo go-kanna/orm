@@ -16,7 +16,6 @@ import (
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/hook"
 	"github.com/go-kanna/orm/option"
-	"github.com/go-kanna/orm/relation"
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/go-kanna/orm/example/mysql/model"
@@ -60,7 +59,7 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 		{"write the customers", ex.signUp},
 		{"update selected columns", ex.updateSelectedColumns},
 		{"place the orders", ex.placeOrders},
-		{"read correlated approvals", ex.readApprovals},
+		{"read approvals", ex.readApprovals},
 		{"read optional memos", ex.readMemos},
 		{"read the open orders", ex.openOrders},
 		{"read joined projections", ex.joinedSummaries},
@@ -393,57 +392,33 @@ func (ex *example) readApprovals(ctx context.Context) error {
 	if err := ex.orders.InsertApprovals(ctx, approvals); err != nil {
 		return fmt.Errorf("read approvals: %w", err)
 	}
-	loaded, err := ex.orders.List(ctx, scopes.Orders().IDAsc().Limit(2).WithCurrentApprover().WithRecentApprovals())
+	loaded, err := ex.orders.List(ctx, scopes.Orders().IDAsc().Limit(2).WithRecentApprovals())
 	if err != nil {
 		return fmt.Errorf("read approvals: %w", err)
 	}
 	for _, order := range loaded {
-		if order.Approver == nil || *order.Approver != "reviewer-1" ||
-			len(order.Approvals) != 3 || order.Approvals[0].Revision != 5 || order.Approvals[2].Revision != 3 {
-			return fmt.Errorf("correlated approval: %+v", order)
+		if len(order.Approvals) != 3 || order.Approvals[0].Revision != 5 || order.Approvals[2].Revision != 3 {
+			return fmt.Errorf("recent approvals: %+v", order)
 		}
 	}
-	custom, err := ex.orders.FindApproval(ctx, orders[0].ID)
-	if err != nil || custom.Approver == nil || *custom.Approver != "reviewer-1" {
-		return fmt.Errorf("custom approval query: %+v, %w", custom, err)
-	}
-	latest, err := ex.orders.Get(ctx, orders[0].ID, scopes.Orders().WithLatestApprover())
+	latest, err := ex.orders.Get(ctx, orders[0].ID, scopes.Orders().WithLatestApproval())
 	if err != nil {
 		return fmt.Errorf("read approvals: %w", err)
 	}
-	if latest.Approver == nil || *latest.Approver != "reviewer-5" {
-		return fmt.Errorf("latest approver: %+v", latest)
+	if len(latest.Approvals) != 1 || latest.Approvals[0].Approver != "reviewer-5" {
+		return fmt.Errorf("latest approval: %+v", latest)
 	}
-	recent := scopes.Orders().PreloadApprovals(func(parent scopes.OrderColumns) relation.Many[model.Approval] {
-		return scopes.Approvals().RevisionGteColumn(parent.Revision).ApprovedAtDesc().IDDesc().Offset(1).Limit(2).Many()
-	})
-	offset, err := ex.orders.Get(ctx, orders[0].ID, recent)
+	page := scopes.Orders().WithApprovals(scopes.Approvals().ApprovedAtDesc().IDDesc().Offset(1).Limit(2))
+	offset, err := ex.orders.Get(ctx, orders[0].ID, page)
 	if err != nil {
 		return fmt.Errorf("read approvals: %w", err)
 	}
 	if len(offset.Approvals) != 2 || offset.Approvals[0].Revision != 4 || offset.Approvals[1].Revision != 3 {
 		return fmt.Errorf("approval offset: %+v", offset)
 	}
-	absent := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) relation.Single[model.Approval] {
-		return scopes.Approvals().RevisionEq(99).One()
-	})
-	missing, err := ex.orders.Get(ctx, orders[0].ID, absent)
-	if err != nil || missing.Approver != nil {
-		return fmt.Errorf("missing approver: %+v, %w", missing, err)
-	}
-	required := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) relation.Single[model.Approval] {
-		return scopes.Approvals().RevisionEq(99).One().Required()
-	})
-	_, err = ex.orders.Get(ctx, orders[0].ID, required)
-	if !errors.Is(err, orm.ErrRequiredRelation) {
-		return fmt.Errorf("required approver error: %w", err)
-	}
-	ambiguous := scopes.Orders().SelectApprover(func(_ scopes.OrderColumns) relation.Single[model.Approval] {
-		return scopes.Approvals().One()
-	})
-	_, err = ex.orders.Get(ctx, orders[0].ID, ambiguous)
-	if err == nil {
-		return errors.New("multiple approvers were silently accepted")
+	current, err := ex.orders.GetApprover(ctx, orders[0].ID)
+	if err != nil || current.Approver == nil || *current.Approver != "reviewer-1" {
+		return fmt.Errorf("current approver: %+v, %w", current, err)
 	}
 	fmt.Fprintln(ex.w, "current approver: reviewer-1; latest: reviewer-5; three approvals per order")
 	return nil

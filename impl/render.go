@@ -2,7 +2,6 @@ package impl
 
 import (
 	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,9 +20,6 @@ type Rendered struct {
 func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 	if q.err != nil {
 		return Rendered{}, q.err
-	}
-	if err := q.loadsTwice(); err != nil {
-		return Rendered{}, err
 	}
 	if len(q.joins) > 0 {
 		return Rendered{}, errors.New("orm: joins require a read projection")
@@ -68,12 +64,7 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 		}
 		b.WriteString("(" + c.pieces[0])
 		for j, arg := range c.args {
-			if ref, ok := asReference(arg); ok {
-				if q.parent == nil || ref.parent.identity == nil || ref.parent.identity != q.parent.parent.identity {
-					return Rendered{}, fmt.Errorf("orm: column %s belongs to another parent query", ref.name)
-				}
-				b.WriteString(quoted(d, q.parent.alias) + "." + quoted(d, q.parentPrefix+ref.name))
-			} else if l, ok := arg.(list); ok {
+			if l, ok := arg.(list); ok {
 				if len(l) == 0 {
 					b.WriteString("NULL")
 				}
@@ -143,4 +134,15 @@ func (r Rendered) clause(keyword string) string {
 		return ""
 	}
 	return keyword + r.conds
+}
+
+func qualified(d Dialect, alias, column string) string {
+	return quoted(d, alias) + "." + quoted(d, column)
+}
+
+func quoted(d Dialect, name string) string {
+	if d == MySQL {
+		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+	}
+	return "\"" + strings.ReplaceAll(name, "\"", "\"\"") + "\""
 }

@@ -13,13 +13,9 @@ WHERE o.placed_at >= :since AND o.status <> 'canceled'
 GROUP BY 1
 ORDER BY 1;
 
--- query: FindApproval
+-- query: GetApprover
 SELECT
-    o.id,
-    o.customer_id,
-    o.status,
-    o.placed_at,
-    o.note,
+    o.id AS order_id,
     a.approver
 FROM orders AS o
 LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL

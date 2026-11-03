@@ -37,7 +37,6 @@ type Product struct {
 }
 
 type Order struct {
-	Approver   *string `orm:"relation=approvals"`
 	Approvals  []Approval
 	ID         OrderID
 	CustomerID CustomerID

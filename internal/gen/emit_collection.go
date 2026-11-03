@@ -7,77 +7,54 @@ import (
 	"strings"
 )
 
-func (e emitter) collection(lk link) {
-	name := lk.field.path[len(lk.field.path)-1]
-	model := e.relationModel(lk)
-	e.printf("func (s %s) Preload%s(build func(%sColumns) %s[%s]) %s {\n",
-		e.p.name, name, e.p.name, e.ref("Many"), model, e.p.name)
-	e.printf("parent := %s()\nreturn %s{%s(%s, %q, parent, build(%sColumnsFor(parent)))}\n}\n\n",
-		e.ref("NewParent"), e.p.name, e.ref("PreloadMany"), e.q("s"), strings.Join(lk.field.path, "."),
-		lowerFirst(e.p.name))
-}
-
-func (e repoEmitter) preloadCollection(lk link, n preloadNames) {
+// preloadEach writes the block loading a page of the rows of lk, a relation to many rows, for each row, when its scope
+// keeps only some of them: one query a chunk of rows, which counts the related rows of each row on its own.
+func (e repoEmitter) preloadEach(lk link, n preloadNames) {
 	if lk.scalar != nil || (lk.way.kind != hasMany && lk.way.kind != manyToMany) {
 		return
 	}
 	field := strings.Join(lk.field.path, ".")
 	model := types.TypeString(lk.model, e.f.Qualifier)
-	e.printf("if sub, parent, ok := %s[%s](%s, %q); ok {\n", e.ref("PreloadedMany"), model, n.q, field)
+	target := e.models[lk.target.table]
+	e.printf("if sub, ok := %s[%s](%s, %q); ok && sub.PagesEach() {\n", e.ref("Preloaded"), model, n.q, field)
 	e.printf("type parentKey struct { %s }\n", e.keyFields(lk.keys))
 	e.printf("keys := []parentKey{}\nfor i := range %s {\n%s\n}\n", n.rows, keyOf("parentKey", "key", n.rows+
 		"[i]", lk.keys, func(k string) string { return "keys=append(keys," + k + ")" }))
 	e.printf("flat := []%s{}\nowners := []parentKey{}\n", model)
-	cols := e.models[lk.target.table].columns
-	config := e.ref("Batch") + "{ParentTable:" + strconv.Quote(lk.way.fk.References) + ",Table:" +
-		strconv.Quote(lk.target.table) + ",ParentKeys:" + columnNamesLiteral(lk.keys) + ",ChildKeys:" +
+	batch := e.ref("Batch") + "{Table:" + strconv.Quote(lk.target.table) + ",ChildKeys:" +
 		columnNamesLiteral(lk.targetKeys)
 	if lk.way.kind == manyToMany {
-		config += ",Through:" + strconv.Quote(lk.way.table) + ",ThroughParent:" + namesLiteral(lk.way.fk.Columns) +
+		batch += ",Through:" + strconv.Quote(lk.way.table) + ",ThroughParent:" + namesLiteral(lk.way.fk.Columns) +
 			",ThroughChild:" + namesLiteral(lk.way.throughFK.Columns) + ",TargetKeys:" + columnNamesLiteral(lk.targetKeys)
 	}
-	manifests := []string{}
-	for _, c := range e.models[lk.target.table].projections {
-		manifests = append(manifests, fmt.Sprintf("{Field:%q,Column:%q,Optional:%t}", fieldPath(c), c.col.Name,
-			nilable(c.typ)))
-	}
-	if len(manifests) > 0 {
-		config += ",Projections:[]" + e.ref("Projection") + "{" + strings.Join(manifests, ",") + "}"
-	}
-	config += "}"
+	batch += "}"
 	e.printf("for chunk := range %s.Chunk(keys,%d) {\ninputs:=make([][]any,len(chunk))\nfor"+
 		" i,key:=range chunk { inputs[i]=[]any{", e.f.Import("slices", "slices"), max(1, inChunk/len(lk.keys)))
 	for i := range lk.keys {
 		e.printf("key.k%d,", i)
 	}
-	e.printf("} }\ntext,args,err:=sub.RenderBatch(%s,%s,parent,%s,inputs)\nif err!=nil{return"+
-		" err}\n", e.dialect(), config, columnNamesLiteral(cols))
+	e.printf("} }\ntext,args,err:=sub.RenderEach(%s,%s,%s,%s,inputs)\nif err!=nil{return"+
+		" %s.Errorf(%q,err)}\n", e.dialect(), batch, e.orderKey(target.table), columnNamesLiteral(target.columns),
+		e.fmtPkg(), "load "+field+": %w")
 	e.printf("related,err:=%s.%s(%s,text,args...)\nif err!=nil{return %s.Errorf(%q,err)}\n", n.db, e.query,
-		n.ctx, e.fmtPkg(), "preload "+field+": %w")
+		n.ctx, e.fmtPkg(), "load "+field+": %w")
 	e.printf("for related.Next(){ var key parentKey\nvar row %s\n", model)
-	scanScope := e.f.Scope()
-	scanColumns := append([]column(nil), cols...)
-	for _, c := range e.models[lk.target.table].projections {
-		c.nullzero = true
-		c.selectedBy = "sub"
-		c.selectionReturn = "related.Close();return err"
-		scanColumns = append(scanColumns, c)
-	}
-	dests, assign := e.scanTargets(scanScope, "row", scanColumns)
-	var keys []string
+	dests, assign := e.scanTargets(e.f.Scope(), "row", target.columns)
+	keys := make([]string, 0, len(lk.keys))
 	for i := range lk.keys {
 		keys = append(keys, fmt.Sprintf("&key.k%d", i))
 	}
 	e.printf("if err:=related.Scan(%s);err!=nil{related.Close();return %s.Errorf(%q,err)}\n",
-		strings.Join(append(keys, dests...), ","), e.fmtPkg(), "scan "+field+": %w")
+		strings.Join(append(keys, dests...), ","), e.fmtPkg(), "load "+field+": %w")
 	e.assignScanned(assign)
-	e.printf("flat=append(flat,row)\nowners=append(owners,key)\n}\nrelated.Close()\nif" +
-		" err:=related.Err();err!=nil{return err}\n}\n")
-	if len(e.models[lk.target.table].links) > 0 {
+	e.printf("flat=append(flat,row)\nowners=append(owners,key)\n}\nrelated.Close()\nif"+
+		" err:=related.Err();err!=nil{return %s.Errorf(%q,err)}\n}\n", e.fmtPkg(), "load "+field+": %w")
+	if len(target.links) > 0 {
 		e.printf("if err:=preload%s(%s,%s,flat,sub);err!=nil{return err}\n", e.names[lk.target.table], n.ctx, n.db)
 	}
 	slice, ok := lk.field.typ.Underlying().(*types.Slice)
 	if !ok {
+		e.printf("}\n")
 		return
 	}
 	elem := types.TypeString(slice.Elem(), e.f.Qualifier)

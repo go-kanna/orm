@@ -2,11 +2,7 @@
 // of the models.
 package scopes
 
-import (
-	"github.com/go-kanna/orm/relation"
-
-	"github.com/go-kanna/orm/example/mysql/model"
-)
+import "github.com/go-kanna/orm/example/mysql/model"
 
 //go:generate go tool kanna-orm
 
@@ -22,20 +18,12 @@ func (s Order) Latest() Order {
 	return s.PlacedAtDesc().IDDesc()
 }
 
-func (s Order) WithCurrentApprover() Order {
-	return s.SelectApprover(func(parent OrderColumns) relation.Single[model.Approval] {
-		return Approvals().RevisionEqColumn(parent.Revision).RevokedAtIsNull().One()
-	})
-}
-
-func (s Order) WithLatestApprover() Order {
-	return s.SelectApprover(func(_ OrderColumns) relation.Single[model.Approval] {
-		return Approvals().RevokedAtIsNull().ApprovedAtDesc().IDDesc().First()
-	})
-}
-
+// WithRecentApprovals loads the three latest approvals of each order.
 func (s Order) WithRecentApprovals() Order {
-	return s.PreloadApprovals(func(_ OrderColumns) relation.Many[model.Approval] {
-		return Approvals().ApprovedAtDesc().IDDesc().Limit(3).Many()
-	})
+	return s.WithApprovals(Approvals().ApprovedAtDesc().IDDesc().Limit(3))
+}
+
+// WithLatestApproval loads the latest approval of each order that is not revoked.
+func (s Order) WithLatestApproval() Order {
+	return s.WithApprovals(Approvals().RevokedAtIsNull().ApprovedAtDesc().IDDesc().Limit(1))
 }

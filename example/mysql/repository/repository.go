@@ -35,7 +35,7 @@ type ProductRepository interface {
 //kanna:repository errors=translateOrderError
 type OrderRepository interface { //nolint:interfacebloat // demonstrates order reads and writes together
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
-	FindApproval(ctx context.Context, id model.OrderID) (model.Order, error)
+	GetApprover(ctx context.Context, id model.OrderID) (OrderApprover, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	ListSummaries(ctx context.Context, s ...scopes.Order) ([]OrderSummary, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
@@ -60,6 +60,12 @@ type FulfillmentRepository interface {
 	FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error)
 	InsertShipment(ctx context.Context, s model.Shipment) error
 	Update(ctx context.Context, o model.Order) error
+}
+
+// OrderApprover is who approved the revision an order is at, nil until someone has.
+type OrderApprover struct {
+	OrderID  model.OrderID
+	Approver *string
 }
 
 // MonthSales is what the orders of a month, as 2026-02, sold.

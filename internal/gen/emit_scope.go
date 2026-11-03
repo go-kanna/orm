@@ -43,8 +43,7 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
 	for _, sc := range scopes {
-		for _, name := range []string{sc.name + "Columns", lowerFirst(sc.name) + "ColumnsFor",
-			sc.name + "Changes", sc.name + "ChangeSet"} {
+		for _, name := range []string{sc.name + "Changes", sc.name + "ChangeSet"} {
 			if at, ok := declared(pkg, name); ok {
 				ds = append(ds, diag.Errorf(at, "%s is reserved for generated scope helpers", name))
 			}
@@ -109,7 +108,7 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	f := gofile.New(generator, pkg.PkgPath, pkg.Name)
 	f.Reserve(declared...)
 	for _, p := range plans {
-		f.Reserve(p.name, p.fn, p.name+"Columns", lowerFirst(p.name)+"ColumnsFor", p.name+"Changes", p.name+"ChangeSet")
+		f.Reserve(p.name, p.fn, p.name+"Changes", p.name+"ChangeSet")
 	}
 	for _, p := range plans {
 		e := emitter{f: f, d: d, p: p}
@@ -149,22 +148,12 @@ func (e emitter) scope() {
 	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s[%s] { return %s }\n\n",
 		s, p.name, e.ref("Of"), model, e.q(s))
 
-	e.columnReferences()
-	e.selectionMethods()
 	e.changes()
 	for _, c := range p.columns {
 		e.column(c)
-		e.columnComparison(c)
 	}
 	for _, lk := range p.links {
-		if !lk.single {
-			e.with(lk)
-		}
-		if lk.single {
-			e.selection(lk)
-		} else if lk.scalar == nil && (lk.way.kind == hasMany || lk.way.kind == manyToMany) {
-			e.collection(lk)
-		}
+		e.with(lk)
 	}
 	for _, w := range p.written {
 		e.written(w)
@@ -222,11 +211,15 @@ func (e emitter) with(lk link) {
 
 	sc := e.f.Scope()
 	s, sub, qs, i, x := sc.Name("s"), sc.Name("sub"), sc.Name("qs"), sc.Name("i"), sc.Name("x")
-	e.printf("// With%s loads %s, from %s %s.\n", name, name, lk.target.table, by)
+	preload, each := "Preload", ""
+	if lk.way.kind == hasMany || lk.way.kind == manyToMany {
+		preload, each = "PreloadEach", " A limit or an offset of the scopes keeps a page of the "+name+" of each row."
+	}
+	e.printf("// With%s loads %s, from %s %s.%s\n", name, name, lk.target.table, by, each)
 	e.printf("func (%[1]s %[2]s) With%[3]s(%[4]s ...%[5]s) %[2]s {\n", s, e.p.name, name, sub, target)
 	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), types.TypeString(lk.model, e.f.Qualifier), sub)
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[2]s.Of()\n}\n", i, x, sub, qs)
-	e.printf("return %s{%s(%s, %s, %s(%s...))}\n}\n\n", e.p.name, e.ref("Preload"), e.q(s),
+	e.printf("return %s{%s(%s, %s, %s(%s...))}\n}\n\n", e.p.name, e.ref(preload), e.q(s),
 		strconv.Quote(strings.Join(lk.field.path, ".")), e.ref("Combine"), qs)
 }
 
@@ -275,7 +268,7 @@ func (e emitter) paging(model string) {
 
 	row := e.f.Scope().Name("row")
 	e.printf("// values holds the value of each column of %s, for After, Before, and Cursor. One that may be NULL\n"+
-		"// holds %s, since no page continues by it.\n", row, e.ref("MayBeNull"))
+		"// holds MayBeNull, since no page continues by it.\n", row)
 	e.printf("func (%s) values(%s %s) map[string]any {\nreturn map[string]any{\n", p.name, row, model)
 	for _, c := range p.columns {
 		v := row + "." + strings.Join(c.path, ".")

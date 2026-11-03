@@ -18,15 +18,13 @@ import (
 // column is a field of a model that holds a column of its table.
 type column struct {
 	// path is the field's name, after those of the structs it is embedded in.
-	path            []string
-	typ             types.Type
-	col             snapshot.Column
-	pos             token.Position
-	nullzero        bool
-	insertDefault   bool
-	selectedBy      string
-	selectionReturn string
-	relationValue   bool
+	path          []string
+	typ           types.Type
+	col           snapshot.Column
+	pos           token.Position
+	nullzero      bool
+	insertDefault bool
+	relationValue bool
 }
 
 // relation is a field of a model that holds other models: a relation, once the foreign key it follows is found.
