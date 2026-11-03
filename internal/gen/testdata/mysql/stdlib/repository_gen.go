@@ -41,7 +41,25 @@ func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any)
 	return result, err
 }
 
-func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (impl.Rows, error) {
+// QueryContext and QueryRowContext return the rows of database/sql as they are, so the hooks see the statement done
+// as these return, before its rows are read.
+func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	ctx, trace := d.options.StartQuery(ctx, query, args)
+	rows, err := d.dbtx.QueryContext(ctx, query, args...)
+	trace.End(err)
+	return rows, err
+}
+
+func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	ctx, trace := d.options.StartQuery(ctx, query, args)
+	row := d.dbtx.QueryRowContext(ctx, query, args...)
+	trace.End(row.Err())
+	return row
+}
+
+// query and queryRow are QueryContext and QueryRowContext that read the rows through the hooks, for them to see the
+// statement done once its rows are read.
+func (d ormDatabase) query(ctx context.Context, query string, args ...any) (impl.Rows, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.dbtx.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -55,7 +73,7 @@ type ormSQLRows struct{ *sql.Rows }
 
 func (r ormSQLRows) Close() { _ = r.Rows.Close() }
 
-func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) impl.Row {
+func (d ormDatabase) queryRow(ctx context.Context, query string, args ...any) impl.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.dbtx.QueryRowContext(ctx, query, args...))
 }
@@ -133,7 +151,7 @@ func (r OrderRepository) ListIDs(ctx context.Context, s ...scopes.Order) ([]mode
 	if err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := r.db.query(ctx, `SELECT id FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("read orders.id: %w", err))
 	}
@@ -168,7 +186,7 @@ func (r OrderRepository) FindMemo(ctx context.Context, id model.OrderID) (**stri
 	if err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
+	rows, err := r.db.query(ctx, `SELECT note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit(), rd.Args()...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("read orders.note: %w", err))
 	}
@@ -211,7 +229,7 @@ func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s 
 		if err != nil {
 			return nil, err
 		}
-		rows, err := r.db.QueryContext(ctx, text+"", args...)
+		rows, err := r.db.query(ctx, text+"", args...)
 		if err != nil {
 			return nil, fmt.Errorf("project orders: %w", err)
 		}
@@ -260,7 +278,7 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 		if err != nil {
 			return nil, err
 		}
-		rows, err := r.db.QueryContext(ctx, text+"", args...)
+		rows, err := r.db.query(ctx, text+"", args...)
 		if err != nil {
 			return nil, fmt.Errorf("project orders: %w", err)
 		}
@@ -309,7 +327,7 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 		if err != nil {
 			return nil, err
 		}
-		rows, err := r.db.QueryContext(ctx, text+"", args...)
+		rows, err := r.db.query(ctx, text+"", args...)
 		if err != nil {
 			return nil, fmt.Errorf("project orders: %w", err)
 		}
@@ -353,7 +371,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	if err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := r.db.QueryContext(ctx, text+"", args...)
+	rows, err := r.db.query(ctx, text+"", args...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 	}
@@ -403,7 +421,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (int64, e
 		return 0, r.mapError(err)
 	}
 	var n int64
-	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
+	if err := r.db.queryRow(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
 		return 0, r.mapError(fmt.Errorf("count orders: %w", err))
 	}
 	return n, nil
@@ -423,7 +441,7 @@ func (r OrderRepository) Exists(ctx context.Context, s ...scopes.Order) (bool, e
 		return false, r.mapError(err)
 	}
 	var n bool
-	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+`)`, rd.Args()...).Scan(&n); err != nil {
+	if err := r.db.queryRow(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+`)`, rd.Args()...).Scan(&n); err != nil {
 		return false, r.mapError(fmt.Errorf("exists orders: %w", err))
 	}
 	return n, nil
@@ -626,13 +644,13 @@ func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order
 			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 		}
 		var row model.Order
-		if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 		}
 		return row, nil
 	}
 	var row model.Order
-	if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+	if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 	}
 	return row, nil
@@ -691,13 +709,13 @@ func (r OrderRepository) UpsertOrder(ctx context.Context, o model.Order) (model.
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		var row model.Order
-		if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		return row, nil
 	}
 	var row model.Order
-	if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+	if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
 	return row, nil
@@ -710,7 +728,7 @@ VALUES (?, ?, ?)`
 		return model.OrderLine{}, r.mapError(fmt.Errorf("insert into order_lines: %w", err))
 	}
 	var row model.OrderLine
-	err := r.db.QueryRowContext(ctx, `SELECT order_id, line_no, sku FROM order_lines WHERE order_id = ? AND line_no = ?`, line.OrderID, line.LineNo).
+	err := r.db.queryRow(ctx, `SELECT order_id, line_no, sku FROM order_lines WHERE order_id = ? AND line_no = ?`, line.OrderID, line.LineNo).
 		Scan(&row.OrderID, &row.LineNo, &row.SKU)
 	if err != nil {
 		return model.OrderLine{}, r.mapError(fmt.Errorf("insert into order_lines: %w", err))
@@ -767,7 +785,7 @@ func (r OrderRepository) Update(ctx context.Context, o model.Order) error {
 	if n == 0 {
 		// MySQL counts the rows an update changes, not those it finds: see whether the row is there.
 		var found bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
+		if err := r.db.queryRow(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
 			return r.mapError(fmt.Errorf("update orders: %w", err))
 		}
 		if !found {
@@ -803,7 +821,7 @@ func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID,
 			return r.mapError(err)
 		}
 		var found bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+")", rd.Args()...).Scan(&found); err != nil {
+		if err := r.db.queryRow(ctx, `SELECT EXISTS (SELECT 1 FROM orders`+rd.Where()+")", rd.Args()...).Scan(&found); err != nil {
 			return r.mapError(fmt.Errorf(`update orders: %w`, err))
 		}
 		if !found {
@@ -843,7 +861,7 @@ ON DUPLICATE KEY UPDATE name = new.name`
 		return model.Customer{}, r.mapError(fmt.Errorf("upsert into customers: %w", err))
 	}
 	var row model.Customer
-	err := r.db.QueryRowContext(ctx, `SELECT id, name FROM customers WHERE id = ?`, c.ID).
+	err := r.db.queryRow(ctx, `SELECT id, name FROM customers WHERE id = ?`, c.ID).
 		Scan(&row.ID, &row.Name)
 	if err != nil {
 		return model.Customer{}, r.mapError(fmt.Errorf("upsert into customers: %w", err))
@@ -868,13 +886,13 @@ func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (m
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		var row model.Order
-		if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		return row, nil
 	}
 	var row model.Order
-	if err := r.db.QueryRowContext(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE `order` = ?", o.Position).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+	if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE `order` = ?", o.Position).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
 	return row, nil
@@ -907,7 +925,7 @@ ON DUPLICATE KEY UPDATE name = new.name`
 		return model.Tag{}, r.mapError(fmt.Errorf("upsert into tags: %w", err))
 	}
 	var row model.Tag
-	err := r.db.QueryRowContext(ctx, `SELECT name FROM tags WHERE name = ?`, tag.Name).
+	err := r.db.queryRow(ctx, `SELECT name FROM tags WHERE name = ?`, tag.Name).
 		Scan(&row.Name)
 	if err != nil {
 		return model.Tag{}, r.mapError(fmt.Errorf("upsert into tags: %w", err))
@@ -922,7 +940,7 @@ FROM orders
 WHERE placed_at >= ?
 GROUP BY 1
 ORDER BY 1`
-	rows, err := r.db.QueryContext(ctx, q, since)
+	rows, err := r.db.query(ctx, q, since)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("query MonthCounts: %w", err))
 	}
@@ -954,7 +972,7 @@ func (r OrderRepository) ListWithCustomers(ctx context.Context, s ...scopes.Orde
 	if err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := r.db.QueryContext(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	rows, err := r.db.query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("query ListWithCustomers: %w", err))
 	}
@@ -1000,7 +1018,7 @@ func (r OrderRepository) FirstPlacedSince(ctx context.Context, since time.Time, 
 	if err != nil {
 		return model.Order{}, r.mapError(err)
 	}
-	rows, err := r.db.QueryContext(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	rows, err := r.db.query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
 	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("query FirstPlacedSince: %w", err))
 	}
@@ -1036,7 +1054,7 @@ JOIN customers c ON c.id = o.customer_id
 WHERE c.id = ? AND o.customer_id = ?
 GROUP BY c.name`
 	var row repository.CustomerTotal
-	err := r.db.QueryRowContext(ctx, q, customerID, customerID).
+	err := r.db.queryRow(ctx, q, customerID, customerID).
 		Scan(&row.Name, &row.Total)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repository.CustomerTotal{}, r.mapError(fmt.Errorf("query TotalOf: %w", orm.ErrNotFound))
@@ -1073,7 +1091,7 @@ func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
 // CustomersOf runs the query of its name in queries.sql.
 func (r OrderRepository) CustomersOf(ctx context.Context, ids []model.OrderID) ([]int64, error) {
 	q, args := impl.Expand([]string{`SELECT customer_id FROM orders WHERE id IN (`, `) ORDER BY id`}, impl.List(ids))
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	rows, err := r.db.query(ctx, q, args...)
 	if err != nil {
 		return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
 	}
@@ -1110,7 +1128,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Custo
 
 // queryCustomers runs query, a query of the rows of customers, and reads them.
 func queryCustomers(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Customer, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
 	}
@@ -1150,7 +1168,7 @@ func selectLineNotes(ctx context.Context, db ormDatabase, q scope.Of[model.LineN
 
 // queryLineNotes runs query, a query of the rows of line_notes, and reads them.
 func queryLineNotes(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.LineNote, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read line_notes: %w", err)
 	}
@@ -1237,7 +1255,7 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.Orde
 
 // queryOrderLines runs query, a query of the rows of order_lines, and reads them.
 func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
 	}
@@ -1282,7 +1300,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			if err != nil {
 				return fmt.Errorf("load Notes: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Notes: %w", err)
 			}
@@ -1337,7 +1355,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1446,7 +1464,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			for _, k := range chunk {
 				args = append(args, k.k0, k.k1)
 			}
-			pairs, err := db.QueryContext(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN ((?, ?)`+strings.Repeat(`, (?, ?)`, len(chunk)-1)+`)`, args...)
+			pairs, err := db.query(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN ((?, ?)`+strings.Repeat(`, (?, ?)`, len(chunk)-1)+`)`, args...)
 			if err != nil {
 				return fmt.Errorf("read line_tags: %w", err)
 			}
@@ -1519,7 +1537,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], 
 
 // queryOrders runs query, a query of the rows of orders, and reads them.
 func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
 	}
@@ -1561,7 +1579,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -1613,7 +1631,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
-			related, err := db.QueryContext(ctx, text, args...)
+			related, err := db.query(ctx, text, args...)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1702,7 +1720,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q sc
 			for _, v := range chunk {
 				args = append(args, v)
 			}
-			pairs, err := db.QueryContext(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id IN (?`+strings.Repeat(`, ?`, len(chunk)-1)+`)`, args...)
+			pairs, err := db.query(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id IN (?`+strings.Repeat(`, ?`, len(chunk)-1)+`)`, args...)
 			if err != nil {
 				return fmt.Errorf("read order_tags: %w", err)
 			}
@@ -1761,7 +1779,7 @@ func selectTags(ctx context.Context, db ormDatabase, q scope.Of[model.Tag], lock
 
 // queryTags runs query, a query of the rows of tags, and reads them.
 func queryTags(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Tag, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read tags: %w", err)
 	}

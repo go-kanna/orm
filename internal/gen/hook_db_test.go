@@ -57,6 +57,21 @@ func TestHooks_MySQL(t *testing.T) {
 	checkExecutions(t, done)
 }
 
+// A statement written by hand on database/sql gets the rows of database/sql, and the hooks see it done as it returns.
+func TestHooks_ByHand_MySQL(t *testing.T) {
+	t.Parallel()
+	var done []hook.Execution
+	repo := mstdlib.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done))
+	ids, n, err := repo.OrderIDsByHand(t.Context())
+	if err != nil || len(ids) == 0 || int64(len(ids)) != n {
+		t.Fatalf("read by hand: %v, %d, %v", ids, n, err)
+	}
+	if len(done) != 2 || !strings.Contains(done[0].SQL, "SELECT id") || !strings.Contains(done[1].SQL, "count(*)") ||
+		done[0].Err != nil || done[1].Err != nil {
+		t.Fatalf("executions: %+v", done)
+	}
+}
+
 type hookKey struct{}
 
 // captureExecutions has a repository mark the context of each statement before it runs, and record it after.
