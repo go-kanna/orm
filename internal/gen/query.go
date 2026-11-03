@@ -193,11 +193,10 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 			m.result = resultCount
 		default:
 			m.result, q.row = resultRow, t
+			// A Find returns nil for no row, as a generated one does, whatever its pointer holds.
 			if ptr, ok := t.(*types.Pointer); ok {
 				if v, known := verbOf(m.name); known && v == verbFind {
-					if _, structured := ptr.Elem().Underlying().(*types.Struct); structured && !holdsColumn(ptr.Elem()) {
-						q.row, m.optional = ptr.Elem(), true
-					}
+					q.row, m.optional = ptr.Elem(), true
 				}
 			}
 			if s, ok := t.Underlying().(*types.Slice); ok {
@@ -208,6 +207,12 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 					return shape
 				}
 				c := described.Columns[0]
+				if m.optional && c.Nullable && !nilable(q.row) {
+					return []diag.Diag{diag.Errorf(st.Header, "%s: a Find returns nil for no row, so it cannot read column "+
+						"%s, which may be NULL", m.name, c.Name).WithHints(fmt.Sprintf(
+						"name it Get, whose (*%s, error) returns nil for NULL and orm.ErrNotFound for no row",
+						types.TypeString(q.row, nil)))}
+				}
 				if _, ok := readable(q.row, c.Type); !ok || c.Nullable && !nilable(q.row) {
 					return []diag.Diag{diag.Errorf(st.Header, "%s: the scalar result cannot hold column %s (%s)",
 						m.name, c.Name, c.Type)}

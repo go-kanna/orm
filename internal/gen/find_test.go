@@ -18,10 +18,14 @@ const findMethods = `
  //kanna:lock update
  FindForUpdate(ctx context.Context, id int64) (*model.Record,error)
  FindCustom(ctx context.Context, recordKey string) (*model.Record,error)
+ FindKeyOf(ctx context.Context, id int64) (*string,error)
 `
 
 const findQuery = `-- query: FindCustom
 SELECT id, record_key, owner_id, note, stamp FROM records WHERE record_key = :recordKey;
+
+-- query: FindKeyOf
+SELECT record_key FROM records WHERE id = :id;
 `
 
 const findChecks = `
@@ -43,6 +47,10 @@ const findChecks = `
  if err != nil || got == nil || got.ID != first.ID { t.Fatalf("custom row: %+v %v",got,err) }
  got,err = records.FindCustom(ctx,"missing")
  if err != nil || got != nil { t.Fatalf("missing custom row: %+v %v",got,err) }
+ key,err := records.FindKeyOf(ctx,first.ID)
+ if err != nil || key == nil || *key != "one" { t.Fatalf("custom scalar: %v %v",key,err) }
+ key,err = records.FindKeyOf(ctx,first.ID+100)
+ if err != nil || key != nil { t.Fatalf("missing custom scalar: %v %v",key,err) }
  got,err = records.FindForUpdate(ctx,first.ID)
  if err == nil || got != nil { t.Fatalf("lock without transaction: %+v %v",got,err) }
  tx,err := conn.BeginTx(ctx,nil)
@@ -90,7 +98,7 @@ func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
 		t.Fatal(err)
 	}
 	statements, ds := sqlfile.Parse("queries.sql", []byte(findQuery))
-	if len(ds) != 0 || len(statements) != 1 {
+	if len(ds) != 0 || len(statements) != 2 {
 		t.Fatalf("parse query: %v", ds)
 	}
 	s.Statements = map[string]snapshot.Statement{
@@ -104,6 +112,11 @@ func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
 				{Name: "note", Type: "text", Nullable: true},
 				{Name: "stamp", Type: "bigint", NotNull: true},
 			},
+		},
+		"example.com/shop/impl.FindKeyOf": {
+			Digest:  snapshot.Digest(statements[1].Text),
+			Params:  []snapshot.Param{{Name: "id", Type: "bigint"}},
+			Columns: []snapshot.Result{{Name: "record_key", Type: "text", NotNull: true}},
 		},
 	}
 	if err := files.WriteFile(snapshot.Name, snapshot.Marshal(s), 0o600); err != nil {
@@ -168,7 +181,8 @@ func TestCommand_FindMistakes(t *testing.T) {
 		{"value", "Find(ctx context.Context, id int64) (model.Record,error)", "cannot implement it as declared"},
 		{"slice", "Find(ctx context.Context, id int64) ([]model.Record,error)", "cannot implement it as declared"},
 		{"nonunique", "Find(ctx context.Context, note string) (*model.Record,error)", "not a unique key"},
-		{"scope only", "Find(ctx context.Context, s ...scopes.Record) (*model.Record,error)", "not a unique key"},
+		{"scope only", "Find(ctx context.Context, s ...scopes.Record) (*model.Record,error)",
+			"reads one row by a key, but it takes none"},
 		{"skip locked", "//kanna:lock update skip-locked\n " + declaration, "skip-locked passes a locked row over"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -219,5 +233,22 @@ func TestRepositories_FindCompositeKey(t *testing.T) {
 `, "", nil)
 	if ds != "" {
 		t.Fatalf("Find composite key: %s", ds)
+	}
+}
+
+func TestRepositories_FindOfANullableColumn(t *testing.T) {
+	t.Parallel()
+
+	const want = "queries.sql:1:1: error: FindNote: a Find returns nil for no row, so it cannot read column note, " +
+		"which may be NULL\n  name it Get, whose (*string, error) returns nil for NULL and orm.ErrNotFound for no row"
+	_, ds := repositories(t, snapshot.PostgreSQL,
+		"\tFindNote(ctx context.Context, id model.OrderID) (*string, error)\n",
+		"-- query: FindNote\nSELECT note FROM orders WHERE id = :id;\n",
+		map[string]snapshot.Statement{"FindNote": {
+			Params:  []snapshot.Param{{Name: "id", Type: "int8"}},
+			Columns: []snapshot.Result{{Name: "note", Type: "text", Nullable: true}},
+		}})
+	if ds != want {
+		t.Errorf("Repositories reports\n%s\nwant\n%s", ds, want)
 	}
 }
