@@ -24,11 +24,47 @@ type DBTX interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+type ormDatabase struct {
+	db      DBTX
+	options orm.Options
+}
+
+func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	trace := d.options.StartQuery(ctx, query, args)
+	result, err := d.db.ExecContext(ctx, query, args...)
+	trace.End(err)
+	return result, err
+}
+
+func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (orm.Rows, error) {
+	trace := d.options.StartQuery(ctx, query, args)
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		trace.End(err)
+		return nil, err
+	}
+	return trace.Rows(ormSQLRows{Rows: rows}, nil)
+}
+
+type ormSQLRows struct{ *sql.Rows }
+
+func (r ormSQLRows) Close() { _ = r.Rows.Close() }
+
+func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) orm.Row {
+	trace := d.options.StartQuery(ctx, query, args)
+	return trace.Row(d.db.QueryRowContext(ctx, query, args...))
+}
+
 // CustomerRepository implements repository.CustomerRepository on MySQL through database/sql.
-type CustomerRepository struct{ db DBTX }
+type CustomerRepository struct {
+	db       DBTX
+	executor ormDatabase
+}
 
 // NewCustomerRepository returns a CustomerRepository running on db.
-func NewCustomerRepository(db DBTX) CustomerRepository { return CustomerRepository{db: db} }
+func NewCustomerRepository(db DBTX, opts ...orm.Option) CustomerRepository {
+	return CustomerRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+}
 
 var _ repository.CustomerRepository = CustomerRepository{}
 
@@ -36,7 +72,7 @@ func (r CustomerRepository) UpsertByEmail(ctx context.Context, c model.Customer)
 	const q = `INSERT INTO customers (email, name, phone, created_at)
 VALUES (?, ?, ?, ?) AS new
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
-	res, err := r.db.ExecContext(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt)
+	res, err := r.executor.ExecContext(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
@@ -45,7 +81,7 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name, phone = COALES
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
 	var row model.Customer
-	err = r.db.QueryRowContext(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`, id).
+	err = r.executor.QueryRowContext(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`, id).
 		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -56,7 +92,7 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name, phone = COALES
 func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
 	var q orm.Of[model.Customer]
 	q = q.Where(`id = `, id)
-	rows, err := selectCustomers(ctx, r.db, q, "")
+	rows, err := selectCustomers(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Customer{}, err
 	}
@@ -78,7 +114,7 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 	if err != nil {
 		return err
 	}
-	res, err := r.db.ExecContext(ctx, text, args...)
+	res, err := r.executor.ExecContext(ctx, text, args...)
 	if err != nil {
 		return fmt.Errorf(`update customers: %w`, err)
 	}
@@ -92,7 +128,7 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 			return err
 		}
 		var found bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM customers`+rd.Where()+")", rd.Args()...).Scan(&found); err != nil {
+		if err := r.executor.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM customers`+rd.Where()+")", rd.Args()...).Scan(&found); err != nil {
 			return fmt.Errorf(`update customers: %w`, err)
 		}
 		if !found {
@@ -103,10 +139,15 @@ func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID
 }
 
 // ProductRepository implements repository.ProductRepository on MySQL through database/sql.
-type ProductRepository struct{ db DBTX }
+type ProductRepository struct {
+	db       DBTX
+	executor ormDatabase
+}
 
 // NewProductRepository returns a ProductRepository running on db.
-func NewProductRepository(db DBTX) ProductRepository { return ProductRepository{db: db} }
+func NewProductRepository(db DBTX, opts ...orm.Option) ProductRepository {
+	return ProductRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+}
 
 var _ repository.ProductRepository = ProductRepository{}
 
@@ -120,7 +161,7 @@ func (r ProductRepository) UpsertAll(ctx context.Context, products []model.Produ
 		for i := range chunk {
 			args = append(args, chunk[i].SKU, chunk[i].Name, chunk[i].Price)
 		}
-		if _, err := r.db.ExecContext(ctx, `INSERT INTO products (sku, name, price)
+		if _, err := r.executor.ExecContext(ctx, `INSERT INTO products (sku, name, price)
 VALUES (?, ?, ?)`+strings.Repeat(`, (?, ?, ?)`, len(chunk)-1)+` AS new
 ON DUPLICATE KEY UPDATE name = new.name, price = new.price`, args...); err != nil {
 			return fmt.Errorf("upsert into products: %w", err)
@@ -135,7 +176,7 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	return selectProducts(ctx, r.db, q, "")
+	return selectProducts(ctx, r.executor, q, "")
 }
 
 func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
@@ -151,7 +192,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT name, price FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+"", rd.Args()...)
+	rows, err := r.executor.QueryContext(ctx, `SELECT name, price FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+"", rd.Args()...)
 	if err != nil {
 		return nil, fmt.Errorf("project products: %w", err)
 	}
@@ -183,7 +224,7 @@ func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]st
 	if err2 != nil {
 		return nil, err2
 	}
-	rows, err2 := r.db.QueryContext(ctx, `SELECT name FROM products`+rd2.Where()+rd2.OrderBy()+rd2.Limit(), rd2.Args()...)
+	rows, err2 := r.executor.QueryContext(ctx, `SELECT name FROM products`+rd2.Where()+rd2.OrderBy()+rd2.Limit(), rd2.Args()...)
 	if err2 != nil {
 		return nil, fmt.Errorf("pluck products.name: %w", err2)
 	}
@@ -215,7 +256,7 @@ func (r ProductRepository) InsertTags(ctx context.Context, tags []model.Tag) err
 		for i := range chunk {
 			args = append(args, chunk[i].Name)
 		}
-		if _, err := r.db.ExecContext(ctx, `INSERT INTO tags (name)
+		if _, err := r.executor.ExecContext(ctx, `INSERT INTO tags (name)
 VALUES (?)`+strings.Repeat(`, (?)`, len(chunk)-1), args...); err != nil {
 			return fmt.Errorf("insert into tags: %w", err)
 		}
@@ -239,10 +280,15 @@ const orderRepositoryOperationMonthlySales orderRepositoryOperation = "MonthlySa
 var _ func(orderRepositoryOperation, error) error = translateOrderError
 
 // OrderRepository implements repository.OrderRepository on MySQL through database/sql.
-type OrderRepository struct{ db DBTX }
+type OrderRepository struct {
+	db       DBTX
+	executor ormDatabase
+}
 
 // NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX) OrderRepository { return OrderRepository{db: db} }
+func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
+	return OrderRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+}
 
 var _ repository.OrderRepository = OrderRepository{}
 
@@ -258,7 +304,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	}
 	q := orm.Join(qs...)
 	q = q.Where(`id = `, id)
-	rows, err := selectOrders(ctx, r.db, q, "")
+	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -287,7 +333,7 @@ LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.
 WHERE o.id = ?`
 	var row model.Order
 	var nullableMemo sql.Null[string]
-	err := r.db.QueryRowContext(ctx, q, id).
+	err := r.executor.QueryRowContext(ctx, q, id).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo, &row.Approver)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, fmt.Errorf("query FindApproval: %w", orm.ErrNotFound)
@@ -310,7 +356,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	return selectOrders(ctx, r.db, q, "")
+	return selectOrders(ctx, r.executor, q, "")
 }
 
 func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result int64, resultErr error) {
@@ -332,7 +378,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result i
 		return 0, err
 	}
 	var n int64
-	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
+	if err := r.executor.QueryRowContext(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count orders: %w", err)
 	}
 	return n, nil
@@ -346,7 +392,7 @@ func (r OrderRepository) Insert(ctx context.Context, o model.Order) (result mode
 	}()
 	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
 VALUES (?, ?, ?, ?)`
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""})
+	res, err := r.executor.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""})
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
 	}
@@ -356,7 +402,7 @@ VALUES (?, ?, ?, ?)`
 	}
 	var row model.Order
 	var nullableMemo sql.Null[string]
-	err = r.db.QueryRowContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).
+	err = r.executor.QueryRowContext(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
@@ -380,7 +426,7 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 		for i := range chunk {
 			args = append(args, chunk[i].OrderID, chunk[i].LineNo, chunk[i].SKU, chunk[i].Quantity)
 		}
-		if _, err := r.db.ExecContext(ctx, `INSERT INTO order_lines (order_id, line_no, sku, quantity)
+		if _, err := r.executor.ExecContext(ctx, `INSERT INTO order_lines (order_id, line_no, sku, quantity)
 VALUES (?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?)`, len(chunk)-1), args...); err != nil {
 			return fmt.Errorf("insert into order_lines: %w", err)
 		}
@@ -403,7 +449,7 @@ func (r OrderRepository) InsertApprovals(ctx context.Context, approvals []model.
 		for i := range chunk {
 			args = append(args, chunk[i].OrderID, chunk[i].Revision, chunk[i].Approver, chunk[i].ApprovedAt, chunk[i].RevokedAt)
 		}
-		if _, err := r.db.ExecContext(ctx, `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
+		if _, err := r.executor.ExecContext(ctx, `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
 VALUES (?, ?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?, ?)`, len(chunk)-1), args...); err != nil {
 			return fmt.Errorf("insert into approvals: %w", err)
 		}
@@ -426,7 +472,7 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 	if err2 != nil {
 		return 0, err2
 	}
-	res, err2 := r.db.ExecContext(ctx, text, args...)
+	res, err2 := r.executor.ExecContext(ctx, text, args...)
 	if err2 != nil {
 		return 0, fmt.Errorf(`delete from orders: %w`, err2)
 	}
@@ -445,7 +491,7 @@ func (r OrderRepository) Tag(ctx context.Context, orderID model.OrderID, tag str
 		}
 	}()
 	const q = `INSERT IGNORE INTO order_tags (order_id, tag) VALUES (?, ?)`
-	if _, err := r.db.ExecContext(ctx, q, orderID, tag); err != nil {
+	if _, err := r.executor.ExecContext(ctx, q, orderID, tag); err != nil {
 		return fmt.Errorf("query Tag: %w", err)
 	}
 	return nil
@@ -467,7 +513,7 @@ JOIN products p ON p.sku = l.sku
 WHERE o.placed_at >= ? AND o.status <> 'canceled'
 GROUP BY 1
 ORDER BY 1`
-	rows, err := r.db.QueryContext(ctx, q, since)
+	rows, err := r.executor.QueryContext(ctx, q, since)
 	if err != nil {
 		return nil, fmt.Errorf("query MonthlySales: %w", err)
 	}
@@ -487,10 +533,15 @@ ORDER BY 1`
 }
 
 // FulfillmentRepository implements repository.FulfillmentRepository on MySQL through database/sql.
-type FulfillmentRepository struct{ db DBTX }
+type FulfillmentRepository struct {
+	db       DBTX
+	executor ormDatabase
+}
 
 // NewFulfillmentRepository returns a FulfillmentRepository running on db.
-func NewFulfillmentRepository(db DBTX) FulfillmentRepository { return FulfillmentRepository{db: db} }
+func NewFulfillmentRepository(db DBTX, opts ...orm.Option) FulfillmentRepository {
+	return FulfillmentRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+}
 
 var _ repository.FulfillmentRepository = FulfillmentRepository{}
 
@@ -500,7 +551,7 @@ func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderI
 	}
 	var q orm.Of[model.Order]
 	q = q.Where(`id = `, id)
-	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE`)
+	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE`)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -520,7 +571,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 	}
 	q := orm.Join(qs...)
 	q = q.Limit(1)
-	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
+	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -533,7 +584,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 func (r FulfillmentRepository) InsertShipment(ctx context.Context, s model.Shipment) error {
 	const q = `INSERT INTO shipments (order_id, carrier, tracking)
 VALUES (?, ?, ?)`
-	if _, err := r.db.ExecContext(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
+	if _, err := r.executor.ExecContext(ctx, q, s.OrderID, s.Carrier, s.Tracking); err != nil {
 		return fmt.Errorf("insert into shipments: %w", err)
 	}
 	return nil
@@ -543,7 +594,7 @@ func (r FulfillmentRepository) Update(ctx context.Context, o model.Order) error 
 	const q = `UPDATE orders
 SET customer_id = ?, status = ?, placed_at = ?, note = ?
 WHERE id = ?`
-	res, err := r.db.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}, o.ID)
+	res, err := r.executor.ExecContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}, o.ID)
 	if err != nil {
 		return fmt.Errorf("update orders: %w", err)
 	}
@@ -554,7 +605,7 @@ WHERE id = ?`
 	if n == 0 {
 		// MySQL counts the rows an update changes, not those it finds: see whether the row is there.
 		var found bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
+		if err := r.executor.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE id = ?)`, o.ID).Scan(&found); err != nil {
 			return fmt.Errorf("update orders: %w", err)
 		}
 		if !found {
@@ -565,7 +616,7 @@ WHERE id = ?`
 }
 
 // selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
-func selectApprovals(ctx context.Context, db DBTX, q orm.Of[model.Approval], lock string) ([]model.Approval, error) {
+func selectApprovals(ctx context.Context, db ormDatabase, q orm.Of[model.Approval], lock string) ([]model.Approval, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -593,7 +644,7 @@ func selectApprovals(ctx context.Context, db DBTX, q orm.Of[model.Approval], loc
 }
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
-func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
+func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -621,7 +672,7 @@ func selectCustomers(ctx context.Context, db DBTX, q orm.Of[model.Customer], loc
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -652,7 +703,7 @@ func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine], l
 }
 
 // preloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q orm.Of[model.OrderLine]) error {
+func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q orm.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -685,7 +736,7 @@ func preloadOrderLines(ctx context.Context, db DBTX, rows []model.OrderLine, q o
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock string) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -727,7 +778,7 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q orm.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -1024,7 +1075,7 @@ func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[mo
 }
 
 // selectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
-func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product], lock string) ([]model.Product, error) {
+func selectProducts(ctx context.Context, db ormDatabase, q orm.Of[model.Product], lock string) ([]model.Product, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -1052,7 +1103,7 @@ func selectProducts(ctx context.Context, db DBTX, q orm.Of[model.Product], lock 
 }
 
 // selectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
-func selectShipments(ctx context.Context, db DBTX, q orm.Of[model.Shipment], lock string) ([]model.Shipment, error) {
+func selectShipments(ctx context.Context, db ormDatabase, q orm.Of[model.Shipment], lock string) ([]model.Shipment, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err
@@ -1080,7 +1131,7 @@ func selectShipments(ctx context.Context, db DBTX, q orm.Of[model.Shipment], loc
 }
 
 // selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
-func selectTags(ctx context.Context, db DBTX, q orm.Of[model.Tag], lock string) ([]model.Tag, error) {
+func selectTags(ctx context.Context, db ormDatabase, q orm.Of[model.Tag], lock string) ([]model.Tag, error) {
 	rd, err := q.Render(orm.MySQL, 1)
 	if err != nil {
 		return nil, err

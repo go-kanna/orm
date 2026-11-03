@@ -38,11 +38,14 @@ func run(ctx context.Context, url string, w io.Writer) error {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer pool.Close()
+	queryLog := orm.WithQueryLogger(func(_ context.Context, q orm.QueryLog) {
+		fmt.Fprintf(w, "SQL (%s): %s; error=%v\n", q.Duration, q.SQL, q.Err)
+	})
 	ex := example{
 		db:          pool,
 		customers:   store.NewCustomerRepository(pool),
 		products:    store.NewProductRepository(pool),
-		orders:      store.NewOrderRepository(pool),
+		orders:      store.NewOrderRepository(pool, queryLog),
 		fulfillment: store.NewFulfillmentRepository(pool),
 		w:           w,
 	}

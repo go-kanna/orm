@@ -21,11 +21,47 @@ type DBTX interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+type ormDatabase struct {
+	db      DBTX
+	options orm.Options
+}
+
+func (d ormDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	trace := d.options.StartQuery(ctx, query, args)
+	result, err := d.db.ExecContext(ctx, query, args...)
+	trace.End(err)
+	return result, err
+}
+
+func (d ormDatabase) QueryContext(ctx context.Context, query string, args ...any) (orm.Rows, error) {
+	trace := d.options.StartQuery(ctx, query, args)
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		trace.End(err)
+		return nil, err
+	}
+	return trace.Rows(ormSQLRows{Rows: rows}, nil)
+}
+
+type ormSQLRows struct{ *sql.Rows }
+
+func (r ormSQLRows) Close() { _ = r.Rows.Close() }
+
+func (d ormDatabase) QueryRowContext(ctx context.Context, query string, args ...any) orm.Row {
+	trace := d.options.StartQuery(ctx, query, args)
+	return trace.Row(d.db.QueryRowContext(ctx, query, args...))
+}
+
 // CustomerRepository implements repository.CustomerRepository on PostgreSQL through database/sql.
-type CustomerRepository struct{ db DBTX }
+type CustomerRepository struct {
+	db       DBTX
+	executor ormDatabase
+}
 
 // NewCustomerRepository returns a CustomerRepository running on db.
-func NewCustomerRepository(db DBTX) CustomerRepository { return CustomerRepository{db: db} }
+func NewCustomerRepository(db DBTX, opts ...orm.Option) CustomerRepository {
+	return CustomerRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+}
 
 var _ repository.CustomerRepository = CustomerRepository{}
 
@@ -34,7 +70,7 @@ func (r CustomerRepository) Insert(ctx context.Context, c model.Customer) (model
 VALUES ($1, $2, $3)
 RETURNING id, email, name, created_at`
 	var row model.Customer
-	err := r.db.QueryRowContext(ctx, q, c.Email, c.Name, c.CreatedAt).
+	err := r.executor.QueryRowContext(ctx, q, c.Email, c.Name, c.CreatedAt).
 		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("insert into customers: %w", err)
@@ -48,7 +84,7 @@ VALUES ($1, $2, $3)
 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
 RETURNING id, email, name, created_at`
 	var row model.Customer
-	err := r.db.QueryRowContext(ctx, q, c.Email, c.Name, c.CreatedAt).
+	err := r.executor.QueryRowContext(ctx, q, c.Email, c.Name, c.CreatedAt).
 		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -57,17 +93,22 @@ RETURNING id, email, name, created_at`
 }
 
 // OrderRepository implements repository.OrderRepository on PostgreSQL through database/sql.
-type OrderRepository struct{ db DBTX }
+type OrderRepository struct {
+	db       DBTX
+	executor ormDatabase
+}
 
 // NewOrderRepository returns an OrderRepository running on db.
-func NewOrderRepository(db DBTX) OrderRepository { return OrderRepository{db: db} }
+func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
+	return OrderRepository{db: db, executor: ormDatabase{db: db, options: orm.NewOptions(opts...)}}
+}
 
 var _ repository.OrderRepository = OrderRepository{}
 
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
 	var q orm.Of[model.Order]
 	q = q.Where(`id = `, id)
-	rows, err := selectOrders(ctx, r.db, q, "")
+	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -83,7 +124,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 		qs[i] = x.Of()
 	}
 	q := orm.Join(qs...)
-	return selectOrders(ctx, r.db, q, "")
+	return selectOrders(ctx, r.executor, q, "")
 }
 
 func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error) {
@@ -101,7 +142,7 @@ func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLin
 	const q = `INSERT INTO order_lines (order_id, sku, quantity)
 SELECT * FROM unnest($1::int8[], $2::text[], $3::int4[])
 RETURNING id, order_id, sku, quantity`
-	rows, err := r.db.QueryContext(ctx, q, orderID, sku, quantity)
+	rows, err := r.executor.QueryContext(ctx, q, orderID, sku, quantity)
 	if err != nil {
 		return nil, fmt.Errorf("insert into order_lines: %w", err)
 	}
@@ -121,7 +162,7 @@ RETURNING id, order_id, sku, quantity`
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -149,7 +190,7 @@ func selectOrderLines(ctx context.Context, db DBTX, q orm.Of[model.OrderLine], l
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock string) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(orm.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -180,7 +221,7 @@ func selectOrders(ctx context.Context, db DBTX, q orm.Of[model.Order], lock stri
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db DBTX, rows []model.Order, q orm.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q orm.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
