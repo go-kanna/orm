@@ -912,7 +912,7 @@ n, err := repo.Delete(ctx, scopes.Orders().
 
 Without pagination, the method deletes all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and deletes those rows in one statement. Composite primary keys and non-null unique keys are supported, on PostgreSQL and MySQL. A table without either kind of key can still use an ordinary condition-based delete, but cannot use paged deletion.
 
-A WHERE condition is required even when a limit is supplied. Paged deletion requires an explicit order; end it in a unique key, such as `IDAsc()`, to choose consistently among equal sort values. A page continued by `After` or `Before` selects them too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
+A WHERE condition is required even when a limit is supplied. A page of rows to delete is chosen as a read of the same scope chooses it: an order ends in the key, so that rows equal in it are chosen alike, and a page of no order holds whichever rows the database reads first, as in SQL. A page continued by `After` or `Before` selects them too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
 
 A `Delete(ctx, id) error` by a key returns `orm.ErrNotFound` when no row has it; the shape of the method, not its name, tells the two apart. Both database examples delete the oldest matching order with a limit.
 

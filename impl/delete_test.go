@@ -17,7 +17,7 @@ func TestRenderDelete(t *testing.T) {
 		if err != nil || !reflect.DeepEqual(args, []any{"old"}) {
 			t.Fatalf("delete page: %s, %v, %v", sql, args, err)
 		}
-		if !strings.Contains(sql, "ORDER BY expires_at, id LIMIT 2 OFFSET 1") || strings.Contains(sql, "'old'") {
+		if !strings.Contains(sql, "ORDER BY expires_at, id, tenant_id LIMIT 2 OFFSET 1") || strings.Contains(sql, "'old'") {
 			t.Fatalf("target selection: %s", sql)
 		}
 		if d == impl.MySQL && !strings.Contains(sql, "orm_delete_targets") {
@@ -28,7 +28,7 @@ func TestRenderDelete(t *testing.T) {
 			t.Fatalf("plain delete or mutated original: %s, %v", plain, err)
 		}
 		for _, invalid := range []impl.Of[int]{
-			{}, base.Limit(1), base.OrderBy("id", false), base.Limit(-1), base.Offset(-1),
+			{}, impl.Of[int]{}.Limit(1), base.OrderBy("id", false), base.Limit(-1), base.Offset(-1),
 		} {
 			if _, _, err := invalid.RenderDelete(d, "records", []string{"id"}); err == nil {
 				t.Fatal("invalid deletion scope accepted")
@@ -36,6 +36,17 @@ func TestRenderDelete(t *testing.T) {
 		}
 		if _, _, err := q.RenderDelete(d, "records", nil); err == nil {
 			t.Fatal("paged delete without identity accepted")
+		}
+		// A page of no order is whichever rows the database reads, as that of a read is.
+		if unordered, _, err := base.Limit(1).RenderDelete(d, "records", []string{"id"}); err != nil ||
+			!strings.Contains(unordered, "WHERE (status = ") || strings.Contains(unordered, "ORDER BY") ||
+			!strings.Contains(unordered, "LIMIT 1") {
+			t.Fatalf("delete of a page of no order: %s, %v", unordered, err)
+		}
+		// An order ends in the key, so that rows equal in it are chosen as a read of the scope chooses them.
+		ordered, _, err := base.OrderBy("expires_at", true).Limit(1).RenderDelete(d, "records", []string{"id"})
+		if err != nil || !strings.Contains(ordered, "ORDER BY expires_at DESC, id DESC LIMIT 1") {
+			t.Fatalf("delete of a page ordered by a column not the key: %s, %v", ordered, err)
 		}
 		zero, _, err := base.OrderBy("id", false).Limit(0).RenderDelete(d, "records", []string{"id"})
 		if err != nil || !strings.Contains(zero, "LIMIT 0") {
