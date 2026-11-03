@@ -126,7 +126,6 @@ type repoMethod struct {
 	returns  returns
 	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
 	conflict, keep []string
-	doNothing      bool
 	coalesce       []string
 	// lock is the locking clause //kanna:lock gives a read, if any.
 	lock string
@@ -364,21 +363,9 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 	conflict, cds := directive.Find(r.pkg.Fset, doc, "conflict")
 	lock, lds := directive.Find(r.pkg.Fset, doc, "lock")
 	pluck, pds := directive.Find(r.pkg.Fset, doc, "pluck")
-	insert, ids := directive.Find(r.pkg.Fset, doc, "insert")
 	cds = append(cds, lds...)
 	cds = append(cds, pds...)
-	cds = append(cds, ids...)
-	if insert.Found && insert.Args != "" {
-		return m, append(cds, diag.Errorf(insert.Pos, "%s: //kanna:insert takes no arguments", m.name))
-	}
-	if insert.Found && pluck.Found {
-		return m, append(cds, diag.Errorf(insert.Pos, "%s: //kanna:insert cannot be combined with //kanna:pluck", m.name))
-	}
 	if st, ok := r.queries[m.name]; ok {
-		if insert.Found {
-			d := diag.Errorf(insert.Pos, "%s: //kanna:insert cannot be combined with a hand-written query", m.name)
-			return m, append(cds, d)
-		}
 		if pluck.Found {
 			d := diag.Errorf(pluck.Pos, "%s: //kanna:pluck cannot be combined with a hand-written query", m.name)
 			return m, append(cds, d)
@@ -393,9 +380,6 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, t
 	}
 
 	v, ok := verbOf(m.name)
-	if insert.Found {
-		v, ok = verbInsert, true
-	}
 	if pluck.Found {
 		v, ok = verbPluck, true
 	}
@@ -652,8 +636,7 @@ func (m repoMethod) shaped() bool {
 	case verbExists:
 		ok = m.returns == returnsBool
 	case verbInsert, verbUpsert:
-		ok = m.returns == returnsNone || m.returns == returnsRow && !m.many || m.returns == returnsRows && m.many ||
-			m.verb == verbInsert && m.returns == returnsCount
+		ok = m.returns == returnsNone || m.returns == returnsRow && !m.many || m.returns == returnsRows && m.many
 	case verbUpdate:
 		return m.updateShaped()
 	case verbDelete:
@@ -700,14 +683,6 @@ func (m *repoMethod) changeSetRows(names []string) (diag.Diag, bool) {
 	return diag.Diag{}, true
 }
 
-// withoutReadback tells what a write of many rows of v can return without reading them back.
-func (v verb) withoutReadback() string {
-	if v == verbInsert {
-		return "return error alone, or (int64, error) for the number of rows written"
-	}
-	return "return error alone"
-}
-
 // verbRules reports what else a method of its verb asks of its table.
 func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
@@ -742,9 +717,9 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 		return []diag.Diag{errorf("%s has no primary key to tell its rows by", m.target.table).WithHints(
 			"name a unique key of " + m.target.table + " with //kanna:conflict")}
 	case (m.verb == verbInsert || m.verb == verbUpsert) && m.many && m.returns != returnsNone &&
-		m.returns != returnsCount && r.s.Dialect == snapshot.MySQL:
+		r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{errorf("MySQL has no RETURNING, so the rows of one statement cannot be read back").
-			WithHints(m.verb.withoutReadback())}
+			WithHints("return error alone")}
 	}
 	return nil
 }
@@ -765,8 +740,8 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(d.Pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
-	if m.verb != verbUpsert && m.verb != verbInsert {
-		return []diag.Diag{errorf("//kanna:conflict is for an Upsert or an Insert with do=nothing")}
+	if m.verb != verbUpsert {
+		return []diag.Diag{errorf("//kanna:conflict is for an Upsert")}
 	}
 	fields := strings.Fields(d.Args)
 	if len(fields) == 0 || strings.Contains(fields[0], "=") {
@@ -776,19 +751,6 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	m.conflict = strings.Split(fields[0], ",")
 	if err := m.conflictOptions(fields[1:]); err != nil {
 		return []diag.Diag{errorf("%v", err)}
-	}
-	if m.doNothing {
-		if m.verb != verbInsert {
-			return []diag.Diag{errorf("do=nothing requires an Insert")}
-		}
-		if len(m.keep) > 0 || len(m.coalesce) > 0 {
-			return []diag.Diag{errorf("do=nothing cannot be combined with keep= or coalesce=")}
-		}
-		if r.s.Dialect == snapshot.MySQL {
-			return []diag.Diag{errorf("MySQL cannot implement targeted ON CONFLICT DO NOTHING")}
-		}
-	} else if m.verb == verbInsert {
-		return []diag.Diag{errorf("//kanna:conflict is for an Upsert or an Insert with do=nothing")}
 	}
 	for _, c := range slices.Concat(m.conflict, m.keep, m.coalesce) {
 		if !slices.ContainsFunc(m.table.Columns, func(col snapshot.Column) bool { return col.Name == c }) {

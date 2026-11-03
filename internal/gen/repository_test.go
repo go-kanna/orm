@@ -344,7 +344,7 @@ func TestRepositories_Mistakes(t *testing.T) {
 				"keys"},
 		{"a conflict on what is no upsert", snapshot.PostgreSQL,
 			"\t//kanna:conflict id\n\tInsertUser(ctx context.Context, u model.User) error\n",
-			"repository.go:24:2: error: InsertUser: //kanna:conflict is for an Upsert or an Insert with do=nothing"},
+			"repository.go:24:2: error: InsertUser: //kanna:conflict is for an Upsert"},
 		{"a conflict MySQL meets on another key too", snapshot.MySQL,
 			"\t//kanna:conflict tenant_id,email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:25:2: warning: UpsertUser: on MySQL, a conflict on (tenant_id, login) also updates the row\n" +
