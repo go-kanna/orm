@@ -104,10 +104,10 @@
     }
   },
   "statements": {
-    "github.com/go-kanna/orm/example/mysql/mysql.GetApprover": {
-      "digest": "779f95a4296d375d",
+    "github.com/go-kanna/orm/example/mysql/mysql.ListApprovers": {
+      "digest": "4d4624b10c9b222c",
       "params": [
-        {"name": "id"}
+        {"name": "ids"}
       ],
       "columns": [
         {"name": "order_id", "type": "bigint", "not_null": true},

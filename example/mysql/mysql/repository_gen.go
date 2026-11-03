@@ -5,7 +5,6 @@ package mysql
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -296,24 +295,32 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 	return rows[0], nil
 }
 
-// GetApprover runs the query of its name in queries.sql.
-func (r OrderRepository) GetApprover(ctx context.Context, id model.OrderID) (repository.OrderApprover, error) {
-	const q = `SELECT
+// ListApprovers runs the query of its name in queries.sql.
+func (r OrderRepository) ListApprovers(ctx context.Context, ids []model.OrderID) ([]repository.OrderApprover, error) {
+	q, args := impl.Expand([]string{`SELECT
     o.id AS order_id,
     a.approver
 FROM orders AS o
 LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
-WHERE o.id = ?`
-	var row repository.OrderApprover
-	err := r.db.QueryRowContext(ctx, q, id).
-		Scan(&row.OrderID, &row.Approver)
-	if errors.Is(err, sql.ErrNoRows) {
-		return repository.OrderApprover{}, r.mapError(fmt.Errorf("query GetApprover: %w", orm.ErrNotFound))
-	}
+WHERE o.id IN (`, `)
+ORDER BY o.id`}, impl.List(ids))
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return repository.OrderApprover{}, r.mapError(fmt.Errorf("query GetApprover: %w", err))
+		return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))
 	}
-	return row, nil
+	defer rows.Close()
+	out := []repository.OrderApprover{}
+	for rows.Next() {
+		var row repository.OrderApprover
+		if err := rows.Scan(&row.OrderID, &row.Approver); err != nil {
+			return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))
+	}
+	return out, nil
 }
 
 func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {

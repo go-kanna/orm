@@ -13,10 +13,11 @@ WHERE o.placed_at >= :since AND o.status <> 'canceled'
 GROUP BY 1
 ORDER BY 1;
 
--- query: GetApprover
+-- query: ListApprovers
 SELECT
     o.id AS order_id,
     a.approver
 FROM orders AS o
 LEFT JOIN approvals AS a ON a.order_id = o.id AND a.revision = o.revision AND a.revoked_at IS NULL
-WHERE o.id = :id;
+WHERE o.id IN (:ids)
+ORDER BY o.id;

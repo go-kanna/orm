@@ -38,7 +38,7 @@ type ProductRepository interface {
 type OrderRepository interface { //nolint:interfacebloat // demonstrates order read and write variants together
 	Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)
 	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
-	GetApprover(ctx context.Context, id model.OrderID) (OrderApprover, error)
+	ListApprovers(ctx context.Context, ids []model.OrderID) ([]OrderApprover, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	ListSummaries(ctx context.Context, s ...scopes.Order) ([]OrderSummary, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)

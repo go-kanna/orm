@@ -416,9 +416,22 @@ func (ex *example) readApprovals(ctx context.Context) error {
 	if len(offset.Approvals) != 2 || offset.Approvals[0].Revision != 4 || offset.Approvals[1].Revision != 3 {
 		return fmt.Errorf("approval offset: %+v", offset)
 	}
-	current, err := ex.orders.GetApprover(ctx, orders[0].ID)
-	if err != nil || current.Approver == nil || *current.Approver != "reviewer-1" {
-		return fmt.Errorf("current approver: %+v, %w", current, err)
+	ids := make([]model.OrderID, len(loaded))
+	for i, order := range loaded {
+		ids[i] = order.ID
+	}
+	approvers, err := ex.orders.ListApprovers(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("read approvals: %w", err)
+	}
+	approverOf := make(map[model.OrderID]*string, len(approvers))
+	for _, a := range approvers {
+		approverOf[a.OrderID] = a.Approver
+	}
+	for _, order := range loaded {
+		if current := approverOf[order.ID]; current == nil || *current != "reviewer-1" {
+			return fmt.Errorf("current approver of order %d: %v", order.ID, current)
+		}
 	}
 	fmt.Fprintln(ex.w, "current approver: reviewer-1; latest: reviewer-5; three approvals per order")
 	return nil
