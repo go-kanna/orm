@@ -666,6 +666,23 @@ func (m repoMethod) shaped() bool {
 	return ok && m.row == ""
 }
 
+// oneRowKey reports why names, the key columns of m, a Get or a Find, read no one row, if they do not.
+func (m *repoMethod) oneRowKey(names []string) (diag.Diag, bool) {
+	errorf := func(format string, args ...any) diag.Diag {
+		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
+	}
+	switch {
+	case len(names) == 0:
+		return errorf("%s reads one row by a key, but it takes none", m.verb).WithHints(fmt.Sprintf(
+			"take a unique key of %s as parameters, or use First", m.target.table)), false
+	case !containsKey(m.table, names):
+		return errorf("%s is not a unique key of %s, so %s cannot return one row",
+			strings.Join(names, ", "), m.target.table, m.verb).WithHints(fmt.Sprintf(
+			"use List, or add a unique index on %s (%s)", m.target.table, strings.Join(names, ", "))), false
+	}
+	return diag.Diag{}, true
+}
+
 // verbRules reports what else a method of its verb asks of its table.
 func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
@@ -675,11 +692,12 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	for _, k := range m.keys {
 		names = append(names, k.col.col.Name)
 	}
+	if m.verb == verbGet || m.verb == verbFind {
+		if d, ok := m.oneRowKey(names); !ok {
+			return []diag.Diag{d}
+		}
+	}
 	switch {
-	case (m.verb == verbGet || m.verb == verbFind) && !containsKey(m.table, names):
-		return []diag.Diag{errorf("%s is not a unique key of %s, so %s cannot return one row",
-			strings.Join(names, ", "), m.target.table, m.verb).WithHints(fmt.Sprintf(
-			"use List, or add a unique index on %s (%s)", m.target.table, strings.Join(names, ", ")))}
 	case m.verb == verbDelete && m.result == resultNone && !containsKey(m.table, names):
 		return []diag.Diag{errorf("(%s) is no key of %s, so Delete would delete more than the one row",
 			strings.Join(names, ", "), m.target.table).WithHints(
