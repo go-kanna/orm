@@ -154,3 +154,26 @@ func TestPreloadManyChecksAtOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestWithAndPreloadOfOneField(t *testing.T) {
+	t.Parallel()
+	children := impl.Of[projectionChild]{}
+	with := impl.Preload(impl.Of[projectionParent]{}, "Children", children)
+	preload := impl.PreloadMany(impl.Of[projectionParent]{}, "Children", impl.NewParent(), children.Many())
+	for name, q := range map[string]impl.Of[projectionParent]{
+		"With then Preload": impl.PreloadMany(with, "Children", impl.NewParent(), children.Many()),
+		"Preload then With": impl.Preload(preload, "Children", children),
+		"combined":          impl.Combine(with, preload),
+	} {
+		_, err := q.Render(impl.Postgres, 1)
+		if want := "Children is loaded by both WithChildren and PreloadChildren"; err == nil ||
+			!strings.Contains(err.Error(), want) {
+			t.Errorf("%s: Render = %v, want %q", name, err, want)
+		}
+	}
+	for name, q := range map[string]impl.Of[projectionParent]{"With": with, "Preload": preload} {
+		if _, err := q.Render(impl.Postgres, 1); err != nil {
+			t.Errorf("%s alone: %v", name, err)
+		}
+	}
+}

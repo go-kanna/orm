@@ -432,7 +432,8 @@ in a query of its own: the rows related to one row come in one query, in the ord
 - A pointer is nil both when it was not loaded and when nothing is related. Telling the two apart would take a type of
   kanna-orm's in your model.
 - A limit or an offset on the related rows would count all of them, not those of each row, so a scope given to a `With`
-  method that holds one makes the query return an error. To read the first few of each, write the query by hand.
+  method that holds one makes the query return an error. To read the first few of each, use
+  [`Preload<Field>`](#correlated-selections-and-per-parent-collections).
 - Relations are read, never written: `Insert` and `Update` write the row's own columns, and a row read back holds
   them alone.
 - A relation by a foreign key of more than one column is read by its columns as a row: `(a, b) IN (SELECT * FROM
@@ -1228,7 +1229,7 @@ The foreign key supplies the basic parent/child correlation. The callback adds c
 - `One().Required()` and `First().Required()` reject a missing or NULL value with `orm.ErrRequiredRelation`. Non-nullable destinations require `Required`. A nullable destination without a selection stays nil.
 - `Many` reads collections in a batch, restricted to the requested parents. `Limit` and `Offset` apply independently to each parent, using `ROW_NUMBER()` when needed. An order is required for per-parent pagination. Empty collections are empty slices. Collection cursors are rejected; paginate parents with cursors and child collections with offsets.
 
-`Select<Field>` adds a scalar subquery to the parent's SELECT, preserving its rows and pagination and reading the value in the same statement. Multiple selected fields have independent predicates and correctly numbered parameters. `Preload<Field>` reads model collections through a separate batched query, supports composite foreign keys and junction tables, and can load the selected children's own relations. A normal repeatable-read transaction provides snapshot consistency across ordinary parent and collection reads; locking and transaction isolation remain explicit caller choices. Existing `With<Field>` preloads retain their behavior.
+`Select<Field>` adds a scalar subquery to the parent's SELECT, preserving its rows and pagination and reading the value in the same statement. Multiple selected fields have independent predicates and correctly numbered parameters. `Preload<Field>` reads model collections through a separate batched query, supports composite foreign keys and junction tables, and can load the selected children's own relations. A normal repeatable-read transaction provides snapshot consistency across ordinary parent and collection reads; locking and transaction isolation remain explicit caller choices. A field is loaded by its `With<Field>` or its `Preload<Field>`, not both: a scope that asks for both fails when it is read.
 
 Scalar selections are read-only: INSERT and UPDATE leave them out. A hand-written repository query can instead select the value under the field's column name, such as `a.approver AS approver`, into the same model. This keeps a route to query-specific optimization without changing the domain model. The PostgreSQL and MySQL examples check current/latest reviewers, per-order history limits and offsets, missing/required/multiple matches, and the custom SQL alternative.
 

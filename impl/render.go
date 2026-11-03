@@ -21,6 +21,9 @@ func (q Of[M]) Render(d Dialect, first int) (Rendered, error) {
 	if q.err != nil {
 		return Rendered{}, q.err
 	}
+	if err := q.loadsTwice(); err != nil {
+		return Rendered{}, err
+	}
 	if len(q.joins) > 0 {
 		return Rendered{}, errors.New("orm: joins require a read projection")
 	}

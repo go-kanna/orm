@@ -49,6 +49,18 @@ func (q Of[M]) pageEach(field string) error {
 	return nil
 }
 
+// loadsTwice reports a relation q loads both by Preload, as a With method has it, and by PreloadMany, as a Preload
+// method has it: one would load the rows of the other over again.
+func (q Of[M]) loadsTwice() error {
+	for _, b := range q.batches {
+		if slices.ContainsFunc(q.preloads, func(p preload) bool { return p.relation == b.field }) {
+			name := b.field[strings.LastIndex(b.field, ".")+1:]
+			return fmt.Errorf("orm: %s is loaded by both With%s and Preload%s; use one", b.field, name, name)
+		}
+	}
+	return nil
+}
+
 // addBatch returns q loading batch too, or with an error if q loads its field by PreloadMany already.
 func (q Of[M]) addBatch(batch batchField) Of[M] {
 	if slices.ContainsFunc(q.batches, func(b batchField) bool { return b.field == batch.field }) {
