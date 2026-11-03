@@ -472,9 +472,9 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 
 - A `Limit` or an `Offset` with no order keeps rows in whatever order the database reads them, as SQL does: order a
   page by the scopes for it to say which rows it holds.
-- When the order does not end in the primary key, it gets the key, in the direction of its last column, on the first
-  page as on those `After` and `Before` continue to, so that rows equal in the order come in one, the same on every
-  page. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
+- When the order does not end in the primary key, it gets the key, in the direction of its last column, in every read
+  that orders rows, on the first page as on those `After` and `Before` continue to, so that rows equal in the order
+  come in one, the same on every page. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
 - When every column of the order goes the same way, the condition compares rows, as above. When they do not, and on
   MySQL, it is spelled out: `a < $1 OR (a = $1 AND b < $2)`.
 - `Before` goes the other way, to the page before the one a row is the first of. The repository reads that page from
@@ -507,8 +507,9 @@ interface when generated into a separate package, its constructor, and the `DBTX
 ### Same-package implementations
 
 Use `-destination .` to keep the interface and its implementation in the same package. The interface must be exported;
-`Category` generates an unexported `category`, a `newCategory(db DBTX) *category` constructor, and pointer receiver
-methods. It also generates `NewCategory(db DBTX) Category` unless you already declare `NewCategory` yourself.
+`Category` generates an unexported `category`, a `newCategory(db DBTX, opts ...option.Option) *category` constructor,
+and pointer receiver methods. It also generates `NewCategory(db DBTX, opts ...option.Option) Category` unless you
+already declare `NewCategory` yourself.
 Keep scope types in a separate package; their methods go into `scopes_gen.go`.
 
 Declare `Bind(db DBTX) Category` to generate transaction binding. The argument may instead be a concrete database or
@@ -523,13 +524,13 @@ For dependency injection, `-constructor-db` chooses a concrete argument type for
 //go:generate go tool kanna-orm -destination . -constructor-db "*example.com/app/db.Reader"
 ```
 
-This generates `NewCategory(db *db.Reader) Category`, while Bind can still use the transaction's DBTX. The flag takes
+This generates `NewCategory(db *db.Reader, opts ...option.Option) Category`, while Bind can still use the transaction's DBTX. The flag takes
 an exported type's full import path and name, optionally prefixed with `*`, loads that package, and checks that the
 type implements the selected driver's DBTX. It applies only to same-package generation. You need no constructor or
 binding wrapper of your own.
 
 Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
-other than `Bind` is left to your implementation. When you implement a method with a recognized verb or SQL query,
+other than `Bind`, is yours to write there; generation stops while it is missing. When you implement a method with a recognized verb or SQL query,
 kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can check its row
 before calling `r.upsert`. kanna-orm writes the helper only when the package calls it, so a method running SQL of
 its own needs none. This helper behavior applies only to same-package generation. The helper has the same
@@ -540,7 +541,7 @@ already be declared. Queries belong in the destination's
 ```go
 //go:generate go tool kanna-orm -destination .
 
-//kanna:repository table=categories
+//kanna:repository
 type Category interface {
 	Bind(db DBTX) Category
 	Upsert(ctx context.Context, c model.Category) error
@@ -595,7 +596,7 @@ type DBTX interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func NewOrderRepository(db DBTX) OrderRepository
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository
 ```
 
 A transaction is begun and committed as it would be without kanna-orm: give the constructor the `pgx.Tx`, or the
@@ -746,7 +747,8 @@ stays `false`. Set `created_at` and `updated_at` in your domain, or explicitly u
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
 done. A row goes by one of two constant statements, with the column and without, as its value says, and the rows of a
-bulk insert by two statements, read back in the order given. MySQL reads a row back by `LAST_INSERT_ID()` when the
+bulk insert by a statement for those with the column and one for those without, read back in the order given: when
+they mix the two, that is two statements, and without a transaction the first stays written if the second fails. MySQL reads a row back by `LAST_INSERT_ID()` when the
 database assigned its primary key, and by its primary key, or an upsert's conflict key, otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
 whether the row is there before returning `orm.ErrNotFound`.
 
@@ -850,7 +852,7 @@ InsertLines(ctx context.Context, lines []model.OrderLine) error
 ```
 
 ```sql
--- PostgreSQL: one statement, however many rows
+-- PostgreSQL: one statement for any number of rows
 INSERT INTO order_lines (order_id, sku, quantity)
 SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 ```
@@ -1158,7 +1160,8 @@ ORDER BY 1`
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
 - A slice argument, other than `[]byte` or a type with a `Value` method, is a list of values. PostgreSQL takes it as
   an array, as in `= ANY(:ids)`. On MySQL, `IN (:ids)` is written with a `?` for each of its values when the method
-  runs, or with `NULL`, which matches nothing, when it has none.
+  runs, or with `NULL`, which matches nothing, when it has none. `NOT IN (:ids)` of none matches nothing either, as
+  `NOT IN (NULL)` does in SQL: test for none in Go when it should match every row.
 
 ### Scopes on a query
 
@@ -1248,7 +1251,7 @@ the difference is settled when the code is generated.
 | A list of keys       | `= ANY($1)`                                         | `IN (?, ...)`, split when long               |
 | Reading a write back | `RETURNING`                                         | `LAST_INSERT_ID()` and a `SELECT` by the key |
 | Upsert               | `ON CONFLICT (...)` on the key named                | `ON DUPLICATE KEY UPDATE` on any unique key  |
-| Many rows            | `unnest`, in one statement                          | `VALUES`, split when long                    |
+| Many rows            | `unnest`, in one statement, or [two](#writing)      | `VALUES`, split when long                    |
 | Paging by key        | a row comparison, unless the order mixes directions | spelled out                                  |
 
 A value type goes to and from the database through its `Value` and `Scan` methods; any other type, as the driver

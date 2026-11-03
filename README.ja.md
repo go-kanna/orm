@@ -386,7 +386,7 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 // ORDER BY placed_at DESC, id DESC LIMIT 20
 ```
 
-- 順序が主キーで終わっていない場合は、最後のカラムの向きで主キーを追加します。1 ページ目も、`After` と `Before` で続けるページも同じなので、順序の上で等しい行にも、どのページでも同じ 1 つの順序が付きます。主キーがないと、等しい行の途中で終わるページでは、その一部が黙って重複したり抜けたりします。
+- 順序が主キーで終わっていない場合は、行を並べる読み込みのすべてで、最後のカラムの向きで主キーを追加します。1 ページ目も、`After` と `Before` で続けるページも同じなので、順序の上で等しい行にも、どのページでも同じ 1 つの順序が付きます。主キーがないと、等しい行の途中で終わるページでは、その一部が黙って重複したり抜けたりします。
 - 順序のすべてのカラムが同じ方向なら、条件は上の例のように行の比較になります。そうでない場合と MySQL では、`a < $1 OR (a = $1 AND b < $2)` のように展開して書かれます。
 - `Before` は逆方向に進み、渡した行が先頭にあるページの 1 つ前のページに移動します。リポジトリはそのページを末尾から読み込み、行をスコープの順序に戻して返します。
 - NULL になりうるカラムで並べると、行の続きを読み込むクエリはエラーを返し、`Cursor` も同様にエラーを返します。データベースによって NULL の並ぶ位置が異なるからです。
@@ -411,7 +411,7 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 ### 同じパッケージに実装する
 
-`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX) *category` コンストラクタ、ポインタレシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX) Category` も生成します。スコープのメソッドは `scopes_gen.go` に出力されます。スコープ型は別のパッケージに置いてください。
+`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) *category` コンストラクタ、ポインタレシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。スコープのメソッドは `scopes_gen.go` に出力されます。スコープ型は別のパッケージに置いてください。
 
 `Bind(db DBTX) Category` を宣言すると、トランザクションへの接続も生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
 
@@ -421,16 +421,16 @@ DI に具体的な引数型を渡すには、`-constructor-db` で公開コン�
 //go:generate go tool kanna-orm -destination . -constructor-db "*example.com/app/db.Reader"
 ```
 
-これで `NewCategory(db *db.Reader) Category` が生成され、Bind では引き続きトランザクションの DBTX を使えます。フラグには公開型の完全なインポートパスと名前を指定し、必要なら先頭に `*` を付けます。生成器がそのパッケージを読み込み、選択したドライバの DBTX を実装しているか検証します。同一パッケージへの生成に限り指定できます。コンストラクタや Bind を手書きでラップする必要はありません。
+これで `NewCategory(db *db.Reader, opts ...option.Option) Category` が生成され、Bind では引き続きトランザクションの DBTX を使えます。フラグには公開型の完全なインポートパスと名前を指定し、必要なら先頭に `*` を付けます。生成器がそのパッケージを読み込み、選択したドライバの DBTX を実装しているか検証します。同一パッケージへの生成に限り指定できます。コンストラクタや Bind を手書きでラップする必要はありません。
 
-アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、手書きの実装に任せます。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` は、行を確かめてから `r.upsert` を呼べます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
+アプリケーション固有のメソッドは、生成される型に直接書けます。`Bind` 以外で、認識できる動詞も手書きのクエリもないメソッドは、そこに自分で書きます。書くまでは生成が止まります。認識できる動詞か手書きのクエリがあるメソッドを自分で実装した場合は、データベースの処理を非公開のヘルパーとして生成します。手書きの `Upsert` は、行を確かめてから `r.upsert` を呼べます。ヘルパーは、パッケージがそれを呼んでいるときだけ生成するので、自分で SQL を実行するメソッドには生成しません。
 
 このヘルパーの生成は同一パッケージへの出力に限ります。ヘルパーのシグネチャはインターフェースのメソッドと同じで、`//kanna:conflict` と `//kanna:lock` も引き継ぎます。ヘルパーと同じ名前のメソッドがすでにあれば、生成を止めます。手書きのクエリは出力先の `.sql` ファイルに置きます。同一パッケージへの出力なら、インターフェースと同じディレクトリです。
 
 ```go
 //go:generate go tool kanna-orm -destination .
 
-//kanna:repository table=categories
+//kanna:repository
 type Category interface {
 	Bind(db DBTX) Category
 	Upsert(ctx context.Context, c model.Category) error
@@ -475,7 +475,7 @@ type DBTX interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func NewOrderRepository(db DBTX) OrderRepository
+func NewOrderRepository(db DBTX, opts ...option.Option) OrderRepository
 ```
 
 トランザクションは、kanna-orm がない場合と同じように開始してコミットします。コンストラクタに `pgx.Tx` か `*sql.Tx` を渡してください。
@@ -584,7 +584,7 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 行は、モデルが保持するとおりに書き込まれます。値を与えなければデータベースが割り当てるカラム（serial、identity の `BY DEFAULT`、AUTO_INCREMENT）は、gorm や Rails と同じく、モデルの値がゼロなら INSERT から外してデータベースに任せ、ゼロでなければ書き込みます。採番の値に 0 は使われないので、0 を「値なし」と読めます。そのため、fixture は ID を与えられ、そのようなキーで行を突き合わせる `Upsert` も書けます（ID のない行は挿入し、ID のある行はその行を更新します）。値を書き込んでもシーケンスは進まないので、後からデータベースが割り当てる行が同じ値を取ることがあります。シーケンスが届かない値を与えるか、後でシーケンスを進めてください。identity の `ALWAYS` や生成カラムのように、データベースがいつも割り当てるカラムは、`default` を指定したフィールドと同じく、いつも INSERT から除外します。それ以外のゼロ値はそのまま書き込み、デフォルトが `true` のカラムに対する `false` も `false` のままです。`created_at` と `updated_at` はドメインで設定するか、明示的に DB のデフォルト値を使ってください。
 
-モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。1 行は、値に応じてカラムのある文とない文の 2 つの定数のどちらかで書き込み、複数行の Insert は 2 つの文で書き込んで、渡した順に読み戻します。MySQL では、データベースが主キーを割り当てた行は `LAST_INSERT_ID()` で、そうでなければ主キー（Upsert では衝突キー）で読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
+モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。1 行は、値に応じてカラムのある文とない文の 2 つの定数のどちらかで書き込み、複数行の Insert はカラムのある行の文とない行の文で書き込んで、渡した順に読み戻します。両方が混ざると 2 つの文になり、トランザクションの外では、2 つ目が失敗しても 1 つ目は書き込まれたまま残ります。MySQL では、データベースが主キーを割り当てた行は `LAST_INSERT_ID()` で、そうでなければ主キー（Upsert では衝突キー）で読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
 
 ### DB のデフォルト値
 
@@ -666,7 +666,7 @@ InsertLines(ctx context.Context, lines []model.OrderLine) error
 ```
 
 ```sql
--- PostgreSQL: one statement, however many rows
+-- PostgreSQL: one statement for any number of rows
 INSERT INTO order_lines (order_id, sku, quantity)
 SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 ```
@@ -935,7 +935,7 @@ ORDER BY 1`
 - スコープには宣言されたメソッドがないので、シグネチャを `-- scope:` の行に書きます。その行のすぐ上のコメント行は、メソッドのドキュメントになります。MySQL は文のパラメータの型を教えませんが、この方法ならその必要がありません。
 - 文は、その `-- query:` や `-- scope:` の行から、次の文のコメントまたはその行までです。文の終わりにある空行とコメント行は文に含まれず、文の一番最後に付いたコメントも含まれません。そのため、スコープはコメントで終えられます。
 - MySQL では、2 回使うパラメータは `?` ごとに 1 回ずつ渡します。
-- `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、`IN (:ids)` をメソッドの実行時に値ごとの `?` に展開し、値がなければ何にも一致しない `NULL` にします。
+- `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、`IN (:ids)` をメソッドの実行時に値ごとの `?` に展開し、値がなければ何にも一致しない `NULL` にします。値のない `NOT IN (:ids)` も、SQL の `NOT IN (NULL)` と同じく何にも一致しません。すべての行に一致させたいときは、値がないことを Go で確かめてください。
 
 ### クエリに scope を渡す
 
@@ -1013,7 +1013,7 @@ approvers, err := repo.ListApprovers(ctx, ids)
 | キーのリスト | `= ANY($1)` | `IN (?, ...)`（長い場合は分割） |
 | 書き込みの読み戻し | `RETURNING` | `LAST_INSERT_ID()` とキーによる `SELECT` |
 | Upsert | 指定したキーに対する `ON CONFLICT (...)` | 任意のユニークキーに対する `ON DUPLICATE KEY UPDATE` |
-| 複数行 | `unnest`（1 つの文） | `VALUES`（長い場合は分割） |
+| 複数行 | `unnest`（1 つの文。[2 つ](#書き込み)のことも） | `VALUES`（長い場合は分割） |
 | キーによるページング | 行の比較（順序の方向が混在する場合を除く） | 展開して書く |
 
 値オブジェクトは `Value` メソッドと `Scan` メソッドを通してデータベースとやり取りし、他の型はドライバが変換するとおりにやり取りします。NULL になりうるカラムはポインタで保持します。database/sql 経由の場合、PostgreSQL の配列をスライスに読み込めるのは Go 1.27 以降で、そこでは pgx/stdlib が各カラムを自分でスキャンします。
