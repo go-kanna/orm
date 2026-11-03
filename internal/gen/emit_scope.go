@@ -319,17 +319,17 @@ func (e emitter) method(doc, s, name, params, expr string) {
 }
 
 // fn writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope made
-// of the orm.Of expr returns.
+// of the scope.Of expr returns.
 func (e emitter) fn(s, name, params, expr string) {
 	e.printf("func (%[1]s %[2]s) %[3]s(%[4]s) %[2]s {\nreturn %[2]s{%[5]s}\n}\n\n", s, e.p.name, name, params, expr)
 }
 
-// q is the orm.Of of the receiver s.
+// q is the scope.Of of the receiver s.
 func (e emitter) q(s string) string {
 	return s + "." + e.p.field
 }
 
-// where is the orm.Of of the receiver s narrowed by the condition parts make.
+// where is the scope.Of of the receiver s narrowed by the condition parts make.
 func (e emitter) where(s string, parts ...string) string {
 	return e.q(s) + ".Where(" + strings.Join(parts, ", ") + ")"
 }

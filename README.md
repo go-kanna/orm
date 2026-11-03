@@ -21,8 +21,8 @@ through pgx or database/sql, or MySQL 8.4 or later through database/sql.
 go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 ```
 
-The generated code imports `github.com/go-kanna/orm`, which the line above already requires: a scope type holds an
-`orm.Of`, and a row that is not there is `orm.ErrNotFound`. It depends on nothing outside the standard library; the
+The generated code imports packages of `github.com/go-kanna/orm`, which the line above already requires: a scope type
+holds a `scope.Of`, and a row that is not there is `orm.ErrNotFound`. It depends on nothing outside the standard library; the
 driver is yours.
 
 ## Use
@@ -222,7 +222,7 @@ $ go tool kanna-orm describe -check ./...
 
 ## Scope types
 
-A scope type is a struct whose only field is an unexported `orm.Of[M]`, `M` being the model the table's rows are read
+A scope type is a struct whose only field is an unexported `scope.Of[M]`, `M` being the model the table's rows are read
 into, so that nothing but its methods narrows it. Each table kanna-orm reads or writes has one, and each model belongs
 to one table: the scope type is the only place where the two are tied together.
 
@@ -238,7 +238,7 @@ A table named otherwise, or a scope type of a name of your own, is declared by h
 
 ```go
 //kanna:scope table=people
-type Person struct{ q orm.Of[model.Person] }
+type Person struct{ q scope.Of[model.Person] }
 ```
 
 A model that a relation reaches but no scope type names stops generation:

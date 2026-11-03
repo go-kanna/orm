@@ -84,42 +84,42 @@ package catalog
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=products
-type Product struct{ q orm.Of[model.Product] }
+type Product struct{ q scope.Of[model.Product] }
 -- scopes/scopes.go --
 package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=customers
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 
 //kanna:scope table=profiles
-type Profile struct{ q orm.Of[model.Profile] }
+type Profile struct{ q scope.Of[model.Profile] }
 
 //kanna:scope table=addresses
-type Address struct{ q orm.Of[model.Address] }
+type Address struct{ q scope.Of[model.Address] }
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 //kanna:scope table=tags
-type Tag struct{ q orm.Of[model.Tag] }
+type Tag struct{ q scope.Of[model.Tag] }
 
 //kanna:scope table=invoices
-type Invoice struct{ q orm.Of[model.Invoice] }
+type Invoice struct{ q scope.Of[model.Invoice] }
 
 //kanna:scope table=categories
-type Category struct{ q orm.Of[model.Category] }
+type Category struct{ q scope.Of[model.Category] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"customers": {Columns: columns("id"), PrimaryKey: []string{"id"}},
@@ -350,42 +350,42 @@ package catalog
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=gifts
-type Gift struct{ q orm.Of[model.Gift] }
+type Gift struct{ q scope.Of[model.Gift] }
 -- scopes/scopes.go --
 package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=customers
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 
 //kanna:scope table=addresses
-type Address struct{ q orm.Of[model.Address] }
+type Address struct{ q scope.Of[model.Address] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 //kanna:scope table=tags
-type Tag struct{ q orm.Of[model.Tag] }
+type Tag struct{ q scope.Of[model.Tag] }
 
 //kanna:scope table=items
-type Item struct{ q orm.Of[model.Item] }
+type Item struct{ q scope.Of[model.Item] }
 
 //kanna:scope table=coupons
-type Coupon struct{ q orm.Of[model.Coupon] }
+type Coupon struct{ q scope.Of[model.Coupon] }
 
 //kanna:scope table=receipts
-type Receipt struct{ q orm.Of[model.Receipt] }
+type Receipt struct{ q scope.Of[model.Receipt] }
 `)
 			_, ds, err := gen.Links(pkg, s)
 			if err != nil {

@@ -129,11 +129,11 @@ package scopes
 import (
 	"example.com/shop/model"
 	other "example.com/shop/other/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 var _ other.Kind
 -- scopes/order_scopes.sql --

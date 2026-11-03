@@ -218,21 +218,21 @@ package catalog
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=products
-type Product struct{ q orm.Of[model.Product] }
+type Product struct{ q scope.Of[model.Product] }
 -- scopes/scopes.go --
 package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"order_lines": {
@@ -279,14 +279,14 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=customers
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"orders": {
@@ -376,17 +376,17 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 //kanna:scope table=invoices
-type Invoice struct{ q orm.Of[model.Invoice] }
+type Invoice struct{ q scope.Of[model.Invoice] }
 -- repository/repository.go --
 package repository
 

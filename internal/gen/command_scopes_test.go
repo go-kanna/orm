@@ -72,11 +72,11 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=order_lines func=Lines
-type Line struct{ q orm.Of[model.OrderLine] }
+type Line struct{ q scope.Of[model.OrderLine] }
 `, []string{"type Order struct", "func Lines() Line"}, []string{"type OrderLine struct", "type Line struct"}},
 	}
 	for _, tt := range tests {

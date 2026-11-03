@@ -10,16 +10,17 @@ import (
 	"github.com/go-kanna/orm/example/mysql/model"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/join"
+	"github.com/go-kanna/orm/scope"
 )
 
 // Customer is the scope of customers, whose rows are read into model.Customer, as //kanna:scopes implies it.
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 
 // Customers returns a scope over all the rows of customers.
 func Customers() Customer { return Customer{} }
 
 // Of returns the scope as a repository reads it.
-func (s Customer) Of() orm.Of[model.Customer] { return s.q }
+func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
 type CustomerColumns struct {
 	ID        orm.Column[model.CustomerID]
@@ -548,7 +549,7 @@ func (s Customer) Join(table string, on ...join.Condition) Customer {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Customer) Or(alternatives ...Customer) Customer {
-	qs := make([]orm.Of[model.Customer], len(alternatives))
+	qs := make([]scope.Of[model.Customer], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -605,13 +606,13 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 }
 
 // Product is the scope of products, whose rows are read into model.Product, as //kanna:scopes implies it.
-type Product struct{ q orm.Of[model.Product] }
+type Product struct{ q scope.Of[model.Product] }
 
 // Products returns a scope over all the rows of products.
 func Products() Product { return Product{} }
 
 // Of returns the scope as a repository reads it.
-func (s Product) Of() orm.Of[model.Product] { return s.q }
+func (s Product) Of() scope.Of[model.Product] { return s.q }
 
 type ProductColumns struct {
 	SKU      orm.Column[model.SKU]
@@ -1042,7 +1043,7 @@ func (s Product) Join(table string, on ...join.Condition) Product {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Product) Or(alternatives ...Product) Product {
-	qs := make([]orm.Of[model.Product], len(alternatives))
+	qs := make([]scope.Of[model.Product], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1098,13 +1099,13 @@ func (s Product) AfterCursor(cursor string) (Product, error) {
 }
 
 // Order is the scope of orders, whose rows are read into model.Order, as //kanna:scopes implies it.
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 // Orders returns a scope over all the rows of orders.
 func Orders() Order { return Order{} }
 
 // Of returns the scope as a repository reads it.
-func (s Order) Of() orm.Of[model.Order] { return s.q }
+func (s Order) Of() scope.Of[model.Order] { return s.q }
 
 type OrderColumns struct {
 	Revision   orm.Column[int32]
@@ -1611,7 +1612,7 @@ func (s Order) SelectApprover(build func(OrderColumns) orm.Single[model.Approval
 
 // WithApprovals loads Approvals, from approvals by order_id.
 func (s Order) WithApprovals(sub ...Approval) Order {
-	qs := make([]orm.Of[model.Approval], len(sub))
+	qs := make([]scope.Of[model.Approval], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1625,7 +1626,7 @@ func (s Order) PreloadApprovals(build func(OrderColumns) orm.Many[model.Approval
 
 // WithCustomer loads Customer, from customers by customer_id.
 func (s Order) WithCustomer(sub ...Customer) Order {
-	qs := make([]orm.Of[model.Customer], len(sub))
+	qs := make([]scope.Of[model.Customer], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1634,7 +1635,7 @@ func (s Order) WithCustomer(sub ...Customer) Order {
 
 // WithLines loads Lines, from order_lines by order_id.
 func (s Order) WithLines(sub ...OrderLine) Order {
-	qs := make([]orm.Of[model.OrderLine], len(sub))
+	qs := make([]scope.Of[model.OrderLine], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1648,7 +1649,7 @@ func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) 
 
 // WithShipment loads Shipment, from shipments by order_id.
 func (s Order) WithShipment(sub ...Shipment) Order {
-	qs := make([]orm.Of[model.Shipment], len(sub))
+	qs := make([]scope.Of[model.Shipment], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1657,7 +1658,7 @@ func (s Order) WithShipment(sub ...Shipment) Order {
 
 // WithTags loads Tags, from tags through order_tags.
 func (s Order) WithTags(sub ...Tag) Order {
-	qs := make([]orm.Of[model.Tag], len(sub))
+	qs := make([]scope.Of[model.Tag], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1696,7 +1697,7 @@ func (s Order) JoinCustomers() Order {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
-	qs := make([]orm.Of[model.Order], len(alternatives))
+	qs := make([]scope.Of[model.Order], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1753,13 +1754,13 @@ func (s Order) AfterCursor(cursor string) (Order, error) {
 }
 
 // OrderLine is the scope of order_lines, whose rows are read into model.OrderLine, as //kanna:scopes implies it.
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 // OrderLines returns a scope over all the rows of order_lines.
 func OrderLines() OrderLine { return OrderLine{} }
 
 // Of returns the scope as a repository reads it.
-func (s OrderLine) Of() orm.Of[model.OrderLine] { return s.q }
+func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
 type OrderLineColumns struct {
 	OrderID  orm.Column[model.OrderID]
@@ -2141,7 +2142,7 @@ func (s OrderLine) QuantityGteColumn(v orm.Column[int]) OrderLine {
 
 // WithProduct loads Product, from products by sku.
 func (s OrderLine) WithProduct(sub ...Product) OrderLine {
-	qs := make([]orm.Of[model.Product], len(sub))
+	qs := make([]scope.Of[model.Product], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -2175,7 +2176,7 @@ func (s OrderLine) JoinProducts() OrderLine {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
-	qs := make([]orm.Of[model.OrderLine], len(alternatives))
+	qs := make([]scope.Of[model.OrderLine], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -2231,13 +2232,13 @@ func (s OrderLine) AfterCursor(cursor string) (OrderLine, error) {
 }
 
 // Shipment is the scope of shipments, whose rows are read into model.Shipment, as //kanna:scopes implies it.
-type Shipment struct{ q orm.Of[model.Shipment] }
+type Shipment struct{ q scope.Of[model.Shipment] }
 
 // Shipments returns a scope over all the rows of shipments.
 func Shipments() Shipment { return Shipment{} }
 
 // Of returns the scope as a repository reads it.
-func (s Shipment) Of() orm.Of[model.Shipment] { return s.q }
+func (s Shipment) Of() scope.Of[model.Shipment] { return s.q }
 
 type ShipmentColumns struct {
 	OrderID  orm.Column[model.OrderID]
@@ -2570,7 +2571,7 @@ func (s Shipment) JoinOrders() Shipment {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Shipment) Or(alternatives ...Shipment) Shipment {
-	qs := make([]orm.Of[model.Shipment], len(alternatives))
+	qs := make([]scope.Of[model.Shipment], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -2624,13 +2625,13 @@ func (s Shipment) AfterCursor(cursor string) (Shipment, error) {
 }
 
 // Tag is the scope of tags, whose rows are read into model.Tag, as //kanna:scopes implies it.
-type Tag struct{ q orm.Of[model.Tag] }
+type Tag struct{ q scope.Of[model.Tag] }
 
 // Tags returns a scope over all the rows of tags.
 func Tags() Tag { return Tag{} }
 
 // Of returns the scope as a repository reads it.
-func (s Tag) Of() orm.Of[model.Tag] { return s.q }
+func (s Tag) Of() scope.Of[model.Tag] { return s.q }
 
 type TagColumns struct {
 	Name orm.Column[string]
@@ -2767,7 +2768,7 @@ func (s Tag) Join(table string, on ...join.Condition) Tag {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Tag) Or(alternatives ...Tag) Tag {
-	qs := make([]orm.Of[model.Tag], len(alternatives))
+	qs := make([]scope.Of[model.Tag], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -2817,13 +2818,13 @@ func (s Tag) AfterCursor(cursor string) (Tag, error) {
 }
 
 // Approval is the scope of approvals, whose rows are read into model.Approval, as //kanna:scopes implies it.
-type Approval struct{ q orm.Of[model.Approval] }
+type Approval struct{ q scope.Of[model.Approval] }
 
 // Approvals returns a scope over all the rows of approvals.
 func Approvals() Approval { return Approval{} }
 
 // Of returns the scope as a repository reads it.
-func (s Approval) Of() orm.Of[model.Approval] { return s.q }
+func (s Approval) Of() scope.Of[model.Approval] { return s.q }
 
 type ApprovalColumns struct {
 	ID         orm.Column[int64]
@@ -3415,7 +3416,7 @@ func (s Approval) JoinOrders() Approval {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Approval) Or(alternatives ...Approval) Approval {
-	qs := make([]orm.Of[model.Approval], len(alternatives))
+	qs := make([]scope.Of[model.Approval], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}

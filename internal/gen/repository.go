@@ -865,7 +865,7 @@ func (r repoReader) rowModel(t types.Type) (model *types.Named, many bool, ok bo
 	return n, many, true
 }
 
-// scopeModel tells the model of a scope type t: M, of its one field, an orm.Of[M].
+// scopeModel tells the model of a scope type t: M, of its one field, an scope.Of[M].
 func scopeModel(t types.Type) (*types.Named, bool) { return scopeModelKind(t, "Of") }
 
 func scopeModelKind(t types.Type, kind string) (*types.Named, bool) {

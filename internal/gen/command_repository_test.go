@@ -34,14 +34,14 @@ package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 // Open narrows to the orders that are not closed.
 func (s Order) Open() Order {

@@ -15,6 +15,7 @@ import (
 	"github.com/go-kanna/orm/example/postgres/repository"
 	"github.com/go-kanna/orm/example/postgres/scopes"
 	"github.com/go-kanna/orm/impl"
+	"github.com/go-kanna/orm/scope"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -77,7 +78,7 @@ RETURNING id, email, name, phone, created_at`
 }
 
 func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
-	var q orm.Of[model.Customer]
+	var q scope.Of[model.Customer]
 	q = q.Where(`id = `, id)
 	rows, err := selectCustomers(ctx, r.executor, q, "")
 	if err != nil {
@@ -90,7 +91,7 @@ func (r CustomerRepository) Get(ctx context.Context, id model.CustomerID) (model
 }
 
 func (r CustomerRepository) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error) {
-	qs := make([]orm.Of[model.Customer], len(s))
+	qs := make([]scope.Of[model.Customer], len(s))
 	for i, s := range s {
 		qs[i] = s.Of()
 	}
@@ -159,7 +160,7 @@ ON CONFLICT (sku) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price`
 }
 
 func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]model.Product, error) {
-	qs := make([]orm.Of[model.Product], len(s))
+	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -168,7 +169,7 @@ func (r ProductRepository) List(ctx context.Context, s ...scopes.Product) ([]mod
 }
 
 func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
-	qs := make([]orm.Of[model.Product], len(s))
+	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -203,7 +204,7 @@ func (r ProductRepository) ListSummaries(ctx context.Context, s ...scopes.Produc
 }
 
 func (r ProductRepository) Names(ctx context.Context, s ...scopes.Product) ([]string, error) {
-	qs := make([]orm.Of[model.Product], len(s))
+	qs := make([]scope.Of[model.Product], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -287,7 +288,7 @@ func (r OrderRepository) Find(ctx context.Context, id model.OrderID, s ...scopes
 			resultErr = translateOrderError(orderRepositoryOperationFind, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -309,7 +310,7 @@ func (r OrderRepository) Get(ctx context.Context, id model.OrderID, s ...scopes.
 			resultErr = translateOrderError(orderRepositoryOperationGet, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -362,7 +363,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) (result []
 			resultErr = translateOrderError(orderRepositoryOperationList, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -376,7 +377,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 			resultErr = translateOrderError(orderRepositoryOperationListSummaries, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -416,7 +417,7 @@ func (r OrderRepository) Count(ctx context.Context, s ...scopes.Order) (result i
 			resultErr = translateOrderError(orderRepositoryOperationCount, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -517,7 +518,7 @@ func (r OrderRepository) Delete(ctx context.Context, s ...scopes.Order) (result 
 			resultErr = translateOrderError(orderRepositoryOperationDelete, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -539,7 +540,7 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 			resultErr = translateOrderError(orderRepositoryOperationDeleteSummaries, resultErr)
 		}
 	}()
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -634,7 +635,7 @@ func (r FulfillmentRepository) GetForUpdate(ctx context.Context, id model.OrderI
 	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx")
 	}
-	var q orm.Of[model.Order]
+	var q scope.Of[model.Order]
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, ` FOR UPDATE`)
 	if err != nil {
@@ -650,7 +651,7 @@ func (r FulfillmentRepository) FirstToShip(ctx context.Context, s ...scopes.Orde
 	if _, ok := r.db.(interface{ Commit(context.Context) error }); !ok {
 		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a pgx.Tx")
 	}
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -690,7 +691,7 @@ WHERE id = $5`
 }
 
 // selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
-func selectApprovals(ctx context.Context, db ormDatabase, q orm.Of[model.Approval], lock string) ([]model.Approval, error) {
+func selectApprovals(ctx context.Context, db ormDatabase, q scope.Of[model.Approval], lock string) ([]model.Approval, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -718,7 +719,7 @@ func selectApprovals(ctx context.Context, db ormDatabase, q orm.Of[model.Approva
 }
 
 // selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
-func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Customer], lock string) ([]model.Customer, error) {
+func selectCustomers(ctx context.Context, db ormDatabase, q scope.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -746,7 +747,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q orm.Of[model.Custome
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -777,7 +778,7 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderL
 }
 
 // preloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q orm.Of[model.OrderLine]) error {
+func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q scope.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -808,7 +809,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lock string) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -850,7 +851,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lo
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q orm.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q scope.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -1133,7 +1134,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q or
 }
 
 // selectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
-func selectProducts(ctx context.Context, db ormDatabase, q orm.Of[model.Product], lock string) ([]model.Product, error) {
+func selectProducts(ctx context.Context, db ormDatabase, q scope.Of[model.Product], lock string) ([]model.Product, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -1161,7 +1162,7 @@ func selectProducts(ctx context.Context, db ormDatabase, q orm.Of[model.Product]
 }
 
 // selectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
-func selectShipments(ctx context.Context, db ormDatabase, q orm.Of[model.Shipment], lock string) ([]model.Shipment, error) {
+func selectShipments(ctx context.Context, db ormDatabase, q scope.Of[model.Shipment], lock string) ([]model.Shipment, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -1189,7 +1190,7 @@ func selectShipments(ctx context.Context, db ormDatabase, q orm.Of[model.Shipmen
 }
 
 // selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
-func selectTags(ctx context.Context, db ormDatabase, q orm.Of[model.Tag], lock string) ([]model.Tag, error) {
+func selectTags(ctx context.Context, db ormDatabase, q scope.Of[model.Tag], lock string) ([]model.Tag, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err

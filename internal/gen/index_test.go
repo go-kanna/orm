@@ -19,11 +19,11 @@ package shop
 
 import (
 	"example.com/shop/catalog/v2"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=products
-type Product struct{ q orm.Of[catalog.Product] }
+type Product struct{ q scope.Of[catalog.Product] }
 -- catalog/v2/catalog.go --
 package catalog
 
@@ -40,7 +40,7 @@ package scopes
 
 import (
 	m "example.com/shop/model"
-	o "github.com/go-kanna/orm"
+	o "github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
@@ -79,29 +79,29 @@ type Plain struct{}
 package scopes
 
 //kanna:scope table=testdata
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 -- vendor/example.com/other/scopes.go --
 package other
 
 //kanna:scope table=vendored
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 -- .hidden/scopes.go --
 package hidden
 
 //kanna:scope table=hidden
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 -- _old/scopes.go --
 package old
 
 //kanna:scope table=old
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 -- nested/go.mod --
 module example.com/nested
 -- nested/scopes.go --
 package nested
 
 //kanna:scope table=nested
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 -- unparsable/scopes.go --
 package unparsable
 
@@ -151,36 +151,36 @@ package admin
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders_archive
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=customers
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 -- scopes/scopes.go --
 package scopes
 
 import (
 	"example.com/shop/model"
-	"github.com/go-kanna/orm"
+	"github.com/go-kanna/orm/scope"
 )
 
 //kanna:scope table=orders
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 //kanna:scope table=order_lines
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 //kanna:scope table=order_lines func=Lines
-type Line struct{ q orm.Of[model.Line] }
+type Line struct{ q scope.Of[model.Line] }
 
 //kanna:scope table=customers func=Clients
-type Client struct{ q orm.Of[model.Client] }
+type Client struct{ q scope.Of[model.Client] }
 
 //kanna:scope table=line_items
-type LineItem struct{ q orm.Of[model.OrderLine] }
+type LineItem struct{ q scope.Of[model.OrderLine] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"orders": {}, "orders_archive": {}, "order_lines": {}, "customers": {}, "line_items": {},

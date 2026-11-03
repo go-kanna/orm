@@ -29,13 +29,13 @@ type Card struct {
 }
 type Record struct {`, 1)
 	archive = strings.Replace(archive, "Note string", "Caption string", 1)
-	archive = strings.Replace(archive, "type Record struct { q orm.Of[model.Record] }",
-		`type Record struct { q orm.Of[model.Record] }
+	archive = strings.Replace(archive, "type Record struct { q scope.Of[model.Record] }",
+		`type Record struct { q scope.Of[model.Record] }
 func (s Record) WithUnusedRelation() Record {
  return Record{impl.Preload(s.q, "Unused", impl.Of[model.Record]{})}
 }`, 1)
-	archive = strings.Replace(archive, `"github.com/go-kanna/orm"`, `"github.com/go-kanna/orm"
-	"github.com/go-kanna/orm/impl"`, 1)
+	archive = strings.Replace(archive, `"github.com/go-kanna/orm/scope"`, `"github.com/go-kanna/orm/impl"
+	"github.com/go-kanna/orm/scope"`, 1)
 	return strings.Replace(archive, "type Records interface {", "type Records interface {\n"+projectionMethods, 1)
 }
 
@@ -137,10 +137,10 @@ type Summary struct { `+field+` }
 package scopes
 import (
  "example.com/shop/model"
- "github.com/go-kanna/orm"
+ "github.com/go-kanna/orm/scope"
 )
 //kanna:scope table=records
-type Record struct { q orm.Of[model.Record] }
+type Record struct { q scope.Of[model.Record] }
 -- repository/repository.go --
 package repository
 import (

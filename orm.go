@@ -1,6 +1,6 @@
-// Package orm is what code written by hand uses of kanna-orm: the scope a scope type holds, what a relation is
-// selected by, the options of a repository, and the errors a repository returns. What the generated code runs on
-// is in package impl.
+// Package orm is what code written by hand uses of kanna-orm: what a relation is selected by, the options of a
+// repository, and the errors a repository returns. A scope type holds a scope.Of, and what the generated code runs
+// on is in package impl.
 package orm
 
 import (
@@ -16,8 +16,6 @@ var ErrNotFound = errors.New("orm: not found")
 var ErrRequiredRelation = impl.ErrRequiredRelation
 
 type (
-	// Of is the scope of a query reading Ms, the one field of a scope type.
-	Of[M any] = impl.Of[M]
 	// Single selects zero or one related row; Required makes no row an error.
 	Single[M any] = impl.Single[M]
 	// Many selects the related rows of each parent.

@@ -9,13 +9,14 @@ import (
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/join"
+	"github.com/go-kanna/orm/scope"
 )
 
 // Orders returns a scope over all the rows of orders.
 func Orders() Order { return Order{} }
 
 // Of returns the scope as a repository reads it.
-func (s Order) Of() orm.Of[model.Order] { return s.q }
+func (s Order) Of() scope.Of[model.Order] { return s.q }
 
 type OrderColumns struct {
 	ID         orm.Column[model.OrderID]
@@ -907,7 +908,7 @@ func (s Order) PositionGteColumn(v orm.Column[int]) Order {
 
 // WithCustomer loads Customer, from customers by customer_id.
 func (s Order) WithCustomer(sub ...Customer) Order {
-	qs := make([]orm.Of[model.Customer], len(sub))
+	qs := make([]scope.Of[model.Customer], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -916,7 +917,7 @@ func (s Order) WithCustomer(sub ...Customer) Order {
 
 // WithLines loads Lines, from order_lines by order_id.
 func (s Order) WithLines(sub ...OrderLine) Order {
-	qs := make([]orm.Of[model.OrderLine], len(sub))
+	qs := make([]scope.Of[model.OrderLine], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -930,7 +931,7 @@ func (s Order) PreloadLines(build func(OrderColumns) orm.Many[model.OrderLine]) 
 
 // WithTags loads Tags, from tags through order_tags.
 func (s Order) WithTags(sub ...Tag) Order {
-	qs := make([]orm.Of[model.Tag], len(sub))
+	qs := make([]scope.Of[model.Tag], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -974,7 +975,7 @@ func (s Order) JoinCustomers() Order {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
-	qs := make([]orm.Of[model.Order], len(alternatives))
+	qs := make([]scope.Of[model.Order], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1042,7 +1043,7 @@ func (s Order) AfterCursor(cursor string) (Order, error) {
 func Customers() Customer { return Customer{} }
 
 // Of returns the scope as a repository reads it.
-func (s Customer) Of() orm.Of[model.Customer] { return s.q }
+func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
 type CustomerColumns struct {
 	ID   orm.Column[int64]
@@ -1267,7 +1268,7 @@ func (s Customer) Join(table string, on ...join.Condition) Customer {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Customer) Or(alternatives ...Customer) Customer {
-	qs := make([]orm.Of[model.Customer], len(alternatives))
+	qs := make([]scope.Of[model.Customer], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1322,7 +1323,7 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 func OrderLines() OrderLine { return OrderLine{} }
 
 // Of returns the scope as a repository reads it.
-func (s OrderLine) Of() orm.Of[model.OrderLine] { return s.q }
+func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
 type OrderLineColumns struct {
 	OrderID orm.Column[model.OrderID]
@@ -1616,7 +1617,7 @@ func (s OrderLine) SKUGteColumn(v orm.Column[string]) OrderLine {
 
 // WithOrder loads Order, from orders by order_id.
 func (s OrderLine) WithOrder(sub ...Order) OrderLine {
-	qs := make([]orm.Of[model.Order], len(sub))
+	qs := make([]scope.Of[model.Order], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1625,7 +1626,7 @@ func (s OrderLine) WithOrder(sub ...Order) OrderLine {
 
 // WithNotes loads Notes, from line_notes by order_id and line_no.
 func (s OrderLine) WithNotes(sub ...LineNote) OrderLine {
-	qs := make([]orm.Of[model.LineNote], len(sub))
+	qs := make([]scope.Of[model.LineNote], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1639,7 +1640,7 @@ func (s OrderLine) PreloadNotes(build func(OrderLineColumns) orm.Many[model.Line
 
 // WithTags loads Tags, from tags through line_tags.
 func (s OrderLine) WithTags(sub ...Tag) OrderLine {
-	qs := make([]orm.Of[model.Tag], len(sub))
+	qs := make([]scope.Of[model.Tag], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1673,7 +1674,7 @@ func (s OrderLine) JoinOrders() OrderLine {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
-	qs := make([]orm.Of[model.OrderLine], len(alternatives))
+	qs := make([]scope.Of[model.OrderLine], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1730,7 +1731,7 @@ func (s OrderLine) AfterCursor(cursor string) (OrderLine, error) {
 func Tags() Tag { return Tag{} }
 
 // Of returns the scope as a repository reads it.
-func (s Tag) Of() orm.Of[model.Tag] { return s.q }
+func (s Tag) Of() scope.Of[model.Tag] { return s.q }
 
 type TagColumns struct {
 	Name orm.Column[string]
@@ -1871,7 +1872,7 @@ func (s Tag) Join(table string, on ...join.Condition) Tag {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Tag) Or(alternatives ...Tag) Tag {
-	qs := make([]orm.Of[model.Tag], len(alternatives))
+	qs := make([]scope.Of[model.Tag], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1887,7 +1888,7 @@ func (s Tag) Not(other Tag) Tag {
 func LineNotes() LineNote { return LineNote{} }
 
 // Of returns the scope as a repository reads it.
-func (s LineNote) Of() orm.Of[model.LineNote] { return s.q }
+func (s LineNote) Of() scope.Of[model.LineNote] { return s.q }
 
 type LineNoteColumns struct {
 	OrderID orm.Column[model.OrderID]
@@ -2189,7 +2190,7 @@ func (s LineNote) BodyGteColumn(v orm.Column[string]) LineNote {
 
 // WithLine loads Line, from order_lines by order_id and line_no.
 func (s LineNote) WithLine(sub ...OrderLine) LineNote {
-	qs := make([]orm.Of[model.OrderLine], len(sub))
+	qs := make([]scope.Of[model.OrderLine], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -2218,7 +2219,7 @@ func (s LineNote) JoinOrderLines() LineNote {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s LineNote) Or(alternatives ...LineNote) LineNote {
-	qs := make([]orm.Of[model.LineNote], len(alternatives))
+	qs := make([]scope.Of[model.LineNote], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}

@@ -18,10 +18,10 @@ type Record struct { ID int64 ` + "`orm:\",default\"`" + ` }
 package scopes
 import (
  "example.com/shop/model"
- "github.com/go-kanna/orm"
+ "github.com/go-kanna/orm/scope"
 )
 //kanna:scope table=records
-type Record struct { q orm.Of[model.Record] }
+type Record struct { q scope.Of[model.Record] }
 -- repository/repository.go --
 package repository
 import (

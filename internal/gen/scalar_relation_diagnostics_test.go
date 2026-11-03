@@ -21,10 +21,10 @@ type Record struct {
 package scopes
 import (
     "example.com/shop/model"
-    "github.com/go-kanna/orm"
+    "github.com/go-kanna/orm/scope"
 )
 //kanna:scope table=records
-type Record struct { q orm.Of[model.Record] }
+type Record struct { q scope.Of[model.Record] }
 `
 
 func TestCommand_ScalarRelationDiagnostics(t *testing.T) {

@@ -9,16 +9,17 @@ import (
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/join"
+	"github.com/go-kanna/orm/scope"
 )
 
 // Customer is the scope of customers, whose rows are read into model.Customer, as //kanna:scopes implies it.
-type Customer struct{ q orm.Of[model.Customer] }
+type Customer struct{ q scope.Of[model.Customer] }
 
 // Customers returns a scope over all the rows of customers.
 func Customers() Customer { return Customer{} }
 
 // Of returns the scope as a repository reads it.
-func (s Customer) Of() orm.Of[model.Customer] { return s.q }
+func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
 type CustomerColumns struct {
 	ID        orm.Column[int64]
@@ -444,7 +445,7 @@ func (s Customer) Join(table string, on ...join.Condition) Customer {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Customer) Or(alternatives ...Customer) Customer {
-	qs := make([]orm.Of[model.Customer], len(alternatives))
+	qs := make([]scope.Of[model.Customer], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -500,13 +501,13 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 }
 
 // Order is the scope of orders, whose rows are read into model.Order, as //kanna:scopes implies it.
-type Order struct{ q orm.Of[model.Order] }
+type Order struct{ q scope.Of[model.Order] }
 
 // Orders returns a scope over all the rows of orders.
 func Orders() Order { return Order{} }
 
 // Of returns the scope as a repository reads it.
-func (s Order) Of() orm.Of[model.Order] { return s.q }
+func (s Order) Of() scope.Of[model.Order] { return s.q }
 
 type OrderColumns struct {
 	ID         orm.Column[int64]
@@ -1015,7 +1016,7 @@ func (s Order) NoteGteColumn(v orm.Column[string]) Order {
 
 // WithLines loads Lines, from order_lines by order_id.
 func (s Order) WithLines(sub ...OrderLine) Order {
-	qs := make([]orm.Of[model.OrderLine], len(sub))
+	qs := make([]scope.Of[model.OrderLine], len(sub))
 	for i, x := range sub {
 		qs[i] = x.Of()
 	}
@@ -1049,7 +1050,7 @@ func (s Order) JoinCustomers() Order {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
-	qs := make([]orm.Of[model.Order], len(alternatives))
+	qs := make([]scope.Of[model.Order], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}
@@ -1106,13 +1107,13 @@ func (s Order) AfterCursor(cursor string) (Order, error) {
 }
 
 // OrderLine is the scope of order_lines, whose rows are read into model.OrderLine, as //kanna:scopes implies it.
-type OrderLine struct{ q orm.Of[model.OrderLine] }
+type OrderLine struct{ q scope.Of[model.OrderLine] }
 
 // OrderLines returns a scope over all the rows of order_lines.
 func OrderLines() OrderLine { return OrderLine{} }
 
 // Of returns the scope as a repository reads it.
-func (s OrderLine) Of() orm.Of[model.OrderLine] { return s.q }
+func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
 type OrderLineColumns struct {
 	ID       orm.Column[int64]
@@ -1523,7 +1524,7 @@ func (s OrderLine) JoinOrders() OrderLine {
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
-	qs := make([]orm.Of[model.OrderLine], len(alternatives))
+	qs := make([]scope.Of[model.OrderLine], len(alternatives))
 	for i, a := range alternatives {
 		qs[i] = a.q
 	}

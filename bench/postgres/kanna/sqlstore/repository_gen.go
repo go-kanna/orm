@@ -13,6 +13,7 @@ import (
 	"github.com/go-kanna/orm/bench/postgres/kanna/repository"
 	"github.com/go-kanna/orm/bench/postgres/kanna/scopes"
 	"github.com/go-kanna/orm/impl"
+	"github.com/go-kanna/orm/scope"
 )
 
 // DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.
@@ -107,7 +108,7 @@ func NewOrderRepository(db DBTX, opts ...orm.Option) OrderRepository {
 var _ repository.OrderRepository = OrderRepository{}
 
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
-	var q orm.Of[model.Order]
+	var q scope.Of[model.Order]
 	q = q.Where(`id = `, id)
 	rows, err := selectOrders(ctx, r.executor, q, "")
 	if err != nil {
@@ -120,7 +121,7 @@ func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error)
 }
 
 func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
-	qs := make([]orm.Of[model.Order], len(s))
+	qs := make([]scope.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = x.Of()
 	}
@@ -163,7 +164,7 @@ RETURNING id, order_id, sku, quantity`
 }
 
 // selectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+func selectOrderLines(ctx context.Context, db ormDatabase, q scope.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -191,7 +192,7 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q orm.Of[model.OrderL
 }
 
 // selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lock string) ([]model.Order, error) {
+func selectOrders(ctx context.Context, db ormDatabase, q scope.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.Postgres, 1)
 	if err != nil {
 		return nil, err
@@ -222,7 +223,7 @@ func selectOrders(ctx context.Context, db ormDatabase, q orm.Of[model.Order], lo
 }
 
 // preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q orm.Of[model.Order]) error {
+func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q scope.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
