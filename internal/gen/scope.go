@@ -138,7 +138,10 @@ func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, [
 	field, model, ds := modelOf(pkg, d.Spec)
 	sc := scope{name: d.Spec.Name.Name, pos: d.Pos, field: field, model: model, table: d.Table}
 
-	if _, ok := s.Tables[d.Table]; !ok {
+	if _, ok := s.Tables[d.Table]; !ok && d.Named {
+		return sc, append(ds, diag.Errorf(d.Pos, "%s: the snapshot has no table %s, which its model is named after",
+			sc.name, d.Table).WithHints("name its table with table=, as in //kanna:scope table=person"))
+	} else if !ok {
 		missing := diag.Errorf(d.Pos, "%s: the snapshot has no table %s", sc.name, d.Table)
 		if near, ok := suggest.Closest(d.Table, slices.Sorted(maps.Keys(s.Tables))); ok {
 			missing = missing.WithHints(fmt.Sprintf("did you mean %s?", near))

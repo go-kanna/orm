@@ -123,6 +123,56 @@ type Order struct{
 	}
 }
 
+// A //kanna:scope type wins over the one //kanna:scopes implies of its model in its own package alone: of another
+// package, both are indexed, for generation to tell of the two.
+func TestIndex_ImpliedAndDeclared(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, `
+-- model/model.go --
+package model
+
+type Order struct{ ID int64 }
+
+type Customer struct{ ID int64 }
+-- scopes/scopes.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scopes model-package=../model
+
+//kanna:scope
+type Order struct{ q scope.Of[model.Order] }
+-- admin/scopes.go --
+package admin
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scope table=customers
+type Client struct{ q scope.Of[model.Customer] }
+`)
+	tables := map[string]snapshot.Table{"orders": {}, "customers": {}}
+	got, err := gen.Index(filepath.Join(dir, "scopes"), tables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"example.com/shop/admin.Client example.com/shop/model.Customer customers ../admin/scopes.go:8",
+		"example.com/shop/scopes.Order example.com/shop/model.Order orders scopes.go:10",
+		"example.com/shop/scopes.Customer example.com/shop/model.Customer customers scopes.go:8 implied",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Index =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestIndex_NoModule(t *testing.T) {
 	t.Parallel()
 

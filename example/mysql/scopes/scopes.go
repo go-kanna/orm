@@ -2,7 +2,11 @@
 // of the models.
 package scopes
 
-import "github.com/go-kanna/orm/example/mysql/model"
+import (
+	_ "time" // named by order_scopes.sql
+
+	"github.com/go-kanna/orm/example/mysql/model"
+)
 
 //go:generate go tool kanna-orm
 

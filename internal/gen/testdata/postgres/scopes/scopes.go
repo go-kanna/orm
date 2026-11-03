@@ -2,6 +2,8 @@
 package scopes
 
 import (
+	_ "time" // named by order_scopes.sql
+
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/scope"
 )

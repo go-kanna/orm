@@ -247,8 +247,10 @@ a table no struct is named after, such as one between two others. So a struct of
 table of its name is made: keep the structs that are not, such as those a query returns, in a package of their own.
 Methods of your own are written on the type as on any other, in another file of the package.
 
-A table named otherwise, as one in the singular, or a scope type of a name of your own, is declared by hand, and wins
-over the one `//kanna:scopes` would imply of its model or its table:
+A scope type of a name of your own is declared by hand with `//kanna:scope`. Its table is the one its model is named
+after, as with `//kanna:scopes`, unless `table=` names another, as one in the singular. It wins over the one
+`//kanna:scopes` would imply of its model or its table in its own package; one of another package stops generation,
+as a table has one scope type:
 
 ```go
 //kanna:scope table=person func=People
@@ -1157,7 +1159,8 @@ ORDER BY 1`
   so this is a matter for hand-written queries only.
 - A scope has no method declared for it, so its signature is written on its line, and the lines of comment right
   above that line are its method's doc. MySQL does not tell the types of a statement's parameters, and this way it
-  need not.
+  need not. A type of another package is named as the Go files of the scope type's package import it: one they do not
+  use is imported for this alone, as in `import _ "time"`.
 - A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
   ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.

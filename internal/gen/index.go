@@ -101,16 +101,17 @@ func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) 
 		return nil, fmt.Errorf("read the scope types of %s: %w", modPath, err)
 	}
 
-	// A //kanna:scope type wins over one implied of its model or its table.
+	// A //kanna:scope type wins over one implied of its model or its table in its own package. One of another package
+	// is not taken out: checkUnique tells of the two.
 	explicit := map[string]bool{}
 	for _, e := range idx {
 		if !e.implied {
-			explicit[e.modelPath+"."+e.modelName] = true
-			explicit[e.table] = true
+			explicit[e.pkgPath+" "+e.modelPath+"."+e.modelName] = true
+			explicit[e.pkgPath+" "+e.table] = true
 		}
 	}
 	return slices.DeleteFunc(idx, func(e indexed) bool {
-		return e.implied && (explicit[e.modelPath+"."+e.modelName] || explicit[e.table])
+		return e.implied && (explicit[e.pkgPath+" "+e.modelPath+"."+e.modelName] || explicit[e.pkgPath+" "+e.table])
 	}), nil
 }
 

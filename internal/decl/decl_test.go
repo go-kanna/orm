@@ -55,6 +55,9 @@ func TestRead(t *testing.T) {
 //kanna:scope table=orders
 type Order struct{}
 
+//kanna:scope
+type Customer struct{ q scope.Of[model.Customer] }
+
 // OrderLine is a scope of the lines of orders.
 //
 //kanna:scope table=order_lines func=Lines
@@ -78,8 +81,8 @@ var _ = 0
 	if len(ds) > 0 {
 		t.Fatalf("Read:\n%s", report(ds))
 	}
-	if want := []string{"Order orders", "OrderLine order_lines Lines", "Person person People"}; !reflect.DeepEqual(
-		scopes, want) {
+	want := []string{"Order orders", "Customer customers", "OrderLine order_lines Lines", "Person person People"}
+	if !reflect.DeepEqual(scopes, want) {
 		t.Errorf("scopes = %q, want %q", scopes, want)
 	}
 	if want := []string{"OrderRepository", "PersonRepository people"}; !reflect.DeepEqual(repositories, want) {
@@ -220,8 +223,6 @@ func TestRead_Mistakes(t *testing.T) {
 		{"a directive misspelled", "//kanna:scop table=orders",
 			`scopes.go:3:1: warning: "//kanna:scop table=orders" is not recognized as a directive` + "\n" +
 				`  did you mean "//kanna:scope table=orders"?`},
-		{"no table", "//kanna:scope",
-			"scopes.go:3:1: error: //kanna:scope wants the table its type is a scope of\n  as in //kanna:scope table=orders"},
 		{"an option it does not know", "//kanna:scope table=orders colour=red",
 			"scopes.go:3:1: error: //kanna:scope takes table= and func=, not \"colour=red\"\n" +
 				"  as in //kanna:scope table=orders"},

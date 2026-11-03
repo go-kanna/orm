@@ -22,8 +22,11 @@ import (
 type Scope struct {
 	Spec *ast.TypeSpec
 	// Pos is where the directive is.
-	Pos   token.Position
+	Pos token.Position
+	// Table is the table table= names, or, without it, the one the model is named after, as orders for
+	// scope.Of[model.Order]; Named says which.
 	Table string
+	Named bool
 	// Func names the function returning the empty scope, when func= does.
 	Func string
 }
@@ -83,10 +86,14 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			ds = append(ds, fds...)
 			if d.Found {
 				table, fn, err := scopeArgs(d.Args)
+				named := false
+				if model, ok := modelName(ts); ok && table == "" {
+					table, named = Plural(model), true
+				}
 				if err != nil {
 					ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:scope table=orders"))
 				} else {
-					decls.Scopes = append(decls.Scopes, Scope{Spec: ts, Pos: d.Pos, Table: table, Func: fn})
+					decls.Scopes = append(decls.Scopes, Scope{Spec: ts, Pos: d.Pos, Table: table, Named: named, Func: fn})
 				}
 			}
 
@@ -144,8 +151,8 @@ func stray(fset *token.FileSet, cg *ast.CommentGroup) []diag.Diag {
 	return ds
 }
 
-// scopeArgs reads what follows //kanna:scope: the table, and the name func= gives the function returning the empty
-// scope, if any.
+// scopeArgs reads what follows //kanna:scope: the table table= names, and the name func= gives the function returning
+// the empty scope, each if any.
 func scopeArgs(args string) (table, fn string, err error) {
 	for field := range strings.FieldsSeq(args) {
 		key, value, _ := strings.Cut(field, "=")
@@ -162,10 +169,27 @@ func scopeArgs(args string) (table, fn string, err error) {
 			return "", "", fmt.Errorf("//kanna:scope takes table= and func=, not %q", field)
 		}
 	}
-	if table == "" {
-		return "", "", errors.New("//kanna:scope wants the table its type is a scope of")
-	}
 	return table, fn, nil
+}
+
+// modelName is the name of the model of ts, a scope type, as Order of struct{ q scope.Of[model.Order] }, read from its
+// syntax alone.
+func modelName(ts *ast.TypeSpec) (string, bool) {
+	st, ok := ts.Type.(*ast.StructType)
+	if !ok || len(st.Fields.List) != 1 {
+		return "", false
+	}
+	ix, ok := st.Fields.List[0].Type.(*ast.IndexExpr)
+	if !ok {
+		return "", false
+	}
+	switch m := ix.Index.(type) {
+	case *ast.Ident:
+		return m.Name, true
+	case *ast.SelectorExpr:
+		return m.Sel.Name, true
+	}
+	return "", false
 }
 
 // repositoryArgs reads what follows //kanna:repository: the table table= names, if any.

@@ -37,9 +37,12 @@ func TestEmit_SQLScopeMistakes(t *testing.T) {
 				"statement takes it by"},
 		{name: "a type that is none", sql: "-- scope: Order.Since(at Time)\nplaced_at >= :at\n",
 			want: "order_scopes.sql:1:1: error: -- scope: Order.Since: Time names no type"},
-		{name: "a package nothing imports", sql: "-- scope: Order.From(addr netip.Addr)\nip = :addr\n",
-			want: "order_scopes.sql:1:1: error: -- scope: Order.From: netip names no package that package scopes " +
+		{name: "a package nothing imports", sql: "-- scope: Order.Above(n big.Int)\nid > :n\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.Above: big names no package that package scopes " +
 				"imports"},
+		{name: "a package imported by one the scopes import", sql: "-- scope: Order.From(addr netip.Addr)\nip = :addr\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.From: netip names no package that package scopes " +
+				"imports\n  import it in a Go file of the package, as in import _ \"net/netip\""},
 		{name: "a type a package has not", sql: "-- scope: Order.Since(at time.Moment)\nplaced_at >= :at\n",
 			want: "order_scopes.sql:1:1: error: -- scope: Order.Since: time.Moment names no type of time"},
 		{name: "a parameter not declared", sql: "-- scope: Order.Since()\nplaced_at >= :at\n",
@@ -62,15 +65,25 @@ func TestEmit_SQLScopeMistakes(t *testing.T) {
 			t.Parallel()
 
 			pkg := module(t, orderScope+`
+-- scopes/imports.go --
+package scopes
+
+import _ "time"
 -- model/model.go --
 package model
 
-import "time"
+import (
+	"net/netip"
+	"time"
+)
 
 type Order struct {
 	ID       int64
 	PlacedAt time.Time
 }
+
+// Origin has the model package import netip as its API shows.
+var Origin netip.Addr
 -- scopes/order_scopes.sql --
 `+tt.sql+`
 -- scopes/more_scopes.sql --
@@ -127,6 +140,8 @@ type Kind int
 package scopes
 
 import (
+	_ "time"
+
 	"example.com/shop/model"
 	other "example.com/shop/other/model"
 	"github.com/go-kanna/orm/scope"
