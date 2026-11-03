@@ -1,5 +1,5 @@
 // Package repository declares what the benchmarks read and write, which kanna-orm implements twice: through pgx in
-// pgxstore, and through database/sql in sqlstore.
+// pgx, and through database/sql in stdlib.
 package repository
 
 import (
@@ -9,8 +9,8 @@ import (
 	"github.com/go-kanna/orm/bench/postgres/kanna/scopes"
 )
 
-//go:generate go tool kanna-orm -destination ../pgxstore
-//go:generate go tool kanna-orm -destination ../sqlstore -driver database/sql
+//go:generate go tool kanna-orm -destination ../pgx
+//go:generate go tool kanna-orm -destination ../stdlib -driver database/sql
 
 //kanna:repository
 type CustomerRepository interface {

@@ -104,14 +104,7 @@
     }
   },
   "statements": {
-    "github.com/go-kanna/orm/example/mysql/scopes.Order.PlacedInMonth": {
-      "digest": "383b1be9e62fddf2",
-      "params": [
-        {"name": "at"}
-      ],
-      "columns": []
-    },
-    "github.com/go-kanna/orm/example/mysql/store.FindApproval": {
+    "github.com/go-kanna/orm/example/mysql/mysql.FindApproval": {
       "digest": "41f20367490b4373",
       "params": [
         {"name": "id"}
@@ -125,7 +118,7 @@
         {"name": "approver", "type": "text", "nullable": true}
       ]
     },
-    "github.com/go-kanna/orm/example/mysql/store.MonthlySales": {
+    "github.com/go-kanna/orm/example/mysql/mysql.MonthlySales": {
       "digest": "95ad8f1311b0e628",
       "params": [
         {"name": "since"}
@@ -136,11 +129,18 @@
         {"name": "revenue", "type": "bigint", "not_null": true}
       ]
     },
-    "github.com/go-kanna/orm/example/mysql/store.Tag": {
+    "github.com/go-kanna/orm/example/mysql/mysql.Tag": {
       "digest": "2c109bd615c74f6f",
       "params": [
         {"name": "orderID"},
         {"name": "tag"}
+      ],
+      "columns": []
+    },
+    "github.com/go-kanna/orm/example/mysql/scopes.Order.PlacedInMonth": {
+      "digest": "383b1be9e62fddf2",
+      "params": [
+        {"name": "at"}
       ],
       "columns": []
     }

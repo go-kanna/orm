@@ -10,19 +10,19 @@ import (
 
 	"github.com/go-kanna/orm/hook"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	mysqlscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
-	mysqlstore "github.com/go-kanna/orm/internal/gen/testdata/mysql/sqlstore"
-	"github.com/go-kanna/orm/internal/gen/testdata/postgres/pgxstore"
-	pgscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
+	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
+	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
+	ppgx "github.com/go-kanna/orm/internal/gen/testdata/postgres/pgx"
+	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 	"github.com/go-kanna/orm/option"
 )
 
 func TestHooks_Postgres(t *testing.T) {
 	t.Parallel()
 	var done []hook.Execution
-	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done))
+	repo := ppgx.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done))
 	ctx := t.Context()
-	if _, err := repo.Get(ctx, 1, pgscopes.Orders().WithLines()); err != nil {
+	if _, err := repo.Get(ctx, 1, pscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.Count(ctx); err != nil {
@@ -40,9 +40,9 @@ func TestHooks_Postgres(t *testing.T) {
 func TestHooks_MySQL(t *testing.T) {
 	t.Parallel()
 	var done []hook.Execution
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done))
+	repo := mstdlib.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done))
 	ctx := t.Context()
-	if _, err := repo.Get(ctx, 1, mysqlscopes.Orders().WithLines()); err != nil {
+	if _, err := repo.Get(ctx, 1, mscopes.Orders().WithLines()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.Count(ctx); err != nil {
@@ -95,7 +95,7 @@ func checkExecutions(t *testing.T, done []hook.Execution) {
 
 func TestHooks_CanceledContext_Postgres(t *testing.T) {
 	t.Parallel()
-	repo := pgxstore.NewOrderRepository(pgxConn(t, postgresSchema(t)), cancelStatements())
+	repo := ppgx.NewOrderRepository(pgxConn(t, postgresSchema(t)), cancelStatements())
 	ctx := t.Context()
 	_, query := repo.Get(ctx, 1)
 	_, queryRow := repo.Count(ctx)
@@ -105,7 +105,7 @@ func TestHooks_CanceledContext_Postgres(t *testing.T) {
 
 func TestHooks_CanceledContext_MySQL(t *testing.T) {
 	t.Parallel()
-	repo := mysqlstore.NewOrderRepository(mysqlDB(t), cancelStatements())
+	repo := mstdlib.NewOrderRepository(mysqlDB(t), cancelStatements())
 	ctx := t.Context()
 	_, query := repo.Get(ctx, 1)
 	_, queryRow := repo.Count(ctx)

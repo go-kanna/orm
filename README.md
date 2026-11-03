@@ -536,7 +536,7 @@ func (r *category) Upsert(ctx context.Context, c model.Category) error {
 
 The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples translate a missing order into
 `model.ErrOrderNotFound`. Their repository declares `//kanna:repository errors=translateOrderError`, and the
-implementation package defines the function in [store/errors.go](example/postgres/store/errors.go).
+implementation package defines the function in [postgres/errors.go](example/postgres/postgres/errors.go).
 
 ```go
 func translateOrderError(op orderRepositoryOperation, err error) error {
@@ -889,7 +889,7 @@ if err != nil {
 }
 defer tx.Rollback(ctx)
 
-orders := store.NewOrderRepository(tx)
+orders := postgres.NewOrderRepository(tx)
 o, err := orders.GetForUpdate(ctx, id)
 if err != nil {
 	return err
@@ -940,7 +940,7 @@ logQuery := func(ctx context.Context, e hook.Execution) {
     fmt.Printf("%s (%s): %v\n", e.SQL, e.Duration, e.Err)
     // Use ctx for request metadata; choose whether to log e.Args.
 }
-repo := store.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
+repo := postgres.NewOrderRepository(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
 A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before repository error translation. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.

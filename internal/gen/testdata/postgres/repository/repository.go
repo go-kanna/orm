@@ -1,5 +1,5 @@
-// Package repository declares the repositories of the tests on PostgreSQL, which kanna-orm implements in pgxstore
-// and sqlstore.
+// Package repository declares the repositories of the tests on PostgreSQL, which kanna-orm implements in pgx and
+// stdlib.
 package repository
 
 import (

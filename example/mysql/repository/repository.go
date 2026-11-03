@@ -9,7 +9,7 @@ import (
 	"github.com/go-kanna/orm/example/mysql/scopes"
 )
 
-//go:generate go tool kanna-orm -destination ../store
+//go:generate go tool kanna-orm -destination ../mysql
 
 //kanna:repository
 type CustomerRepository interface {

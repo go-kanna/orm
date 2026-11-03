@@ -19,9 +19,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/go-kanna/orm/example/postgres/model"
+	"github.com/go-kanna/orm/example/postgres/postgres"
 	"github.com/go-kanna/orm/example/postgres/repository"
 	"github.com/go-kanna/orm/example/postgres/scopes"
-	"github.com/go-kanna/orm/example/postgres/store"
 )
 
 func main() {
@@ -46,10 +46,10 @@ func run(ctx context.Context, url string, w io.Writer) error {
 	}})
 	ex := example{
 		db:          pool,
-		customers:   store.NewCustomerRepository(pool),
-		products:    store.NewProductRepository(pool),
-		orders:      store.NewOrderRepository(pool, queryLog),
-		fulfillment: store.NewFulfillmentRepository(pool),
+		customers:   postgres.NewCustomerRepository(pool),
+		products:    postgres.NewProductRepository(pool),
+		orders:      postgres.NewOrderRepository(pool, queryLog),
+		fulfillment: postgres.NewFulfillmentRepository(pool),
 		w:           w,
 	}
 	for _, step := range []struct {
@@ -80,10 +80,10 @@ func run(ctx context.Context, url string, w io.Writer) error {
 // example is what each step of the example runs on, and the customers it has written.
 type example struct {
 	db          *pgxpool.Pool
-	customers   store.CustomerRepository
-	products    store.ProductRepository
-	orders      store.OrderRepository
-	fulfillment store.FulfillmentRepository
+	customers   postgres.CustomerRepository
+	products    postgres.ProductRepository
+	orders      postgres.OrderRepository
+	fulfillment postgres.FulfillmentRepository
 	w           io.Writer
 	ann, bob    model.Customer
 }
@@ -223,7 +223,7 @@ func (ex *example) placeOrders(ctx context.Context) error {
 }
 
 // ship writes the shipment of o, and o as shipped.
-func (ex *example) ship(ctx context.Context, fulfillment store.FulfillmentRepository, o model.Order) error {
+func (ex *example) ship(ctx context.Context, fulfillment postgres.FulfillmentRepository, o model.Order) error {
 	s := model.Shipment{OrderID: o.ID, Carrier: "Kanna Post", Tracking: fmt.Sprintf("KP%06d", o.ID)}
 	if err := fulfillment.InsertShipment(ctx, s); err != nil {
 		return fmt.Errorf("the shipment: %w", err)
@@ -332,7 +332,7 @@ func (ex *example) cancel(ctx context.Context) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	fulfillment := store.NewFulfillmentRepository(tx)
+	fulfillment := postgres.NewFulfillmentRepository(tx)
 	o, err := fulfillment.GetForUpdate(ctx, 3)
 	if err != nil {
 		return fmt.Errorf("order 3: %w", err)
@@ -361,7 +361,7 @@ func (ex *example) shipNext(ctx context.Context) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = first.Rollback(ctx) }()
-	fulfillment := store.NewFulfillmentRepository(first)
+	fulfillment := postgres.NewFulfillmentRepository(first)
 	o, err := fulfillment.FirstToShip(ctx, next)
 	if err != nil {
 		return fmt.Errorf("worker 1: %w", err)
@@ -373,7 +373,7 @@ func (ex *example) shipNext(ctx context.Context) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = second.Rollback(ctx) }()
-	if _, err := store.NewFulfillmentRepository(second).FirstToShip(ctx, next); !errors.Is(err, orm.ErrNotFound) {
+	if _, err := postgres.NewFulfillmentRepository(second).FirstToShip(ctx, next); !errors.Is(err, orm.ErrNotFound) {
 		return fmt.Errorf("worker 2: %w, not orm.ErrNotFound", err)
 	}
 	fmt.Fprintln(ex.w, "worker 2 finds no order to take")

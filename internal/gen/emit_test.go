@@ -321,9 +321,9 @@ func TestEmitRepositories(t *testing.T) {
 		d            snapshot.Dialect
 		drv, dest    string
 	}{
-		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "pgx", "postgres/pgxstore"},
-		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "database/sql", "postgres/sqlstore"},
-		{"mysql/scopes", "mysql/repository", snapshot.MySQL, "database/sql", "mysql/sqlstore"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "pgx", "postgres/pgx"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "database/sql", "postgres/stdlib"},
+		{"mysql/scopes", "mysql/repository", snapshot.MySQL, "database/sql", "mysql/stdlib"},
 	} {
 		t.Run(tt.dest, func(t *testing.T) {
 			t.Parallel()
