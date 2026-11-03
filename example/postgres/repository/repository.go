@@ -24,8 +24,6 @@ type CustomerRepository interface {
 
 //kanna:repository
 type ProductRepository interface {
-	//kanna:conflict sku do=nothing
-	Insert(ctx context.Context, p model.Product) (int64, error)
 	// UpsertAll writes the catalog in one statement, however many products it has.
 	//kanna:conflict sku
 	UpsertAll(ctx context.Context, products []model.Product) error
