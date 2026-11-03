@@ -545,9 +545,13 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	model := types.TypeString(m.model, e.f.Qualifier)
 	inserted := m.inserted()
 	what, tail := e.insertTail(m)
-	if given, ok := m.given(); ok {
+	given, gives := m.given()
+	if gives && !m.many {
 		e.insertGiven(m, sc, recv, sig, given, tail, what)
 		return
+	}
+	if gives {
+		inserted = slices.Concat(inserted, []column{given})
 	}
 	var (
 		query strings.Builder
@@ -579,8 +583,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 			e.printf("%s[%s] = %s\n", args[j], i, e.storageValue(c, sig.row+"["+i+"]."+fieldPath(c)))
 		}
 		e.printf("}\n")
-		fmt.Fprintf(&query, "SELECT * FROM unnest(%s)", //nolint:unqueryvet // unnest gives the columns listed
-			strings.Join(casts, ", "))
+		query.WriteString(e.unnestRows(inserted, casts, given, gives))
 	default:
 		params := make([]string, 0, len(inserted))
 		for _, c := range inserted {

@@ -78,6 +78,9 @@ type Column struct {
 	// serial, an identity BY DEFAULT, or an AUTO_INCREMENT column, but not that of an identity ALWAYS or a generated
 	// column.
 	Writable bool `json:"writable,omitzero"`
+	// AssignedBy is, of a writable assigned column on PostgreSQL, the expression the database assigns its value by, as
+	// nextval('orders_id_seq'::regclass): what a statement writing many rows writes for those that give none.
+	AssignedBy string `json:"assigned_by,omitzero"`
 }
 
 // ForeignKey is a foreign key, its columns paired in order with the ones it references.
@@ -228,6 +231,9 @@ func column(c Column) string {
 	}
 	if c.Writable {
 		s += `, "writable": true`
+	}
+	if c.AssignedBy != "" {
+		s += `, "assigned_by": ` + quote(c.AssignedBy)
 	}
 	return s + "}"
 }

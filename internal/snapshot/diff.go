@@ -94,6 +94,8 @@ func describeColumn(c Column) string {
 		parts = append(parts, "with a default")
 	}
 	switch {
+	case c.Writable && c.AssignedBy != "":
+		parts = append(parts, "assigned by "+c.AssignedBy+" unless given")
 	case c.Writable:
 		parts = append(parts, "assigned by the database unless given")
 	case c.Assigned:

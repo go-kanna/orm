@@ -68,10 +68,30 @@ func mysqlValues(n int) string {
 	return "(" + strings.Repeat("?, ", n-1) + "?)"
 }
 
-// insertGiven writes the body of m, an Insert or an Upsert on PostgreSQL of rows that hold given, writing the column
-// of a row whose value is not zero, and leaving it to the database for one whose value is: the statements of the two
-// kept as constants, a row going by the one of its value, and the rows of a many by two statements, read back in the
-// order they are given.
+// unnestRows selects the rows of a many on PostgreSQL from the arrays casts take, one for each of cols. When the rows
+// give the column of given, the last of cols, one whose value is zero gets what the database assigns, so that the rows
+// that give it and those that do not are written by one statement.
+func (e repoEmitter) unnestRows(cols []column, casts []string, given column, gives bool) string {
+	if !gives {
+		//nolint:unqueryvet // unnest gives the columns listed
+		return fmt.Sprintf("SELECT * FROM unnest(%s)", strings.Join(casts, ", "))
+	}
+	names := make([]string, 0, len(cols))
+	selected := make([]string, 0, len(cols))
+	for _, c := range cols {
+		name := sqlName(e.d, c.col.Name)
+		names = append(names, name)
+		selected = append(selected, "u."+name)
+	}
+	selected[len(selected)-1] = fmt.Sprintf("COALESCE(NULLIF(u.%s, 0), %s)", sqlName(e.d, given.col.Name),
+		given.col.AssignedBy)
+	return fmt.Sprintf("SELECT %s FROM unnest(%s) AS u(%s)", strings.Join(selected, ", "), strings.Join(casts, ", "),
+		strings.Join(names, ", "))
+}
+
+// insertGiven writes the body of m, an Insert or an Upsert on PostgreSQL of a row that holds given, writing the
+// column when the row's value is not zero, and leaving it to the database when it is: the statements of the two kept
+// as constants, and the row going by the one of its value.
 func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig signature, given column, tail,
 	what string,
 ) {
@@ -83,92 +103,34 @@ func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig
 	e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)+tail))
 	err := sc.Name("err")
 	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")"
-	if !m.many {
-		value := sig.row + "." + fieldPath(given)
-		q, args := sc.Name("q"), sc.Name("args")
-		values := make([]string, 0, len(cols))
-		for _, c := range cols {
-			values = append(values, e.storageValue(c, sig.row+"."+fieldPath(c)))
-		}
-		e.printf("%s, %s := %s, []any{%s}\nif %s != 0 {\n%s, %s = %s, append(%s, %s)\n}\n", q, args, without,
-			strings.Join(values, ", "), value, q, args, with, args, value)
-		call := sig.ctx + ", " + q + ", " + args + "..."
-		switch m.returns { //nolint:exhaustive // shaped turns the others down for a write
-		case returnsRow:
-			row := sc.Name("row")
-			e.printf("var %s %s\n", row, model)
-			dests, assignments := e.scanTargets(sc, row, m.columns)
-			e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
-				err, recv, e.queryRow, call, strings.Join(dests, ", "), model, sig.mapped(wrap))
-			e.assignScanned(assignments)
-			e.printf("return %s, nil\n", row)
-		case returnsNone:
-			e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
-				e.exec, call, sig.mapped(wrap))
-		}
-		return
+	value := sig.row + "." + fieldPath(given)
+	q, args := sc.Name("q"), sc.Name("args")
+	values := make([]string, 0, len(cols))
+	for _, c := range cols {
+		values = append(values, e.storageValue(c, sig.row+"."+fieldPath(c)))
 	}
-
-	none, zero := "nil", ""
-	out := sc.Name("out")
-	if m.returns == returnsRows {
-		none, zero = "[]"+model+"{}, nil", "nil, "
-	}
-	e.printf("if len(%s) == 0 {\nreturn %s\n}\n", sig.row, none)
-	if m.returns == returnsRows {
-		e.printf("%s := make([]%s, len(%s))\n", out, model, sig.row)
-	}
-	assigned, givenRows, i := sc.Name("assigned"), sc.Name("given"), sc.Name("i")
-	e.printf("// The rows whose %s is zero, which the database assigns, and those which give it.\n", given.col.Name)
-	e.printf("var %[1]s, %[2]s []int\nfor %[3]s := range %[4]s {\nif %[4]s[%[3]s].%[5]s == 0 {\n"+
-		"%[1]s = append(%[1]s, %[3]s)\n} else {\n%[2]s = append(%[2]s, %[3]s)\n}\n}\n", assigned, givenRows, i, sig.row,
-		fieldPath(given))
-	for _, part := range []struct {
-		at, query string
-		cols      []column
-	}{{assigned, without, cols}, {givenRows, with, withCols}} {
-		e.printf("if len(%s) > 0 {\n", part.at)
-		inner := e.f.Scope()
-		args := make([]string, 0, len(part.cols))
-		for _, c := range part.cols {
-			v := inner.Name(lowerFirst(c.path[len(c.path)-1]))
-			e.printf("%s := make([]%s, len(%s))\n", v, e.storageType(c), part.at)
-			args = append(args, v)
-		}
-		j, k := inner.Name("j"), inner.Name("k")
-		e.printf("for %s, %s := range %s {\n", j, k, part.at)
-		for n, c := range part.cols {
-			e.printf("%s[%s] = %s\n", args[n], j, e.storageValue(c, sig.row+"["+k+"]."+fieldPath(c)))
-		}
-		e.printf("}\n")
-		call := strings.Join(append([]string{sig.ctx, part.query}, args...), ", ")
-		if m.returns != returnsRows {
-			e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s%[6]s\n}\n}\n", err, recv,
-				e.exec, call, zero, sig.mapped(wrap))
-			continue
-		}
-		rows, row, n := inner.Name("rows"), inner.Name("row"), inner.Name("n")
-		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn nil, %[6]s\n}\n", rows, err, recv,
-			e.query, call, sig.mapped(wrap))
-		e.printf("for %[1]s := 0; %[1]s < len(%[2]s) && %[3]s.Next(); %[1]s++ {\nvar %[4]s %[5]s\n", n, part.at, rows,
-			row, model)
-		dests, assignments := e.scanTargets(inner, row, m.columns)
-		e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\n%[2]s.Close()\nreturn nil, %[4]s\n}\n", err, rows,
-			strings.Join(dests, ", "), sig.mapped(wrap))
+	e.printf("%s, %s := %s, []any{%s}\nif %s != 0 {\n%s, %s = %s, append(%s, %s)\n}\n", q, args, without,
+		strings.Join(values, ", "), value, q, args, with, args, value)
+	call := sig.ctx + ", " + q + ", " + args + "..."
+	switch m.returns { //nolint:exhaustive // shaped turns the others down for a write
+	case returnsRow:
+		row := sc.Name("row")
+		e.printf("var %s %s\n", row, model)
+		dests, assignments := e.scanTargets(sc, row, m.columns)
+		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
+			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, sig.mapped(wrap))
 		e.assignScanned(assignments)
-		e.printf("%s[%s[%s]] = %s\n}\n%s.Close()\n", out, part.at, n, row, rows)
-		e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n}\n", err, rows, sig.mapped(wrap))
+		e.printf("return %s, nil\n", row)
+	case returnsNone:
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
+			e.exec, call, sig.mapped(wrap))
 	}
-	if m.returns == returnsRows {
-		e.printf("return %s, nil\n", out)
-		return
-	}
-	e.printf("return nil\n")
 }
 
 // insertGivenMySQL is insertGiven on MySQL, where a row the database assigns the column of is read back by the
-// value LAST_INSERT_ID() tells, and one that gives it by its key, and the rows of a many are written as many to a
-// statement as its placeholders take.
+// value LAST_INSERT_ID() tells, and one that gives it by its key. The rows of a many are written as many to a
+// statement as its placeholders take, a row whose value is zero giving NULL, which AUTO_INCREMENT assigns, so that
+// the rows that give the column and those that do not go by one statement.
 func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string, sig signature, given column, tail,
 	what string,
 ) {
@@ -179,35 +141,28 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 	err := sc.Name("err")
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
 	if m.many {
-		e.printf("const %s = %s\n", without, goString(e.insertText(m, cols)))
 		e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)))
 		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
-		assigned, givenRows, i := sc.Name("assigned"), sc.Name("given"), sc.Name("i")
-		e.printf("// The rows whose %s is zero, which the database assigns, and those which give it.\n", given.col.Name)
-		e.printf("var %[1]s, %[2]s []int\nfor %[3]s := range %[4]s {\nif %[4]s[%[3]s].%[5]s == 0 {\n"+
-			"%[1]s = append(%[1]s, %[3]s)\n} else {\n%[2]s = append(%[2]s, %[3]s)\n}\n}\n", assigned, givenRows, i,
-			sig.row, fieldPath(given))
-		for _, part := range []struct {
-			at, head string
-			cols     []column
-		}{{assigned, without, cols}, {givenRows, with, withCols}} {
-			inner := e.f.Scope()
-			chunk, args, k := inner.Name("chunk"), inner.Name("args"), inner.Name("k")
-			fields := make([]string, 0, len(part.cols))
-			for _, c := range part.cols {
-				fields = append(fields, e.storageValue(c, sig.row+"["+k+"]."+fieldPath(c)))
-			}
-			query := part.head + "+" + e.f.Import("strings", "strings") + ".Repeat(" +
-				goString(", "+mysqlValues(len(part.cols))) + ", len(" + chunk + ")-1)"
-			if tail != "" {
-				query += "+" + goString(tail)
-			}
-			e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, len(%[1]s)*%[6]d)\n"+
-				"for _, %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.f.Import("slices", "slices"),
-				part.at, 65535/len(part.cols), args, len(part.cols), k, strings.Join(fields, ", "))
-			e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n", err,
-				recv, e.exec, sig.ctx, query, args, wrap)
+		inner := e.f.Scope()
+		chunk, args, row, value := inner.Name("chunk"), inner.Name("args"), inner.Name("row"),
+			inner.Name(lowerFirst(given.path[len(given.path)-1]))
+		fields := make([]string, 0, len(withCols))
+		for _, c := range cols {
+			fields = append(fields, e.storageValue(c, row+"."+fieldPath(c)))
 		}
+		fields = append(fields, value)
+		query := with + "+" + e.f.Import("strings", "strings") + ".Repeat(" +
+			goString(", "+mysqlValues(len(withCols))) + ", len(" + chunk + ")-1)"
+		if tail != "" {
+			query += "+" + goString(tail)
+		}
+		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, len(%[1]s)*%[6]d)\n"+
+			"for _, %[7]s := range %[1]s {\nvar %[8]s any\nif %[7]s.%[9]s != 0 {\n%[8]s = %[10]s\n}\n"+
+			"%[5]s = append(%[5]s, %[11]s)\n}\n", chunk, e.f.Import("slices", "slices"), sig.row, 65535/len(withCols),
+			args, len(withCols), row, value, fieldPath(given), e.storageValue(given, row+"."+fieldPath(given)),
+			strings.Join(fields, ", "))
+		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n", err,
+			recv, e.exec, sig.ctx, query, args, wrap)
 		e.printf("return nil\n")
 		return
 	}
