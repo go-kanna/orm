@@ -47,6 +47,8 @@ type OrderRepository interface {
 	ListUnlocked(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
+	InsertOrders(ctx context.Context, orders []model.Order) ([]model.Order, error)
+	UpsertOrder(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLine(ctx context.Context, line model.OrderLine) error
 	InsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error)
 	InsertTags(ctx context.Context, tags []model.Tag) error

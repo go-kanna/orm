@@ -643,14 +643,144 @@ func (r OrderRepository) ListUnlocked(ctx context.Context, s ...scopes.Order) ([
 }
 
 func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
+	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
 	var row model.Order
-	err := r.db.QueryRowContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position).
+	err := r.db.QueryRowContext(ctx, q, args...).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
+	}
+	return row, nil
+}
+
+func (r OrderRepository) InsertOrders(ctx context.Context, orders []model.Order) ([]model.Order, error) {
+	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
+SELECT * FROM unnest($1::int8[], $2::text[], $3::timestamptz[], $4::text[], $5::int8[], $6::bool[], $7::text[], $8::bytea[], $9::int4[])
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
+SELECT * FROM unnest($1::int8[], $2::text[], $3::timestamptz[], $4::text[], $5::int8[], $6::bool[], $7::text[], $8::bytea[], $9::int4[], $10::int8[])
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	if len(orders) == 0 {
+		return []model.Order{}, nil
+	}
+	out := make([]model.Order, len(orders))
+	// The rows whose id is zero, which the database assigns, and those which give it.
+	var assigned, given []int
+	for i := range orders {
+		if orders[i].ID == 0 {
+			assigned = append(assigned, i)
+		} else {
+			given = append(given, i)
+		}
+	}
+	if len(assigned) > 0 {
+		customerID := make([]int64, len(assigned))
+		status := make([]model.OrderStatus, len(assigned))
+		placedAt := make([]time.Time, len(assigned))
+		memo := make([]*string, len(assigned))
+		total := make([]int64, len(assigned))
+		paid := make([]bool, len(assigned))
+		contact := make([]*model.Email, len(assigned))
+		receipt := make([][]byte, len(assigned))
+		position := make([]int, len(assigned))
+		for j, k := range assigned {
+			customerID[j] = orders[k].CustomerID
+			status[j] = orders[k].Status
+			placedAt[j] = orders[k].PlacedAt
+			memo[j] = orders[k].Memo
+			total[j] = orders[k].Total
+			paid[j] = orders[k].Paid
+			contact[j] = orders[k].Contact
+			receipt[j] = orders[k].Receipt
+			position[j] = orders[k].Position
+		}
+		rows, err := r.db.QueryContext(ctx, withoutID, customerID, status, placedAt, memo, total, paid, contact, receipt, position)
+		if err != nil {
+			return nil, fmt.Errorf("insert into orders: %w", err)
+		}
+		for n := 0; n < len(assigned) && rows.Next(); n++ {
+			var row model.Order
+			if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("insert into orders: %w", err)
+			}
+			out[assigned[n]] = row
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("insert into orders: %w", err)
+		}
+	}
+	if len(given) > 0 {
+		customerID := make([]int64, len(given))
+		status := make([]model.OrderStatus, len(given))
+		placedAt := make([]time.Time, len(given))
+		memo := make([]*string, len(given))
+		total := make([]int64, len(given))
+		paid := make([]bool, len(given))
+		contact := make([]*model.Email, len(given))
+		receipt := make([][]byte, len(given))
+		position := make([]int, len(given))
+		id := make([]model.OrderID, len(given))
+		for j, k := range given {
+			customerID[j] = orders[k].CustomerID
+			status[j] = orders[k].Status
+			placedAt[j] = orders[k].PlacedAt
+			memo[j] = orders[k].Memo
+			total[j] = orders[k].Total
+			paid[j] = orders[k].Paid
+			contact[j] = orders[k].Contact
+			receipt[j] = orders[k].Receipt
+			position[j] = orders[k].Position
+			id[j] = orders[k].ID
+		}
+		rows, err := r.db.QueryContext(ctx, withID, customerID, status, placedAt, memo, total, paid, contact, receipt, position, id)
+		if err != nil {
+			return nil, fmt.Errorf("insert into orders: %w", err)
+		}
+		for n := 0; n < len(given) && rows.Next(); n++ {
+			var row model.Order
+			if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("insert into orders: %w", err)
+			}
+			out[given[n]] = row
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("insert into orders: %w", err)
+		}
+	}
+	return out, nil
+}
+
+func (r OrderRepository) UpsertOrder(ctx context.Context, o model.Order) (model.Order, error) {
+	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (id) DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, placed_at = EXCLUDED.placed_at, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt, "order" = EXCLUDED."order"
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (id) DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, placed_at = EXCLUDED.placed_at, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt, "order" = EXCLUDED."order"
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
+	var row model.Order
+	err := r.db.QueryRowContext(ctx, q, args...).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if err != nil {
+		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)
 	}
 	return row, nil
 }
@@ -904,12 +1034,20 @@ RETURNING id, name`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
+	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
+	if o.ID != 0 {
+		q, args = withID, append(args, o.ID)
+	}
 	var row model.Order
-	err := r.db.QueryRowContext(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position).
+	err := r.db.QueryRowContext(ctx, q, args...).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("upsert into orders: %w", err)

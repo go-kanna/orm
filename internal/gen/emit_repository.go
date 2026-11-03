@@ -540,6 +540,11 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	}
 	model := types.TypeString(m.model, e.f.Qualifier)
 	inserted := m.inserted()
+	what, tail := e.insertTail(m)
+	if given, ok := m.given(); ok {
+		e.insertGiven(m, sc, recv, sig, given, tail, what)
+		return
+	}
 	var (
 		query strings.Builder
 		args  []string
@@ -581,27 +586,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		fmt.Fprintf(&query, "VALUES (%s)", strings.Join(params, ", "))
 	}
 
-	what := "insert into " + m.target.table
-	if m.verb == verbUpsert {
-		what = "upsert into " + m.target.table
-		key := make([]string, 0, len(m.rowKey()))
-		for _, name := range m.rowKey() {
-			key = append(key, sqlName(e.d, name))
-		}
-		// With nothing to update, the key is set to itself, so that the row met is still returned.
-		sets := []string{key[0] + " = EXCLUDED." + key[0]}
-		if updated := m.updated(); len(updated) > 0 {
-			sets = sets[:0]
-			for _, c := range updated {
-				name := sqlName(e.d, c.col.Name)
-				sets = append(sets, e.upsertAssignment(m, c, "EXCLUDED."+name, sqlName(e.d, m.target.table)+"."+name))
-			}
-		}
-		fmt.Fprintf(&query, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))
-	}
-	if m.returns == returnsRow || m.returns == returnsRows {
-		fmt.Fprintf(&query, "\nRETURNING %s", e.columnList(m.columns))
-	}
+	query.WriteString(tail)
 
 	q, err := sc.Name("q"), sc.Name("err")
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
@@ -627,6 +612,34 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 			e.exec, call, wrap)
 	case returnsCount, returnsBool, returnsScalar: // shaped turns them down for a write
 	}
+}
+
+// insertTail is what an insert of m on PostgreSQL does, for its error, and what follows its rows: the update of an
+// upsert's row met, and the columns read back.
+func (e repoEmitter) insertTail(m repoMethod) (string, string) {
+	var tail strings.Builder
+	what := "insert into " + m.target.table
+	if m.verb == verbUpsert {
+		what = "upsert into " + m.target.table
+		key := make([]string, 0, len(m.rowKey()))
+		for _, name := range m.rowKey() {
+			key = append(key, sqlName(e.d, name))
+		}
+		// With nothing to update, the key is set to itself, so that the row met is still returned.
+		sets := []string{key[0] + " = EXCLUDED." + key[0]}
+		if updated := m.updated(); len(updated) > 0 {
+			sets = sets[:0]
+			for _, c := range updated {
+				name := sqlName(e.d, c.col.Name)
+				sets = append(sets, e.upsertAssignment(m, c, "EXCLUDED."+name, sqlName(e.d, m.target.table)+"."+name))
+			}
+		}
+		fmt.Fprintf(&tail, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))
+	}
+	if m.returns == returnsRow || m.returns == returnsRows {
+		fmt.Fprintf(&tail, "\nRETURNING %s", e.columnList(m.columns))
+	}
+	return what, tail.String()
 }
 
 // update writes the body of m, an Update: its row written over the one with its key, or orm.ErrNotFound when none
@@ -687,7 +700,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		var sets []string
 		if hasAuto && m.returns == returnsRow { // for LAST_INSERT_ID() to tell the row met
 			name := sqlName(e.d, auto)
-			sets = append(sets, name+" = LAST_INSERT_ID("+name+")")
+			sets = append(sets, name+" = LAST_INSERT_ID("+table+"."+name+")")
 		}
 		for _, c := range m.updated() {
 			name := sqlName(e.d, c.col.Name)
@@ -698,6 +711,10 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 			sets = append(sets, name+" = new."+name)
 		}
 		tail = " AS new\nON DUPLICATE KEY UPDATE " + strings.Join(sets, ", ")
+	}
+	if given, ok := m.given(); ok {
+		e.insertGivenMySQL(m, sc, recv, sig, given, tail, what)
+		return
 	}
 
 	err := sc.Name("err")

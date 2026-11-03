@@ -273,7 +273,7 @@ func TestGeneratedRepository_MySQLWrites(t *testing.T) {
 	memo, contact := "fragile", must(model.NewEmail("bob@example.com"))
 	placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
 	o, err := repo.Insert(ctx, model.Order{
-		ID: 99, CustomerID: 20, Status: "open", PlacedAt: placed, Memo: &memo, Total: 400, Contact: &contact,
+		CustomerID: 20, Status: "open", PlacedAt: placed, Memo: &memo, Total: 400, Contact: &contact,
 		Receipt: []byte{1}, Position: 4, Lines: []model.OrderLine{{LineNo: 1, SKU: "ignored"}},
 	})
 	if err != nil {
