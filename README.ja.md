@@ -1088,6 +1088,28 @@ approvers, err := repo.ListApprovers(ctx, ids)
 
 [example](example/postgres/main.go) は、この方法で注文の承認者を読み込みます。
 
+## 渡す scope の検査
+
+scope によっては、repository のメソッドが、SQL を送る前に毎回失敗します。`Count` は条件だけを取るので、行を並べ替える scope を渡すと `orm: Count takes conditions alone, but its scope orders the rows` を返します。`kanna-orm vet` は、そうした呼び出しを、実行せずに見つけます。
+
+```sh
+go tool kanna-orm vet ./...
+```
+
+```text
+usecase/orders.go:42:21: error: Count takes conditions alone, but its scope orders the rows
+  scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
+```
+
+呼び出したメソッドの位置に、その呼び出しが返すエラーと同じ文で報告します。失敗の原因が別の場所（自分で書いた scope の中など）にあるときは、その場所も添えます。見つけるのは次のものです。
+
+- 条件だけを取るもの（`Count`、`Exists`、change set を取る `Update`、`Or` と `Not` の選択肢）に渡した scope の順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete` に渡した関連の読み込み
+- 条件のない scope での `Delete` と、change set を取る `Update`（すべての行に効いてしまう）。`Limit` も `Offset` もない、順序つきの `Delete`。主キーも NULL のない一意キーもない表の、ページつきの `Delete`
+- 関連を読む scope の `After` と `Before`。1 行の関連を読む scope の `Limit` と `Offset`
+- `Limit` と `Offset` に渡した負の定数。何も代入しない change set を渡した `Update`。メソッドが書けない列（upsert が行を突き合わせる列など）に代入する change set
+
+vet は、関数の中の変数、scope を組み立てる分岐、scope を読むクロージャ、自分で書いた scope のメソッドと関数をたどります。interface を通した呼び出しは、kanna-orm がそれに生成した実装が実行するとおりに検査します。報告するのは、どの経路でも失敗する呼び出しだけです。2 ページ目以降でだけページングする scope のように、一部の経路でだけ失敗するものは報告しません。vet がたどらない scope（引数、フィールド、パッケージ変数、スライスで来たもの）も報告しません。テストのファイルは検査しません。テストでは、わざと失敗させることがあるためです。vet が通っても、vet が失敗を見つけた呼び出しがないというだけで、失敗する呼び出しがないことの証明ではありません。
+
 ## ドライバと方言
 
 スナップショットはどのデータベースから作られたかを知っているので、選ぶのはドライバだけで、`-driver` で指定します:
@@ -1136,6 +1158,7 @@ approvers, err := repo.ListApprovers(ctx, ids)
 ```sh
 kanna-orm [flags] [packages]
 kanna-orm describe [flags] [packages]
+kanna-orm vet [flags] [packages]
 ```
 
 生成:
@@ -1159,6 +1182,12 @@ describe:
 | `-tags <list>` | カンマ区切りのビルドタグ |
 | `-check` | 書き出す代わりに、スナップショットがデータベースに対して最新であることを検証する |
 | `-v` | スナップショットを書き出したか、変更しなかったかを表示する |
+
+vet:
+
+| フラグ | 意味 |
+|---|---|
+| `-tags <list>` | カンマ区切りのビルドタグ |
 
 パッケージのデフォルトはカレントディレクトリのパッケージなので、`//go:generate go tool kanna-orm` に引数は不要です。他の kanna ジェネレータと同じく、`KANNA_CHECK=1 go generate ./...` は書き出す代わりにチェックします。成功した実行は、警告以外何も出力しません。`//kanna:scope` の型も `//kanna:repository` のインターフェースも見つからなかった実行は、そのことを知らせます。宣言がすべてなくなったパッケージの `scopes_gen.go` は削除され、インターフェースがすべてなくなった出力先の `repository_gen.go` も削除されます。ただし、実行時に読み込んだパッケージのコードがその宣言をまだ呼び出している場合は削除されません。同じ名前でも生成コードのヘッダがないファイルには決して触れません。削除を行う `go generate` は `open ...: no such file or directory` で終わります。これは go generate 自身のエラーで、ジェネレータを実行する前にパッケージのファイルを列挙しているためです。ファイルは意図どおり削除されています（[golang/go#36068](https://github.com/golang/go/issues/36068)）。
 
