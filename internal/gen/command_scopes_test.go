@@ -75,9 +75,10 @@ import (
 	"github.com/go-kanna/orm/scope"
 )
 
-//kanna:scope table=order_lines func=Lines
+//kanna:scope table=order_lines
 type Line struct{ q scope.Of[model.OrderLine] }
-`, []string{"type Order struct", "func Lines() Line"}, []string{"type OrderLine struct", "type Line struct"}},
+`, []string{"type Order struct", "func (s Line) Of()"},
+			[]string{"type OrderLine struct", "type Line struct", "func OrderLines()", "func Lines()"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -559,7 +559,9 @@ func generatedNames(plans map[*packages.Package][]scopePlan, d snapshot.Dialect)
 	for pkg, ps := range plans {
 		for _, p := range ps {
 			set, fn := changeSetNames(p.name)
-			names[pkg.PkgPath+"."+p.fn] = true
+			if p.fn != "" {
+				names[pkg.PkgPath+"."+p.fn] = true
+			}
 			names[pkg.PkgPath+"."+set] = true
 			names[pkg.PkgPath+"."+fn] = true
 			if p.implied {

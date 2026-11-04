@@ -34,11 +34,11 @@ func checkPagesOfEach(t *testing.T, order model.Order) {
 func TestWithPagesEach_Postgres(t *testing.T) {
 	t.Parallel()
 	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
-		order, err := repo.Get(t.Context(), 1, pscopes.Orders().
-			WithTags(pscopes.Tags().NameAsc().Limit(1)).
-			WithLines(pscopes.OrderLines().LineNoAsc().
-				WithNotes(pscopes.LineNotes().BodyAsc().Limit(1)).
-				WithTags(pscopes.LineTags().TagIDAsc().Limit(1))))
+		order, err := repo.Get(t.Context(), 1, pscopes.Order{}.
+			WithTags(pscopes.Tag{}.NameAsc().Limit(1)).
+			WithLines(pscopes.OrderLine{}.LineNoAsc().
+				WithNotes(pscopes.LineNote{}.BodyAsc().Limit(1)).
+				WithTags(pscopes.LineTag{}.TagIDAsc().Limit(1))))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,11 +49,11 @@ func TestWithPagesEach_Postgres(t *testing.T) {
 func TestWithPagesEach_MySQL(t *testing.T) {
 	t.Parallel()
 	repo := mstdlib.NewOrderRepository(mysqlDB(t))
-	order, err := repo.Get(t.Context(), 1, mscopes.Orders().
-		WithTags(mscopes.Tags().NameAsc().Limit(1)).
-		WithLines(mscopes.OrderLines().LineNoAsc().
-			WithNotes(mscopes.LineNotes().BodyAsc().Limit(1)).
-			WithTags(mscopes.LineTags().TagIDAsc().Limit(1))))
+	order, err := repo.Get(t.Context(), 1, mscopes.Order{}.
+		WithTags(mscopes.Tag{}.NameAsc().Limit(1)).
+		WithLines(mscopes.OrderLine{}.LineNoAsc().
+			WithNotes(mscopes.LineNote{}.BodyAsc().Limit(1)).
+			WithTags(mscopes.LineTag{}.TagIDAsc().Limit(1))))
 	if err != nil {
 		t.Fatal(err)
 	}

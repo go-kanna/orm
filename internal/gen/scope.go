@@ -36,7 +36,8 @@ type scope struct {
 	// model is the struct the rows of table are read into.
 	model *types.Named
 	table string
-	// fn names the function returning the empty scope.
+	// fn names the function returning the empty scope, which a scope type declared by hand has none of: its zero
+	// value is one, and a function of a name is the user's to write.
 	fn string
 	// implied reports whether a //kanna:scopes directive implies it, so that the run declares it too.
 	implied bool
@@ -53,14 +54,16 @@ func findScopes(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]sc
 		models []decl.Models
 	)
 	add := func(sc scope, sds []diag.Diag) {
-		if fn, ok := fns[sc.fn]; ok {
+		if fn, ok := fns[sc.fn]; ok && sc.fn != "" {
 			sds = append(sds, diag.Errorf(sc.pos, "%s: %s is the function returning the empty scope of %s too",
-				sc.name, sc.fn, fn).WithHints("name another with func="))
+				sc.name, sc.fn, fn).WithHints("declare the scope type yourself: //kanna:scope table="+sc.table))
 		}
 		ds = append(ds, sds...)
 		if len(sds) == 0 {
 			scopes = append(scopes, sc)
-			fns[sc.fn] = sc.name
+			if sc.fn != "" {
+				fns[sc.fn] = sc.name
+			}
 		}
 	}
 	for _, file := range pkg.Syntax {
@@ -96,6 +99,10 @@ func impliedScope(pkg *packages.Package, e indexed) (scope, []diag.Diag) {
 			e.modelPath)
 	case !ok:
 		return sc, errorf("no Go name can be made of %s for the function returning the empty scope", e.table)
+	case fn == sc.name:
+		return sc, []diag.Diag{diag.Errorf(e.pos, "%s: the function returning the empty scope of %s would be named %s, "+
+			"as the scope type //kanna:scopes implies is", sc.name, e.table, fn).
+			WithHints("declare the scope type yourself, which gets no function: //kanna:scope table=" + e.table)}
 	}
 	for _, name := range []string{sc.name, fn} {
 		if pos, ok := declared(pkg, name); ok {
@@ -151,23 +158,6 @@ func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, [
 		return sc, append(ds, missing)
 	}
 
-	fn := d.Func
-	if fn == "" {
-		var ok bool
-		if fn, ok = funcName(d.Table); !ok {
-			return sc, append(ds, diag.Errorf(d.Pos, "%s: no Go name can be made of %s", sc.name, d.Table).
-				WithHints("name the function returning the empty scope with func="))
-		}
-	}
-	sc.fn = fn
-	if fn == sc.name {
-		ds = append(ds, diag.Errorf(d.Pos, "%s: the function returning the empty scope would be named %s, as the type is",
-			sc.name, fn).WithHints("name another with func="))
-	} else if pos, ok := declared(pkg, fn); ok {
-		ds = append(ds, diag.Errorf(d.Pos, "%s: %s, the function returning the empty scope, is declared already",
-			sc.name, fn).WithHints(fmt.Sprintf("it is declared at %s:%d", filepath.Base(pos.Filename), pos.Line),
-			"name another with func="))
-	}
 	return sc, ds
 }
 

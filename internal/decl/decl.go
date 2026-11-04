@@ -4,6 +4,7 @@
 package decl
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -25,8 +26,6 @@ type Scope struct {
 	// scope.Of[model.Order]; Named says which.
 	Table string
 	Named bool
-	// Func names the function returning the empty scope, when func= does.
-	Func string
 }
 
 // Models is a //kanna:scopes directive, which implies a scope type for each struct of the packages it names that a
@@ -83,15 +82,15 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			d, fds := directive.Find(fset, doc, "scope")
 			ds = append(ds, fds...)
 			if d.Found {
-				table, fn, ads := scopeArgs(d)
+				table, ads := scopeArgs(d, ts.Name.Name)
 				named := false
 				if model, ok := modelName(ts); ok && table == "" {
 					table, named = Plural(model), true
 				}
 				if len(ads) > 0 {
-					ds = append(ds, hinted(ads, "as in //kanna:scope table=orders")...)
+					ds = append(ds, ads...)
 				} else {
-					decls.Scopes = append(decls.Scopes, Scope{Spec: ts, Pos: d.Pos, Table: table, Named: named, Func: fn})
+					decls.Scopes = append(decls.Scopes, Scope{Spec: ts, Pos: d.Pos, Table: table, Named: named})
 				}
 			}
 
@@ -161,22 +160,29 @@ func stray(fset *token.FileSet, cg *ast.CommentGroup, lines []directive.Line) []
 	return ds
 }
 
-// scopeArgs reads what follows //kanna:scope: the table table= names, and the name func= gives the function returning
-// the empty scope, each if any.
-func scopeArgs(d directive.Directive) (table, fn string, ds []diag.Diag) {
-	args, ds := d.Parse(directive.Spec{Keys: []string{"table", "func"}})
-	for _, a := range args {
-		switch {
-		case a.Name == "table":
-			table = a.Value
-		case a.Name == "func" && token.IsIdentifier(a.Value):
-			fn = a.Value
-		default:
-			ds = append(ds, diag.Errorf(d.Pos, "//kanna:scope func=%s: %q is not a name a Go function can have", a.Value,
-				a.Value))
+// scopeArgs reads what follows //kanna:scope on the type name: the table table= names, if any. A func= is told apart
+// from a misspelled option: it named the function returning the empty scope, which a scope type declared by hand has
+// none of.
+func scopeArgs(d directive.Directive, name string) (table string, ds []diag.Diag) {
+	var kept []string
+	for item := range strings.FieldsSeq(d.Args) {
+		if key, fn, _ := strings.Cut(item, "="); key == "func" {
+			hint := fmt.Sprintf("its zero value, %s{}, is the empty scope", name)
+			if token.IsIdentifier(fn) {
+				hint += fmt.Sprintf("; write func %s() %s { return %[2]s{} } for a function of that name", fn, name)
+			}
+			ds = append(ds, diag.Errorf(d.Pos, "//kanna:scope takes no func=: a scope type declared by hand has no "+
+				"function returning the empty scope").WithHints(hint))
+			continue
 		}
+		kept = append(kept, item)
 	}
-	return table, fn, ds
+	d.Args = strings.Join(kept, " ")
+	args, pds := d.Parse(directive.Spec{Keys: []string{"table"}})
+	for _, a := range args {
+		table = a.Value
+	}
+	return table, append(ds, hinted(pds, "as in //kanna:scope table=orders")...)
 }
 
 // modelName is the name of the model of ts, a scope type, as Order of struct{ q scope.Of[model.Order] }, read from its

@@ -271,9 +271,16 @@ after, as with `//kanna:scopes`, unless `table=` names another, as one in the si
 as a table has one scope type:
 
 ```go
-//kanna:scope table=person func=People
+//kanna:scope table=person
 type Person struct{ q scope.Of[model.Person] }
+
+// People is the empty scope of person, under a name of its own.
+func People() Person { return Person{} }
 ```
+
+A scope type declared by hand gets no function returning the empty scope, as its name and its table are off the
+conventions the function's name would follow. Its zero value, `Person{}`, is the empty scope, and a function of a name
+of your own is one line, as `People` above.
 
 A model that a relation reaches but no scope type names stops generation:
 
@@ -285,9 +292,9 @@ A model that a relation reaches but no scope type names stops generation:
 For each scope type, kanna-orm writes:
 
 - the type, when `//kanna:scopes` implies it;
-- a function returning the empty scope, named after the table: `Orders()` for `orders`. When the name is the type's own,
-  or is taken otherwise, declare the type by hand and choose another with `func=`, as in
-  `//kanna:scope table=person func=People`;
+- a function returning the empty scope, named after the table, `Orders()` for `orders`, for a type `//kanna:scopes`
+  implies. When the name is the type's own, as for a table whose name is the same singular and plural, or is taken
+  otherwise, declare the type by hand;
 - a method for each column, each relation, and each [hand-written scope](#hand-written-sql);
 - `Limit`, `Offset`, `Or`, `Not`, `After`, `Before`, `Cursor`, and `AfterCursor`.
 
@@ -505,7 +512,7 @@ the scope given for them.
 `Limit` and `Offset` page as SQL does. For pages that stay put while rows come and go, give `After` the last row of a
 page, and it continues from there in the scope's order. `After`, `Before`, `Cursor`, and `AfterCursor` continue by the
 primary key, so a scope type of a table without one, or of a model holding no field of it, has none of them, and the
-doc of its function returning the empty scope says why:
+doc of its function returning the empty scope, or of its `Of` for a type declared by hand, says why:
 
 ```go
 s := scopes.Orders().Open().PlacedAtDesc().Limit(20)

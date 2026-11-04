@@ -181,7 +181,7 @@ func TestGeneratedRepository_PostgresSkipLocked(t *testing.T) {
 
 	tx := pgxTx(t, url)
 	repo := ppgx.NewOrderRepository(tx)
-	orders := pscopes.Orders().IDAsc()
+	orders := pscopes.Order{}.IDAsc()
 	for _, tt := range []struct {
 		name string
 		s    pscopes.Order
@@ -227,7 +227,7 @@ func TestGeneratedRepository_PostgresLockLeavesRelations(t *testing.T) {
 	url := postgresSchema(t)
 	other := pgxConn(t, url)
 	repo := ppgx.NewOrderRepository(pgxTx(t, url))
-	o, err := repo.GetNoWait(t.Context(), 1, pscopes.Orders().WithLines().WithTags())
+	o, err := repo.GetNoWait(t.Context(), 1, pscopes.Order{}.WithLines().WithTags())
 	if err != nil || len(o.Lines) != 2 || len(o.Tags) != 2 {
 		t.Fatalf("GetNoWait with relations = %+v, %v", o, err)
 	}
@@ -386,7 +386,7 @@ func TestGeneratedRepository_MySQLSkipLocked(t *testing.T) {
 
 	tx := mysqlTx(t, db)
 	repo := mstdlib.NewOrderRepository(tx)
-	orders := mscopes.Orders().IDAsc()
+	orders := mscopes.Order{}.IDAsc()
 	if got, err := repo.ListUnlocked(ctx, orders); err != nil || !slices.Equal(ids(got), []model.OrderID{2, 3}) {
 		t.Errorf("ListUnlocked = %v, %v; want the free rows", ids(got), err)
 	}
@@ -420,7 +420,7 @@ func TestGeneratedRepository_MySQLLockLeavesRelations(t *testing.T) {
 
 	db := mysqlDB(t)
 	repo := mstdlib.NewOrderRepository(mysqlTx(t, db))
-	o, err := repo.GetNoWait(t.Context(), 1, mscopes.Orders().WithLines().WithTags())
+	o, err := repo.GetNoWait(t.Context(), 1, mscopes.Order{}.WithLines().WithTags())
 	if err != nil || len(o.Lines) != 2 || len(o.Tags) != 2 {
 		t.Fatalf("GetNoWait with relations = %+v, %v", o, err)
 	}

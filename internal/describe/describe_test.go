@@ -71,7 +71,7 @@ package scopes
 //kanna:scope table=orders
 type Order struct{}
 
-//kanna:scope table=order_lines func=Lines
+//kanna:scope table=order_lines
 type OrderLine struct{}
 -- repository/repository.go --
 package repository
@@ -288,7 +288,7 @@ func TestDescribe_ScopeDirectives(t *testing.T) {
 		name, directive, want string
 	}{
 		{"with an option it does not know", "//kanna:scope table=orders colour=red",
-			"scopes.go:3:1: error: //kanna:scope takes table=… or func=…, not \"colour=red\"\n" +
+			"scopes.go:3:1: error: //kanna:scope takes table=…, not \"colour=red\"\n" +
 				"  as in //kanna:scope table=orders"},
 	}
 	for _, tt := range tests {

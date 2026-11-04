@@ -31,11 +31,11 @@ SELECT record_key FROM records WHERE id = :id;
 const findChecks = `
  first,err := records.Upsert(ctx,model.Record{Key:"one",OwnerID:new(int64(11)),Note:"first"})
  if err != nil { t.Fatal(err) }
- got,err := records.Find(ctx,first.ID,scopes.Records().NoteEq("first"))
+ got,err := records.Find(ctx,first.ID,scopes.Record{}.NoteEq("first"))
  if err != nil || got == nil || got.ID != first.ID || got.OwnerID == nil || *got.OwnerID != 11 {
  t.Fatalf("existing row: %+v %v",got,err)
  }
- got,err = records.Find(ctx,first.ID,scopes.Records().NoteEq("different"))
+ got,err = records.Find(ctx,first.ID,scopes.Record{}.NoteEq("different"))
  if err != nil || got != nil { t.Fatalf("filtered row: %+v %v",got,err) }
  got,err = records.Find(ctx,first.ID+100)
  if err != nil || got != nil { t.Fatalf("missing row: %+v %v",got,err) }

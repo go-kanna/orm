@@ -17,7 +17,7 @@ func TestUpdateChanges_Postgres(t *testing.T) {
 	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
 		changed, err := repo.UpdateFields(ctx, 1, pscopes.OrderChanges().SetMemo(nil).SetTotal(0).SetPaid(false),
-			pscopes.Orders().StatusEq("open"))
+			pscopes.Order{}.StatusEq("open"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -27,19 +27,19 @@ func TestUpdateChanges_Postgres(t *testing.T) {
 		if _, err := repo.UpdateFields(ctx, 1, pscopes.OrderChanges()); err == nil {
 			t.Fatal("empty changes accepted")
 		}
-		_, err = repo.UpdateFields(ctx, 1, pscopes.OrderChanges().SetStatus("closed"), pscopes.Orders().StatusEq("open"))
+		_, err = repo.UpdateFields(ctx, 1, pscopes.OrderChanges().SetStatus("closed"), pscopes.Order{}.StatusEq("open"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = repo.UpdateFields(ctx, 1, pscopes.OrderChanges().SetStatus("open"), pscopes.Orders().StatusEq("open"))
+		_, err = repo.UpdateFields(ctx, 1, pscopes.OrderChanges().SetStatus("open"), pscopes.Order{}.StatusEq("open"))
 		if !errors.Is(err, orm.ErrNotFound) {
 			t.Fatalf("failed precondition: %v", err)
 		}
-		n, err := repo.UpdateMany(ctx, pscopes.OrderChanges().SetPaid(true), pscopes.Orders().IDIn(1, 3))
+		n, err := repo.UpdateMany(ctx, pscopes.OrderChanges().SetPaid(true), pscopes.Order{}.IDIn(1, 3))
 		if err != nil || n != 2 {
 			t.Fatalf("bulk update: %d, %v", n, err)
 		}
-		rows, err := repo.UpdateManyReturning(ctx, pscopes.OrderChanges().SetTotal(111), pscopes.Orders().IDIn(1, 3))
+		rows, err := repo.UpdateManyReturning(ctx, pscopes.OrderChanges().SetTotal(111), pscopes.Order{}.IDIn(1, 3))
 		if err != nil || len(rows) != 2 {
 			t.Fatalf("returning rows: %+v, %v", rows, err)
 		}
@@ -56,7 +56,7 @@ func TestUpdateChanges_Postgres(t *testing.T) {
 			t.Fatalf("composite key: %+v, %v", line, err)
 		}
 		changed.Total = 222
-		stored, err := repo.UpdateScoped(ctx, changed, pscopes.Orders().StatusEq("closed"))
+		stored, err := repo.UpdateScoped(ctx, changed, pscopes.Order{}.StatusEq("closed"))
 		if err != nil || stored.Total != 222 {
 			t.Fatalf("full row returning: %+v, %v", stored, err)
 		}
@@ -69,7 +69,7 @@ func TestUpdateChanges_MySQL(t *testing.T) {
 	ctx := t.Context()
 	changes := mscopes.OrderChanges().SetMemo(nil).SetTotal(0)
 	for range 2 {
-		if err := repo.UpdateFieldsOnly(ctx, 1, changes, mscopes.Orders().StatusEq("open")); err != nil {
+		if err := repo.UpdateFieldsOnly(ctx, 1, changes, mscopes.Order{}.StatusEq("open")); err != nil {
 			t.Fatalf("matched update, including unchanged values: %v", err)
 		}
 	}
@@ -77,11 +77,11 @@ func TestUpdateChanges_MySQL(t *testing.T) {
 	if err != nil || row.Memo != nil || row.Total != 0 || row.CustomerID != 10 {
 		t.Fatalf("partial update: %+v, %v", row, err)
 	}
-	err = repo.UpdateFieldsOnly(ctx, 1, changes, mscopes.Orders().StatusEq("closed"))
+	err = repo.UpdateFieldsOnly(ctx, 1, changes, mscopes.Order{}.StatusEq("closed"))
 	if !errors.Is(err, orm.ErrNotFound) {
 		t.Fatalf("missing update: %v", err)
 	}
-	n, err := repo.UpdateMany(ctx, mscopes.OrderChanges().SetPaid(true), mscopes.Orders().IDIn(1, 3))
+	n, err := repo.UpdateMany(ctx, mscopes.OrderChanges().SetPaid(true), mscopes.Order{}.IDIn(1, 3))
 	if err != nil || n != 2 {
 		t.Fatalf("bulk update: %d, %v", n, err)
 	}

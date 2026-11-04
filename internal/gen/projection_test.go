@@ -226,7 +226,7 @@ func TestProjections(t *testing.T) {
  if err != nil { t.Fatal(err) }
  t.Cleanup(func(){ _ = db.Close() })
  r, ctx := NewRecords(db), t.Context()
- cards, err := r.ListCards(ctx, scopes.Records().IDEq(7).IDDesc().Offset(1).Limit(3))
+ cards, err := r.ListCards(ctx, scopes.Record{}.IDEq(7).IDDesc().Offset(1).Limit(3))
  if err != nil || len(cards) != 1 || cards[0].Status != "active" || cards[0].Caption != "" {
   t.Fatalf("ListCards = %+v, %v", cards, err)
  }
@@ -240,13 +240,13 @@ func TestProjections(t *testing.T) {
   t.Fatalf("lock: %v", err)
  }
  if card, err := r.FindCard(ctx, 7); err != nil || card == nil { t.Fatalf("FindCard = %+v, %v", card, err) }
- if _, err := r.FirstCard(ctx, scopes.Records().IDAsc()); err != nil { t.Fatal(err) }
+ if _, err := r.FirstCard(ctx, scopes.Record{}.IDAsc()); err != nil { t.Fatal(err) }
  if !strings.Contains(projectionQuery, "LIMIT 1") { t.Fatal(projectionQuery) }
  projectionMode = "reverse"
- cards, err = r.ListCards(ctx, scopes.Records().IDAsc().Before(model.Record{ID: 99}).Limit(2))
+ cards, err = r.ListCards(ctx, scopes.Record{}.IDAsc().Before(model.Record{ID: 99}).Limit(2))
  if err != nil || len(cards) != 2 || cards[0].Caption != "earlier" { t.Fatalf("reverse = %+v, %v", cards, err) }
  projectionMode = ""
- if _, err := r.ListCards(ctx, scopes.Records().WithUnusedRelation()); err == nil { t.Fatal("preload was ignored") }
+ if _, err := r.ListCards(ctx, scopes.Record{}.WithUnusedRelation()); err == nil { t.Fatal("preload was ignored") }
  projectionMode = "empty"
  cards, err = r.ListCards(ctx)
  if err != nil || cards == nil || len(cards) != 0 { t.Fatalf("empty = %+v, %v", cards, err) }

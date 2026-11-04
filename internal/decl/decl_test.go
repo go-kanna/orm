@@ -29,7 +29,7 @@ func read(t *testing.T, src string) (scopes, repositories []string, ds []diag.Di
 	}
 	decls, ds := decl.Read(fset, file)
 	for _, s := range decls.Scopes {
-		scopes = append(scopes, strings.TrimSpace(s.Spec.Name.Name+" "+s.Table+" "+s.Func))
+		scopes = append(scopes, strings.TrimSpace(s.Spec.Name.Name+" "+s.Table))
 	}
 	for _, r := range decls.Repositories {
 		repositories = append(repositories, strings.TrimSpace(r.Spec.Name.Name+" "+r.Table))
@@ -60,11 +60,11 @@ type Customer struct{ q scope.Of[model.Customer] }
 
 // OrderLine is a scope of the lines of orders.
 //
-//kanna:scope table=order_lines func=Lines
+//kanna:scope table=order_lines
 type OrderLine struct{}
 
 type (
-	//kanna:scope table=person func=People
+	//kanna:scope table=person
 	Person struct{}
 
 	unmarked struct{}
@@ -81,7 +81,7 @@ var _ = 0
 	if len(ds) > 0 {
 		t.Fatalf("Read:\n%s", report(ds))
 	}
-	want := []string{"Order orders", "Customer customers", "OrderLine order_lines Lines", "Person person People"}
+	want := []string{"Order orders", "Customer customers", "OrderLine order_lines", "Person person"}
 	if !reflect.DeepEqual(scopes, want) {
 		t.Errorf("scopes = %q, want %q", scopes, want)
 	}
@@ -226,15 +226,17 @@ func TestRead_Mistakes(t *testing.T) {
 			`scopes.go:3:1: warning: "//kanna:scop table=orders" is not recognized as a directive` + "\n" +
 				`  did you mean "//kanna:scope table=orders"?`},
 		{"an option it does not know", "//kanna:scope table=orders colour=red",
-			"scopes.go:3:1: error: //kanna:scope takes table=… or func=…, not \"colour=red\"\n" +
+			"scopes.go:3:1: error: //kanna:scope takes table=…, not \"colour=red\"\n" +
 				"  as in //kanna:scope table=orders"},
 		{"a table given twice", "//kanna:scope table=orders table=order_lines",
 			"scopes.go:3:1: error: //kanna:scope takes table once\n  as in //kanna:scope table=orders"},
-		{"a function given twice", "//kanna:scope table=orders func=Orders func=AllOrders",
-			"scopes.go:3:1: error: //kanna:scope takes func once\n  as in //kanna:scope table=orders"},
+		{"a function named", "//kanna:scope table=orders func=AllOrders",
+			"scopes.go:3:1: error: //kanna:scope takes no func=: a scope type declared by hand has no function returning " +
+				"the empty scope\n  its zero value, Order{}, is the empty scope; " +
+				"write func AllOrders() Order { return Order{} } for a function of that name"},
 		{"a function no Go function can be named", "//kanna:scope table=orders func=all-orders",
-			"scopes.go:3:1: error: //kanna:scope func=all-orders: \"all-orders\" is not a name a Go function can have\n" +
-				"  as in //kanna:scope table=orders"},
+			"scopes.go:3:1: error: //kanna:scope takes no func=: a scope type declared by hand has no function returning " +
+				"the empty scope\n  its zero value, Order{}, is the empty scope"},
 		{"an option a repository does not take", "//kanna:repository table=orders func=Orders",
 			"scopes.go:3:1: error: //kanna:repository takes table=…, not \"func=Orders\"\n" +
 				"  as in //kanna:repository table=orders"},

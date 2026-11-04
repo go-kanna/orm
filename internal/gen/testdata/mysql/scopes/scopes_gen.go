@@ -17,9 +17,6 @@ func ormRuntime[M any](q scope.Of[M]) impl.Of[M] { return impl.Of[M](q) }
 
 func ormScope[M any](q impl.Of[M]) scope.Of[M] { return scope.Of[M](q) }
 
-// Orders returns a scope over all the rows of orders.
-func Orders() Order { return Order{} }
-
 // Of returns the scope as a repository reads it.
 func (s Order) Of() scope.Of[model.Order] { return s.q }
 
@@ -789,9 +786,6 @@ func (s Order) AfterCursor(cursor string) (Order, error) {
 	return s.After(row), nil
 }
 
-// Customers returns a scope over all the rows of customers.
-func Customers() Customer { return Customer{} }
-
 // Of returns the scope as a repository reads it.
 func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
@@ -1088,9 +1082,6 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 	return s.After(row), nil
 }
 
-// OrderLines returns a scope over all the rows of order_lines.
-func OrderLines() OrderLine { return OrderLine{} }
-
 // Of returns the scope as a repository reads it.
 func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
@@ -1386,13 +1377,10 @@ func (s OrderLine) AfterCursor(cursor string) (OrderLine, error) {
 	return s.After(row), nil
 }
 
-// Tags returns a scope over all the rows of tags.
+// Of returns the scope as a repository reads it.
 //
 // It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary key:
 // tags has no primary key.
-func Tags() Tag { return Tag{} }
-
-// Of returns the scope as a repository reads it.
 func (s Tag) Of() scope.Of[model.Tag] { return s.q }
 
 // TagChangeSet holds explicitly assigned columns of tags.
@@ -1503,13 +1491,10 @@ func (s Tag) Not(other Tag) Tag {
 	return Tag{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
 }
 
-// LineNotes returns a scope over all the rows of line_notes.
+// Of returns the scope as a repository reads it.
 //
 // It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary key:
 // line_notes has no primary key.
-func LineNotes() LineNote { return LineNote{} }
-
-// Of returns the scope as a repository reads it.
 func (s LineNote) Of() scope.Of[model.LineNote] { return s.q }
 
 // LineNoteChangeSet holds explicitly assigned columns of line_notes.
@@ -1752,9 +1737,6 @@ func (s LineNote) Or(alternatives ...LineNote) LineNote {
 func (s LineNote) Not(other LineNote) LineNote {
 	return LineNote{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
 }
-
-// LineTags returns a scope over all the rows of line_tags.
-func LineTags() LineTag { return LineTag{} }
 
 // Of returns the scope as a repository reads it.
 func (s LineTag) Of() scope.Of[model.LineTag] { return s.q }

@@ -32,19 +32,19 @@ func TestCommand_ScalarRelations(t *testing.T) {
     }
     if strings.HasPrefix`, 1)
 					runtime = strings.Replace(runtime, "invalidState = true", `
-    loaded, err := records.List(ctx, scopes.Records().WithTopics())
+    loaded, err := records.List(ctx, scopes.Record{}.WithTopics())
     if err != nil || len(loaded) != 1 || len(loaded[0].Topics) != 1 || loaded[0].Topics[0] != "active" {
         t.Fatalf("WithTopics = %+v, %v", loaded, err)
     }
     plain, err := records.List(ctx)
     if err != nil || plain[0].Topics != nil { t.Fatalf("unrequested relation = %+v, %v", plain, err) }
     relationValue = ""
-    empty, err := records.List(ctx, scopes.Records().WithTopics())
+    empty, err := records.List(ctx, scopes.Record{}.WithTopics())
     if err != nil || empty[0].Topics == nil || len(empty[0].Topics) != 0 {
         t.Fatalf("empty relation = %+v, %v", empty, err)
     }
     relationValue = "invalid"
-    if _, err := records.List(ctx, scopes.Records().WithTopics()); err == nil {
+    if _, err := records.List(ctx, scopes.Record{}.WithTopics()); err == nil {
         t.Fatal("invalid related enum was accepted")
     }
     invalidState = true`, 1)
