@@ -16,15 +16,16 @@ func TestRepositories_StrayDirectives(t *testing.T) {
 	const (
 		list  = "\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n"
 		at    = "repository.go:24:2: "
-		stray = " marks no method of a //kanna:repository\n  write it right above the method"
+		loose = " is not attached to a declaration, so nothing reads it\n" +
+			"  write it right above what it marks, with no blank line between"
 	)
 	for _, tt := range []struct{ name, methods, want string }{
 		{"a conflict parted from the method by a blank line", "\t//kanna:conflict id\n\n" + list,
-			at + "error: //kanna:conflict" + stray},
+			at + "warning: //kanna:conflict" + loose},
 		{"a conflict at the end of the line", strings.TrimSuffix(list, "\n") + " //kanna:conflict id\n",
-			"repository.go:24:70: error: //kanna:conflict" + stray},
+			"repository.go:24:70: warning: //kanna:conflict" + loose},
 		{"a lock after the last method", list + "\t//kanna:lock update\n",
-			"repository.go:25:2: error: //kanna:lock" + stray},
+			"repository.go:25:2: warning: //kanna:lock" + loose},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

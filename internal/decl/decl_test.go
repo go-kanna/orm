@@ -262,26 +262,42 @@ func TestRead_Mistakes(t *testing.T) {
 	}
 }
 
+func TestRead_ScopesInTheDocOfAType(t *testing.T) {
+	t.Parallel()
+
+	_, _, ds := read(t, "package scopes\n\n//kanna:scopes model-package=../model\ntype Order struct{}\n")
+	want := "scopes.go:3:1: warning: //kanna:scopes marks no declaration, so nothing reads it in the doc of a type\n" +
+		"  write it in a comment of its own, apart from the type"
+	if got := report(ds); !strings.Contains(got, want) {
+		t.Errorf("Read reports\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestRead_StrayDirectives(t *testing.T) {
 	t.Parallel()
 
-	const want = "error: //kanna:%s marks the type it is the doc of, but this comment is the doc of none\n" +
-		"  write it right above one type, with no blank line between"
+	const (
+		loose = "warning: //kanna:%s is not attached to a declaration, so nothing reads it\n" +
+			"  write it right above what it marks, with no blank line between"
+		stray = "warning: //kanna:%s marks the type it is the doc of, but this comment is the doc of no one type\n" +
+			"  write it right above one type, with no blank line between"
+	)
 	tests := []struct {
-		name, src, key string
+		name, src, key, want string
 	}{
-		{"a blank line before the type", "//kanna:repository\n\ntype Orders interface{}\n", "repository"},
-		{"a group of types", "//kanna:scope table=orders\ntype (\n\tOrder struct{}\n\tLine struct{}\n)\n", "scope"},
-		{"a function", "//kanna:repository\nfunc Orders() {}\n", "repository"},
-		{"a field", "type Order struct {\n\t//kanna:scope table=orders\n\tq int\n}\n", "scope"},
+		{"a blank line before the type", "//kanna:repository\n\ntype Orders interface{}\n", "repository", loose},
+		{"a group of types", "//kanna:scope table=orders\ntype (\n\tOrder struct{}\n\tLine struct{}\n)\n", "scope",
+			stray},
+		{"a function", "//kanna:repository\nfunc Orders() {}\n", "repository", stray},
+		{"a field", "type Order struct {\n\t//kanna:scope table=orders\n\tq int\n}\n", "scope", stray},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			scopes, repositories, ds := read(t, "package scopes\n\n"+tt.src)
-			if got := report(ds); !strings.HasSuffix(got, fmt.Sprintf(want, tt.key)) || len(ds) != 1 {
-				t.Errorf("Read reports\n%s\nwant\n%s", got, fmt.Sprintf(want, tt.key))
+			if got := report(ds); !strings.HasSuffix(got, fmt.Sprintf(tt.want, tt.key)) || len(ds) != 1 {
+				t.Errorf("Read reports\n%s\nwant\n%s", got, fmt.Sprintf(tt.want, tt.key))
 			}
 			if len(scopes) > 0 || len(repositories) > 0 {
 				t.Errorf("scopes = %q, repositories = %q, want none", scopes, repositories)

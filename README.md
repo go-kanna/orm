@@ -1108,9 +1108,9 @@ once instead, and `skip-locked` has it pass those rows over.
 - Only rows that exist are sure to be locked, so do not count on a lock to keep a row from being inserted.
 - PostgreSQL also locks the rows an `Offset` skips. InnoDB locks the rows it scans, not those it returns, so a read with
   no index for its condition locks the whole table.
-- `//kanna:lock` anywhere but right above such a method stops generation, rather than leave the method unlocked. So does
-  one on a method a [hand-written query](#hand-written-sql) or your own code alone implements: write the lock there.
-  A method delegating to a generated helper keeps its lock on that helper.
+- `//kanna:lock` anywhere but right above such a method gets a warning, as nothing reads it and the method is generated
+  without the lock. One on a method a [hand-written query](#hand-written-sql) or your own code alone implements stops
+  generation: write the lock there. A method delegating to a generated helper keeps its lock on that helper.
 - A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such as `GetForUpdateForm`, says nothing of a lock.
 
 ### Hooks
