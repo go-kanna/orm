@@ -330,6 +330,7 @@ func TestEmitRepositories(t *testing.T) {
 			{Name: "paid", Type: "bool", NotNull: true}, {Name: "contact", Type: "text", Nullable: true},
 			{Name: "receipt", Type: "bytea", Nullable: true}, {Name: "order", Type: "int4", NotNull: true}},
 	}
+	results["ListRepeated"] = results["FirstPlacedSince"]
 	for _, tt := range []struct {
 		scopes, repo string
 		d            snapshot.Dialect

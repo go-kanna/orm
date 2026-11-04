@@ -13,10 +13,9 @@ func (e repoEmitter) preloadScalar(lk link, n preloadNames) {
 	field := strings.Join(lk.field.path, ".")
 	e.printf("if _, %s := %s[%s](%s, %q); %s {\n", n.ok, e.ref("Preloaded"), valueType, n.q, field, n.ok)
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, keyType, n.rows)
+	add := e.keysOnce(n, keyType)
 	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows,
-		ifSet(n.rows+"["+n.i+"]."+fieldPath(own), isPointer(own.typ), func(v string) string {
-			return n.keys + " = append(" + n.keys + ", " + v + ")"
-		}))
+		ifSet(n.rows+"["+n.i+"]."+fieldPath(own), isPointer(own.typ), add))
 	e.printf("%s := map[%s][]%s{}\n", n.byKey, keyType, valueType)
 	// Chunk both drivers so one relation never exceeds the driver's parameter limit.
 	e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.f.Import("slices", "slices"), n.keys, inChunk)

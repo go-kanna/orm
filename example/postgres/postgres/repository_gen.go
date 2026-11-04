@@ -817,9 +817,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].ID}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.Approval{}
 		owners := []parentKey{}
@@ -866,9 +870,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].ID}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.OrderLine{}
 		owners := []parentKey{}
@@ -918,9 +926,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].ID}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.Tag{}
 		owners := []parentKey{}
@@ -966,8 +978,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[model.OrderID][]model.Approval{}
 		related, err := ormSelectApprovals(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
@@ -1009,8 +1025,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[model.OrderID][]model.OrderLine{}
 		related, err := ormSelectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
@@ -1029,8 +1049,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.Shipment](q, "Shipment"); ok {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[model.OrderID]model.Shipment{}
 		related, err := ormSelectShipments(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
@@ -1048,8 +1072,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[model.OrderID][]model.Tag{}
 		pairs, err := db.Query(ctx, `SELECT order_id, tag_id FROM order_tags WHERE order_id = ANY($1)`, keys)

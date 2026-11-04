@@ -74,6 +74,8 @@ type OrderRepository interface {
 	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
 	ListWithCustomers(ctx context.Context, s ...scopes.Order) ([]OrderWithCustomer, error)
 	FirstPlacedSince(ctx context.Context, since time.Time, s ...scopes.Order) (model.Order, error)
+	// ListRepeated returns each order 1,331 times, as a query written by hand may return a row more than once.
+	ListRepeated(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	TotalOf(ctx context.Context, customerID int64) (CustomerTotal, error)
 	CloseOld(ctx context.Context, before time.Time) (int64, error)
 	Reopen(ctx context.Context, id model.OrderID) error

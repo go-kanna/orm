@@ -1031,6 +1031,44 @@ func (r OrderRepository) FirstPlacedSince(ctx context.Context, since time.Time, 
 	return out[0], nil
 }
 
+// ListRepeated runs the query of its name in queries.sql.
+func (r OrderRepository) ListRepeated(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	const text = "WITH list_repeated AS (SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o.`order`\nFROM orders o\nCROSS JOIN (WITH RECURSIVE n (i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 10) SELECT a.i FROM n a, n b, n c) AS r)\nSELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.note, orders.total, orders.paid, orders.contact, orders.receipt, orders.`order` FROM list_repeated AS orders"
+	args := []any{}
+	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	rows, err := r.db.query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListRepeated: %w", err))
+	}
+	defer rows.Close()
+	out := []model.Order{}
+	for rows.Next() {
+		var row model.Order
+		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+			return nil, r.mapError(fmt.Errorf("query ListRepeated: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListRepeated: %w", err))
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := ormPreloadOrders(ctx, r.db, out, q); err != nil {
+		return nil, r.mapError(err)
+	}
+	return out, nil
+}
+
 // TotalOf runs the query of its name in queries.sql.
 func (r OrderRepository) TotalOf(ctx context.Context, customerID int64) (repository.CustomerTotal, error) {
 	const q = `SELECT c.name AS customer, CAST(sum(o.total) AS SIGNED) AS total
@@ -1343,9 +1381,13 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			k1 int
 		}
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.LineNote{}
 		owners := []parentKey{}
@@ -1398,9 +1440,13 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			k1 int
 		}
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.LineTag{}
 		owners := []parentKey{}
@@ -1478,9 +1524,13 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			k1 int
 		}
 		keys := make([]key, 0, len(rows))
+		seen := map[key]bool{}
 		for i := range rows {
 			k := key{rows[i].OrderID, rows[i].LineNo}
-			keys = append(keys, k)
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
 		}
 		byKey := map[key][]model.LineNote{}
 		for chunk := range slices.Chunk(keys, 1000) {
@@ -1514,9 +1564,13 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			k1 int
 		}
 		keys := make([]key, 0, len(rows))
+		seen := map[key]bool{}
 		for i := range rows {
 			k := key{rows[i].OrderID, rows[i].LineNo}
-			keys = append(keys, k)
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
 		}
 		byKey := map[key][]model.LineTag{}
 		for chunk := range slices.Chunk(keys, 1000) {
@@ -1595,9 +1649,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].ID}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.OrderLine{}
 		owners := []parentKey{}
@@ -1647,9 +1705,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].ID}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.Tag{}
 		owners := []parentKey{}
@@ -1720,8 +1782,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[model.OrderID][]model.OrderLine{}
 		for chunk := range slices.Chunk(keys, 1000) {
@@ -1742,8 +1808,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
 		keys := make([]model.OrderID, 0, len(rows))
+		seen := map[model.OrderID]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[model.OrderID][]model.Tag{}
 		for chunk := range slices.Chunk(keys, 1000) {
