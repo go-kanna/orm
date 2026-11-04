@@ -85,17 +85,22 @@ func NewCustomer(db DBTX, opts ...option.Option) Customer { return newCustomer(d
 
 var _ repository.Customer = Customer{}
 
-func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
+func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
+	set, err := changes.Of().UpsertValues("UpsertByEmail", []string{"name", "phone"}, []string{"email"})
+	if err != nil {
+		return model.Customer{}, err
+	}
 	const withoutID = `INSERT INTO customers (email, name, phone, created_at)
 VALUES (?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)`
 	const withID = `INSERT INTO customers (email, name, phone, created_at, id)
 VALUES (?, ?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = new.name, phone = COALESCE(new.phone, customers.phone)`
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)`
 	q, args := withoutID, []any{c.Email, c.Name, c.Phone, c.CreatedAt}
 	if c.ID != 0 {
 		q, args = withID, append(args, c.ID)
 	}
+	args = append(args, set...)
 	res, err := r.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -138,7 +143,7 @@ func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes
 	q := impl.Combine(qs...)
 	changes := c.Of()
 	q = q.Where(`id = `, id)
-	text, args, err := changes.RenderUpdate(impl.MySQL, "customers", []string{"email", "name", "phone", "created_at"}, q)
+	text, args, err := changes.RenderUpdate(impl.MySQL, "customers", []string{"email", "name", "phone"}, q)
 	if err != nil {
 		return err
 	}

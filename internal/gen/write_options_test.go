@@ -19,6 +19,7 @@ type Record struct {
  OwnerID *int64
  Note string ` + "`orm:\",nullzero\"`" + `
  Stamp int64 ` + "`orm:\",default\"`" + `
+ Origin string ` + "`orm:\",insertonly\"`" + `
 }
 -- scopes/scopes.go --
 package scopes
@@ -33,13 +34,16 @@ package repository
 import (
  "context"
  "example.com/shop/model"
+ "example.com/shop/scopes"
 )
 //kanna:repository
 type Records interface {
  Insert(ctx context.Context, record model.Record) error
- //kanna:conflict record_key coalesce=owner_id,note
+ //kanna:conflict record_key
  Upsert(ctx context.Context, record model.Record) (model.Record,error)
- //kanna:conflict record_key coalesce=note keep=owner_id
+ //kanna:conflict record_key
+ UpsertChanges(ctx context.Context, record model.Record, changes scopes.RecordChangeSet) (model.Record,error)
+ //kanna:conflict record_key
  UpsertAll(ctx context.Context, records []model.Record) error
  Update(ctx context.Context, record model.Record) error
  Get(ctx context.Context, id int64) (model.Record,error)
@@ -56,6 +60,7 @@ import (
  "testing"
  "time"
  "example.com/shop/model"
+ "example.com/shop/scopes"
  _ "github.com/go-sql-driver/mysql"
  _ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -77,45 +82,71 @@ func TestWriteOptions(t *testing.T) {
   t.Cleanup(func(){ _,_ = conn.ExecContext(context.Background(),"DROP DATABASE "+namespace) })
   if _,err := conn.ExecContext(ctx,"USE "+namespace); err != nil { t.Fatal(err) }
   _,err = conn.ExecContext(ctx,"CREATE TABLE records (id BIGINT PRIMARY KEY DEFAULT (UUID_SHORT()), "+
-   "record_key VARCHAR(64) NOT NULL UNIQUE, owner_id BIGINT, note TEXT, stamp BIGINT NOT NULL DEFAULT 10)")
+   "record_key VARCHAR(64) NOT NULL UNIQUE, owner_id BIGINT, note TEXT, stamp BIGINT NOT NULL DEFAULT 10, "+
+   "origin TEXT NOT NULL)")
  } else {
   if _,err := conn.ExecContext(ctx,"CREATE SCHEMA "+namespace); err != nil { t.Fatal(err) }
   t.Cleanup(func(){ _,_ = conn.ExecContext(context.Background(),"DROP SCHEMA "+namespace+" CASCADE") })
   if _,err := conn.ExecContext(ctx,"SET search_path TO "+namespace); err != nil { t.Fatal(err) }
   if _,err := conn.ExecContext(ctx,"CREATE SEQUENCE ids"); err != nil { t.Fatal(err) }
   _,err = conn.ExecContext(ctx,"CREATE TABLE records (id BIGINT PRIMARY KEY DEFAULT nextval('ids'), "+
-   "record_key TEXT NOT NULL UNIQUE, owner_id BIGINT, note TEXT, stamp BIGINT NOT NULL DEFAULT 10)")
+   "record_key TEXT NOT NULL UNIQUE, owner_id BIGINT, note TEXT, stamp BIGINT NOT NULL DEFAULT 10, "+
+   "origin TEXT NOT NULL)")
  }
  if err != nil { t.Fatal(err) }
  records := NewRecords(conn)
- first,err := records.Upsert(ctx,model.Record{ID:999,Key:"one",OwnerID:new(int64(11)),Note:"first",Stamp:99})
+ first,err := records.Upsert(ctx,model.Record{ID:999,Key:"one",OwnerID:new(int64(11)),Note:"first",Stamp:99,Origin:"a"})
  if err != nil { t.Fatal(err) }
- if first.ID == 0 || first.ID == 999 || first.Stamp != 10 { t.Fatalf("database defaults: %+v",first) }
- saved,err := records.Upsert(ctx,model.Record{ID:888,Key:"one",Stamp:99})
+ if first.ID == 0 || first.ID == 999 || first.Stamp != 10 || first.Origin != "a" {
+  t.Fatalf("database defaults: %+v",first)
+ }
+ saved,err := records.Upsert(ctx,model.Record{ID:888,Key:"one",Note:"second",Stamp:99,Origin:"b"})
  if err != nil { t.Fatal(err) }
- if saved.ID != first.ID || saved.OwnerID == nil || *saved.OwnerID != 11 || saved.Note != "first" || saved.Stamp != 10 {
-  t.Fatalf("NULL input did not keep stored values: %+v",saved)
+ if saved.ID != first.ID || saved.OwnerID != nil || saved.Note != "second" || saved.Stamp != 10 || saved.Origin != "a" {
+  t.Fatalf("upsert of a row: %+v",saved)
  }
- saved,err = records.Upsert(ctx,model.Record{Key:"one",OwnerID:new(int64(22)),Note:"changed"})
- if err != nil || saved.OwnerID == nil || *saved.OwnerID != 22 || saved.Note != "changed" {
-  t.Fatalf("non-NULL update: %+v, %v",saved,err)
+ saved,err = records.UpsertChanges(ctx,model.Record{Key:"one",Note:"given",Origin:"c"},
+  scopes.RecordChanges().SetOwnerID(new(int64(22))).SetStamp(30))
+ if err != nil || saved.OwnerID == nil || *saved.OwnerID != 22 || saved.Note != "second" || saved.Stamp != 30 ||
+  saved.Origin != "a" {
+  t.Fatalf("upsert of a change set: %+v, %v",saved,err)
  }
- saved.Stamp = 20
+ saved,err = records.UpsertChanges(ctx,model.Record{Key:"one",Note:"given"},scopes.RecordChanges().SetNote(""))
+ if err != nil || saved.Note != "" || saved.OwnerID == nil || *saved.OwnerID != 22 {
+  t.Fatalf("upsert of a change set to NULL: %+v, %v",saved,err)
+ }
+ saved,err = records.UpsertChanges(ctx,model.Record{Key:"one",Note:"given"},scopes.RecordChanges())
+ if err != nil || saved.ID != first.ID || saved.Note != "" || saved.Stamp != 30 {
+  t.Fatalf("upsert of no changes: %+v, %v",saved,err)
+ }
+ if _,err := records.UpsertChanges(ctx,model.Record{Key:"one"},scopes.RecordChanges().SetKey("other")); err == nil {
+  t.Fatal("upsert of a change set writing its key succeeded")
+ }
+ if _,err := records.GetByKey(ctx,"other"); err == nil { t.Fatal("upsert of a change set wrote its key") }
+ fresh,err := records.UpsertChanges(ctx,model.Record{Key:"four",Note:"fresh",Origin:"d"},
+  scopes.RecordChanges().SetNote("x"))
+ if err != nil || fresh.Note != "fresh" || fresh.Origin != "d" || fresh.Stamp != 10 {
+  t.Fatalf("upsert of a change set inserting: %+v, %v",fresh,err)
+ }
+ saved.Stamp, saved.Origin = 20, "z"
  if err := records.Update(ctx,saved); err != nil { t.Fatal(err) }
  got,err := records.Get(ctx,saved.ID)
- if err != nil || got.Stamp != 20 { t.Fatalf("default affected UPDATE: %+v, %v",got,err) }
- if err := records.UpsertAll(ctx,[]model.Record{{Key:"one"},{Key:"two"}}); err != nil { t.Fatal(err) }
+ if err != nil || got.Stamp != 20 || got.Origin != "a" { t.Fatalf("update: %+v, %v",got,err) }
+ bulk := []model.Record{{Key:"one",Note:"bulk",Origin:"y"},{Key:"two",Origin:"t"}}
+ if err := records.UpsertAll(ctx,bulk); err != nil { t.Fatal(err) }
  got,err = records.Get(ctx,first.ID)
- if err != nil || got.Note != "changed" || got.OwnerID == nil || *got.OwnerID != 22 || got.Stamp != 20 {
+ if err != nil || got.Note != "bulk" || got.OwnerID != nil || got.Stamp != 20 || got.Origin != "a" {
   t.Fatalf("bulk upsert: %+v, %v",got,err)
  }
  second,err := records.GetByKey(ctx,"two")
- if err != nil || second.ID == first.ID || second.Stamp != 10 || second.OwnerID != nil || second.Note != "" {
+ if err != nil || second.ID == first.ID || second.Stamp != 10 || second.OwnerID != nil || second.Origin != "t" {
   t.Fatalf("bulk defaults: %+v, %v",second,err)
  }
- if err := records.Insert(ctx,model.Record{ID:999,Key:"three",Stamp:99}); err != nil { t.Fatal(err) }
+ if err := records.Insert(ctx,model.Record{ID:999,Key:"three",Stamp:99,Origin:"o"}); err != nil { t.Fatal(err) }
  third,err := records.GetByKey(ctx,"three")
- if err != nil || third.ID == 999 || third.Stamp != 10 { t.Fatalf("INSERT defaults: %+v, %v",third,err) }
+ if err != nil || third.ID == 999 || third.Stamp != 10 || third.Origin != "o" {
+  t.Fatalf("INSERT defaults: %+v, %v",third,err)
+ }
 }
 `
 
@@ -127,6 +158,7 @@ func writeOptionsSnapshot(t *testing.T, dir string, dialect snapshot.Dialect) {
 			{Name: "record_key", Type: "text", NotNull: true},
 			{Name: "owner_id", Type: "bigint"}, {Name: "note", Type: "text"},
 			{Name: "stamp", Type: "bigint", NotNull: true, Default: true},
+			{Name: "origin", Type: "text", NotNull: true},
 		}, PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"record_key"}}},
 	}}
 	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {

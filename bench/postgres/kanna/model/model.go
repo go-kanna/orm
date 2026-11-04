@@ -7,7 +7,7 @@ type Customer struct {
 	ID        int64
 	Email     string
 	Name      string
-	CreatedAt time.Time
+	CreatedAt time.Time `orm:",insertonly"`
 }
 
 type Order struct {

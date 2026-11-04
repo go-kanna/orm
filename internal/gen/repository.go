@@ -122,9 +122,8 @@ type repoMethod struct {
 	many     bool
 	optional bool
 	returns  returns
-	// conflict names the columns an upsert meets an existing row by, and keep those it leaves as they were.
-	conflict, keep []string
-	coalesce       []string
+	// conflict names the columns an upsert meets an existing row by.
+	conflict []string
 	// lock is the locking clause //kanna:lock gives a read, if any.
 	lock string
 	// query is the query written by hand that implements the method, if one does.
@@ -681,8 +680,7 @@ func containsKey(t snapshot.Table, columns []string) bool {
 	return false
 }
 
-// conflict reads the //kanna:conflict of an upsert: the columns of the key it meets a row by, and keep= those it
-// leaves as they were.
+// conflict reads the //kanna:conflict of an upsert: the columns of the key it meets a row by.
 func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(d.Pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
@@ -691,15 +689,18 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 		return []diag.Diag{errorf("//kanna:conflict is for an Upsert")}
 	}
 	fields := strings.Fields(d.Args)
-	if len(fields) == 0 || strings.Contains(fields[0], "=") {
-		return []diag.Diag{errorf("//kanna:conflict names the columns of a key, and keep= those to leave as they were").
-			WithHints("as in //kanna:conflict tenant_id,email keep=created_at")}
+	switch {
+	case len(fields) == 0 || strings.Contains(fields[0], "="):
+		return []diag.Diag{errorf("//kanna:conflict names the columns of a key").
+			WithHints("as in //kanna:conflict tenant_id,email")}
+	case len(fields) > 1:
+		return []diag.Diag{errorf("//kanna:conflict names the columns of a key alone, not %q", fields[1]).WithHints(
+			`a column an upsert leaves as it was is tagged orm:",insertonly"`,
+			"an upsert writing chosen columns over the row it meets takes a change set: "+
+				"Upsert(ctx, row, changes "+m.target.name+"ChangeSet)")}
 	}
 	m.conflict = strings.Split(fields[0], ",")
-	if err := m.conflictOptions(fields[1:]); err != nil {
-		return []diag.Diag{errorf("%v", err)}
-	}
-	for _, c := range slices.Concat(m.conflict, m.keep, m.coalesce) {
+	for _, c := range m.conflict {
 		if !slices.ContainsFunc(m.table.Columns, func(col snapshot.Column) bool { return col.Name == c }) {
 			return []diag.Diag{errorf("%s has no column %s", m.target.table, c)}
 		}
@@ -708,23 +709,6 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 		return []diag.Diag{errorf("(%s) is neither the primary key of %s nor one of its unique keys",
 			strings.Join(m.conflict, ", "), m.target.table)}
 	}
-	for _, name := range m.coalesce {
-		if !slices.ContainsFunc(m.updated(), func(c column) bool { return c.col.Name == name }) {
-			unupdated := errorf("coalesce=%s names a column this upsert does not update", name)
-			if m.insertDefault(name) {
-				unupdated = unupdated.WithHints("an upsert keeps a column default leaves out of INSERT")
-			}
-			return []diag.Diag{unupdated}
-		}
-	}
-	var ds []diag.Diag
-	for _, name := range m.keep {
-		if m.insertDefault(name) {
-			ds = append(ds, diag.Warningf(d.Pos, "%s: keep=%s changes nothing: an upsert keeps a column default leaves "+
-				"out of INSERT", m.name, name).WithHints("leave "+name+" out of keep="))
-		}
-	}
-
 	// MySQL updates on a conflict over any unique key, but for one the database assigns every column of.
 	var others []string
 	for _, k := range append([][]string{m.table.PrimaryKey}, m.table.UniqueKeys...) {
@@ -737,16 +721,11 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 		}
 	}
 	if r.s.Dialect == snapshot.MySQL && len(others) > 0 {
-		ds = append(ds, diag.Warningf(m.pos, "%s: on MySQL, a conflict on %s also updates the row", m.name,
+		return []diag.Diag{diag.Warningf(m.pos, "%s: on MySQL, a conflict on %s also updates the row", m.name,
 			strings.Join(others, " or ")).WithHints(fmt.Sprintf("%s has unique keys other than (%s)", m.target.table,
-			strings.Join(m.conflict, ", "))))
+			strings.Join(m.conflict, ", ")))}
 	}
-	return ds
-}
-
-// insertDefault tells whether default leaves the column name out of the INSERT of m.
-func (m repoMethod) insertDefault(name string) bool {
-	return slices.ContainsFunc(m.columns, func(c column) bool { return c.insertDefault && c.col.Name == name })
+	return nil
 }
 
 func sameColumns(a, b []string) bool {
@@ -841,12 +820,13 @@ func (m repoMethod) rowKey() []string {
 }
 
 // updated are the columns an update or an upsert of m writes over its row: those it inserts but its key, the primary
-// key, and those it keeps. An upsert keeps a column default leaves out of INSERT, too, rather than reset it to its
-// database default on a conflict.
+// key, and those tagged insertonly. An upsert of a row keeps a column default leaves out of INSERT, too, rather than
+// reset it to its database default on a conflict; one of a change set writes it when the change set does.
 func (m repoMethod) updated() []column {
-	skip := slices.Concat(m.rowKey(), m.table.PrimaryKey, m.keep)
+	skip := slices.Concat(m.rowKey(), m.table.PrimaryKey)
 	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool {
-		return c.col.Assigned || slices.Contains(skip, c.col.Name) || m.verb == verbUpsert && c.insertDefault
+		return c.col.Assigned || c.insertOnly || slices.Contains(skip, c.col.Name) ||
+			m.verb == verbUpsert && m.changes == "" && c.insertDefault
 	})
 }
 
@@ -1080,14 +1060,15 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			continue
 		}
 		if model, ok := r.changesParam(p, field, ts); ok {
-			if m.verb != verbUpdate || m.changes != "" || m.row != "" {
-				return nil, nil, errorf("a change set is accepted only once, by an Update without a row parameter")
+			if m.verb != verbUpdate && m.verb != verbUpsert || m.changes != "" || m.verb == verbUpdate && m.row != "" {
+				return nil, nil, errorf("a change set is taken once, by an Update without a row or by an Upsert of " +
+					"one row")
 			}
 			m.changes, models = p.Name(), append(models, model)
 			continue
 		}
 		if model, many, ok := r.rowModel(p.Type()); ok {
-			if m.row != "" || m.changes != "" {
+			if m.row != "" || m.changes != "" && m.verb == verbUpdate {
 				return nil, nil, errorf("it takes both %s and %s, rows to write", m.row, p.Name())
 			}
 			m.row, m.many, models = p.Name(), many, append(models, model)
@@ -1097,6 +1078,11 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			return nil, nil, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
 		}
 		keyParams = append(keyParams, p)
+	}
+	if m.changes != "" && m.many {
+		return nil, nil, []diag.Diag{diag.Errorf(m.pos, "%s: an Upsert of many rows takes no change set, whose values "+
+			"would be written over every row it meets", m.name).WithHints("take one row", "write the values of each "+
+			`row: take no change set, and tag the columns an upsert leaves as they were orm:",insertonly"`)}
 	}
 	return models, keyParams, nil
 }
@@ -1119,7 +1105,7 @@ func (m repoMethod) writeKeyRules() []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
-	if m.verb != verbInsert && m.changes == "" {
+	if m.verb != verbInsert && (m.changes == "" || m.verb == verbUpsert) {
 		for _, name := range m.rowKey() {
 			i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
 			switch {

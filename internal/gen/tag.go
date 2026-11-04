@@ -19,6 +19,9 @@ type fieldTag struct {
 	relation      string
 	value         string
 	insertDefault bool
+	// insertOnly says the column is written by an insert alone, and left as it was by an update and by an upsert
+	// meeting its row.
+	insertOnly bool
 }
 
 // parseTag reads the orm key of a struct tag. A tag that reflect cannot read is an error rather than no tag, since
@@ -69,6 +72,8 @@ func parseTag(tag string) (fieldTag, error) {
 				tag.nullzero = true
 			case option == "default" && !tag.insertDefault:
 				tag.insertDefault = true
+			case option == "insertonly" && !tag.insertOnly:
+				tag.insertOnly = true
 			default:
 				return fieldTag{}, fmt.Errorf("unknown or duplicate orm option %q", option)
 			}

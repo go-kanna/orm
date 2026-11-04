@@ -75,13 +75,17 @@ func NewCustomer(db DBTX, opts ...option.Option) Customer { return newCustomer(d
 
 var _ repository.Customer = Customer{}
 
-func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
+func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
+	set, err := changes.Of().UpsertValues("UpsertByEmail", []string{"name", "phone"}, []string{"email"})
+	if err != nil {
+		return model.Customer{}, err
+	}
 	const q = `INSERT INTO customers (email, name, phone, created_at)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, phone = COALESCE(EXCLUDED.phone, customers.phone)
+ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.name END, phone = CASE WHEN $7 THEN $8 ELSE customers.phone END
 RETURNING id, email, name, phone, created_at`
 	var row model.Customer
-	err := r.db.QueryRow(ctx, q, c.Email, c.Name, c.Phone, c.CreatedAt).
+	err = r.db.QueryRow(ctx, q, append([]any{c.Email, c.Name, c.Phone, c.CreatedAt}, set...)...).
 		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
@@ -109,7 +113,7 @@ func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes
 	q := impl.Combine(qs...)
 	changes := c.Of()
 	q = q.Where(`id = `, id)
-	text, args, err := changes.RenderUpdate(impl.Postgres, "customers", []string{"email", "name", "phone", "created_at"}, q)
+	text, args, err := changes.RenderUpdate(impl.Postgres, "customers", []string{"email", "name", "phone"}, q)
 	if err != nil {
 		return model.Customer{}, err
 	}

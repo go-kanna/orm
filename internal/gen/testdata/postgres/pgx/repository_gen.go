@@ -1044,21 +1044,26 @@ RETURNING id, name`
 	return row, nil
 }
 
-func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error) {
+func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error) {
+	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"order"})
+	if err != nil {
+		return model.Order{}, r.mapError(err)
+	}
 	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt
+ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $10 THEN $11 ELSE orders.customer_id END, status = CASE WHEN $12 THEN $13 ELSE orders.status END, placed_at = CASE WHEN $14 THEN $15 ELSE orders.placed_at END, note = CASE WHEN $16 THEN $17 ELSE orders.note END, total = CASE WHEN $18 THEN $19 ELSE orders.total END, paid = CASE WHEN $20 THEN $21 ELSE orders.paid END, contact = CASE WHEN $22 THEN $23 ELSE orders.contact END, receipt = CASE WHEN $24 THEN $25 ELSE orders.receipt END
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT ("order") DO UPDATE SET customer_id = EXCLUDED.customer_id, status = EXCLUDED.status, note = EXCLUDED.note, total = EXCLUDED.total, paid = EXCLUDED.paid, contact = EXCLUDED.contact, receipt = EXCLUDED.receipt
+ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $11 THEN $12 ELSE orders.customer_id END, status = CASE WHEN $13 THEN $14 ELSE orders.status END, placed_at = CASE WHEN $15 THEN $16 ELSE orders.placed_at END, note = CASE WHEN $17 THEN $18 ELSE orders.note END, total = CASE WHEN $19 THEN $20 ELSE orders.total END, paid = CASE WHEN $21 THEN $22 ELSE orders.paid END, contact = CASE WHEN $23 THEN $24 ELSE orders.contact END, receipt = CASE WHEN $25 THEN $26 ELSE orders.receipt END
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
 	if o.ID != 0 {
 		q, args = withID, append(args, o.ID)
 	}
+	args = append(args, set...)
 	var row model.Order
-	err := r.db.QueryRow(ctx, q, args...).
+	err = r.db.QueryRow(ctx, q, args...).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
 	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))

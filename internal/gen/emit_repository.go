@@ -527,11 +527,16 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		return
 	}
 	model := types.TypeString(m.model, e.f.Qualifier)
+	zero := ""
+	if m.returns == returnsRow {
+		zero = model + "{}, "
+	}
+	set, err := e.changeValues(m, sc, sig, zero)
 	inserted := m.inserted()
-	what, tail := e.insertTail(m)
+	tail := e.insertTail(m, len(inserted)+1)
 	given, gives := m.given()
 	if gives && !m.many {
-		e.insertGiven(m, sc, recv, sig, given, tail, what)
+		e.insertGiven(m, sc, recv, sig, given, set, err)
 		return
 	}
 	if gives {
@@ -579,8 +584,11 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 
 	query.WriteString(tail)
 
-	q, err := sc.Name("q"), sc.Name("err")
-	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
+	q := sc.Name("q")
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", m.action()+": %w") + ", " + err + ")")
+	if set != "" {
+		args = []string{"append([]any{" + strings.Join(args, ", ") + "}, " + set + "...)..."}
+	}
 	call := strings.Join(append([]string{sig.ctx, q}, args...), ", ")
 	e.printf("const %s = %s\n", q, goString(query.String()))
 	switch m.returns {
@@ -588,8 +596,8 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		row := sc.Name("row")
 		e.printf("var %s %s\n", row, model)
 		dests, assignments := e.scanTargets(sc, row, m.columns)
-		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
-			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, wrap)
+		e.printf("%[1]s %[8]s %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
+			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, wrap, declare(set))
 		e.assignScanned(assignments)
 		e.printf("return %s, nil\n", row)
 	case returnsRows:
@@ -605,13 +613,16 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 	}
 }
 
-// insertTail is what an insert of m on PostgreSQL does, for its error, and what follows its rows: the update of an
-// upsert's row met, and the columns read back.
-func (e repoEmitter) insertTail(m repoMethod) (string, string) {
+// action is what m, an Insert or an Upsert, does, for its error.
+func (m repoMethod) action() string {
+	return strings.ToLower(string(m.verb)) + " into " + m.target.table
+}
+
+// insertTail is what follows the rows of an insert of m on PostgreSQL: the update of an upsert's row met, and the
+// columns read back. The values of a change set are at placeholders from first on.
+func (e repoEmitter) insertTail(m repoMethod, first int) string {
 	var tail strings.Builder
-	what := "insert into " + m.target.table
 	if m.verb == verbUpsert {
-		what = "upsert into " + m.target.table
 		key := make([]string, 0, len(m.rowKey()))
 		for _, name := range m.rowKey() {
 			key = append(key, sqlName(e.d, name))
@@ -620,9 +631,10 @@ func (e repoEmitter) insertTail(m repoMethod) (string, string) {
 		sets := []string{key[0] + " = EXCLUDED." + key[0]}
 		if updated := m.updated(); len(updated) > 0 {
 			sets = sets[:0]
-			for _, c := range updated {
+			for i, c := range updated {
 				name := sqlName(e.d, c.col.Name)
-				sets = append(sets, e.upsertAssignment(m, c, "EXCLUDED."+name, sqlName(e.d, m.target.table)+"."+name))
+				sets = append(sets, e.upsertAssignment(m, c, "EXCLUDED."+name, sqlName(e.d, m.target.table)+"."+name,
+					first+2*i))
 			}
 		}
 		fmt.Fprintf(&tail, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))
@@ -630,7 +642,7 @@ func (e repoEmitter) insertTail(m repoMethod) (string, string) {
 	if m.returns == returnsRow || m.returns == returnsRows {
 		fmt.Fprintf(&tail, "\nRETURNING %s", e.columnList(m.columns))
 	}
-	return what, tail.String()
+	return tail.String()
 }
 
 // update writes the body of m, an Update: its row written over the one with its key, or orm.ErrNotFound when none
@@ -677,6 +689,11 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 // statement as its placeholders allow, and its row, when m returns it, read back by LAST_INSERT_ID() or by its key.
 func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig signature) {
 	model := types.TypeString(m.model, e.f.Qualifier)
+	zero := ""
+	if m.returns == returnsRow {
+		zero = model + "{}, "
+	}
+	set, err := e.changeValues(m, sc, sig, zero)
 	table := sqlName(e.d, m.target.table)
 	inserted := m.inserted()
 	auto, hasAuto := m.autoIncrement()
@@ -685,9 +702,8 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		values = "(" + strings.Repeat("?, ", len(inserted)-1) + "?)"
 	}
 	head := "INSERT INTO " + table + " (" + e.columnList(inserted) + ")\nVALUES " + values
-	what, tail := "insert into "+m.target.table, ""
+	tail := ""
 	if m.verb == verbUpsert {
-		what = "upsert into " + m.target.table
 		var sets []string
 		if hasAuto && m.returns == returnsRow { // for LAST_INSERT_ID() to tell the row met
 			name := sqlName(e.d, auto)
@@ -695,7 +711,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		}
 		for _, c := range m.updated() {
 			name := sqlName(e.d, c.col.Name)
-			sets = append(sets, e.upsertAssignment(m, c, "new."+name, table+"."+name))
+			sets = append(sets, e.upsertAssignment(m, c, "new."+name, table+"."+name, 0))
 		}
 		if len(sets) == 0 { // the key set to itself, as an update of nothing
 			name := sqlName(e.d, m.rowKey()[0])
@@ -704,12 +720,11 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		tail = " AS new\nON DUPLICATE KEY UPDATE " + strings.Join(sets, ", ")
 	}
 	if given, ok := m.given(); ok {
-		e.insertGivenMySQL(m, sc, recv, sig, given, tail, what)
+		e.insertGivenMySQL(m, sc, recv, sig, given, tail, set, err)
 		return
 	}
 
-	err := sc.Name("err")
-	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", m.action()+": %w") + ", " + err + ")")
 	if m.many {
 		chunk, args, i := sc.Name("chunk"), sc.Name("args"), sc.Name("i")
 		fields := make([]string, 0, len(inserted))
@@ -736,12 +751,14 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 
 	q := sc.Name("q")
-	args := make([]string, 0, 2+len(inserted))
-	args = append(args, sig.ctx, q)
+	rowArgs := make([]string, 0, len(inserted))
 	for _, c := range inserted {
-		args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
+		rowArgs = append(rowArgs, e.storageValue(c, sig.row+"."+fieldPath(c)))
 	}
-	call := strings.Join(args, ", ")
+	if set != "" {
+		rowArgs = []string{"append([]any{" + strings.Join(rowArgs, ", ") + "}, " + set + "...)..."}
+	}
+	call := strings.Join(append([]string{sig.ctx, q}, rowArgs...), ", ")
 	e.printf("const %s = %s\n", q, goString(head+tail))
 	if m.returns != returnsRow {
 		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,
@@ -750,7 +767,6 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 
 	// The row read back by the value LAST_INSERT_ID() tells, or else by its key.
-	zero := model + "{}, "
 	key := m.table.PrimaryKey
 	if m.verb == verbUpsert && !hasAuto {
 		key = m.rowKey()
@@ -758,7 +774,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	conds := make([]string, 0, len(key))
 	keyArgs := make([]string, 0, len(key))
 	id := sc.Name("id")
-	assign := ":="
+	assign := declare(set)
 	if hasAuto {
 		res := e.execResult(sc)
 		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn %[6]s%[7]s\n}\n", res, err, recv,

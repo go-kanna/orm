@@ -22,7 +22,7 @@ const findMethods = `
 `
 
 const findQuery = `-- query: FindCustom
-SELECT id, record_key, owner_id, note, stamp FROM records WHERE record_key = :recordKey;
+SELECT id, record_key, owner_id, note, stamp, origin FROM records WHERE record_key = :recordKey;
 
 -- query: FindKeyOf
 SELECT record_key FROM records WHERE id = :id;
@@ -72,9 +72,7 @@ const findChecks = `
 `
 
 func findShop() string {
-	archive := strings.Replace(writeOptionsShop, " Get(ctx", findMethods+"\n Get(ctx", 1)
-	return strings.Replace(archive, `"context"`, `"context"
- "example.com/shop/scopes"`, 1)
+	return strings.Replace(writeOptionsShop, " Get(ctx", findMethods+"\n Get(ctx", 1)
 }
 
 func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
@@ -111,6 +109,7 @@ func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
 				{Name: "owner_id", Type: "bigint", Nullable: true},
 				{Name: "note", Type: "text", Nullable: true},
 				{Name: "stamp", Type: "bigint", NotNull: true},
+				{Name: "origin", Type: "text", NotNull: true},
 			},
 		},
 		"example.com/shop/impl.FindKeyOf": {
@@ -137,8 +136,6 @@ func TestCommand_Find(t *testing.T) {
 			runtime, _, _ := strings.Cut(writeOptionsRuntime, " first,err := records.Upsert")
 			runtime = strings.ReplaceAll(runtime, "TestWriteOptions", "TestFind")
 			runtime = strings.ReplaceAll(runtime, "DIALECT", string(tt.dialect))
-			runtime = strings.Replace(runtime, `"example.com/shop/model"`, `"example.com/shop/model"
- "example.com/shop/scopes"`, 1)
 			runtime += findChecks
 			if tt.driver == "pgx" {
 				runtime = strings.ReplaceAll(runtime, ` "database/sql"`, "")
