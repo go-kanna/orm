@@ -8,6 +8,22 @@ import (
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
+// each writes the impl.Each the block of preload reads the rows of lk with, as a variable named name of the file: the
+// part of its query that is the same for every read, put together once.
+func (e repoEmitter) each(lk link, name string) {
+	var columns string
+	orderKey := "nil"
+	if lk.scalar != nil {
+		columns = columnNamesLiteral([]column{*lk.scalar})
+	} else {
+		target := e.models[lk.target.table]
+		columns, orderKey = columnNamesLiteral(target.columns), e.orderKey(target.table)
+	}
+	e.printf("// %s reads the rows of %s for the keys of rows, as %s loads them.\n", name, lk.target.table,
+		strings.Join(lk.field.path, "."))
+	e.printf("var %s = %s(%s, %s, %s, %s)\n\n", name, e.ref("NewEach"), e.dialect(), e.batch(lk), orderKey, columns)
+}
+
 // preload writes the block loading the relation lk into the rows, when the scope loads it. It numbers the keys of the
 // rows, each once, and has the database join them to the related rows: so a row is related to a key as SQL compares
 // them, whatever Go's == says of their values, and comes with the number of its key, which hands it to the rows of the
@@ -17,52 +33,59 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 	field := strings.Join(lk.field.path, ".")
 	wrap := e.fmtPkg() + ".Errorf(" + strconv.Quote("load "+field+": %w") + ", err)"
 	target, scalar := e.models[lk.target.table], lk.scalar != nil
-	var row, columns string
-	orderKey := "nil"
+	var row string
 	if scalar {
-		row, columns = types.TypeString(lk.scalar.typ, e.f.Qualifier), columnNamesLiteral([]column{*lk.scalar})
+		row = types.TypeString(lk.scalar.typ, e.f.Qualifier)
 	} else {
-		row, columns = types.TypeString(lk.model, e.f.Qualifier), columnNamesLiteral(target.columns)
-		orderKey = e.orderKey(target.table)
+		row = types.TypeString(lk.model, e.f.Qualifier)
 	}
 
 	e.printf("if %s, %s := %s[%s](%s, %q); %s {\n", n.sub, n.ok, e.ref("Preloaded"), row, n.q, field, n.ok)
 	e.printf("type parentKey struct{ %s }\n", e.keyFields(lk.keys))
-	e.printf("keys := []parentKey{}\nowners := make([]int, len(%[1]s))\nseen := map[parentKey]int{}\n"+
+	columns, appends := make([]string, 0, len(lk.keys)), make([]string, 0, len(lk.keys))
+	for i, c := range lk.keys {
+		k := "keys" + strconv.Itoa(i)
+		columns = append(columns, k)
+		appends = append(appends, k+" = append("+k+", key.k"+strconv.Itoa(i)+")")
+		e.printf("%s := make([]%s, 0, len(%s))\n", k, types.TypeString(elemOf(c.typ), e.f.Qualifier), n.rows)
+	}
+	e.printf("owners := make([]int, len(%[1]s))\nseen := make(map[parentKey]int, len(%[1]s))\n"+
 		"for i := range %[1]s {\nowners[i] = -1\n%[2]s\n}\n", n.rows,
 		keyOf("parentKey", "key", n.rows+"[i]", lk.keys, func(k string) string {
-			return "at, ok := seen[" + k + "]\nif !ok {\nat = len(keys)\nseen[" + k + "] = at\nkeys = append(keys, " + k +
-				")\n}\nowners[i] = at"
+			return "at, ok := seen[" + k + "]\nif !ok {\nat = len(keys0)\nseen[" + k + "] = at\n" +
+				strings.Join(appends, "\n") + "\n}\nowners[i] = at"
 		}))
 	if scalar {
 		e.printf("%[1]s = %[1]s.OrderBy(%[2]q, false)\n", n.sub, sqlName(e.d, lk.scalar.col.Name))
 	}
-	e.printf("flat, numbers := []%s{}, []int{}\n", row)
-	keys, first := "keys", "0"
+	e.printf("var flat []%s\nvar numbers []int\n", row)
+	keys, first := "[]any{"+strings.Join(columns, ", ")+"}", "0"
 	if e.d == snapshot.MySQL {
-		e.printf("for start := 0; start < len(keys); start += %d {\nchunk := keys[start:min(start+%[1]d, len(keys))]\n",
-			max(1, inChunk/len(lk.keys)))
-		keys, first = "chunk", "start"
+		size := max(1, inChunk/len(lk.keys))
+		e.printf("for start := 0; start < len(keys0); start += %d {\nend := min(start+%[1]d, len(keys0))\n", size)
+		chunks := make([]string, 0, len(columns))
+		for _, k := range columns {
+			chunks = append(chunks, k+"[start:end]")
+		}
+		keys, first = "[]any{"+strings.Join(chunks, ", ")+"}", "start"
 	} else {
-		e.printf("if len(keys) > 0 {\n")
+		e.printf("if len(keys0) > 0 {\n")
 	}
-	values := make([]string, 0, len(lk.keys))
-	for i := range lk.keys {
-		values = append(values, "key.k"+strconv.Itoa(i))
-	}
-	e.printf("inputs := make([][]any, len(%[1]s))\nfor i, key := range %[1]s {\ninputs[i] = []any{%[2]s}\n}\n", keys,
-		strings.Join(values, ", "))
-	e.printf("text, args, err := %s.RenderEach(%s, %s, %s, %s, inputs, %s)\nif err != nil {\nreturn %s\n}\n", n.sub,
-		e.dialect(), e.batch(lk), orderKey, columns, first, wrap)
+	e.printf("text, args, err := %s.RenderEach(%s, %s, %s)\nif err != nil {\nreturn %s\n}\n", n.sub,
+		e.eachNames[eachKey(n.table, lk)], keys, first, wrap)
 	e.printf("related, err := %s.%s(%s, text, args...)\nif err != nil {\nreturn %s\n}\n", n.db, e.query, n.ctx,
 		wrap)
-	e.printf("for related.Next() {\nvar number int\nvar row %s\n", row)
-	dests, assign := []string{"&row"}, []string(nil)
-	if !scalar {
+	e.printf("var number int\nvar row %s\n", row)
+	dests, assign, reset := []string{"&row"}, []string(nil), "row = none"
+	if scalar {
+		e.printf("var none %s\n", row)
+	} else {
 		dests, assign = e.scanTargets(e.f.Scope(), "row", target.columns)
+		reset = "row = " + row + "{}"
 	}
-	e.printf("if err := related.Scan(%s); err != nil {\nrelated.Close()\nreturn %s\n}\n",
-		strings.Join(append([]string{"&number"}, dests...), ", "), wrap)
+	e.printf("dest := []any{%s}\nfor related.Next() {\n%s\n", strings.Join(append([]string{"&number"}, dests...), ", "),
+		reset)
+	e.printf("if err := related.Scan(dest...); err != nil {\nrelated.Close()\nreturn %s\n}\n", wrap)
 	e.assignScanned(assign)
 	e.printf("flat = append(flat, row)\nnumbers = append(numbers, number)\n}\nrelated.Close()\n"+
 		"if err := related.Err(); err != nil {\nreturn %s\n}\n}\n", wrap)
@@ -70,29 +93,29 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 		e.printf("if err := %s(%s, %s, flat, %s); err != nil {\nreturn err\n}\n", e.helpers[lk.target.table].preload,
 			n.ctx, n.db, n.sub)
 	}
-	e.handOut(lk, n, row)
+	e.handOut(lk, n)
 }
 
+// eachKey is how the file names the impl.Each of lk, loaded for the rows of table: by the table and the field.
+func eachKey(table string, lk link) string { return table + "." + strings.Join(lk.field.path, ".") }
+
 // handOut writes what hands the related rows, flat, each the number of its key in numbers, to the rows each key is
-// the key of: a slice of them, empty for none, or a pointer to the first, nil for none.
-func (e repoEmitter) handOut(lk link, n preloadNames, row string) {
+// the key of: a slice of them, empty for none, or a copy of the first, nil for none.
+func (e repoEmitter) handOut(lk link, n preloadNames) {
 	dest := n.rows + "[i]." + strings.Join(lk.field.path, ".")
+	group := e.ref("Group")
 	slice, many := lk.field.typ.Underlying().(*types.Slice)
+	if many && isPointer(slice.Elem()) {
+		group = e.ref("GroupPointers")
+	}
+	e.printf("grouped := %s(flat, numbers, len(keys0))\nfor i := range %s {\n", group, n.rows)
 	if !many {
-		e.printf("grouped := make([][]%s, len(keys))\nfor i := range flat {\n"+
-			"grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])\n}\n"+
-			"for i := range %s {\nif owners[i] >= 0 && len(grouped[owners[i]]) > 0 {\nfound := grouped[owners[i]][0]\n"+
-			"%s = &found\n}\n}\n}\n", row, n.rows, dest)
+		e.printf("if owners[i] >= 0 && grouped[owners[i]] != nil {\nfound := grouped[owners[i]][0]\n%s = &found\n}\n}\n}\n",
+			dest)
 		return
 	}
-	elem, value := types.TypeString(slice.Elem(), e.f.Qualifier), "flat[i]"
-	if isPointer(slice.Elem()) {
-		value = "&flat[i]"
-	}
-	e.printf("grouped := make([][]%s, len(keys))\nfor i := range flat {\n"+
-		"grouped[numbers[i]] = append(grouped[numbers[i]], %s)\n}\n"+
-		"for i := range %s {\n%s = []%s{}\nif owners[i] >= 0 && grouped[owners[i]] != nil {\n%[4]s = grouped[owners[i]]\n}\n"+
-		"}\n}\n", elem, value, n.rows, dest, elem)
+	e.printf("%s = []%s{}\nif owners[i] >= 0 && grouped[owners[i]] != nil {\n%[1]s = grouped[owners[i]]\n}\n}\n}\n",
+		dest, types.TypeString(slice.Elem(), e.f.Qualifier))
 }
 
 // batch is the impl.Batch literal telling how the rows lk reaches are related to the rows they are loaded for, and on

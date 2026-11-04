@@ -51,10 +51,8 @@ func (fakeConn) QueryContext(_ context.Context, query string, args []driver.Name
  if strings.Contains(query, "unnest") {
   unnested = true
   numbers = args[0].Value.([]int64)
-  for i := range args[1].Value.([]any) {
-   tenants = append(tenants, args[1].Value.([]any)[i].(int64))
-   ids = append(ids, args[2].Value.([]any)[i].(int64))
-  }
+  tenants = args[1].Value.([]int64)
+  ids = args[2].Value.([]int64)
  } else {
   for i := 0; i < len(args); i += 3 {
    numbers = append(numbers, int64(args[i].Value.(int)))

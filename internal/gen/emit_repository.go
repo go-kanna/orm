@@ -35,6 +35,8 @@ type repoEmitter struct {
 	// and loading their relations.
 	models  map[string]readModel
 	helpers map[string]tableHelpers
+	// eachNames name the impl.Each of each relation the helpers load, by eachKey.
+	eachNames map[string]string
 }
 
 // tableHelpers name the functions of the implementations reading the whole rows of a table that a scope matches,
@@ -60,7 +62,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 		}
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
-		helpers: map[string]tableHelpers{}}
+		helpers: map[string]tableHelpers{}, eachNames: map[string]string{}}
 	if drv == driverSQL {
 		e.exec, e.query, e.queryRow = "ExecContext", "query", "queryRow"
 	}
@@ -71,6 +73,11 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 			preload: sc.Name("ormPreload" + names[table])}
 		f.Reserve(h.selectRows, h.queryRows, h.preload)
 		e.helpers[table] = h
+		for _, lk := range models[table].links {
+			name := sc.Name("ormEach" + names[table] + strings.Join(lk.field.path, ""))
+			f.Reserve(name)
+			e.eachNames[eachKey(table, lk)] = name
+		}
 	}
 	rows := "ormSQLRows"
 	if drv == driverPgx {
@@ -960,7 +967,8 @@ const inChunk = 1000
 
 // preloadNames are the names in a function loading relations.
 type preloadNames struct {
-	ctx, db, rows, q, sub, ok string
+	// table is the table of the rows the function loads relations into.
+	table, ctx, db, rows, q, sub, ok string
 }
 
 // preloadRows writes the function loading into rows of rm the relations a scope loads, each by the keys of the rows.
@@ -969,8 +977,11 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
 	n := preloadNames{
-		ctx: sc.Name("ctx"), db: sc.Name("db"), rows: sc.Name("rows"), q: sc.Name("q"), sub: sc.Name("sub"),
-		ok: sc.Name("ok"),
+		table: rm.target.table, ctx: sc.Name("ctx"), db: sc.Name("db"), rows: sc.Name("rows"), q: sc.Name("q"),
+		sub: sc.Name("sub"), ok: sc.Name("ok"),
+	}
+	for _, lk := range rm.links {
+		e.each(lk, e.eachNames[eachKey(n.table, lk)])
 	}
 	e.printf("// %s loads into %s the relations %s loads, each by the keys of the rows.\n", name, n.rows, n.q)
 	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s %[9]s, %[5]s []%[6]s, %[7]s %[8]s[%[6]s]) error {\n",
