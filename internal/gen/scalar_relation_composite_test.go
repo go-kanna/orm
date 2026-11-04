@@ -107,7 +107,7 @@ func TestCommand_CompositeScalarRelations(t *testing.T) {
 		t.Run(string(tt.dialect)+"/"+tt.driver, func(t *testing.T) {
 			t.Parallel()
 			archive := strings.Replace(typedQueryShop, "ID int64",
-				"ID int64\nTenantID int64\nTopics []string `orm:\"relation=record_topics,column=topic\"`", 1)
+				"ID int64\nTenantID int64\nTopics []string `orm:\"relation=record_topics,fk=tenant_id,record_id\"`", 1)
 			// This fixture reads rows only; custom SQL is covered by the single-key tests.
 			archive = strings.Replace(archive, "Insert(ctx context.Context, record model.Record) error", "", 1)
 			archive = strings.Replace(archive, "Get(ctx context.Context, id int64) (model.Record, error)", "", 1)

@@ -305,9 +305,8 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 | `orm:",default"`                | omit this column from generated INSERT statements and use its database default |
 | `orm:",insertonly"`             | write this column by an insert alone: an update, and an upsert meeting its row, leave it as it was |
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
-| `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
-| `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
-| `orm:"relation=device_topics,column=topic"` | a slice of the values of a column of the related rows: a [scalar relation](#scalar-relations) |
+| `orm:"fk=order_id"`             | on a [relation](#relations), the columns of the foreign key it follows, when its names do not tell them |
+| `orm:"relation=device_topics"`  | a slice of the values of a column of the related rows: a [scalar relation](#scalar-relations) |
 
 A field with no column, a column that may be NULL held by a field that cannot be nil, and, on a table something inserts
 into, a column the database requires a value for and the model has no field for, all stop generation. A column the
@@ -415,31 +414,50 @@ limit, or a relation to load makes the query return an error. When every alterna
 
 ### Relations
 
-A field holding a pointer to another model, or a slice of models or of pointers to them, is a relation. kanna-orm
-tells its kind from the snapshot's foreign keys, so nothing more is written for it. A relation of one row is a
-pointer, nil when its row is not loaded or not there; a model held by value stops generation, as it could not tell
-either:
+A field holding a pointer to another model, or a slice of models or of pointers to them, is a relation. Its names
+tell the foreign key it follows, so nothing more is written for it; the snapshot is read only to check that the key is
+there, and for the columns it refers to. A relation of one row is a pointer, nil when its row is not loaded or not
+there; a model held by value stops generation, as it could not tell either:
 
-| Field                | Foreign key                                                    | Kind         |
-|----------------------|----------------------------------------------------------------|--------------|
-| `Lines []OrderLine`  | `order_lines.order_id` to `orders`                             | has many     |
-| `Customer *Customer` | `orders.customer_id` to `customers`                            | belongs to   |
-| `Profile *Profile`   | `profiles.user_id` to `users`, a unique key                    | has one      |
-| `Tags []Tag`         | through a table with foreign keys to both, such as `user_tags` | many to many |
+| Field of `Order`     | Foreign key, as the names tell it                                                      | Kind         |
+|----------------------|----------------------------------------------------------------------------------------|--------------|
+| `Customer *Customer` | `orders.customer_id` to `customers`: the field's name and `_id`                        | belongs to   |
+| `Shipment *Shipment` | `shipments.order_id` to `orders`, a unique key: the model's name and `_id`             | has one      |
+| `Lines []OrderLine`  | `order_lines.order_id` to `orders`: the model's name and `_id`                         | has many     |
+| `Tags []Tag`         | through `order_tags`, the model's name and the field's: its `order_id` and `tag_id`    | many to many |
 
-When more than one foreign key could serve, generation stops and asks for a tag:
+A pointer is whichever of a belongs to and a has one the snapshot has, and a slice whichever of a has many and a many
+to many; with both, generation stops rather than pick one. A foreign key of other columns is named by a tag, whose
+columns are of the table the kind of the relation says: the model's own for a belongs to, and the related one for a
+has one or a has many. One of more columns is named by all of them, as `orm:"fk=order_id,line_no"`.
 
-```console
-../model/order.go:16:1: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
-  order_lines.order_id to orders
-  order_lines.replaced_order_id to orders
-  tag the field with the one to follow: orm:"fk=order_id"
+```go
+type OrderLine struct {
+	OrderID OrderID
+	LineNo  int
+	SKU     SKU
+	Product *Product `orm:"fk=sku"` // order_lines.sku to products, rather than product_id
+}
+
+type Category struct {
+	ID       int64
+	ParentID *int64
+	Parent   *Category                       // categories.parent_id, the field's name
+	Children []Category `orm:"fk=parent_id"` // categories.parent_id, rather than category_id
+}
 ```
 
-A table with foreign keys to both counts as much as a foreign key of the related table: when `refunds` refers to
-`orders` and to `order_lines`, `Lines` could be the lines of an order or those refunded, and asks for a tag too. Where
-the column alone does not tell, as `order_id` does not here, the tag names its table as well:
-`orm:"fk=order_lines.order_id"`.
+Generation says what it looked for, and which foreign key of the snapshot would read the relation, if one alone would:
+
+```console
+../model/order.go:16:1: error: Order.Buyer: no foreign key of orders.buyer_id to customers reads it, nor a unique one of customers.order_id to orders
+  orders.customer_id to customers reads it: tag the field orm:"fk=customer_id"
+```
+
+A table between whose names are not those of a many to many, as one referring to a key of two columns, is read as a
+model of its own, by a has many and a belongs to. A relation the names cannot tell, as a pointer that a foreign key of
+each table, of the same name, could read, is read by SQL written by hand: see [Scopes on a query](#scopes-on-a-query)
+and [Adding a value related by other columns](#adding-a-value-related-by-other-columns).
 
 A relation is loaded only when the scope asks for it with its `With` method, which takes scopes of the related rows:
 their conditions, their order, and relations of their own to load.
@@ -729,24 +747,27 @@ type TodoRepository interface {
 ### Scalar relations
 
 A relation can load one column of related rows directly into a slice, including a slice of enums. Name the related
-table and the column to read; no intermediate row model or scope type is needed:
+table; no intermediate row model or scope type is needed:
 
 ```go
 type Device struct {
-    ID uuid.UUID
-    Topics []Topic `orm:"relation=device_topics,column=topic"`
+    ID     uuid.UUID
+    Topics []Topic `orm:"relation=device_topics"` // device_topics.topic, by device_topics.device_id
 }
 ```
 
-The snapshot must have a foreign key from `device_topics` to `devices`. Its referenced columns must be held by the
-parent model. When multiple foreign keys connect the tables, select one with
-`orm:"relation=device_topics,column=topic,fk=device_id"`. Generation checks the column's type and nullability against
-the slice element type.
+The column is the one whose plural the field's name is, as for [reading the values of a column](#reading-the-values-of-a-column):
+`Topics` of `topic`, `Categories` of `category`, and `TopicIDs` of `topic_id`. The rows are related by the foreign key
+of the model's name and `_id`, as for a has many: `device_topics.device_id` to `devices`. A column of another name is
+named with `column=`, and a foreign key of other columns with `fk=`, whose columns go on after it:
+`orm:"relation=device_topics,column=name,fk=tenant_id,device_id"`. Generation checks the column's type and nullability
+against the slice element type, and stops when two columns have the plural, as `leaf` and `leave` do, until
+`column=` names one.
 
-Composite foreign keys work the same way: a relation from `order_tags.(tenant_id, order_id)` to
-`orders.(tenant_id, id)` matches and groups by the whole pair. The parent model must hold both referenced columns.
-Related values are loaded in batches using tuple conditions, so rows with the same ID in different tenants remain
-separate. A parent with a nil pointer in any key component has no related values loaded.
+A foreign key of more than one column, as from `device_topics (tenant_id, device_id)` to `devices (tenant_id, id)`,
+matches and groups by the whole pair. The parent model must hold both referenced columns. Related values are loaded in
+batches using tuple conditions, so rows with the same ID in different tenants remain separate. A parent with a nil
+pointer in any key component has no related values loaded.
 
 The generated device scope has `WithTopics()`. A normal generated read loads this relation only when requested, in
 batches, ordered by the selected column. Each enum value goes through its scanner. An explicitly loaded relation with

@@ -51,8 +51,8 @@ type OrderLine struct {
 	LineNo  int
 	SKU     string
 	Order   *Order
-	Notes   []LineNote // by both columns of the key of order_lines
-	Tags    []Tag      // through line_tags, by both columns of the key of order_lines
+	Notes   []LineNote `orm:"fk=order_id,line_no"`
+	Tags    []LineTag  `orm:"fk=order_id,line_no"`
 }
 
 // LineNote is a note on an order line, which it refers to by both columns of its key.
@@ -60,7 +60,16 @@ type LineNote struct {
 	OrderID OrderID
 	LineNo  int
 	Body    string
-	Line    *OrderLine
+	Line    *OrderLine `orm:"fk=order_id,line_no"`
+}
+
+// LineTag tags an order line. It is the table between order_lines and tags, which a many to many does not go through,
+// as it refers to an order line by both columns of its key.
+type LineTag struct {
+	OrderID OrderID
+	LineNo  int
+	TagID   string
+	Tag     *Tag
 }
 
 type Tag struct{ Name string }

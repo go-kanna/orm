@@ -42,8 +42,8 @@ CREATE TABLE tags (name text PRIMARY KEY);
 
 CREATE TABLE order_tags (
     order_id bigint NOT NULL REFERENCES orders ON DELETE CASCADE,
-    tag      text NOT NULL REFERENCES tags,
-    PRIMARY KEY (order_id, tag)
+    tag_id   text NOT NULL REFERENCES tags,
+    PRIMARY KEY (order_id, tag_id)
 );
 
 CREATE TABLE approvals (

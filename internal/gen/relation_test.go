@@ -50,12 +50,12 @@ type Order struct {
 	BillingAddressID  int64
 	ShippingAddressID int64
 	Customer          *Customer
-	BillingAddress    *Address `+"`orm:\"fk=billing_address_id\"`"+`
-	Lines             []OrderLine `+"`orm:\"fk=order_lines.order_id\"`"+`
-	Refunded          []OrderLine `+"`orm:\"fk=refunds.order_id\"`"+`
+	BillingAddress    *Address
+	Shipping          *Address `+"`orm:\"fk=shipping_address_id\"`"+`
+	Lines             []OrderLine
 	Tags              []Tag
 	Products          []*Product
-	Invoice           *Invoice
+	Invoice           *Invoice `+"`orm:\"fk=tenant_id,order_id\"`"+`
 }
 
 type OrderLine struct {
@@ -77,7 +77,7 @@ type Category struct {
 	ID       int64
 	ParentID *int64
 	Parent   *Category
-	Children []Category
+	Children []Category `+"`orm:\"fk=parent_id\"`"+`
 }
 -- catalog/catalog.go --
 package catalog
@@ -122,7 +122,12 @@ type Invoice struct{ q scope.Of[model.Invoice] }
 type Category struct{ q scope.Of[model.Category] }
 `)
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
-		"customers": {Columns: columns("id"), PrimaryKey: []string{"id"}},
+		// customers.order_id is no unique key, so Order.Customer reads by orders.customer_id alone.
+		"customers": {
+			Columns:     append(columns("id"), snapshot.Column{Name: "order_id", Type: "int8"}),
+			PrimaryKey:  []string{"id"},
+			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
+		},
 		"profiles": {
 			Columns: columns("id", "customer_id"), PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"customer_id"}},
 			ForeignKeys: []snapshot.ForeignKey{fk([]string{"customer_id"}, "customers", "id")},
@@ -144,13 +149,6 @@ type Category struct{ q scope.Of[model.Category] }
 				fk([]string{"product_id"}, "products", "id"),
 			},
 		},
-		"refunds": {
-			Columns: columns("id", "order_id", "product_id"), PrimaryKey: []string{"id"},
-			ForeignKeys: []snapshot.ForeignKey{
-				fk([]string{"order_id"}, "orders", "id"),
-				fk([]string{"order_id", "product_id"}, "order_lines", "order_id", "product_id"),
-			},
-		},
 		"products": {Columns: columns("id"), PrimaryKey: []string{"id"}},
 		"tags":     {Columns: columns("id"), PrimaryKey: []string{"id"}},
 		"order_tags": {
@@ -158,6 +156,13 @@ type Category struct{ q scope.Of[model.Category] }
 			ForeignKeys: []snapshot.ForeignKey{
 				fk([]string{"order_id"}, "orders", "id"),
 				fk([]string{"tag_id"}, "tags", "id"),
+			},
+		},
+		"order_products": {
+			Columns: columns("order_id", "product_id"), PrimaryKey: []string{"order_id", "product_id"},
+			ForeignKeys: []snapshot.ForeignKey{
+				fk([]string{"order_id"}, "orders", "id"),
+				fk([]string{"product_id"}, "products", "id"),
 			},
 		},
 		"invoices": {
@@ -182,12 +187,11 @@ type Category struct{ q scope.Of[model.Category] }
 		"Customer.Orders has many scopes.Order: orders.customer_id to customers; ID = CustomerID",
 		"Order.Customer belongs to scopes.Customer: orders.customer_id to customers; CustomerID = ID",
 		"Order.BillingAddress belongs to scopes.Address: orders.billing_address_id to addresses; BillingAddressID = ID",
+		"Order.Shipping belongs to scopes.Address: orders.shipping_address_id to addresses; ShippingAddressID = ID",
 		"Order.Lines has many scopes.OrderLine: order_lines.order_id to orders; ID = OrderID",
-		"Order.Refunded many to many scopes.OrderLine: refunds.order_id to orders, and refunds (order_id, product_id) " +
-			"to order_lines; ID = OrderID, ProductID",
 		"Order.Tags many to many scopes.Tag: order_tags.order_id to orders, and order_tags.tag_id to tags; ID = ID",
-		"Order.Products many to many catalog.Product: order_lines.order_id to orders, and order_lines.product_id to " +
-			"products; ID = ID",
+		"Order.Products many to many catalog.Product: order_products.order_id to orders, and order_products.product_id " +
+			"to products; ID = ID",
 		"Order.Invoice has one scopes.Invoice: invoices (order_id, tenant_id) to orders; ID, TenantID = OrderID, TenantID",
 		"OrderLine.Product belongs to catalog.Product: order_lines.product_id to products; ProductID = ID",
 		"Category.Parent belongs to scopes.Category: categories.parent_id to categories; ParentID = ID",
@@ -206,66 +210,74 @@ func TestLinks_Mistakes(t *testing.T) {
 		name, field, want string
 	}{
 		{"a model of no scope type, whose table a foreign key names", "Product *Product",
-			"model.go:8:1: error: Order.Product: no scope type is declared for model.Product\n" +
+			"model.go:9:1: error: Order.Product: no scope type is declared for model.Product\n" +
 				"  declare one where products are queried: //kanna:scope table=products"},
 		{"a model of no scope type", "Notes []Note",
-			"model.go:8:1: error: Order.Notes: no scope type is declared for model.Note\n" +
+			"model.go:9:1: error: Order.Notes: no scope type is declared for model.Note\n" +
 				"  declare one where its rows are queried: //kanna:scope table=<table>"},
 		{"a scope type of a table the snapshot has not", "Gift *Gift",
-			"model.go:8:1: error: Order.Gift: the snapshot has no table gifts, of which catalog.Gift is a scope type"},
-		{"two foreign keys of the table", "ShippingAddress *Address",
-			"model.go:8:1: error: Order.ShippingAddress: orders has two foreign keys to addresses " +
-				"(billing_address_id, shipping_address_id)\n" +
-				"  orders.billing_address_id to addresses\n" +
-				"  orders.shipping_address_id to addresses\n" +
-				`  tag the field with the one to follow: orm:"fk=shipping_address_id"`},
-		{"a foreign key each way", "Receipt *Receipt",
-			"model.go:8:1: error: Order.Receipt: two foreign keys could relate orders and receipts\n" +
-				"  orders.receipt_id to receipts\n" +
-				"  receipts.order_id to orders\n" +
-				`  tag the field with the one to follow: orm:"fk=receipt_id"`},
+			"model.go:9:1: error: Order.Gift: the snapshot has no table gifts, of which catalog.Gift is a scope type"},
+		{"no foreign key of the name, and two others", "Address *Address",
+			"model.go:9:1: error: Order.Address: no foreign key of orders.address_id to addresses reads it, nor a " +
+				"unique one of addresses.order_id to orders\n" +
+				`  orders.billing_address_id to addresses reads it: tag the field orm:"fk=billing_address_id"` + "\n" +
+				`  orders.shipping_address_id to addresses reads it: tag the field orm:"fk=shipping_address_id"`},
 		{"a tag naming no foreign key", "BillingAddress *Address `orm:\"fk=address_id\"`",
-			`model.go:8:1: error: Order.BillingAddress: orm:"fk=address_id" names no foreign key that relates orders ` +
-				"and addresses\n" +
-				"  one that does: orders.billing_address_id to addresses\n" +
-				"  one that does: orders.shipping_address_id to addresses"},
-		{"a foreign key, and a table between", "Lines []OrderLine",
-			"model.go:8:1: error: Order.Lines: two foreign keys could relate orders and order_lines\n" +
-				"  order_lines.order_id to orders\n" +
-				"  refunds.order_id to orders, and refunds (order_id, product_id) to order_lines\n" +
-				`  tag the field with the one to follow: orm:"fk=order_lines.order_id"`},
-		{"a tag whose column alone does not tell", "Lines []OrderLine `orm:\"fk=order_id\"`",
-			"model.go:8:1: error: Order.Lines: two foreign keys could relate orders and order_lines\n" +
-				"  order_lines.order_id to orders\n" +
-				"  refunds.order_id to orders, and refunds (order_id, product_id) to order_lines\n" +
-				`  tag the field with the one to follow: orm:"fk=order_lines.order_id"`},
-		{"a tag naming a column of another foreign key of the table", "Lines []OrderLine `orm:\"fk=refunds.product_id\"`",
-			`model.go:8:1: error: Order.Lines: orm:"fk=refunds.product_id" names no foreign key that relates orders ` +
-				"and order_lines\n" +
-				"  one that does: order_lines.order_id to orders\n" +
-				"  one that does: refunds.order_id to orders, and refunds (order_id, product_id) to order_lines"},
-		{"no foreign key", "Tags []Tag",
-			"model.go:8:1: error: Order.Tags: no foreign key relates orders and tags\n" +
-				"  a slice is loaded by a foreign key of tags to orders, or through a table with foreign keys to both"},
+			"model.go:9:1: error: Order.BillingAddress: no foreign key of orders.address_id to addresses reads it, " +
+				"nor a unique one of addresses.address_id to orders\n" +
+				`  orders.billing_address_id to addresses reads it: tag the field orm:"fk=billing_address_id"` + "\n" +
+				`  orders.shipping_address_id to addresses reads it: tag the field orm:"fk=shipping_address_id"`},
+		{"a belongs to and a has one", "Receipt *Receipt",
+			"model.go:9:1: error: Order.Receipt: its names read it both as a belongs to, by orders.receipt_id to " +
+				"receipts, and as a has one, by receipts.order_id to orders\n" +
+				"  a relation its names cannot tell is read by SQL written by hand: a join returning a struct that embeds the " +
+				"model, or a query of the related rows by a slice of keys, put together in Go"},
+		{"two foreign keys of the column", "Buyer *Customer",
+			"model.go:9:1: error: Order.Buyer: orders has two foreign keys of buyer_id to customers\n" +
+				"  a relation its names cannot tell is read by SQL written by hand: a join returning a struct that embeds the " +
+				"model, or a query of the related rows by a slice of keys, put together in Go"},
+		{"a has many and a many to many", "Parts []Part",
+			"model.go:9:1: error: Order.Parts: its names read it both as a has many, by parts.order_id to orders, " +
+				"and as a many to many, through order_parts\n" +
+				`  for the has many, tag the field orm:"fk=order_id"` + "\n" +
+				"  for the many to many, read order_parts as a model of its own, by a has many and a belongs to"},
+		{"a table between of other names", "Coupons []Coupon",
+			"model.go:9:1: error: Order.Coupons: no foreign key of coupons.order_id to orders reads it, nor a table " +
+				"between, order_coupons, with foreign keys of order_id to orders and of coupon_id to coupons\n" +
+				"  orders.coupon_id to coupons relates one row of coupons to each: declare the field as a pointer, tagged " +
+				`orm:"fk=coupon_id"` + "\n" +
+				"  a table between, as coupon_uses, whose names are not order_coupons, order_id, and coupon_id, is read as " +
+				"a model of its own, by a has many and a belongs to, or by SQL written by hand"},
+		{"a model related to itself through a table", "Bundles []Order",
+			"model.go:9:1: error: Order.Bundles: no foreign key of orders.order_id to orders reads it\n" +
+				"  a table between rows of orders, whose two columns would both be order_id, is read as a model of its " +
+				"own, by a has many and a belongs to, or by SQL written by hand"},
 		{"a pointer to what there are many of", "Line *OrderLine",
-			"model.go:8:1: error: Order.Line: no foreign key relates orders and order_lines\n" +
+			"model.go:9:1: error: Order.Line: no foreign key of orders.line_id to order_lines reads it, nor a unique " +
+				"one of order_lines.order_id to orders\n" +
 				"  order_lines.order_id to orders relates many rows of order_lines to each: declare the field as a slice"},
 		{"a slice of what there is one of", "Customers []Customer",
-			"model.go:8:1: error: Order.Customers: no foreign key relates orders and customers\n" +
-				"  orders.customer_id to customers relates one row of customers to each: declare the field as a pointer"},
+			"model.go:9:1: error: Order.Customers: no foreign key of customers.order_id to orders reads it, nor a " +
+				"table between, order_customers, with foreign keys of order_id to orders and of customer_id to customers\n" +
+				"  orders.customer_id to customers relates one row of customers to each: declare the field as a pointer, " +
+				`tagged orm:"fk=customer_id"`},
+		{"a foreign key of more columns than the name", "Invoice *Invoice",
+			"model.go:9:1: error: Order.Invoice: no foreign key of orders.invoice_id to invoices reads it, nor a " +
+				"unique one of invoices.order_id to orders\n" +
+				`  invoices (order_id, tenant_id) to orders reads it: tag the field orm:"fk=order_id,tenant_id"`},
 		{"a pointer of no foreign key", "Tag *Tag",
-			"model.go:8:1: error: Order.Tag: no foreign key relates orders and tags\n" +
-				"  a pointer is loaded by a foreign key of orders to tags, or by a unique one of tags to orders"},
+			"model.go:9:1: error: Order.Tag: no foreign key of orders.tag_id to tags reads it, nor a unique one of " +
+				"tags.order_id to orders"},
 		{"a key the model holds no field for", "Coupon *Coupon",
-			"model.go:8:1: error: Order.Coupon: no field of Order holds orders.coupon_id, which Coupon is loaded by"},
+			"model.go:9:1: error: Order.Coupon: no field of Order holds orders.coupon_id, which Coupon is loaded by"},
 		{"a key the related model holds no field for", "Items []Item",
-			"model.go:8:1: error: Order.Items: no field of model.Item holds items.order_id, which Items is loaded by"},
+			"model.go:9:1: error: Order.Items: no field of model.Item holds items.order_id, which Items is loaded by"},
 	}
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
 		"orders": {
-			Columns: columns("id", "customer_id", "billing_address_id", "shipping_address_id", "product_id", "coupon_id",
-				"receipt_id"),
-			PrimaryKey: []string{"id"},
+			Columns: columns("id", "tenant_id", "customer_id", "billing_address_id", "shipping_address_id", "product_id",
+				"coupon_id", "receipt_id", "buyer_id"),
+			PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"id", "tenant_id"}},
 			ForeignKeys: []snapshot.ForeignKey{
 				fk([]string{"customer_id"}, "customers", "id"),
 				fk([]string{"billing_address_id"}, "addresses", "id"),
@@ -273,9 +285,11 @@ func TestLinks_Mistakes(t *testing.T) {
 				fk([]string{"product_id"}, "products", "id"),
 				fk([]string{"coupon_id"}, "coupons", "id"),
 				fk([]string{"receipt_id"}, "receipts", "id"),
+				fk([]string{"buyer_id"}, "customers", "id"),
+				fk([]string{"buyer_id"}, "customers", "number"),
 			},
 		},
-		"customers": {Columns: columns("id"), PrimaryKey: []string{"id"}},
+		"customers": {Columns: columns("id", "number"), PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"number"}}},
 		"addresses": {Columns: columns("id"), PrimaryKey: []string{"id"}},
 		"order_lines": {
 			Columns: columns("order_id", "product_id"), PrimaryKey: []string{"order_id", "product_id"},
@@ -284,23 +298,45 @@ func TestLinks_Mistakes(t *testing.T) {
 				fk([]string{"product_id"}, "products", "id"),
 			},
 		},
-		"refunds": {
-			Columns: columns("id", "order_id", "product_id"), PrimaryKey: []string{"id"},
-			ForeignKeys: []snapshot.ForeignKey{
-				fk([]string{"order_id"}, "orders", "id"),
-				fk([]string{"order_id", "product_id"}, "order_lines", "order_id", "product_id"),
-			},
-		},
 		"products": {Columns: columns("id"), PrimaryKey: []string{"id"}},
 		"tags":     {Columns: columns("id"), PrimaryKey: []string{"id"}},
 		"items": {
 			Columns:     columns("order_id", "product_id"),
 			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
 		},
+		"parts": {
+			Columns: columns("id", "order_id"), PrimaryKey: []string{"id"},
+			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
+		},
+		"order_parts": {
+			Columns: columns("order_id", "part_id"), PrimaryKey: []string{"order_id", "part_id"},
+			ForeignKeys: []snapshot.ForeignKey{
+				fk([]string{"order_id"}, "orders", "id"),
+				fk([]string{"part_id"}, "parts", "id"),
+			},
+		},
 		"coupons": {Columns: columns("id"), PrimaryKey: []string{"id"}},
+		"coupon_uses": {
+			Columns: columns("order_id", "coupon_id"), PrimaryKey: []string{"order_id", "coupon_id"},
+			ForeignKeys: []snapshot.ForeignKey{
+				fk([]string{"order_id"}, "orders", "id"),
+				fk([]string{"coupon_id"}, "coupons", "id"),
+			},
+		},
+		"order_bundles": {
+			Columns: columns("order_id", "bundled_id"), PrimaryKey: []string{"order_id", "bundled_id"},
+			ForeignKeys: []snapshot.ForeignKey{
+				fk([]string{"order_id"}, "orders", "id"),
+				fk([]string{"bundled_id"}, "orders", "id"),
+			},
+		},
 		"receipts": {
 			Columns: columns("id", "order_id"), PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"order_id"}},
 			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id"}, "orders", "id")},
+		},
+		"invoices": {
+			Columns: columns("order_id", "tenant_id"), PrimaryKey: []string{"tenant_id", "order_id"},
+			ForeignKeys: []snapshot.ForeignKey{fk([]string{"order_id", "tenant_id"}, "orders", "id", "tenant_id")},
 		},
 		"notes": {Columns: columns("id"), PrimaryKey: []string{"id"}},
 	}}
@@ -314,6 +350,7 @@ package model
 
 type Order struct {
 	ID                int64
+	TenantID          int64
 	CustomerID        int64
 	BillingAddressID  int64
 	ShippingAddressID int64
@@ -335,11 +372,21 @@ type Tag struct{ ID int64 }
 
 type Item struct{ ProductID int64 }
 
+type Part struct {
+	ID      int64
+	OrderID int64
+}
+
 type Coupon struct{ ID int64 }
 
 type Receipt struct {
 	ID      int64
 	OrderID int64
+}
+
+type Invoice struct {
+	OrderID  int64
+	TenantID int64
 }
 
 type Note struct{ ID int64 }
@@ -381,11 +428,17 @@ type Tag struct{ q scope.Of[model.Tag] }
 //kanna:scope table=items
 type Item struct{ q scope.Of[model.Item] }
 
+//kanna:scope table=parts
+type Part struct{ q scope.Of[model.Part] }
+
 //kanna:scope table=coupons
 type Coupon struct{ q scope.Of[model.Coupon] }
 
 //kanna:scope table=receipts
 type Receipt struct{ q scope.Of[model.Receipt] }
+
+//kanna:scope table=invoices
+type Invoice struct{ q scope.Of[model.Invoice] }
 `)
 			_, ds, err := gen.Links(pkg, s)
 			if err != nil {

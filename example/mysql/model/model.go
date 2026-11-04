@@ -47,7 +47,7 @@ type Order struct {
 	Customer *Customer   // belongs to, by customer_id
 	Lines    []OrderLine // has many, by order_lines.order_id
 	Shipment *Shipment   // has one, by shipments.order_id, its primary key
-	Tags     []Tag       // many to many, through order_tags
+	Tags     []Tag       // many to many, through order_tags, by its order_id and tag_id
 }
 
 type OrderLine struct {

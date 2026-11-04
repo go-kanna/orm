@@ -35,7 +35,13 @@ func TestCommand_ScalarRelationDiagnostics(t *testing.T) {
 	}{
 		{name: "missing table", before: "relation=record_states", after: "relation=missing", want: "no table missing"},
 		{name: "missing column", before: "column=state", after: "column=missing", want: "has no column missing"},
-		{name: "missing inferred column", before: ",column=state", want: "has no column topics"},
+		{name: "missing inferred column", before: ",column=state", want: "has no column whose plural is Topics"},
+		{name: "ambiguous inferred column", before: "Topics []string `orm:\"relation=record_states,column=state\"`",
+			after: "Leaves []string `orm:\"relation=record_states\"`",
+			want:  "leaf, leave are all columns of record_states whose plural is Leaves", change: func(table *snapshot.Table) {
+				table.Columns = append(table.Columns, snapshot.Column{Name: "leaf", Type: "text", NotNull: true},
+					snapshot.Column{Name: "leave", Type: "text", NotNull: true})
+			}},
 		{name: "unknown option", before: "column=state", after: "column=state,unknown=x",
 			want: "unknown scalar relation option"},
 		{name: "single value", before: "[]string", after: "string",
@@ -44,14 +50,16 @@ func TestCommand_ScalarRelationDiagnostics(t *testing.T) {
 		{name: "nullable value", want: "including its nullability", change: func(table *snapshot.Table) {
 			table.Columns[1].NotNull = false
 		}},
-		{name: "missing foreign key", want: "no matching foreign key", change: func(table *snapshot.Table) {
-			table.ForeignKeys = nil
-		}},
-		{name: "ambiguous foreign key", want: "multiple foreign keys", change: func(table *snapshot.Table) {
+		{name: "missing foreign key", want: "no foreign key of record_states.record_id to records reads it",
+			change: func(table *snapshot.Table) { table.ForeignKeys = nil }},
+		{name: "foreign key of another name", want: "record_states.other_record_id to records reads it: name its " +
+			"columns with fk=other_record_id", change: func(table *snapshot.Table) {
 			table.Columns = append(table.Columns, snapshot.Column{Name: "other_record_id", Type: "int8", NotNull: true})
-			table.ForeignKeys = append(table.ForeignKeys, snapshot.ForeignKey{Columns: []string{"other_record_id"},
-				References: "records", ReferencedColumns: []string{"id"}})
+			table.ForeignKeys = []snapshot.ForeignKey{{Columns: []string{"other_record_id"}, References: "records",
+				ReferencedColumns: []string{"id"}}}
 		}},
+		{name: "two foreign keys of the name", want: "two foreign keys of record_states.record_id refer to records",
+			change: func(table *snapshot.Table) { table.ForeignKeys = append(table.ForeignKeys, table.ForeignKeys[0]) }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

@@ -97,17 +97,17 @@ CREATE TABLE line_notes (
 CREATE TABLE line_tags (
 	order_id bigint NOT NULL,
 	line_no int NOT NULL,
-	tag varchar(64) NOT NULL,
-	PRIMARY KEY (order_id, line_no, tag),
+	tag_id varchar(64) NOT NULL,
+	PRIMARY KEY (order_id, line_no, tag_id),
 	FOREIGN KEY (order_id, line_no) REFERENCES order_lines (order_id, line_no),
-	FOREIGN KEY (tag) REFERENCES tags (name)
+	FOREIGN KEY (tag_id) REFERENCES tags (name)
 );
 CREATE TABLE order_tags (
 	order_id bigint NOT NULL,
-	tag varchar(64) NOT NULL,
-	PRIMARY KEY (order_id, tag),
+	tag_id varchar(64) NOT NULL,
+	PRIMARY KEY (order_id, tag_id),
 	FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
-	FOREIGN KEY (tag) REFERENCES tags (name)
+	FOREIGN KEY (tag_id) REFERENCES tags (name)
 );
 INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, ` + "`order`" + `) VALUES
 	(10, 'open', '2026-10-01 00:00:00', 'gift', 100, false, 'ann@example.com', X'00ff', 1),
@@ -219,7 +219,7 @@ INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 
 	lines, err := repo.Get(ctx, 1, mscopes.Orders().WithLines(mscopes.OrderLines().LineNoAsc().
 		WithNotes(mscopes.LineNotes().BodyAsc().WithLine()).
-		WithTags(mscopes.Tags().NameAsc())))
+		WithTags(mscopes.LineTags().TagIDAsc().WithTag())))
 	if err != nil {
 		t.Fatal(err)
 	}

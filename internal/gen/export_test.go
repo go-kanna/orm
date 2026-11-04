@@ -28,10 +28,15 @@ func Readable(kind types.BasicKind, dbType string) (string, bool) {
 	return readable(types.Typ[kind], dbType)
 }
 
-// ParseTag is parseTag, with what the tag says spread out.
-func ParseTag(tag string) (column string, skip bool, fk string, err error) {
+// ParseTag is parseTag, with what the tag says spread out, the columns of fk= and those a scalar relation reads by
+// joined by commas, and relation=table.column of a scalar relation, whose column is the field's to tell if it says
+// none.
+func ParseTag(tag string) (column string, skip bool, fk string, relation string, err error) {
 	t, err := parseTag(tag)
-	return t.column, t.skip, t.fk, err
+	if t.relation != "" {
+		relation = t.relation + "." + t.value
+	}
+	return t.column, t.skip, strings.Join(t.fk, ","), relation, err
 }
 
 // index reads the index of the module of pkg, with the models of the scope types //kanna:scopes implies found among
@@ -72,8 +77,8 @@ func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) 
 		for _, r := range f.relations {
 			line := prefix + strings.Join(r.path, ".") + " " + types.TypeString(r.typ, (*types.Package).Name) +
 				" relation"
-			if r.fk != "" {
-				line += " fk=" + r.fk
+			if r.fk != nil {
+				line += " fk=" + strings.Join(r.fk, ",")
 			}
 			got = append(got, line)
 		}

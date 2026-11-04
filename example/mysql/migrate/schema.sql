@@ -46,10 +46,10 @@ CREATE TABLE tags (name varchar(64) PRIMARY KEY);
 
 CREATE TABLE order_tags (
     order_id bigint NOT NULL,
-    tag      varchar(64) NOT NULL,
-    PRIMARY KEY (order_id, tag),
+    tag_id   varchar(64) NOT NULL,
+    PRIMARY KEY (order_id, tag_id),
     FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
-    FOREIGN KEY (tag) REFERENCES tags (name)
+    FOREIGN KEY (tag_id) REFERENCES tags (name)
 );
 
 CREATE TABLE approvals (

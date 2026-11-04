@@ -22,3 +22,6 @@ type Tag struct{ q scope.Of[model.Tag] }
 
 //kanna:scope table=line_notes
 type LineNote struct{ q scope.Of[model.LineNote] }
+
+//kanna:scope table=line_tags
+type LineTag struct{ q scope.Of[model.LineTag] }

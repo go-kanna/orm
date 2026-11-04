@@ -115,8 +115,8 @@ CREATE TABLE customers (id bigint PRIMARY KEY, name text NOT NULL);
 CREATE TABLE tags (name text PRIMARY KEY);
 CREATE TABLE order_tags (
 	order_id bigint NOT NULL REFERENCES orders ON DELETE CASCADE,
-	tag text NOT NULL REFERENCES tags,
-	PRIMARY KEY (order_id, tag)
+	tag_id text NOT NULL REFERENCES tags,
+	PRIMARY KEY (order_id, tag_id)
 );
 CREATE TABLE labels (order_id bigint PRIMARY KEY REFERENCES orders ON DELETE CASCADE, names text[]);
 CREATE TABLE line_notes (
@@ -128,8 +128,8 @@ CREATE TABLE line_notes (
 CREATE TABLE line_tags (
 	order_id bigint NOT NULL,
 	line_no integer NOT NULL,
-	tag text NOT NULL REFERENCES tags,
-	PRIMARY KEY (order_id, line_no, tag),
+	tag_id text NOT NULL REFERENCES tags,
+	PRIMARY KEY (order_id, line_no, tag_id),
 	FOREIGN KEY (order_id, line_no) REFERENCES order_lines
 );
 INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order") VALUES
@@ -295,7 +295,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 
 		lines, err := repo.Get(ctx, 1, pscopes.Orders().WithLines(pscopes.OrderLines().LineNoAsc().
 			WithNotes(pscopes.LineNotes().BodyAsc().WithLine()).
-			WithTags(pscopes.Tags().NameAsc())))
+			WithTags(pscopes.LineTags().TagIDAsc().WithTag())))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -491,7 +491,10 @@ func compositeRelations(lines []model.OrderLine) string {
 		}
 		tags := make([]string, 0, len(l.Tags))
 		for _, t := range l.Tags {
-			tags = append(tags, t.Name)
+			if t.Tag == nil || t.Tag.Name != t.TagID {
+				return fmt.Sprintf("the tag of a line tag of line %d is %+v", l.LineNo, t.Tag)
+			}
+			tags = append(tags, t.TagID)
 		}
 		described = append(described, fmt.Sprintf("%d: %v %v", l.LineNo, bodies, tags))
 	}

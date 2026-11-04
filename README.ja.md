@@ -262,9 +262,8 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 | `orm:",default"` | 生成する INSERT からカラムを省略し、DB のデフォルト値を使う |
 | `orm:",insertonly"` | カラムを insert でだけ書く。update と、行と突き合わせた Upsert は変えない |
 | `orm:"-"` | カラムではない。kanna-orm はこのフィールドを読み書きしない |
-| `orm:"fk=order_id"` | [リレーション](#リレーション)で、候補が複数あるときにたどる外部キー |
-| `orm:"fk=order_lines.order_id"` | 同上。カラムだけでは特定できない場合のために、テーブルも指定する |
-| `orm:"relation=device_topics,column=topic"` | 関連する行の 1 カラムの値のスライス。[スカラーのリレーション](#スカラーのリレーション) |
+| `orm:"fk=order_id"` | [リレーション](#リレーション)で、名前から決まらないときにたどる外部キーのカラム |
+| `orm:"relation=device_topics"` | 関連する行の 1 カラムの値のスライス。[スカラーのリレーション](#スカラーのリレーション) |
 
 カラムのないフィールド、nil になれないフィールドが保持する NULL になりうるカラム、そして insert されるテーブルで、データベースが値を必須とするのにモデルにフィールドがないカラムは、いずれも生成を止めます。それ以外の場合、モデルにフィールドがないカラムには何もしません。
 
@@ -344,25 +343,41 @@ s := scopes.Orders().Or(
 
 ### リレーション
 
-別のモデルのポインタ、またはモデルかそのポインタのスライスを保持するフィールドはリレーションです。kanna-orm はスナップショットの外部キーからリレーションの種類を判断するので、他に何も書く必要はありません。1 行のリレーションはポインタで、行を読み込んでいないときと、行がないときに nil です。モデルを値で持つと、そのどちらも表せないので生成を止めます:
+別のモデルのポインタ、またはモデルかそのポインタのスライスを保持するフィールドはリレーションです。たどる外部キーは名前で決まるので、他に何も書く必要はありません。スナップショットは、その外部キーがあるかの検査と、外部キーが参照するカラムを読むことにだけ使います。1 行のリレーションはポインタで、行を読み込んでいないときと、行がないときに nil です。モデルを値で持つと、そのどちらも表せないので生成を止めます:
 
-| フィールド | 外部キー | 種類 |
+| `Order` のフィールド | 名前で決まる外部キー | 種類 |
 |---|---|---|
-| `Lines []OrderLine` | `orders` への `order_lines.order_id` | has many |
-| `Customer *Customer` | `customers` への `orders.customer_id` | belongs to |
-| `Profile *Profile` | `users` への `profiles.user_id`（ユニークキー） | has one |
-| `Tags []Tag` | `user_tags` のような、両方への外部キーを持つテーブルを経由 | many to many |
+| `Customer *Customer` | `customers` への `orders.customer_id`。フィールド名と `_id` | belongs to |
+| `Shipment *Shipment` | `orders` への `shipments.order_id`（ユニークキー）。モデル名と `_id` | has one |
+| `Lines []OrderLine` | `orders` への `order_lines.order_id`。モデル名と `_id` | has many |
+| `Tags []Tag` | モデル名とフィールド名の `order_tags` を経由し、その `order_id` と `tag_id` | many to many |
 
-使える外部キーが複数ある場合は、生成が止まり、タグを求められます:
+ポインタは belongs to と has one のうち、スナップショットにある方になり、スライスは has many と many to many のうち、ある方になります。両方あるときは、どちらかを選ばずに生成を止めます。ほかのカラムの外部キーはタグで指定します。そのカラムがどのテーブルのものかは関連の種類で決まり、belongs to なら自分のテーブル、has one と has many なら関連先のテーブルです。複数カラムの外部キーは、`orm:"fk=order_id,line_no"` のようにすべてのカラムを並べます。
 
-```console
-../model/order.go:16:1: error: Order.Lines: order_lines has two foreign keys to orders (order_id, replaced_order_id)
-  order_lines.order_id to orders
-  order_lines.replaced_order_id to orders
-  tag the field with the one to follow: orm:"fk=order_id"
+```go
+type OrderLine struct {
+	OrderID OrderID
+	LineNo  int
+	SKU     SKU
+	Product *Product `orm:"fk=sku"` // product_id ではなく、products への order_lines.sku
+}
+
+type Category struct {
+	ID       int64
+	ParentID *int64
+	Parent   *Category                       // フィールド名どおり categories.parent_id
+	Children []Category `orm:"fk=parent_id"` // category_id ではなく categories.parent_id
+}
 ```
 
-両方への外部キーを持つテーブルは、関連先のテーブルの外部キーと同じように数えられます。`refunds` が `orders` と `order_lines` を参照している場合、`Lines` は注文の明細とも返金された明細とも解釈できるので、やはりタグが求められます。ここでの `order_id` のようにカラムだけでは特定できない場合は、タグでテーブルも `orm:"fk=order_lines.order_id"` のように指定します。
+生成時のエラーは、何を探したかと、スナップショットのどの外部キーなら 1 つに決まるかを示します:
+
+```console
+../model/order.go:16:1: error: Order.Buyer: no foreign key of orders.buyer_id to customers reads it, nor a unique one of customers.order_id to orders
+  orders.customer_id to customers reads it: tag the field orm:"fk=customer_id"
+```
+
+名前が many to many の規約に合わない中間テーブル（2 カラムのキーを参照するものなど）は、それ自身をモデルにして、has many と belongs to でたどります。どちらのテーブルの同じ名前の外部キーでも読めるポインタのように、名前で決まらないリレーションは、手書きの SQL で読み込みます。[クエリに scope を渡す](#クエリに-scope-を渡す) と [外部キー以外のカラムで関連する値を足す](#外部キー以外のカラムで関連する値を足す) を参照してください。
 
 リレーションは、スコープが `With` メソッドで要求したときにだけ読み込まれます。`With` メソッドは関連する行のスコープを受け取り、その条件、並び順、さらに読み込むリレーションを指定できます。
 
@@ -572,18 +587,18 @@ type TodoRepository interface {
 
 ### スカラーのリレーション
 
-関連する行の 1 カラムを、enum を含むスライスへ直接読み込めます。関連先のテーブルとカラムを指定し、中間のモデルやスコープ型は不要です。
+関連する行の 1 カラムを、enum を含むスライスへ直接読み込めます。関連先のテーブルを指定し、中間のモデルやスコープ型は不要です。
 
 ```go
 type Device struct {
-    ID uuid.UUID
-    Topics []Topic `orm:"relation=device_topics,column=topic"`
+    ID     uuid.UUID
+    Topics []Topic `orm:"relation=device_topics"` // device_topics.device_id で、device_topics.topic を読む
 }
 ```
 
-スナップショットに `device_topics` から `devices` への外部キーが必要です。参照先のカラムは親モデルが保持している必要があります。複数の外部キーがある場合は `orm:"relation=device_topics,column=topic,fk=device_id"` で選択します。カラムの型と NULL の許容をスライスの要素型に照合します。
+カラムは、フィールド名がその複数形になっているカラムです。[カラムの値を読む](#カラムの値を読む) と同じ規則で、`Topics` なら `topic`、`Categories` なら `category`、`TopicIDs` なら `topic_id` です。行は、has many と同じくモデル名と `_id` の外部キー（`devices` への `device_topics.device_id`）で関連づけます。ほかの名前のカラムは `column=` で、ほかのカラムの外部キーは `fk=` で指定します。`fk=` のあとに続くカラムも外部キーのカラムです（`orm:"relation=device_topics,column=name,fk=tenant_id,device_id"`）。カラムの型と NULL の許容をスライスの要素型に照合します。`leaf` と `leave` のように同じ複数形のカラムが 2 つあれば、`column=` で指定するまで生成を止めます。
 
-複合外部キーにも対応します。例えば `order_tags.(tenant_id, order_id)` から `orders.(tenant_id, id)` への関連は、組全体で検索し、親ごとに振り分けます。親モデルは参照先の両カラムを保持する必要があります。組を条件にしてバッチで読み込むため、別テナントで同じ ID があっても混在しません。キーのいずれかのポインタが nil の親は、関連の読み込み対象から外れます。
+`device_topics (tenant_id, device_id)` から `devices (tenant_id, id)` への関連のような複数カラムの外部キーは、組全体で検索し、親ごとに振り分けます。親モデルは参照先の両カラムを保持する必要があります。組を条件にしてバッチで読み込むため、別テナントで同じ ID があっても混在しません。キーのいずれかのポインタが nil の親は、関連の読み込み対象から外れます。
 
 生成されたスコープには `WithTopics()` が追加されます。通常生成の検索で指定した場合だけ、関連する値をバッチで読み込み、選択したカラムの昇順で格納します。enum の値は Scanner を通ります。読み込んだ関連が 0 件なら空のスライス、指定しなかった関連は nil です。親の INSERT・UPDATE と手書き SQL のモデルマッピングからは除外します。関連の更新処理は別に実装してください。
 

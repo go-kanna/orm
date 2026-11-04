@@ -1,5 +1,5 @@
 -- query: Tag
-INSERT INTO order_tags (order_id, tag) VALUES (:orderID, :tag)
+INSERT INTO order_tags (order_id, tag_id) VALUES (:orderID, :tag)
 ON CONFLICT DO NOTHING;
 
 -- query: MonthlySales

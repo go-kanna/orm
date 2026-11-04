@@ -16,8 +16,9 @@ func TestCommand_ScalarRelations(t *testing.T) {
 	for _, driver := range []string{"pgx", "database/sql"} {
 		for _, tc := range []struct{ name, field, column, option string }{
 			{"explicit", "Topics", "state", ",column=state"},
-			{"inferred", "Approval", "approval", ""},
-			{"snake case", "ApprovalState", "approval_state", ""},
+			{"inferred", "Approvals", "approval", ""},
+			{"snake case", "ApprovalStates", "approval_state", ""},
+			{"acronym", "StateIDs", "state_id", ""},
 		} {
 			t.Run(driver+"/"+tc.name, func(t *testing.T) {
 				t.Parallel()

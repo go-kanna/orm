@@ -92,7 +92,7 @@ func TestGenerated_Postgres(t *testing.T) {
 			[]any{day, int64(3)},
 		}},
 		{"a scope written by hand with a variadic parameter", pscopes.Orders().Tagged("gift", "rush"), rendered{
-			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag = ANY($1)))", []any{[]string{"gift", "rush"}},
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY($1)))", []any{[]string{"gift", "rush"}},
 		}},
 	}
 	for _, tt := range tests {
@@ -117,10 +117,10 @@ func TestGenerated_MySQL(t *testing.T) {
 			rendered{" WHERE (status NOT IN (?))", []any{model.OrderStatus("open")}}},
 		{"HasPrefix", mscopes.Orders().MemoHasPrefix("a_b"), rendered{" WHERE (note LIKE ? ESCAPE '!')", []any{"a!_b%"}}},
 		{"a scope written by hand with a variadic parameter", mscopes.Orders().Tagged("gift", "rush"), rendered{
-			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (?, ?)))", []any{"gift", "rush"},
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag_id IN (?, ?)))", []any{"gift", "rush"},
 		}},
 		{"a scope written by hand with a variadic parameter of none", mscopes.Orders().Tagged(), rendered{
-			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag IN (SELECT NULL FROM DUAL WHERE FALSE)))", nil,
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag_id IN (SELECT NULL FROM DUAL WHERE FALSE)))", nil,
 		}},
 	}
 	for _, tt := range tests {

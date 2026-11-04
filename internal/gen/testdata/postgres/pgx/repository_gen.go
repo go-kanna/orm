@@ -214,7 +214,7 @@ func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s 
 		if err := q.Unpaged("GetTagSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "tags", Column: "name"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`, []string{`id`})
+		text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "tags", Column: "name"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`, []string{`id`})
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +263,7 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 		if err := q.Unpaged("GetSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
+		text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +312,7 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 		if err := q.Unpaged("FindSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
+		text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
 		if err != nil {
 			return nil, err
 		}
@@ -356,7 +356,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, r.mapError(err)
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -1464,6 +1464,77 @@ func preloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineNote
 	return nil
 }
 
+// selectLineTags reads the rows of line_tags that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func selectLineTags(ctx context.Context, db ormDatabase, q impl.Of[model.LineTag], lock string) ([]model.LineTag, error) {
+	rd, err := q.Render(impl.Postgres, 1, []string{`order_id`, `line_no`, `tag_id`})
+	if err != nil {
+		return nil, err
+	}
+	out, err := queryLineTags(ctx, db, `SELECT order_id, line_no, tag_id FROM line_tags`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	if err != nil {
+		return nil, err
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := preloadLineTags(ctx, db, out, q); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// queryLineTags runs query, a query of the rows of line_tags, and reads them.
+func queryLineTags(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.LineTag, error) {
+	rows, err := db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read line_tags: %w", err)
+	}
+	defer rows.Close()
+	out := []model.LineTag{}
+	for rows.Next() {
+		var row model.LineTag
+		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.TagID); err != nil {
+			return nil, fmt.Errorf("read line_tags: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read line_tags: %w", err)
+	}
+	return out, nil
+}
+
+// preloadLineTags loads into rows the relations q loads, each by the keys of the rows.
+func preloadLineTags(ctx context.Context, db ormDatabase, rows []model.LineTag, q impl.Of[model.LineTag]) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tag"); ok {
+		keys := make([]string, 0, len(rows))
+		seen := map[string]bool{}
+		for i := range rows {
+			if !seen[rows[i].TagID] {
+				seen[rows[i].TagID] = true
+				keys = append(keys, rows[i].TagID)
+			}
+		}
+		byKey := map[string]model.Tag{}
+		related, err := selectTags(ctx, db, sub.Where(`name = ANY(`, keys, `)`), "")
+		if err != nil {
+			return err
+		}
+		for j := range related {
+			byKey[related[j].Name] = related[j]
+		}
+		for i := range rows {
+			if found, ok := byKey[rows[i].TagID]; ok {
+				rows[i].Tag = &found
+			}
+		}
+	}
+	return nil
+}
+
 // selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
 func selectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`order_id`, `line_no`})
@@ -1564,7 +1635,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
+	if sub, ok := impl.Preloaded[model.LineTag](q, "Tags"); ok && sub.PagesEach() {
 		type parentKey struct {
 			k0 model.OrderID
 			k1 int
@@ -1574,14 +1645,14 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
 			keys = append(keys, key)
 		}
-		flat := []model.Tag{}
+		flat := []model.LineTag{}
 		owners := []parentKey{}
 		for chunk := range slices.Chunk(keys, 500) {
 			inputs := make([][]any, len(chunk))
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0, key.k1}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "line_tags", ThroughParent: []string{"order_id", "line_no"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, nil, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "line_tags", ChildKeys: []string{"order_id", "line_no"}}, []string{`order_id`, `line_no`, `tag_id`}, []string{"order_id", "line_no", "tag_id"}, inputs)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1591,8 +1662,8 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 			for related.Next() {
 				var key parentKey
-				var row model.Tag
-				if err := related.Scan(&key.k0, &key.k1, &row.Name); err != nil {
+				var row model.LineTag
+				if err := related.Scan(&key.k0, &key.k1, &row.OrderID, &row.LineNo, &row.TagID); err != nil {
 					related.Close()
 					return fmt.Errorf("load Tags: %w", err)
 				}
@@ -1604,12 +1675,15 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 				return fmt.Errorf("load Tags: %w", err)
 			}
 		}
-		grouped := map[parentKey][]model.Tag{}
+		if err := preloadLineTags(ctx, db, flat, sub); err != nil {
+			return err
+		}
+		grouped := map[parentKey][]model.LineTag{}
 		for i := range flat {
 			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
 		}
 		for i := range rows {
-			rows[i].Tags = []model.Tag{}
+			rows[i].Tags = []model.LineTag{}
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
 			if values, ok := grouped[key]; ok {
 				rows[i].Tags = values
@@ -1672,7 +1746,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
+	if sub, ok := impl.Preloaded[model.LineTag](q, "Tags"); ok && !sub.PagesEach() {
 		type key struct {
 			k0 model.OrderID
 			k1 int
@@ -1682,51 +1756,23 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 			k := key{rows[i].OrderID, rows[i].LineNo}
 			keys = append(keys, k)
 		}
-		byKey := map[key][]model.Tag{}
-		type targetKey struct{ k0 string }
+		byKey := map[key][]model.LineTag{}
 		k0s := make([]model.OrderID, 0, len(keys))
 		k1s := make([]int, 0, len(keys))
 		for _, k := range keys {
 			k0s = append(k0s, k.k0)
 			k1s = append(k1s, k.k1)
 		}
-		pairs, err := db.Query(ctx, `SELECT order_id, line_no, tag FROM line_tags WHERE (order_id, line_no) IN (SELECT * FROM unnest($1::int8[], $2::int4[]))`, k0s, k1s)
-		if err != nil {
-			return fmt.Errorf("read line_tags: %w", err)
-		}
-		parentsOf := map[targetKey][]key{}
-		var targetKeys []targetKey
-		for pairs.Next() {
-			var pk key
-			var tk targetKey
-			if err := pairs.Scan(&pk.k0, &pk.k1, &tk.k0); err != nil {
-				pairs.Close()
-				return fmt.Errorf("read line_tags: %w", err)
-			}
-			if _, ok := parentsOf[tk]; !ok {
-				targetKeys = append(targetKeys, tk)
-			}
-			parentsOf[tk] = append(parentsOf[tk], pk)
-		}
-		if err := pairs.Err(); err != nil {
-			return fmt.Errorf("read line_tags: %w", err)
-		}
-		tk0s := make([]string, 0, len(targetKeys))
-		for _, k := range targetKeys {
-			tk0s = append(tk0s, k.k0)
-		}
-		related, err := selectTags(ctx, db, sub.Where(`(name) IN (SELECT * FROM unnest(`, tk0s, `::text[]))`), "")
+		related, err := selectLineTags(ctx, db, sub.Where(`(order_id, line_no) IN (SELECT * FROM unnest(`, k0s, `::int8[], `, k1s, `::int4[]))`), "")
 		if err != nil {
 			return err
 		}
 		for j := range related {
-			k := targetKey{related[j].Name}
-			for _, pk := range parentsOf[k] {
-				byKey[pk] = append(byKey[pk], related[j])
-			}
+			k := key{related[j].OrderID, related[j].LineNo}
+			byKey[k] = append(byKey[k], related[j])
 		}
 		for i := range rows {
-			rows[i].Tags = []model.Tag{}
+			rows[i].Tags = []model.LineTag{}
 			k := key{rows[i].OrderID, rows[i].LineNo}
 			if found, ok := byKey[k]; ok {
 				rows[i].Tags = found
@@ -1847,7 +1893,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, nil, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}}, nil, []string{"name"}, inputs)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1931,7 +1977,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[model.OrderID][]model.Tag{}
-		pairs, err := db.Query(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id = ANY($1)`, keys)
+		pairs, err := db.Query(ctx, `SELECT order_id, tag_id FROM order_tags WHERE order_id = ANY($1)`, keys)
 		if err != nil {
 			return fmt.Errorf("read order_tags: %w", err)
 		}
