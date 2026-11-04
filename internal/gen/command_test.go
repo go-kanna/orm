@@ -50,7 +50,7 @@ func (s Order) Open() Order {
 }
 
 func recent() Order {
-	return Orders().IDDesc().Limit(10)
+	return Order{}.IDDesc().Limit(10)
 }
 -- scopes/order_scopes.sql --
 -- scope: Order.Paid()
@@ -155,8 +155,8 @@ func TestCommand_Mistakes(t *testing.T) {
 		{"an error not about what is generated", true, "-- scopes/broken.go --\npackage scopes\n\nvar _ int = \"one\"\n",
 			"./broken.go:3:13: error: cannot use \"one\" (untyped string constant) as int value in variable declaration\n"},
 		{"a mistake behind a call to what is generated", true,
-			"-- scopes/broken.go --\npackage scopes\n\nvar _ = Orders().Closed()\n",
-			"./broken.go:3:18: error: Orders().Closed undefined (type Order has no field or method Closed)\n"},
+			"-- scopes/broken.go --\npackage scopes\n\nvar _ = Order{}.Closed()\n",
+			"./broken.go:3:17: error: Order{}.Closed undefined (type Order has no field or method Closed)\n"},
 		{"a mistake in a declaration", true, "-- scopes/more.go --\npackage scopes\n\nimport (\n" +
 			"\t\"example.com/shop/model\"\n\t\"github.com/go-kanna/orm/scope\"\n)\n\n" +
 			"//kanna:scope table=order\ntype Archived struct{ q scope.Of[model.Order] }\n",
@@ -203,7 +203,7 @@ func TestCommand_DirectiveDeclaringNothing(t *testing.T) {
 		{"scope of a misspelled key", "scopes", "package scopes\n\nimport (\n\t\"example.com/shop/model\"\n" +
 			"\t\"github.com/go-kanna/orm/scope\"\n)\n\n//kanna:scope tabel=orders\n" +
 			"type Order struct{ q scope.Of[model.Order] }\n",
-			"./scopes.go:8:1: error: //kanna:scope takes table=… or func=…, not \"tabel=orders\"\n" +
+			"./scopes.go:8:1: error: //kanna:scope takes table=…, not \"tabel=orders\"\n" +
 				"  did you mean \"table\"?\n  as in //kanna:scope table=orders\n", cli.ExitFailure},
 		{"repository of a misspelled key", "repository", "package repository\n\nimport \"context\"\n\n" +
 			"//kanna:repository tabel=orders\ntype Order interface {\n\tDelete(ctx context.Context, id int64) error\n}\n",
@@ -285,8 +285,9 @@ func TestCommand_KeepsWhatCodeStillCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, errOut := run(t, scopes)
-	if want := "./scopes.go:12:11: error: s.StatusNe undefined (type Order has no field or method StatusNe)\n" +
-		"./scopes.go:16:9: error: undefined: Orders\n"; code != cli.ExitFailure || errOut != want {
+	want := "./scopes.go:12:11: error: s.StatusNe undefined (type Order has no field or method StatusNe)\n" +
+		"./scopes.go:16:17: error: Order{}.IDDesc undefined (type Order has no field or method IDDesc)\n"
+	if code != cli.ExitFailure || errOut != want {
 		t.Errorf("kanna-orm = %d\n%s\nwant %d\n%s", code, errOut, cli.ExitFailure, want)
 	}
 	if _, err := os.Stat(filepath.Join(scopes, "scopes_gen.go")); err != nil {
@@ -343,15 +344,15 @@ package orders
 
 import "example.com/shop/scopes"
 
-var Open = scopes.Orders().Open()
+var Open = scopes.Order{}.Open()
 `
 	tests := []struct {
 		name, extra, file, edit, want string
 	}{
 		// Paid goes from scopes, which itself does not call it.
-		{"a package calling what the run removes", caller + "\nvar Paid = scopes.Orders().Paid()\n",
+		{"a package calling what the run removes", caller + "\nvar Paid = scopes.Order{}.Paid()\n",
 			"order_scopes.sql", "-- scope: Order.Paid()\nstatus = 'paid'\n",
-			"orders/orders.go:7:28: error: scopes.Orders().Paid undefined (type scopes.Order has no field or method Paid)\n"},
+			"orders/orders.go:7:27: error: scopes.Order{}.Paid undefined (type scopes.Order has no field or method Paid)\n"},
 		{"a package with a mistake of its own", caller + "\nvar _ int = \"one\"\n", "", "",
 			"orders/orders.go:7:13: error: cannot use \"one\" (untyped string constant) as int value in variable " +
 				"declaration\n"},
@@ -428,7 +429,7 @@ func TestCommand_ATypeThatDoesNotTypeCheck(t *testing.T) {
 		{"the model's", "q scope.Of[model.Order]", "q scope.Of[model.Ordr]",
 			"./scopes.go:9:37: error: undefined: model.Ordr\n" +
 				"./scopes.go:13:11: error: s.StatusNe undefined (type Order has no field or method StatusNe)\n" +
-				"./scopes.go:17:9: error: undefined: Orders\n"},
+				"./scopes.go:17:17: error: Order{}.IDDesc undefined (type Order has no field or method IDDesc)\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

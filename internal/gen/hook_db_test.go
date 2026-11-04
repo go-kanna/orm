@@ -22,7 +22,7 @@ func TestHooks_Postgres(t *testing.T) {
 	var done []hook.Execution
 	repo := ppgx.NewOrderRepository(pgxConn(t, postgresSchema(t)), captureExecutions(t, &done))
 	ctx := t.Context()
-	if _, err := repo.Get(ctx, 1, pscopes.Orders().WithLines()); err != nil {
+	if _, err := repo.Get(ctx, 1, pscopes.Order{}.WithLines()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.Count(ctx); err != nil {
@@ -42,7 +42,7 @@ func TestHooks_MySQL(t *testing.T) {
 	var done []hook.Execution
 	repo := mstdlib.NewOrderRepository(mysqlDB(t), captureExecutions(t, &done))
 	ctx := t.Context()
-	if _, err := repo.Get(ctx, 1, mscopes.Orders().WithLines()); err != nil {
+	if _, err := repo.Get(ctx, 1, mscopes.Order{}.WithLines()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.Count(ctx); err != nil {

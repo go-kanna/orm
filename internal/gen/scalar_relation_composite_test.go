@@ -85,7 +85,7 @@ func TestCompositeRelations(t *testing.T) {
  records := NewRecords(db)
  for _, count := range []int{3, 1001} {
   parentCount, relationQueries = count, 0
-  rows, err := records.List(t.Context(), scopes.Records().WithTopics())
+  rows, err := records.List(t.Context(), scopes.Record{}.WithTopics())
   if err != nil || len(rows) != count { t.Fatalf("List = %+v, %v", rows, err) }
   for _, row := range rows {
    want := 1

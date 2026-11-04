@@ -170,17 +170,17 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 		if _, err := repo.Get(ctx, 9); !errors.Is(err, orm.ErrNotFound) || err.Error() != "orders with id 9: orm: not found" {
 			t.Errorf("Get(9) error = %v, want orm.ErrNotFound", err)
 		}
-		if _, err := repo.Get(ctx, 2, pscopes.Orders().StatusEq("open")); !errors.Is(err, orm.ErrNotFound) {
+		if _, err := repo.Get(ctx, 2, pscopes.Order{}.StatusEq("open")); !errors.Is(err, orm.ErrNotFound) {
 			t.Errorf("Get(2) of the open orders error = %v, want orm.ErrNotFound", err)
 		}
 
-		if o, err := repo.First(ctx, pscopes.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
+		if o, err := repo.First(ctx, pscopes.Order{}.PlacedAtDesc()); err != nil || o.ID != 3 {
 			t.Errorf("First, latest first = %v, %v; want 3", o.ID, err)
 		}
-		if o, err := repo.First(ctx, pscopes.Orders().StatusEq("open")); err != nil || o.ID != 1 {
+		if o, err := repo.First(ctx, pscopes.Order{}.StatusEq("open")); err != nil || o.ID != 1 {
 			t.Errorf("First of no order = %v, %v; want 1, the first by the primary key", o.ID, err)
 		}
-		if _, err := repo.Get(ctx, 1, pscopes.Orders().Offset(1)); err == nil ||
+		if _, err := repo.Get(ctx, 1, pscopes.Order{}.Offset(1)); err == nil ||
 			err.Error() != "orm: Get reads one row by its key, but its scope keeps only some of the rows" {
 			t.Errorf("Get with an offset error = %v", err)
 		}
@@ -189,12 +189,12 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			list func() ([]model.Order, error)
 			want []model.OrderID
 		}{
-			{"open", func() ([]model.Order, error) { return repo.List(ctx, pscopes.Orders().StatusEq("open").IDAsc()) },
+			{"open", func() ([]model.Order, error) { return repo.List(ctx, pscopes.Order{}.StatusEq("open").IDAsc()) },
 				[]model.OrderID{1, 3}},
 			{"of a customer", func() ([]model.Order, error) {
-				return repo.ListByCustomer(ctx, 10, pscopes.Orders().IDDesc())
+				return repo.ListByCustomer(ctx, 10, pscopes.Order{}.IDDesc())
 			}, []model.OrderID{2, 1}},
-			{"none", func() ([]model.Order, error) { return repo.List(ctx, pscopes.Orders().TotalGt(1000)) },
+			{"none", func() ([]model.Order, error) { return repo.List(ctx, pscopes.Order{}.TotalGt(1000)) },
 				[]model.OrderID{}},
 		} {
 			got, err := tt.list()
@@ -203,7 +203,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			}
 		}
 
-		page := pscopes.Orders().PlacedAtDesc().Limit(2)
+		page := pscopes.Order{}.PlacedAtDesc().Limit(2)
 		first, err := repo.List(ctx, page)
 		if err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
 			t.Fatalf("the first page = %v, %v", ids(first), err)
@@ -216,7 +216,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			t.Errorf("the page before = %v, %v; want [3]", ids(before), err)
 		}
 		// Orders 1 and 2 are both customer 10's, so the first page ends between two rows equal in the order.
-		tied := pscopes.Orders().CustomerIDDesc().Limit(2)
+		tied := pscopes.Order{}.CustomerIDDesc().Limit(2)
 		if first, err = repo.List(ctx, tied); err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
 			t.Fatalf("the first page ending among equal rows = %v, %v; want [3 2]", ids(first), err)
 		}
@@ -224,16 +224,16 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 			t.Errorf("the page after one among equal rows = %v, %v; want [1]", ids(next), err)
 		}
 
-		if n, err := repo.Count(ctx, pscopes.Orders().StatusEq("open")); err != nil || n != 2 {
+		if n, err := repo.Count(ctx, pscopes.Order{}.StatusEq("open")); err != nil || n != 2 {
 			t.Errorf("Count of the open orders = %d, %v; want 2", n, err)
 		}
-		if _, err := repo.Count(ctx, pscopes.Orders().IDAsc()); err == nil {
+		if _, err := repo.Count(ctx, pscopes.Order{}.IDAsc()); err == nil {
 			t.Error("Count takes a scope that orders the rows")
 		}
-		if ok, err := repo.Exists(ctx, pscopes.Orders().CustomerIDEq(20)); err != nil || !ok {
+		if ok, err := repo.Exists(ctx, pscopes.Order{}.CustomerIDEq(20)); err != nil || !ok {
 			t.Errorf("Exists of customer 20 = %v, %v; want true", ok, err)
 		}
-		if ok, err := repo.Exists(ctx, pscopes.Orders().CustomerIDEq(99)); err != nil || ok {
+		if ok, err := repo.Exists(ctx, pscopes.Order{}.CustomerIDEq(99)); err != nil || ok {
 			t.Errorf("Exists of customer 99 = %v, %v; want false", ok, err)
 		}
 
@@ -253,7 +253,7 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 		if _, err := repo.DeleteStale(ctx); err == nil {
 			t.Error("DeleteStale deletes without a condition")
 		}
-		if n, err := repo.DeleteStale(ctx, pscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
+		if n, err := repo.DeleteStale(ctx, pscopes.Order{}.StatusEq("closed")); err != nil || n != 1 {
 			t.Errorf("DeleteStale of the closed orders = %d, %v; want 1", n, err)
 		}
 	})
@@ -265,10 +265,10 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
 
-		o, err := repo.Get(ctx, 1, pscopes.Orders().
+		o, err := repo.Get(ctx, 1, pscopes.Order{}.
 			WithCustomer().
-			WithLines(pscopes.OrderLines().LineNoDesc().WithOrder()).
-			WithTags(pscopes.Tags().NameAsc()))
+			WithLines(pscopes.OrderLine{}.LineNoDesc().WithOrder()).
+			WithTags(pscopes.Tag{}.NameAsc()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,9 +293,9 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 			t.Errorf("Tags = %v, want [gift rush], by name", tags)
 		}
 
-		lines, err := repo.Get(ctx, 1, pscopes.Orders().WithLines(pscopes.OrderLines().LineNoAsc().
-			WithNotes(pscopes.LineNotes().BodyAsc().WithLine()).
-			WithTags(pscopes.LineTags().TagIDAsc().WithTag())))
+		lines, err := repo.Get(ctx, 1, pscopes.Order{}.WithLines(pscopes.OrderLine{}.LineNoAsc().
+			WithNotes(pscopes.LineNote{}.BodyAsc().WithLine()).
+			WithTags(pscopes.LineTag{}.TagIDAsc().WithTag())))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -303,7 +303,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 			t.Errorf("the notes and tags of the lines of order 1, by both columns of their key = %s", got)
 		}
 
-		all, err := repo.List(ctx, pscopes.Orders().IDAsc().WithLines().WithTags())
+		all, err := repo.List(ctx, pscopes.Order{}.IDAsc().WithLines().WithTags())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -313,7 +313,7 @@ func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 		if plain, err := repo.Get(ctx, 1); err != nil || plain.Lines != nil || plain.Customer != nil {
 			t.Errorf("Get without With = %+v, %v; want no relation loaded", plain, err)
 		}
-		paged, err := repo.List(ctx, pscopes.Orders().IDAsc().WithLines(pscopes.OrderLines().Offset(1)))
+		paged, err := repo.List(ctx, pscopes.Order{}.IDAsc().WithLines(pscopes.OrderLine{}.Offset(1)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -407,7 +407,7 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 			SKU: "G"}}); err != nil {
 			t.Fatal(err)
 		}
-		got, err := repo.Get(ctx, 4, pscopes.Orders().WithLines(pscopes.OrderLines().LineNoAsc()))
+		got, err := repo.Get(ctx, 4, pscopes.Order{}.WithLines(pscopes.OrderLine{}.LineNoAsc()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -464,7 +464,7 @@ func TestGeneratedRepository_PostgresQueries(t *testing.T) {
 		if err := repo.Reopen(ctx, 2); err != nil {
 			t.Fatal(err)
 		}
-		if n, err := repo.Count(ctx, pscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
+		if n, err := repo.Count(ctx, pscopes.Order{}.StatusEq("closed")); err != nil || n != 1 {
 			t.Errorf("the closed orders = %d, %v; want order 1 alone", n, err)
 		}
 	})

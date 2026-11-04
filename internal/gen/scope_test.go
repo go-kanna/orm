@@ -110,11 +110,11 @@ type Order struct{ q scope.Of[model.Order] }
 
 // OrderLine is a scope of the lines of orders.
 //
-//kanna:scope table=order_lines func=Lines
+//kanna:scope table=order_lines
 type OrderLine struct{ lines scope.Of[model.OrderLine] }
 
 type (
-	//kanna:scope table=person func=People
+	//kanna:scope table=person
 	Person struct{ q scope.Of[model.Person] }
 
 	unmarked struct{}
@@ -139,10 +139,11 @@ type Generated struct{}
 		t.Fatalf("FindScopes:\n%s", report(ds))
 	}
 	want := []gen.Scope{
-		{Name: "Order", Field: "q", Model: "model.Order", Table: "orders", Func: "Orders"},
-		{Name: "OrderLine", Field: "lines", Model: "model.OrderLine", Table: "order_lines", Func: "Lines"},
-		{Name: "Person", Field: "q", Model: "model.Person", Table: "person", Func: "People"},
-		{Name: "TagScope", Field: "q", Model: "scopes.Tag", Table: "tags", Func: "Tags"},
+		// Declared by hand, none has a function returning the empty scope: its zero value is one.
+		{Name: "Order", Field: "q", Model: "model.Order", Table: "orders"},
+		{Name: "OrderLine", Field: "lines", Model: "model.OrderLine", Table: "order_lines"},
+		{Name: "Person", Field: "q", Model: "model.Person", Table: "person"},
+		{Name: "TagScope", Field: "q", Model: "scopes.Tag", Table: "tags"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("FindScopes =\n%+v\nwant\n%+v", got, want)
@@ -158,7 +159,7 @@ func TestFindScopes_Mistakes(t *testing.T) {
 		{"a directive it cannot read", `
 //kanna:scope colour=red
 type Order struct{ q scope.Of[model.Order] }
-`, "scopes.go:10:1: error: //kanna:scope takes table=… or func=…, not \"colour=red\"\n" +
+`, "scopes.go:10:1: error: //kanna:scope takes table=…, not \"colour=red\"\n" +
 			"  as in //kanna:scope table=orders"},
 		{"a model named after no table", `
 //kanna:scope
@@ -174,31 +175,28 @@ type Order struct{ q scope.Of[model.Order] }
 type Order struct{ q scope.Of[model.Order] }
 `, "scopes.go:10:1: error: Order: the snapshot has no table invoices\n" +
 			"  if it is new, describe the database again: go tool kanna-orm describe"},
+		// A scope type declared by hand has no function returning the empty scope, so no name of one is taken, or
+		// cannot be made.
 		{"a table no Go name is made of", `
 //kanna:scope table=2fa_codes
 type Order struct{ q scope.Of[model.Order] }
-`, "scopes.go:10:1: error: Order: no Go name can be made of 2fa_codes\n" +
-			"  name the function returning the empty scope with func="},
-		{"a function named as the type", `
+`, ""},
+		{"a table named as the type", `
 //kanna:scope table=person
 type Person struct{ q scope.Of[model.Order] }
-`, "scopes.go:10:1: error: Person: the function returning the empty scope would be named Person, as the type is\n" +
-			"  name another with func="},
-		{"a function declared already", `
+`, ""},
+		{"a function of the table's name declared by hand", `
 //kanna:scope table=orders
 type Order struct{ q scope.Of[model.Order] }
 
 func Orders() Order { return Order{} }
-`, "scopes.go:10:1: error: Order: Orders, the function returning the empty scope, is declared already\n" +
-			"  it is declared at scopes.go:13\n  name another with func="},
-		{"a function of two scope types", `
-//kanna:scope table=orders
-type Order struct{ q scope.Of[model.Order] }
-
-//kanna:scope table=order_lines func=Orders
+`, ""},
+		{"a function named", `
+//kanna:scope table=order_lines func=Lines
 type OrderLine struct{ q scope.Of[model.Order] }
-`, "scopes.go:13:1: error: OrderLine: Orders is the function returning the empty scope of Order too\n" +
-			"  name another with func="},
+`, "scopes.go:10:1: error: //kanna:scope takes no func=: a scope type declared by hand has no function returning " +
+			"the empty scope\n  its zero value, OrderLine{}, is the empty scope; " +
+			"write func Lines() OrderLine { return OrderLine{} } for a function of that name"},
 		{"not a struct", `
 //kanna:scope table=orders
 type Order int
@@ -309,7 +307,7 @@ type Order struct{ q scope.Of[model.Order] }
 		t.Fatalf("Emit: %v\n%s", err, report(ds))
 	}
 	const why = "// It has no After, Before, Cursor, or AfterCursor, which continue a page from a row by the primary " +
-		"key:\n// model.Order holds no field of id, of the primary key of orders.\nfunc Orders() Order"
+		"key:\n// model.Order holds no field of id, of the primary key of orders.\nfunc (s Order) Of()"
 	if !strings.Contains(string(src), why) || strings.Contains(string(src), ") After(") {
 		t.Errorf("Emit wrote\n%s\nwant no After, and the doc\n%s", src, why)
 	}

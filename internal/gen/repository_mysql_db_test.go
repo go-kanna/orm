@@ -139,22 +139,22 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	if _, err := repo.Get(ctx, 9); !errors.Is(err, orm.ErrNotFound) || err.Error() != "orders with id 9: orm: not found" {
 		t.Errorf("Get(9) error = %v, want orm.ErrNotFound", err)
 	}
-	if o, err := repo.First(ctx, mscopes.Orders().PlacedAtDesc()); err != nil || o.ID != 3 {
+	if o, err := repo.First(ctx, mscopes.Order{}.PlacedAtDesc()); err != nil || o.ID != 3 {
 		t.Errorf("First, latest first = %v, %v; want 3", o.ID, err)
 	}
-	if o, err := repo.First(ctx, mscopes.Orders().StatusEq("open")); err != nil || o.ID != 1 {
+	if o, err := repo.First(ctx, mscopes.Order{}.StatusEq("open")); err != nil || o.ID != 1 {
 		t.Errorf("First of no order = %v, %v; want 1, the first by the primary key", o.ID, err)
 	}
-	if _, err := repo.Get(ctx, 1, mscopes.Orders().Offset(1)); err == nil ||
+	if _, err := repo.Get(ctx, 1, mscopes.Order{}.Offset(1)); err == nil ||
 		err.Error() != "orm: Get reads one row by its key, but its scope keeps only some of the rows" {
 		t.Errorf("Get with an offset error = %v", err)
 	}
-	if got, err := repo.ListByCustomer(ctx, 10, mscopes.Orders().IDDesc()); err != nil ||
+	if got, err := repo.ListByCustomer(ctx, 10, mscopes.Order{}.IDDesc()); err != nil ||
 		!slices.Equal(ids(got), []model.OrderID{2, 1}) {
 		t.Errorf("ListByCustomer(10) = %v, %v; want [2 1]", ids(got), err)
 	}
 
-	page := mscopes.Orders().PlacedAtDesc().Limit(2)
+	page := mscopes.Order{}.PlacedAtDesc().Limit(2)
 	first, err := repo.List(ctx, page)
 	if err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
 		t.Fatalf("the first page = %v, %v", ids(first), err)
@@ -167,7 +167,7 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 		t.Errorf("the page before = %v, %v; want [3]", ids(before), err)
 	}
 	// Orders 1 and 2 are both customer 10's, so the first page ends between two rows equal in the order.
-	tied := mscopes.Orders().CustomerIDDesc().Limit(2)
+	tied := mscopes.Order{}.CustomerIDDesc().Limit(2)
 	if first, err = repo.List(ctx, tied); err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2}) {
 		t.Fatalf("the first page ending among equal rows = %v, %v; want [3 2]", ids(first), err)
 	}
@@ -175,10 +175,10 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 		t.Errorf("the page after one among equal rows = %v, %v; want [1]", ids(next), err)
 	}
 
-	if n, err := repo.Count(ctx, mscopes.Orders().StatusEq("open")); err != nil || n != 2 {
+	if n, err := repo.Count(ctx, mscopes.Order{}.StatusEq("open")); err != nil || n != 2 {
 		t.Errorf("Count of the open orders = %d, %v; want 2", n, err)
 	}
-	if ok, err := repo.Exists(ctx, mscopes.Orders().CustomerIDEq(99)); err != nil || ok {
+	if ok, err := repo.Exists(ctx, mscopes.Order{}.CustomerIDEq(99)); err != nil || ok {
 		t.Errorf("Exists of customer 99 = %v, %v; want false", ok, err)
 	}
 	if line, err := repo.GetLine(ctx, 1, 2); err != nil || line.SKU != "B" {
@@ -191,7 +191,7 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	if err := repo.Delete(ctx, 3); !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("Delete(3) again error = %v, want orm.ErrNotFound", err)
 	}
-	if n, err := repo.DeleteStale(ctx, mscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
+	if n, err := repo.DeleteStale(ctx, mscopes.Order{}.StatusEq("closed")); err != nil || n != 1 {
 		t.Errorf("DeleteStale of the closed orders = %d, %v; want 1", n, err)
 	}
 }
@@ -217,9 +217,9 @@ INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 		t.Fatal(err)
 	}
 
-	lines, err := repo.Get(ctx, 1, mscopes.Orders().WithLines(mscopes.OrderLines().LineNoAsc().
-		WithNotes(mscopes.LineNotes().BodyAsc().WithLine()).
-		WithTags(mscopes.LineTags().TagIDAsc().WithTag())))
+	lines, err := repo.Get(ctx, 1, mscopes.Order{}.WithLines(mscopes.OrderLine{}.LineNoAsc().
+		WithNotes(mscopes.LineNote{}.BodyAsc().WithLine()).
+		WithTags(mscopes.LineTag{}.TagIDAsc().WithTag())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,10 +227,10 @@ INSERT INTO order_tags SELECT id, 'gift' FROM orders WHERE status = 'bulk';
 		t.Errorf("the notes and tags of the lines of order 1, by both columns of their key = %s", got)
 	}
 
-	all, err := repo.List(ctx, mscopes.Orders().IDAsc().
+	all, err := repo.List(ctx, mscopes.Order{}.IDAsc().
 		WithCustomer().
-		WithLines(mscopes.OrderLines().LineNoDesc().WithOrder()).
-		WithTags(mscopes.Tags().NameAsc()))
+		WithLines(mscopes.OrderLine{}.LineNoDesc().WithOrder()).
+		WithTags(mscopes.Tag{}.NameAsc()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func TestGeneratedRepository_MySQLWrites(t *testing.T) {
 		SKU: "G"}}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := repo.Get(ctx, 4, mscopes.Orders().WithLines(mscopes.OrderLines().LineNoAsc()))
+	got, err := repo.Get(ctx, 4, mscopes.Order{}.WithLines(mscopes.OrderLine{}.LineNoAsc()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestGeneratedRepository_MySQLQueries(t *testing.T) {
 	if err := repo.Reopen(ctx, 2); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := repo.Count(ctx, mscopes.Orders().StatusEq("closed")); err != nil || n != 1 {
+	if n, err := repo.Count(ctx, mscopes.Order{}.StatusEq("closed")); err != nil || n != 1 {
 		t.Errorf("the closed orders = %d, %v; want order 1 alone", n, err)
 	}
 }

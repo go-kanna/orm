@@ -34,7 +34,7 @@ func TestJoinedProjection_Postgres(t *testing.T) {
 	t.Parallel()
 	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
-		full, err := repo.Get(ctx, 1, pscopes.Orders().WithCustomer())
+		full, err := repo.Get(ctx, 1, pscopes.Order{}.WithCustomer())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestJoinedProjection_Postgres(t *testing.T) {
 			t.Fatalf("joined result: %+v, %v; want %+v", summary, err, full)
 		}
 
-		ordered := pscopes.Orders().TotalAsc().IDAsc()
+		ordered := pscopes.Order{}.TotalAsc().IDAsc()
 		rows, err := repo.ListSummaries(ctx, ordered.TotalGte(200).Limit(1))
 		if err != nil || len(rows) != 1 || rows[0].ID != 2 || rows[0].Customer.Name != "Ann" {
 			t.Fatalf("filtered page: %+v, %v", rows, err)
@@ -84,11 +84,11 @@ func TestJoinedProjection_PostgresLeftJoin(t *testing.T) {
 				t.Fatal(err)
 			}
 			repo := open(t, url)
-			got, err := repo.ListContacts(t.Context(), pscopes.Orders().IDAsc())
+			got, err := repo.ListContacts(t.Context(), pscopes.Order{}.IDAsc())
 			if err != nil || !slices.Equal(contacts(got), []string{"Ann -", "Ann -", "Bob bobby", "nil"}) {
 				t.Fatalf("LEFT JOIN: %v, %v; want a NULL nickname told apart from no customer", contacts(got), err)
 			}
-			inner, err := repo.ListSummaries(t.Context(), pscopes.Orders().IDAsc())
+			inner, err := repo.ListSummaries(t.Context(), pscopes.Order{}.IDAsc())
 			if err != nil || len(inner) != 3 {
 				t.Fatalf("INNER JOIN: %+v, %v; want the order of no customer left out", inner, err)
 			}
@@ -101,7 +101,7 @@ func TestJoinedProjection_MySQL(t *testing.T) {
 	db := mysqlDB(t)
 	repo := mstdlib.NewOrderRepository(db)
 	ctx := t.Context()
-	full, err := repo.Get(ctx, 1, mscopes.Orders().WithCustomer())
+	full, err := repo.Get(ctx, 1, mscopes.Order{}.WithCustomer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestJoinedProjection_MySQL(t *testing.T) {
 	if err != nil || summary.Customer.Name != full.Customer.Name || summary.Memo == nil || *summary.Memo != *full.Memo {
 		t.Fatalf("joined result: %+v, %v", summary, err)
 	}
-	ordered := mscopes.Orders().TotalAsc().IDAsc()
+	ordered := mscopes.Order{}.TotalAsc().IDAsc()
 	rows, err := repo.ListSummaries(ctx, ordered.TotalGte(200).Offset(1).Limit(1))
 	if err != nil || len(rows) != 1 || rows[0].ID != 3 || rows[0].Customer.Name != "Bob" {
 		t.Fatalf("filtered page: %+v, %v", rows, err)
@@ -128,11 +128,11 @@ func TestJoinedProjection_MySQL(t *testing.T) {
 		"VALUES (30, 'open', '2026-10-04 00:00:00', 400, false, 4)"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := repo.ListContacts(ctx, mscopes.Orders().IDAsc())
+	got, err := repo.ListContacts(ctx, mscopes.Order{}.IDAsc())
 	if err != nil || !slices.Equal(contacts(got), []string{"Ann -", "Ann -", "Bob bobby", "nil"}) {
 		t.Fatalf("LEFT JOIN: %v, %v; want a NULL nickname told apart from no customer", contacts(got), err)
 	}
-	inner, err := repo.ListSummaries(ctx, mscopes.Orders().IDAsc())
+	inner, err := repo.ListSummaries(ctx, mscopes.Order{}.IDAsc())
 	if err != nil || len(inner) != 3 {
 		t.Fatalf("INNER JOIN: %+v, %v; want the order of no customer left out", inner, err)
 	}

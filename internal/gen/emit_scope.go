@@ -118,7 +118,10 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	f.Reserve(declared...)
 	for _, p := range plans {
 		set, fn := changeSetNames(p.name)
-		f.Reserve(p.name, p.fn, fn, set)
+		f.Reserve(p.name, fn, set)
+		if p.fn != "" {
+			f.Reserve(p.fn)
+		}
 	}
 	var toRuntime, toScope string
 	if len(plans) > 0 {
@@ -166,11 +169,17 @@ func (e emitter) scope() {
 		e.printf("// %[1]s is the scope of %[2]s, whose rows are read into %[3]s, as //kanna:scopes implies it.\n%[5]s"+
 			"type %[1]s struct{ q %[4]s.Of[%[3]s] }\n\n", p.name, p.table, model, e.f.Import(scopePath, "scope"), unpaged)
 	}
-	e.printf("// %[1]s returns a scope over all the rows of %[2]s.\n%[4]sfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
-		p.fn, p.table, p.name, unpaged)
+	// What the scope lacks is said where the run writes a doc of it: the function returning it, or, for a type
+	// declared by hand, which has none, Of.
+	ofDoc := unpaged
+	if p.fn != "" {
+		e.printf("// %[1]s returns a scope over all the rows of %[2]s.\n%[4]sfunc %[1]s() %[3]s { return %[3]s{} }\n\n",
+			p.fn, p.table, p.name, unpaged)
+		ofDoc = ""
+	}
 	s := e.f.Scope().Name("s")
-	e.printf("// Of returns the scope as a repository reads it.\nfunc (%s %s) Of() %s[%s] { return %s }\n\n",
-		s, p.name, e.f.Import(scopePath, "scope")+".Of", model, s+"."+p.field)
+	e.printf("// Of returns the scope as a repository reads it.\n%sfunc (%s %s) Of() %s[%s] { return %s }\n\n",
+		ofDoc, s, p.name, e.f.Import(scopePath, "scope")+".Of", model, s+"."+p.field)
 
 	e.changes()
 	for _, c := range p.columns {

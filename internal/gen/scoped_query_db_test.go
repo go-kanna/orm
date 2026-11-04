@@ -19,15 +19,15 @@ func TestScopedQuery_Postgres(t *testing.T) {
 	t.Parallel()
 	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
-		rows, err := repo.ListWithCustomers(ctx, pscopes.Orders().StatusEq("open").IDAsc().WithLines())
+		rows, err := repo.ListWithCustomers(ctx, pscopes.Order{}.StatusEq("open").IDAsc().WithLines())
 		if err != nil || len(rows) != 2 || rows[0].ID != 1 || rows[0].CustomerName != "Ann" ||
 			len(rows[0].Lines) != 2 || rows[1].ID != 3 || rows[1].CustomerName != "Bob" || rows[1].Lines == nil {
 			t.Errorf("ListWithCustomers of the open orders with their lines = %+v, %v", rows, err)
 		}
-		if o, err := repo.FirstPlacedSince(ctx, since, pscopes.Orders().PlacedAtAsc()); err != nil || o.ID != 2 {
+		if o, err := repo.FirstPlacedSince(ctx, since, pscopes.Order{}.PlacedAtAsc()); err != nil || o.ID != 2 {
 			t.Errorf("FirstPlacedSince = %+v, %v; want order 2", o, err)
 		}
-		if o, err := repo.FirstPlacedSince(ctx, since, pscopes.Orders().StatusEq("gone")); err == nil {
+		if o, err := repo.FirstPlacedSince(ctx, since, pscopes.Order{}.StatusEq("gone")); err == nil {
 			t.Errorf("FirstPlacedSince of no order = %+v; want orm.ErrNotFound", o)
 		}
 	})
@@ -53,9 +53,9 @@ func TestScopedQuery_RepeatedRowsPostgres(t *testing.T) {
 	t.Parallel()
 	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
 		ctx := t.Context()
-		rows, err := repo.ListRepeated(ctx, pscopes.Orders().IDEq(1).WithLines())
+		rows, err := repo.ListRepeated(ctx, pscopes.Order{}.IDEq(1).WithLines())
 		checkRepeated(t, "its lines", rows, err)
-		rows, err = repo.ListRepeated(ctx, pscopes.Orders().IDEq(1).WithLines(pscopes.OrderLines().Limit(5)))
+		rows, err = repo.ListRepeated(ctx, pscopes.Order{}.IDEq(1).WithLines(pscopes.OrderLine{}.Limit(5)))
 		checkRepeated(t, "a page of its lines", rows, err)
 	})
 }
@@ -64,9 +64,9 @@ func TestScopedQuery_RepeatedRowsMySQL(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	repo := mstdlib.NewOrderRepository(mysqlDB(t))
-	rows, err := repo.ListRepeated(ctx, mscopes.Orders().IDEq(1).WithLines())
+	rows, err := repo.ListRepeated(ctx, mscopes.Order{}.IDEq(1).WithLines())
 	checkRepeated(t, "its lines", rows, err)
-	rows, err = repo.ListRepeated(ctx, mscopes.Orders().IDEq(1).WithLines(mscopes.OrderLines().Limit(5)))
+	rows, err = repo.ListRepeated(ctx, mscopes.Order{}.IDEq(1).WithLines(mscopes.OrderLine{}.Limit(5)))
 	checkRepeated(t, "a page of its lines", rows, err)
 }
 
@@ -74,12 +74,12 @@ func TestScopedQuery_MySQL(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	repo := mstdlib.NewOrderRepository(mysqlDB(t))
-	rows, err := repo.ListWithCustomers(ctx, mscopes.Orders().StatusEq("open").IDAsc().WithLines())
+	rows, err := repo.ListWithCustomers(ctx, mscopes.Order{}.StatusEq("open").IDAsc().WithLines())
 	if err != nil || len(rows) != 2 || rows[0].ID != 1 || rows[0].CustomerName != "Ann" ||
 		len(rows[0].Lines) != 2 || rows[1].ID != 3 || rows[1].CustomerName != "Bob" || rows[1].Lines == nil {
 		t.Errorf("ListWithCustomers of the open orders with their lines = %+v, %v", rows, err)
 	}
-	if o, err := repo.FirstPlacedSince(ctx, since, mscopes.Orders().PlacedAtAsc()); err != nil || o.ID != 2 {
+	if o, err := repo.FirstPlacedSince(ctx, since, mscopes.Order{}.PlacedAtAsc()); err != nil || o.ID != 2 {
 		t.Errorf("FirstPlacedSince = %+v, %v; want order 2", o, err)
 	}
 }

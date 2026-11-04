@@ -187,7 +187,7 @@ func TestPluck(t *testing.T) {
 	t.Cleanup(func(){ _ = db.Close() })
 	r := NewRecords(db)
 	ctx := t.Context()
-	ids, err := r.ListIDs(ctx, scopes.Records().IDEq(7).IDDesc().Limit(2))
+	ids, err := r.ListIDs(ctx, scopes.Record{}.IDEq(7).IDDesc().Limit(2))
 	if err != nil || !reflect.DeepEqual(ids, []int64{7,9}) { t.Fatalf("IDs: %v, %v", ids, err) }
 	if !strings.HasPrefix(pluckQuery, "SELECT id FROM records WHERE (id = ") ||
 		!strings.Contains(pluckQuery, "ORDER BY id DESC") || !strings.Contains(pluckQuery, "LIMIT 2") ||

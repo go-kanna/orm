@@ -42,7 +42,7 @@ func TestDeps(t *testing.T) {
 	if !slices.Equal(r.Refs, want) {
 		t.Errorf("Refs = %+v, want %+v", r.Refs, want)
 	}
-	for _, name := range []string{"example.com/shop/scopes.Orders", "example.com/shop/scopes.Order.StatusNe"} {
+	for _, name := range []string{"example.com/shop/scopes.OrderChanges", "example.com/shop/scopes.Order.StatusNe"} {
 		if !slices.Contains(r.Declares, name) {
 			t.Errorf("Declares = %q, want %s among them", r.Declares, name)
 		}

@@ -223,10 +223,10 @@ type Order struct{ q scope.Of[model.Order] }
 //kanna:scope table=order_lines
 type OrderLine struct{ q scope.Of[model.OrderLine] }
 
-//kanna:scope table=order_lines func=Lines
+//kanna:scope table=order_lines
 type Line struct{ q scope.Of[model.Line] }
 
-//kanna:scope table=customers func=Clients
+//kanna:scope table=customers
 type Client struct{ q scope.Of[model.Client] }
 
 //kanna:scope table=line_items
