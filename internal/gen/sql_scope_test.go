@@ -35,6 +35,10 @@ func TestEmit_SQLScopeMistakes(t *testing.T) {
 		{name: "a parameter without a name", sql: "-- scope: Order.Since(time.Time)\nplaced_at >= now()\n",
 			want: "order_scopes.sql:1:1: error: -- scope: Order.Since: its parameter 1 has no name, which the " +
 				"statement takes it by"},
+		{name: "a name of two parameters", sql: "-- scope: Order.By(v int64, v int64)\nid = :v\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.By: two of its parameters are named v"},
+		{name: "a name of two parameters of one type", sql: "-- scope: Order.By(v, v int64)\nid = :v\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.By: two of its parameters are named v"},
 		{name: "a type that is none", sql: "-- scope: Order.Since(at Time)\nplaced_at >= :at\n",
 			want: "order_scopes.sql:1:1: error: -- scope: Order.Since: Time names no type"},
 		{name: "a package nothing imports", sql: "-- scope: Order.Above(n big.Int)\nid > :n\n",

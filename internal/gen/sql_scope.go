@@ -134,6 +134,9 @@ func (r resolver) sqlScope(st sqlfile.Statement, d snapshot.Dialect,
 			return sc, []diag.Diag{errorf("its parameter %d has no name, which the statement takes it by", i+1)}
 		}
 		for _, n := range field.Names {
+			if n.Name != "_" && slices.ContainsFunc(sc.params, func(p param) bool { return p.name == n.Name }) {
+				return sc, []diag.Diag{errorf("two of its parameters are named %s", n.Name)}
+			}
 			sc.params = append(sc.params, param{name: n.Name, typ: t, variadic: variadic})
 		}
 	}
