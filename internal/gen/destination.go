@@ -30,7 +30,7 @@ func destinationAt(dir string) (destination, error) {
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
-	name, err := output.PackageName(dir, repositoryOutputName, "")
+	name, err := output.PackageName(dir, repositoryOutputName)
 	if err != nil {
 		return destination{}, err //nolint:wrapcheck // the caller reports it at dir
 	}
