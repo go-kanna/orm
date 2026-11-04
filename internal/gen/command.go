@@ -48,7 +48,7 @@ func Command() cli.Command[config] {
 				"`pgx` or database/sql (default: pgx on PostgreSQL, database/sql on MySQL)")
 			fs.StringVar(&cfg.snapshot, "snapshot", "",
 				"the snapshot to read (default: "+snapshot.Name+" at the root of the module)")
-			fs.StringVar(&cfg.tags, "tags", "", "comma-separated build tags")
+			cli.Tags(fs, &cfg.tags)
 		},
 		Run:  run,
 		Deps: reportDeps,
