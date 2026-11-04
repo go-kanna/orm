@@ -176,6 +176,7 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	_, _ = u.orders.Count(ctx, scopes.Orders().Or(scopes.Orders().Open(), scopes.Orders().IDEq(1)))
 	_, _ = u.orders.Count(ctx, scopes.Orders().Or())
 	_, _ = u.orders.Delete(ctx, scopes.Orders().Not(scopes.Orders().Open()))
+	_, _ = u.orders.Delete(ctx, scopes.Orders().After(model.Order{ID: 1}))
 	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
 
 	c := scopes.CustomerChanges()

@@ -405,7 +405,8 @@ func projectionOnly(s *scopeVal, what string) *failed {
 	return nil
 }
 
-// renderDelete is RenderDelete(d, table, key) of the scope of argument 0.
+// renderDelete is RenderDelete(d, table, key) of the scope of argument 0. A row to continue from is a condition, as
+// Render writes one of it.
 func renderDelete(c opCall) *failed {
 	s := c.scope(0)
 	if t, p := s.loads(); t == every {
@@ -414,7 +415,7 @@ func renderDelete(c opCall) *failed {
 	if f := scopeErr(s); f != nil {
 		return f
 	}
-	if table, ok := c.str(2); ok && s.conds.t == never {
+	if table, ok := c.str(2); ok && s.conds.t == never && s.seek.t == never {
 		return fail("Delete would delete every row of "+table+": give it a condition", cause{}, "")
 	}
 	if s.limit.t == never && s.offset.t == never && s.orders.t == every && s.seek.t == never {
@@ -442,7 +443,7 @@ func renderUpdate(c opCall) *failed {
 			return fail("Update cannot assign column "+a.column, a.p.at, "assigns "+a.column)
 		}
 	}
-	if table, ok := c.str(2); ok && s.conds.t == never {
+	if table, ok := c.str(2); ok && s.conds.t == never && s.seek.t == never {
 		return fail("Update would update every row of "+table+": give it a condition", cause{}, "")
 	}
 	return nil
