@@ -214,6 +214,11 @@ func TestCommand_DirectiveDeclaringNothing(t *testing.T) {
 				"  write it right above what it marks, with no blank line between\n" +
 				"warning: no type is marked //kanna:scope or //kanna:repository in example.com/shop/repository\n",
 			cli.ExitOK},
+		// one warning, though scope is a typo away from scopes, which the comment is read for
+		{"loose scope", "scopes", "package scopes\n\n//kanna:scope\n\ntype Order struct{}\n",
+			"./scopes.go:3:1: warning: //kanna:scope is not attached to a declaration, so nothing reads it\n" +
+				"  write it right above what it marks, with no blank line between\n" +
+				"warning: no type is marked //kanna:scope or //kanna:repository in example.com/shop/scopes\n", cli.ExitOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

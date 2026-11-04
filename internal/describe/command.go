@@ -43,7 +43,7 @@ func Exec(env cli.Env, args []string) int {
 	fset.StringVar(&dbURL, "database-url", "", "the database to describe (default: $DATABASE_URL)")
 	fset.StringVar(&snapshotPath, "snapshot", "",
 		"the snapshot to write (default: "+snapshot.Name+" at the root of the module)")
-	fset.StringVar(&tags, "tags", "", "comma-separated build tags")
+	cli.Tags(fset, &tags)
 	fset.BoolVar(&check, "check", false, "check that the snapshot is up to date with the database instead of writing it")
 	fset.BoolVar(&verbose, "v", false, "say whether the snapshot was written or left unchanged")
 	fset.BoolVar(&version, "version", false, "print the version and exit")
