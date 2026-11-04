@@ -358,14 +358,14 @@ type OrderLine struct {
 	OrderID OrderID
 	LineNo  int
 	SKU     SKU
-	Product *Product `orm:"fk=sku"` // product_id ではなく、products への order_lines.sku
+	Product *Product `orm:"fk=sku"` // order_lines.sku to products, rather than product_id
 }
 
 type Category struct {
 	ID       int64
 	ParentID *int64
-	Parent   *Category                       // フィールド名どおり categories.parent_id
-	Children []Category `orm:"fk=parent_id"` // category_id ではなく categories.parent_id
+	Parent   *Category                       // categories.parent_id, the field's name
+	Children []Category `orm:"fk=parent_id"` // categories.parent_id, rather than category_id
 }
 ```
 
@@ -591,7 +591,7 @@ type TodoRepository interface {
 ```go
 type Device struct {
     ID     uuid.UUID
-    Topics []Topic `orm:"relation=device_topics"` // device_topics.device_id で、device_topics.topic を読む
+    Topics []Topic `orm:"relation=device_topics"` // device_topics.topic, by device_topics.device_id
 }
 ```
 
@@ -909,8 +909,8 @@ projection は、元のテーブルが参照するテーブルの列を、入れ
 type MembershipSummary struct {
     UserID  uuid.UUID
     Role    Role
-    User    struct{ DisplayName string }  // user_id の先の users を INNER JOIN
-    Inviter *struct{ DisplayName string } // inviter_id の先の users を LEFT JOIN
+    User    struct{ DisplayName string }  // users, by user_id: INNER JOIN
+    Inviter *struct{ DisplayName string } // users, by inviter_id: LEFT JOIN
 }
 
 GetSummary(ctx context.Context, userID uuid.UUID, s ...scopes.Membership) (MembershipSummary, error)
