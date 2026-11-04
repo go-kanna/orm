@@ -113,13 +113,14 @@ func TestRepositories_LockMistakes(t *testing.T) {
 				"  use nowait, which returns an error for a locked row"},
 		{"at the end of the line", snapshot.PostgreSQL,
 			strings.TrimSuffix(get, "\n") + " //kanna:lock update\n",
-			"repository.go:24:66: error: //kanna:lock marks no method of a //kanna:repository\n" +
-				"  write it right above the method"},
+			"repository.go:24:66: warning: //kanna:lock is not attached to a declaration, so nothing reads it\n" +
+				"  write it right above what it marks, with no blank line between"},
 		{"parted from the method by a blank line", snapshot.PostgreSQL, "\t//kanna:lock update\n\n" + list,
-			at + "error: //kanna:lock marks no method of a //kanna:repository\n  write it right above the method"},
+			at + "warning: //kanna:lock is not attached to a declaration, so nothing reads it\n" +
+				"  write it right above what it marks, with no blank line between"},
 		{"after the last method", snapshot.PostgreSQL, list + "\t//kanna:lock update\n",
-			"repository.go:25:2: error: //kanna:lock marks no method of a //kanna:repository\n" +
-				"  write it right above the method"},
+			"repository.go:25:2: warning: //kanna:lock is not attached to a declaration, so nothing reads it\n" +
+				"  write it right above what it marks, with no blank line between"},
 		{"a space after the comment marker", snapshot.PostgreSQL, "\t// kanna:lock update\n" + list,
 			at + `warning: "// kanna:lock update" is not recognized as a directive; write it as ` +
 				`"//kanna:lock update" with no space`},
@@ -159,7 +160,7 @@ func TestRepositories_LockMistakes(t *testing.T) {
 func TestRepositories_LockOnTheInterface(t *testing.T) {
 	t.Parallel()
 
-	const want = "repository.go:22:1: error: //kanna:lock marks no method of a //kanna:repository\n" +
+	const want = "repository.go:22:1: warning: //kanna:lock marks no method of a //kanna:repository\n" +
 		"  write it right above the method"
 	_, ds := repositoriesMarked(t, snapshot.PostgreSQL, "//kanna:lock update\n//kanna:repository",
 		"\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n", "", nil)
@@ -171,7 +172,7 @@ func TestRepositories_LockOnTheInterface(t *testing.T) {
 func TestRepositories_LockOnAnEmbeddedInterface(t *testing.T) {
 	t.Parallel()
 
-	const want = "repository.go:26:2: error: //kanna:lock marks no method of a //kanna:repository\n" +
+	const want = "repository.go:26:2: warning: //kanna:lock marks no method of a //kanna:repository\n" +
 		"  write it right above the method"
 	_, ds := repositoriesMarked(t, snapshot.PostgreSQL, "type Base interface{}\n\n//kanna:repository",
 		"\t//kanna:lock update\n\tBase\n", "", nil)

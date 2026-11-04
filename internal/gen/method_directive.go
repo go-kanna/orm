@@ -3,6 +3,7 @@ package gen
 import (
 	"go/ast"
 	"go/token"
+	"slices"
 
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/directive"
@@ -30,8 +31,9 @@ func hasNoGeneratedSQL(d directive.Directive, key, name, where string) diag.Diag
 		WithHints(instead + " in " + where)
 }
 
-// strayDirectives reports the method directives of file on no method of repos, such as one at the end of a line or
-// parted from a method by a blank line. Nothing reads them, so the method would go on without them, without a word.
+// strayDirectives warns of the method directives of file on no method of repos. One in no doc comment, as one at the
+// end of a line or parted from a method by a blank line, is directive.Loose's to tell; one in the doc of something
+// else, orm's. Nothing reads them, so the method would go on without them.
 func strayDirectives(fset *token.FileSet, file *ast.File, repos []decl.Repository) []diag.Diag {
 	docs := map[*ast.CommentGroup]bool{}
 	for _, repo := range repos {
@@ -46,16 +48,21 @@ func strayDirectives(fset *token.FileSet, file *ast.File, repos []decl.Repositor
 		}
 	}
 
-	var ds []diag.Diag
+	keys := make([]string, 0, len(methodDirectives))
+	for _, md := range methodDirectives {
+		keys = append(keys, md.key)
+	}
+	lines := directive.Lines(fset, []*ast.File{file})
+	ds := directive.Loose(lines, keys...)
 	for _, cg := range file.Comments {
 		if docs[cg] {
 			continue
 		}
-		for _, md := range methodDirectives {
-			d, fds := directive.Find(fset, cg, md.key)
+		for _, key := range keys {
+			d, fds := directive.Find(fset, cg, key)
 			ds = append(ds, fds...)
-			if d.Found {
-				ds = append(ds, diag.Errorf(d.Pos, "//kanna:%s marks no method of a //kanna:repository", md.key).
+			if d.Found && slices.ContainsFunc(lines, func(l directive.Line) bool { return l.Pos == d.Pos && l.Attached }) {
+				ds = append(ds, diag.Warningf(d.Pos, "//kanna:%s marks no method of a //kanna:repository", key).
 					WithHints("write it right above the method"))
 			}
 		}

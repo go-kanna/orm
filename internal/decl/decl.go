@@ -109,15 +109,22 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		}
 	}
 
-	// //kanna:scopes marks no declaration, so it stands in a comment of its own.
+	// A //kanna:scope or //kanna:repository in no doc comment is loose; one in the doc of something else than a type
+	// is stray. //kanna:scopes marks no declaration, so it stands in a comment of its own.
+	lines := directive.Lines(fset, []*ast.File{file})
+	ds = append(ds, directive.Loose(lines, "scope", "repository")...)
 	for _, cg := range file.Comments {
 		if !marking[cg] {
-			if sds := stray(fset, cg); len(sds) > 0 {
+			if sds := stray(fset, cg, lines); len(sds) > 0 {
 				ds = append(ds, sds...)
 				continue
 			}
 		}
 		if docs[cg] {
+			if d, _ := directive.Find(fset, cg, "scopes"); d.Found {
+				ds = append(ds, diag.Warningf(d.Pos, "//kanna:scopes marks no declaration, so nothing reads it in the "+
+					"doc of a type").WithHints("write it in a comment of its own, apart from the type"))
+			}
 			continue
 		}
 		d, fds := directive.Find(fset, cg, "scopes")
@@ -135,16 +142,21 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 	return decls, ds
 }
 
-// stray reports each //kanna:scope and //kanna:repository of cg, a comment read as the doc of no type: one apart from
-// any declaration, or above a group of types, which would otherwise mark nothing without a word.
-func stray(fset *token.FileSet, cg *ast.CommentGroup) []diag.Diag {
+// stray warns of each //kanna:scope and //kanna:repository of cg, a comment read as the doc of no one type: the doc of
+// a function, of a field, or of a group of types. One in no doc comment at all is left to directive.Loose, as lines
+// tell.
+func stray(fset *token.FileSet, cg *ast.CommentGroup, lines []directive.Line) []diag.Diag {
 	var ds []diag.Diag
 	for _, c := range cg.List {
 		body, ok := strings.CutPrefix(c.Text, "//kanna:")
-		if key, _, _ := strings.Cut(body, " "); ok && (key == "scope" || key == "repository") {
-			ds = append(ds, diag.Errorf(fset.Position(c.Pos()), "//kanna:%s marks the type it is the doc of, but this "+
-				"comment is the doc of none", key).WithHints("write it right above one type, with no blank line between"))
+		key, _, _ := strings.Cut(body, " ")
+		pos := fset.Position(c.Pos())
+		if !ok || key != "scope" && key != "repository" ||
+			slices.ContainsFunc(lines, func(l directive.Line) bool { return l.Pos == pos && !l.Attached }) {
+			continue
 		}
+		ds = append(ds, diag.Warningf(pos, "//kanna:%s marks the type it is the doc of, but this comment is the doc of "+
+			"no one type", key).WithHints("write it right above one type, with no blank line between"))
 	}
 	return ds
 }
