@@ -7,7 +7,7 @@ toolchain go1.26.9
 tool github.com/go-kanna/orm/cmd/kanna-orm
 
 require (
-	github.com/go-kanna/orm v0.0.27
+	github.com/go-kanna/orm v0.0.28
 	github.com/jackc/pgx/v5 v5.11.0
 )
 
