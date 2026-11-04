@@ -4,8 +4,6 @@
 package decl
 
 import (
-	"errors"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -85,13 +83,13 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			d, fds := directive.Find(fset, doc, "scope")
 			ds = append(ds, fds...)
 			if d.Found {
-				table, fn, err := scopeArgs(d.Args)
+				table, fn, ads := scopeArgs(d)
 				named := false
 				if model, ok := modelName(ts); ok && table == "" {
 					table, named = Plural(model), true
 				}
-				if err != nil {
-					ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:scope table=orders"))
+				if len(ads) > 0 {
+					ds = append(ds, hinted(ads, "as in //kanna:scope table=orders")...)
 				} else {
 					decls.Scopes = append(decls.Scopes, Scope{Spec: ts, Pos: d.Pos, Table: table, Named: named, Func: fn})
 				}
@@ -100,9 +98,9 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			d, fds = directive.Find(fset, doc, "repository")
 			ds = append(ds, fds...)
 			if d.Found {
-				table, err := repositoryArgs(d.Args)
-				if err != nil {
-					ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:repository table=orders"))
+				table, ads := repositoryArgs(d)
+				if len(ads) > 0 {
+					ds = append(ds, hinted(ads, "as in //kanna:repository table=orders")...)
 				} else {
 					decls.Repositories = append(decls.Repositories,
 						Repository{Spec: ts, Pos: d.Pos, Table: table})
@@ -127,9 +125,9 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		if !d.Found {
 			continue
 		}
-		paths, err := modelsArgs(d.Args)
-		if err != nil {
-			ds = append(ds, diag.Errorf(d.Pos, "%v", err).WithHints("as in //kanna:scopes model-package=../model"))
+		paths, ads := modelsArgs(d)
+		if len(ads) > 0 {
+			ds = append(ds, hinted(ads, "as in //kanna:scopes model-package=../model")...)
 			continue
 		}
 		decls.Models = append(decls.Models, Models{Pos: d.Pos, Paths: paths})
@@ -153,23 +151,20 @@ func stray(fset *token.FileSet, cg *ast.CommentGroup) []diag.Diag {
 
 // scopeArgs reads what follows //kanna:scope: the table table= names, and the name func= gives the function returning
 // the empty scope, each if any.
-func scopeArgs(args string) (table, fn string, err error) {
-	for field := range strings.FieldsSeq(args) {
-		key, value, _ := strings.Cut(field, "=")
+func scopeArgs(d directive.Directive) (table, fn string, ds []diag.Diag) {
+	args, ds := d.Parse(directive.Spec{Keys: []string{"table", "func"}})
+	for _, a := range args {
 		switch {
-		case key == "table" && table != "", key == "func" && fn != "":
-			return "", "", fmt.Errorf("//kanna:scope gives %s= twice", key)
-		case key == "table" && value != "":
-			table = value
-		case key == "func" && token.IsIdentifier(value):
-			fn = value
-		case key == "func":
-			return "", "", fmt.Errorf("//kanna:scope func=%s: %q is not a name a Go function can have", value, value)
+		case a.Name == "table":
+			table = a.Value
+		case a.Name == "func" && token.IsIdentifier(a.Value):
+			fn = a.Value
 		default:
-			return "", "", fmt.Errorf("//kanna:scope takes table= and func=, not %q", field)
+			ds = append(ds, diag.Errorf(d.Pos, "//kanna:scope func=%s: %q is not a name a Go function can have", a.Value,
+				a.Value))
 		}
 	}
-	return table, fn, nil
+	return table, fn, ds
 }
 
 // modelName is the name of the model of ts, a scope type, as Order of struct{ q scope.Of[model.Order] }, read from its
@@ -193,39 +188,34 @@ func modelName(ts *ast.TypeSpec) (string, bool) {
 }
 
 // repositoryArgs reads what follows //kanna:repository: the table table= names, if any.
-func repositoryArgs(args string) (table string, err error) {
-	for field := range strings.FieldsSeq(args) {
-		key, value, _ := strings.Cut(field, "=")
-		switch {
-		case key == "table" && table != "":
-			return "", errors.New("//kanna:repository gives table= twice")
-		case key == "table" && value != "":
-			table = value
-		default:
-			return "", fmt.Errorf("//kanna:repository takes table=, not %q", field)
-		}
+func repositoryArgs(d directive.Directive) (table string, ds []diag.Diag) {
+	args, ds := d.Parse(directive.Spec{Keys: []string{"table"}})
+	for _, a := range args {
+		table = a.Value
 	}
-	return table, nil
+	return table, ds
 }
 
 // modelsArgs reads what follows //kanna:scopes: the packages of the models model-package= names, separated by commas.
-func modelsArgs(args string) ([]string, error) {
+func modelsArgs(d directive.Directive) ([]string, []diag.Diag) {
+	args, ds := d.Parse(directive.Spec{Keys: []string{"model-package"}, Needed: true})
 	var paths []string
-	for field := range strings.FieldsSeq(args) {
-		key, value, _ := strings.Cut(field, "=")
-		switch {
-		case key == "model-package" && paths != nil:
-			return nil, errors.New("//kanna:scopes gives model-package= twice")
-		case key == "model-package" && value != "" && !slices.Contains(strings.Split(value, ","), ""):
-			paths = strings.Split(value, ",")
-		default:
-			return nil, fmt.Errorf("//kanna:scopes takes model-package=, not %q", field)
+	for _, a := range args {
+		paths = strings.Split(a.Value, ",")
+		if slices.Contains(paths, "") {
+			return nil, append(ds, diag.Errorf(d.Pos, "//kanna:scopes model-package=%s has an empty package among "+
+				"its commas", a.Value))
 		}
 	}
-	if paths == nil {
-		return nil, errors.New("//kanna:scopes wants the packages of the models")
+	return paths, ds
+}
+
+// hinted gives each of ds hint.
+func hinted(ds []diag.Diag, hint string) []diag.Diag {
+	for i := range ds {
+		ds[i] = ds[i].WithHints(hint)
 	}
-	return paths, nil
+	return ds
 }
 
 // Implied is a scope type a //kanna:scopes directive implies: one named after the struct it holds, Model, of the

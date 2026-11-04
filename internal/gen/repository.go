@@ -698,18 +698,20 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	if m.verb != verbUpsert {
 		return []diag.Diag{errorf("//kanna:conflict is for an Upsert")}
 	}
-	fields := strings.Fields(d.Args)
+	set, _ := changeSetNames(m.target.name)
+	alone := []string{`a column an upsert leaves as it was is tagged orm:",insertonly"`,
+		"an upsert writing chosen columns over the row it meets takes a change set: Upsert(ctx, row, changes " + set + ")"}
+	args, ds := d.Parse(directive.Spec{Any: "<columns>", AnyWord: true, Needed: true})
 	switch {
-	case len(fields) == 0 || strings.Contains(fields[0], "="):
-		return []diag.Diag{errorf("//kanna:conflict names the columns of a key").
-			WithHints("as in //kanna:conflict tenant_id,email")}
-	case len(fields) > 1:
-		return []diag.Diag{errorf("//kanna:conflict names the columns of a key alone, not %q", fields[1]).WithHints(
-			`a column an upsert leaves as it was is tagged orm:",insertonly"`,
-			"an upsert writing chosen columns over the row it meets takes a change set: "+
-				"Upsert(ctx, row, changes "+m.target.name+"ChangeSet)")}
+	case len(ds) > 0 && len(strings.Fields(d.Args)) == 0:
+		return hinted(methodDiags(m.name, ds), "as in //kanna:conflict tenant_id,email")
+	case len(ds) > 0:
+		return hinted(methodDiags(m.name, ds), alone...)
+	case len(args) > 1:
+		return []diag.Diag{errorf("//kanna:conflict names the columns of a key alone, not %q", args[1].Name).
+			WithHints(alone...)}
 	}
-	m.conflict = strings.Split(fields[0], ",")
+	m.conflict = strings.Split(args[0].Name, ",")
 	for _, c := range m.conflict {
 		if !slices.ContainsFunc(m.table.Columns, func(col snapshot.Column) bool { return col.Name == c }) {
 			return []diag.Diag{errorf("%s has no column %s", m.target.table, c)}

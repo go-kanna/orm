@@ -119,11 +119,13 @@ type Line struct{}
 	}
 
 	for directive, want := range map[string]string{
-		"//kanna:scopes":                                 "//kanna:scopes wants the packages of the models",
-		"//kanna:scopes ../model":                        "//kanna:scopes takes model-package=, not \"../model\"",
-		"//kanna:scopes model-package=":                  "//kanna:scopes takes model-package=, not \"model-package=\"",
-		"//kanna:scopes model-package=a,,b":              "//kanna:scopes takes model-package=, not \"model-package=a,,b\"",
-		"//kanna:scopes model-package=a model-package=b": "//kanna:scopes gives model-package= twice",
+		"//kanna:scopes":          "//kanna:scopes needs model-package=…",
+		"//kanna:scopes ../model": "//kanna:scopes takes model-package=…, not \"../model\"",
+		"//kanna:scopes model-package=": "//kanna:scopes takes a value for model-package, " +
+			"as in model-package=…",
+		"//kanna:scopes model-package=a,,b": "//kanna:scopes model-package=a,,b has an empty package " +
+			"among its commas",
+		"//kanna:scopes model-package=a model-package=b": "//kanna:scopes takes model-package once",
 	} {
 		_, ds = decl.Read(fset, mustParse(t, fset, "package scopes\n\n"+directive+"\n"))
 		if got, want := report(ds), "scopes.go:3:1: error: "+want+"\n  as in //kanna:scopes model-package=../model"; got !=
@@ -224,25 +226,25 @@ func TestRead_Mistakes(t *testing.T) {
 			`scopes.go:3:1: warning: "//kanna:scop table=orders" is not recognized as a directive` + "\n" +
 				`  did you mean "//kanna:scope table=orders"?`},
 		{"an option it does not know", "//kanna:scope table=orders colour=red",
-			"scopes.go:3:1: error: //kanna:scope takes table= and func=, not \"colour=red\"\n" +
+			"scopes.go:3:1: error: //kanna:scope takes table=… or func=…, not \"colour=red\"\n" +
 				"  as in //kanna:scope table=orders"},
 		{"a table given twice", "//kanna:scope table=orders table=order_lines",
-			"scopes.go:3:1: error: //kanna:scope gives table= twice\n  as in //kanna:scope table=orders"},
+			"scopes.go:3:1: error: //kanna:scope takes table once\n  as in //kanna:scope table=orders"},
 		{"a function given twice", "//kanna:scope table=orders func=Orders func=AllOrders",
-			"scopes.go:3:1: error: //kanna:scope gives func= twice\n  as in //kanna:scope table=orders"},
+			"scopes.go:3:1: error: //kanna:scope takes func once\n  as in //kanna:scope table=orders"},
 		{"a function no Go function can be named", "//kanna:scope table=orders func=all-orders",
 			"scopes.go:3:1: error: //kanna:scope func=all-orders: \"all-orders\" is not a name a Go function can have\n" +
 				"  as in //kanna:scope table=orders"},
 		{"an option a repository does not take", "//kanna:repository table=orders func=Orders",
-			"scopes.go:3:1: error: //kanna:repository takes table=, not \"func=Orders\"\n" +
+			"scopes.go:3:1: error: //kanna:repository takes table=…, not \"func=Orders\"\n" +
 				"  as in //kanna:repository table=orders"},
 		{"a repository of no table", "//kanna:repository table=",
-			"scopes.go:3:1: error: //kanna:repository takes table=, not \"table=\"\n" +
+			"scopes.go:3:1: error: //kanna:repository takes a value for table, as in table=…\n" +
 				"  as in //kanna:repository table=orders"},
 		{"a repository's table given twice", "//kanna:repository table=orders table=order_lines",
-			"scopes.go:3:1: error: //kanna:repository gives table= twice\n  as in //kanna:repository table=orders"},
+			"scopes.go:3:1: error: //kanna:repository takes table once\n  as in //kanna:repository table=orders"},
 		{"an error translator, which a method of the implementation is", "//kanna:repository errors=translate",
-			"scopes.go:3:1: error: //kanna:repository takes table=, not \"errors=translate\"\n" +
+			"scopes.go:3:1: error: //kanna:repository takes table=…, not \"errors=translate\"\n" +
 				"  as in //kanna:repository table=orders"},
 	}
 	for _, tt := range tests {

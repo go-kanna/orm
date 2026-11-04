@@ -2,14 +2,10 @@ package gen
 
 import (
 	"fmt"
-	"maps"
 	"regexp"
-	"slices"
-	"strings"
 
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/directive"
-	"github.com/go-kanna/internal/suggest"
 
 	"github.com/go-kanna/orm/internal/snapshot"
 )
@@ -24,6 +20,25 @@ var lockClauses = map[string]string{
 
 // lockWaits are what //kanna:lock takes after a strength, and what each adds to its clause.
 var lockWaits = map[string]string{"nowait": "NOWAIT", "skip-locked": "SKIP LOCKED"}
+
+// lockWords are the words //kanna:lock takes: a strength, then nowait or skip-locked if any.
+var lockWords = []string{"update", "no-key-update", "share", "key-share", "nowait", "skip-locked"}
+
+// methodDiags are ds, about a directive of the method named method, saying so.
+func methodDiags(method string, ds []diag.Diag) []diag.Diag {
+	for i := range ds {
+		ds[i].Message = method + ": " + ds[i].Message
+	}
+	return ds
+}
+
+// hinted gives each of ds hints.
+func hinted(ds []diag.Diag, hints ...string) []diag.Diag {
+	for i := range ds {
+		ds[i] = ds[i].WithHints(hints...)
+	}
+	return ds
+}
 
 // lockedName matches a name that ends in the strength of a lock, as GetForUpdate does, and not one in which more
 // follows, as GetForUpdateForm, which may well read rows for an update to come.
@@ -58,37 +73,30 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 			m.projection.joins[0].field).WithHints("lock the rows by reading the model, and read the values joined apart",
 			"or write the query by hand, locking the rows of the tables meant, as FOR UPDATE OF does")}
 	}
-	fields := strings.Fields(d.Args)
-	if len(fields) == 0 || len(fields) > 2 {
+	args, ds := d.Parse(directive.Spec{Words: lockWords, Needed: true})
+	if len(ds) > 0 {
+		return hinted(methodDiags(m.name, ds), "as in //kanna:lock update skip-locked")
+	}
+	_, strong := lockClauses[args[0].Name]
+	if !strong || len(args) > 2 || len(args) == 2 && lockWaits[args[1].Name] == "" {
 		return []diag.Diag{errorf("//kanna:lock takes the strength of the lock, then nowait or skip-locked if any").
 			WithHints("as in //kanna:lock update skip-locked")}
 	}
-	strength := fields[0]
+	strength := args[0].Name
 	if named := lockedName.FindStringSubmatch(m.name); named != nil && namedStrengths[named[1]] != strength {
 		return []diag.Diag{errorf("its name ends in a lock of %s, but //kanna:lock is of %s",
 			namedStrengths[named[1]], strength).WithHints("make the two one")}
 	}
-	clause, ok := lockClauses[strength]
-	if !ok {
-		unknown := errorf("//kanna:lock takes update, no-key-update, share, or key-share, not %q", strength)
-		if near, ok := suggest.Closest(strength, slices.Sorted(maps.Keys(lockClauses))); ok {
-			unknown = unknown.WithHints(fmt.Sprintf("did you mean %s?", near))
-		}
-		return []diag.Diag{unknown}
-	}
+	clause := lockClauses[strength]
 	if r.s.Dialect == snapshot.MySQL && (strength == "no-key-update" || strength == "key-share") {
 		return []diag.Diag{errorf("MySQL has no %s", clause).WithHints("lock with update or share")}
 	}
-	if len(fields) == 2 {
-		wait, ok := lockWaits[fields[1]]
-		if !ok {
-			return []diag.Diag{errorf("//kanna:lock takes nowait or skip-locked after the strength, not %q", fields[1])}
-		}
-		if fields[1] == "skip-locked" && (m.verb == verbGet || m.verb == verbFind) {
+	if len(args) == 2 {
+		if args[1].Name == "skip-locked" && (m.verb == verbGet || m.verb == verbFind) {
 			return []diag.Diag{errorf("skip-locked passes a locked row over, which a %s would report as not found", m.verb).
 				WithHints("use nowait, which returns an error for a locked row")}
 		}
-		clause += " " + wait
+		clause += " " + lockWaits[args[1].Name]
 	}
 	m.lock = clause
 	return nil

@@ -62,6 +62,9 @@ func TestRepositories_LockOnMySQL(t *testing.T) {
 	}
 }
 
+// lockWords are what //kanna:lock takes, as its diagnostics name them.
+const lockWords = "update, no-key-update, share, key-share, nowait, or skip-locked"
+
 func TestRepositories_LockMistakes(t *testing.T) {
 	t.Parallel()
 
@@ -77,16 +80,22 @@ func TestRepositories_LockMistakes(t *testing.T) {
 		want    string
 	}{
 		{"no strength", snapshot.PostgreSQL, "\t//kanna:lock\n" + get,
-			at + "error: Get: //kanna:lock takes the strength of the lock, then nowait or skip-locked if any\n" +
-				"  as in //kanna:lock update skip-locked"},
-		{"too many words", snapshot.PostgreSQL, "\t//kanna:lock update nowait now\n" + get,
-			at + "error: Get: //kanna:lock takes the strength of the lock, then nowait or skip-locked if any\n" +
+			at + "error: Get: //kanna:lock needs " + lockWords + "\n  as in //kanna:lock update skip-locked"},
+		{"a word it does not know", snapshot.PostgreSQL, "\t//kanna:lock update nowait now\n" + get,
+			at + `error: Get: //kanna:lock takes ` + lockWords + `, not "now"` + "\n" +
 				"  as in //kanna:lock update skip-locked"},
 		{"a strength misspelled", snapshot.PostgreSQL, "\t//kanna:lock updat\n" + get,
-			at + `error: Get: //kanna:lock takes update, no-key-update, share, or key-share, not "updat"` + "\n" +
-				"  did you mean update?"},
+			at + `error: Get: //kanna:lock takes ` + lockWords + `, not "updat"` + "\n" +
+				`  did you mean "update"?` + "\n  as in //kanna:lock update skip-locked"},
 		{"a wait it does not know", snapshot.PostgreSQL, "\t//kanna:lock update wait=nowait\n" + get,
-			at + `error: Get: //kanna:lock takes nowait or skip-locked after the strength, not "wait=nowait"`},
+			at + `error: Get: //kanna:lock takes ` + lockWords + `, not "wait=nowait"` + "\n" +
+				"  as in //kanna:lock update skip-locked"},
+		{"the strength after the wait", snapshot.PostgreSQL, "\t//kanna:lock nowait update\n" + get,
+			at + "error: Get: //kanna:lock takes the strength of the lock, then nowait or skip-locked if any\n" +
+				"  as in //kanna:lock update skip-locked"},
+		{"two strengths", snapshot.PostgreSQL, "\t//kanna:lock update share\n" + get,
+			at + "error: Get: //kanna:lock takes the strength of the lock, then nowait or skip-locked if any\n" +
+				"  as in //kanna:lock update skip-locked"},
 		{"twice", snapshot.PostgreSQL, "\t//kanna:lock update\n\t//kanna:lock share\n" + get,
 			"repository.go:25:2: error: duplicate //kanna:lock directive\n  the first is on line 24"},
 		{"a verb that reads no whole rows", snapshot.PostgreSQL,
