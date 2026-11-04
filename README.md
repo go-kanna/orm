@@ -474,26 +474,31 @@ o, err := repo.Get(ctx, id, scopes.Orders().
 ```
 
 On PostgreSQL, each relation costs one query, however many rows there are: the call above runs four, one each for
-orders, customers, order lines, and products. A relation through a table between costs two, one for the pairs of keys
-in that table and one for the related rows. The related rows are read by the keys of the rows already read, each key
-once, with `= ANY($1)` on PostgreSQL and `IN (?, ...)` on MySQL, where the keys go a thousand at a time, each thousand
-in a query of its own: the rows related to one row come in one query, in the order of the scope given for them.
+orders, customers, order lines, and products. A relation through a table between costs one too, which joins the table.
+The related rows are read by the keys of the rows already read, each key once and numbered, as a table the query joins:
+`unnest($1::int8[], $2::text[])` on PostgreSQL, each column of the keys cast to the type of its column, and
+`VALUES ROW(?, ?), ...` on MySQL, where the keys go a thousand at a time, each thousand in a query of its own. So the
+database compares the keys as SQL does, whatever Go's `==` says: a key of a column that ignores case, as MySQL's
+default collation does, finds the rows of another case, and `NaN` finds `NaN`. Each related row comes with the number
+of its key, which hands it to the rows of that key, and the rows related to one row come in one query, in the order of
+the scope given for them.
 
 - A slice that was loaded is never nil: it is empty when nothing is related. A nil slice was not loaded.
 - A pointer is nil both when it was not loaded and when nothing is related. Telling the two apart would take a type of
   kanna-orm's in your model.
 - A limit or an offset on the related rows keeps a page of those of each row, as a `LATERAL` subquery would in SQL:
   `WithApprovals(scopes.Approvals().ApprovedAtDesc().IDDesc().Limit(3))` reads the three latest approvals of each
-  order. The rows of each row are numbered with `ROW_NUMBER()` in the order of the scope, ended in the primary key of
-  the related table, or in that key alone when the scope has none, and the query keeps those of the page. A relation
-  through a table between is then read in one query. A page continues by `Offset`: `After` and `Before` make the query
-  return an error. For a table without a primary key, the scope needs an order of its own.
+  order. The rows of each key are numbered with `ROW_NUMBER()` in the order of the scope, ended in the primary key of
+  the related table, or in that key alone when the scope has none, and the query keeps those of the page; the rows of
+  each key are counted apart from those of every other, however the database compares the keys. A page continues by
+  `Offset`: `After` and `Before` make the query return an error. For a table without a primary key, the scope needs an
+  order of its own.
 - A value related by other columns than a foreign key, such as who approved the revision an order is at, is read by a
   query of your own: see [Adding a value related by other columns](#adding-a-value-related-by-other-columns).
 - Relations are read, never written: `Insert` and `Update` write the row's own columns, and a row read back holds
   them alone.
-- A relation by a foreign key of more than one column is read by its columns as a row: `(a, b) IN (SELECT * FROM
-  unnest($1, $2))` on PostgreSQL, and `(a, b) IN ((?, ?), ...)` on MySQL.
+- A relation by a foreign key of more than one column is read as one of one column is: the table of the keys has a
+  column for each, and the query joins them all.
 
 ### Paging
 
@@ -1376,6 +1381,7 @@ the difference is settled when the code is generated.
 | A name, quoted       | `"x"`                                               | `` `x` ``                                    |
 | Parameters           | `$1`, used again where needed                       | `?`, one for each use                        |
 | A list of keys       | `= ANY($1)`                                         | `IN (?, ...)`, split when long               |
+| Relation keys        | `unnest(...)`, joined                               | `VALUES ROW(...)`, joined, split when long   |
 | Reading a write back | `RETURNING`                                         | `LAST_INSERT_ID()` and a `SELECT` by the key |
 | Upsert               | `ON CONFLICT (...)` on the key named                | `ON DUPLICATE KEY UPDATE` on any unique key  |
 | Many rows            | `unnest`, in one statement                          | `VALUES`, split when long                    |

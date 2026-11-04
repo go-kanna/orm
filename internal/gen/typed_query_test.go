@@ -80,6 +80,14 @@ func (fakeDriver) Open(string) (driver.Conn, error) { return fakeConn{}, nil }
 func (fakeConn) Close() error { return nil }
 func (fakeConn) Begin() (driver.Tx, error) { return nil, errors.New("unused") }
 func (fakeConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unused") }
+// CheckNamedValue takes the arrays of the keys of PostgreSQL as pgx does, and leaves the rest to database/sql.
+func (fakeConn) CheckNamedValue(v *driver.NamedValue) error {
+	switch v.Value.(type) {
+	case []int64, []any:
+		return nil
+	}
+	return driver.ErrSkip
+}
 func (fakeConn) ExecContext(_ context.Context, _ string, args []driver.NamedValue) (driver.Result, error) {
 	lastArgs = args
 	return driver.RowsAffected(1), nil
