@@ -504,6 +504,28 @@ type UserRepository interface {
 	}
 }
 
+// A []byte holds the value of a binary column, as a field does, rather than rows of bytes.
+func TestRepositories_QueryOfBytes(t *testing.T) {
+	t.Parallel()
+
+	blob := snapshot.Statement{Columns: []snapshot.OutputColumn{{Name: "blob", Type: "bytea", NotNull: true}}}
+	got, ds := repositories(t, snapshot.PostgreSQL, `
+	GetBlob(ctx context.Context) ([]byte, error)
+	ListBlobs(ctx context.Context) ([][]byte, error)
+`, "-- query: GetBlob\nSELECT blob FROM records LIMIT 1\n\n-- query: ListBlobs\nSELECT blob FROM records\n",
+		map[string]snapshot.Statement{"GetBlob": blob, "ListBlobs": blob})
+	if ds != "" {
+		t.Fatalf("Repositories:\n%s", ds)
+	}
+	want := []string{
+		"OrderRepository.GetBlob query \"SELECT blob FROM records LIMIT 1\" args= scalar []byte{}",
+		"OrderRepository.ListBlobs query \"SELECT blob FROM records\" args= rows []byte{}",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Repositories =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestRepositories_QueryMistakes(t *testing.T) {
 	t.Parallel()
 

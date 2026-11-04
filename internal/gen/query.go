@@ -232,7 +232,8 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 					q.row, m.optional = ptr.Elem(), true
 				}
 			}
-			if s, ok := t.Underlying().(*types.Slice); ok {
+			// A []byte is the value of a binary column, as it is in a field, and not rows of bytes.
+			if s, ok := t.Underlying().(*types.Slice); ok && !isBytes(t) {
 				m.returns, q.row = returnsRows, s.Elem()
 			}
 			if _, ok := q.row.Underlying().(*types.Struct); !ok || holdsColumn(q.row) {
