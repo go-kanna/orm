@@ -1507,8 +1507,8 @@ generated once for PostgreSQL through pgx, in [`example/postgres`](example/postg
 database/sql, in [`example/mysql`](example/mysql): each a module of its own, as a table has one scope type in a module.
 It has scopes of its own, in Go and in SQL, keyset paging with cursors, each kind of relation, an upsert by a natural
 key, many rows written at once, queries written by hand, and rows locked in transactions. `make example` migrates the
-databases of `make db-up`, describes them, regenerates the example, and runs it against each; CI does the same, and
-fails if the output would change.
+databases of `make db-up`, describes them, regenerates the example, checks it with `kanna-orm vet`, and runs it against
+each; CI does the same, and fails if the output would change or vet reports a call.
 
 ## Development
 
@@ -1517,7 +1517,7 @@ make test       # unit tests
 make db-up      # start the PostgreSQL and the MySQL of compose.yaml, on ports 15432 and 13306
 make test-db    # unit tests, and the tests against those databases
 make lint       # golangci-lint
-make example    # migrate and describe the databases of db-up, regenerate the example, and run it
+make example    # migrate and describe the databases of db-up, regenerate the example, vet it, and run it
 make bench      # run the benchmarks in a container next to the PostgreSQL of db-up
 ```
 
