@@ -35,6 +35,8 @@ type repoEmitter struct {
 	// and loading their relations.
 	models  map[string]readModel
 	helpers map[string]tableHelpers
+	// eachNames name the impl.Each of each relation the helpers load, by eachKey.
+	eachNames map[string]string
 }
 
 // tableHelpers name the functions of the implementations reading the whole rows of a table that a scope matches,
@@ -60,7 +62,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 		}
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
-		helpers: map[string]tableHelpers{}}
+		helpers: map[string]tableHelpers{}, eachNames: map[string]string{}}
 	if drv == driverSQL {
 		e.exec, e.query, e.queryRow = "ExecContext", "query", "queryRow"
 	}
@@ -71,6 +73,11 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 			preload: sc.Name("ormPreload" + names[table])}
 		f.Reserve(h.selectRows, h.queryRows, h.preload)
 		e.helpers[table] = h
+		for _, lk := range models[table].links {
+			name := sc.Name("ormEach" + names[table] + strings.Join(lk.field.path, ""))
+			f.Reserve(name)
+			e.eachNames[eachKey(table, lk)] = name
+		}
 	}
 	rows := "ormSQLRows"
 	if drv == driverPgx {
@@ -520,13 +527,17 @@ type scanNames struct {
 	rows, out, row, err, wrap, zero string
 }
 
-// scanRows writes the loop reading the rows of model, each column into the field holding it.
+// scanRows writes the loop reading the rows of model, each column into the field holding it. The row and what Scan
+// writes into are made once, for every row to be read into: a row is set to the zero value before it is read, and
+// copied into out after.
 func (e repoEmitter) scanRows(n scanNames, model string, columns []column, sc gofile.Scope) {
 	zero := cmp.Or(n.zero, "nil")
-	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", n.out, model, n.rows, n.row)
+	dest := sc.Name("dest")
+	e.printf("%[1]s := []%[2]s{}\nvar %[3]s %[2]s\n", n.out, model, n.row)
 	dests, assignments := e.scanTargets(sc, n.row, columns)
-	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn %[5]s, %[4]s\n}\n", n.err, n.rows,
-		strings.Join(dests, ", "), n.wrap, zero)
+	e.printf("%s := []any{%s}\nfor %s.Next() {\n%s = %s{}\n", dest, strings.Join(dests, ", "), n.rows, n.row, model)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s...); %[1]s != nil {\nreturn %[5]s, %[4]s\n}\n", n.err, n.rows, dest,
+		n.wrap, zero)
 	e.assignScanned(assignments)
 	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", n.out, n.row)
 	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn %[4]s, %[3]s\n}\n", n.err, n.rows, n.wrap, zero)
@@ -914,7 +925,7 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 			"defer %[1]s.Close()\n", rows, err, recv, e.query, call, wrap)
 		n := scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}
 		if m.query.scalar {
-			e.scalarRows(n, typ)
+			e.scalarRows(n, typ, sc)
 		} else {
 			e.scanRows(n, typ, m.query.fields, sc)
 		}
@@ -956,7 +967,8 @@ const inChunk = 1000
 
 // preloadNames are the names in a function loading relations.
 type preloadNames struct {
-	ctx, db, rows, q, sub, ok string
+	// table is the table of the rows the function loads relations into.
+	table, ctx, db, rows, q, sub, ok string
 }
 
 // preloadRows writes the function loading into rows of rm the relations a scope loads, each by the keys of the rows.
@@ -965,8 +977,11 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
 	n := preloadNames{
-		ctx: sc.Name("ctx"), db: sc.Name("db"), rows: sc.Name("rows"), q: sc.Name("q"), sub: sc.Name("sub"),
-		ok: sc.Name("ok"),
+		table: rm.target.table, ctx: sc.Name("ctx"), db: sc.Name("db"), rows: sc.Name("rows"), q: sc.Name("q"),
+		sub: sc.Name("sub"), ok: sc.Name("ok"),
+	}
+	for _, lk := range rm.links {
+		e.each(lk, e.eachNames[eachKey(n.table, lk)])
 	}
 	e.printf("// %s loads into %s the relations %s loads, each by the keys of the rows.\n", name, n.rows, n.q)
 	e.printf("func %[1]s(%[2]s %[3]s.Context, %[4]s %[9]s, %[5]s []%[6]s, %[7]s %[8]s[%[6]s]) error {\n",
@@ -1026,8 +1041,11 @@ func (e repoEmitter) pluckRead(m repoMethod, sc gofile.Scope, recv string, sig s
 	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s.Args()...)\n", rows, err, recv, e.query, sig.ctx, text,
 		rd)
 	e.printf("if %s != nil {\nreturn %s, %s\n}\ndefer %s.Close()\n", err, zero, wrap, rows)
-	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[5]s\n", out, typ, rows, row, e.storageType(*column))
-	e.printf("if %[1]s := %[2]s.Scan(&%[3]s); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, rows, row, zero, wrap)
+	none, dest := sc.Name("none"), sc.Name("dest")
+	e.printf("%[1]s := []%[2]s{}\nvar %[3]s, %[4]s %[5]s\n%[6]s := []any{&%[3]s}\nfor %[7]s.Next() {\n%[3]s = %[4]s\n",
+		out, typ, row, none, e.storageType(*column), dest, rows)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s...); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, rows, dest, zero,
+		wrap)
 	value := row
 	if column.nullzero {
 		value = row + ".V"

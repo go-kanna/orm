@@ -157,9 +157,11 @@ func (r OrderRepository) ListIDs(ctx context.Context, s ...scopes.Order) ([]mode
 	}
 	defer rows.Close()
 	out := []model.OrderID{}
+	var row, none model.OrderID
+	dest := []any{&row}
 	for rows.Next() {
-		var row model.OrderID
-		if err := rows.Scan(&row); err != nil {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
 			return nil, r.mapError(fmt.Errorf("read orders.id: %w", err))
 		}
 		out = append(out, row)
@@ -192,9 +194,11 @@ func (r OrderRepository) FindMemo(ctx context.Context, id model.OrderID) (**stri
 	}
 	defer rows.Close()
 	out := []*string{}
+	var row, none *string
+	dest := []any{&row}
 	for rows.Next() {
-		var row *string
-		if err := rows.Scan(&row); err != nil {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
 			return nil, r.mapError(fmt.Errorf("read orders.note: %w", err))
 		}
 		out = append(out, row)
@@ -523,14 +527,15 @@ func (r OrderRepository) DeleteTags(ctx context.Context, s ...scopes.Tag) (int64
 
 func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error) {
 	const q = `SELECT order_id, line_no, sku FROM order_lines WHERE order_id = ? AND line_no = ?`
-	rows, err := ormQueryOrderLines(ctx, r.db, q, orderID, lineNo)
-	if err != nil {
-		return model.OrderLine{}, r.mapError(err)
-	}
-	if len(rows) == 0 {
+	var row model.OrderLine
+	err := r.db.queryRow(ctx, q, orderID, lineNo).Scan(&row.OrderID, &row.LineNo, &row.SKU)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.OrderLine{}, r.mapError(fmt.Errorf("order_lines with order_id %v and line_no %v: %w", orderID, lineNo, orm.ErrNotFound))
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.OrderLine{}, r.mapError(fmt.Errorf(`read order_lines: %w`, err))
+	}
+	return row, nil
 }
 
 func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
@@ -538,14 +543,15 @@ func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (mo
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	const q = "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ? FOR UPDATE"
-	rows, err := ormQueryOrders(ctx, r.db, q, id)
-	if err != nil {
-		return model.Order{}, r.mapError(err)
-	}
-	if len(rows) == 0 {
+	var row model.Order
+	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf(`read orders: %w`, err))
+	}
+	return row, nil
 }
 
 func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (model.Order, error) {
@@ -553,14 +559,15 @@ func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (mod
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	const q = "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ? FOR SHARE"
-	rows, err := ormQueryOrders(ctx, r.db, q, id)
-	if err != nil {
-		return model.Order{}, r.mapError(err)
-	}
-	if len(rows) == 0 {
+	var row model.Order
+	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf(`read orders: %w`, err))
+	}
+	return row, nil
 }
 
 func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
@@ -931,9 +938,11 @@ ORDER BY 1`
 	}
 	defer rows.Close()
 	out := []repository.MonthCount{}
+	var row repository.MonthCount
+	dest := []any{&row.Month, &row.Count}
 	for rows.Next() {
-		var row repository.MonthCount
-		if err := rows.Scan(&row.Month, &row.Count); err != nil {
+		row = repository.MonthCount{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, r.mapError(fmt.Errorf("query MonthCounts: %w", err))
 		}
 		out = append(out, row)
@@ -963,9 +972,11 @@ func (r OrderRepository) ListWithCustomers(ctx context.Context, s ...scopes.Orde
 	}
 	defer rows.Close()
 	out := []repository.OrderWithCustomer{}
+	var row repository.OrderWithCustomer
+	dest := []any{&row.Order.ID, &row.Order.CustomerID, &row.Order.Status, &row.Order.PlacedAt, &row.Order.Memo, &row.Order.Total, &row.Order.Paid, &row.Order.Contact, &row.Order.Receipt, &row.Order.Position, &row.CustomerName}
 	for rows.Next() {
-		var row repository.OrderWithCustomer
-		if err := rows.Scan(&row.Order.ID, &row.Order.CustomerID, &row.Order.Status, &row.Order.PlacedAt, &row.Order.Memo, &row.Order.Total, &row.Order.Paid, &row.Order.Contact, &row.Order.Receipt, &row.Order.Position, &row.CustomerName); err != nil {
+		row = repository.OrderWithCustomer{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, r.mapError(fmt.Errorf("query ListWithCustomers: %w", err))
 		}
 		out = append(out, row)
@@ -1009,9 +1020,11 @@ func (r OrderRepository) FirstPlacedSince(ctx context.Context, since time.Time, 
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("query FirstPlacedSince: %w", err))
 		}
 		out = append(out, row)
@@ -1050,9 +1063,11 @@ func (r OrderRepository) ListRepeated(ctx context.Context, s ...scopes.Order) ([
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, r.mapError(fmt.Errorf("query ListRepeated: %w", err))
 		}
 		out = append(out, row)
@@ -1120,9 +1135,11 @@ func (r OrderRepository) CustomersOf(ctx context.Context, ids []model.OrderID) (
 	}
 	defer rows.Close()
 	out := []int64{}
+	var row, none int64
+	dest := []any{&row}
 	for rows.Next() {
-		var row int64
-		if err := rows.Scan(&row); err != nil {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
 			return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
 		}
 		out = append(out, row)
@@ -1157,9 +1174,11 @@ func ormQueryCustomers(ctx context.Context, db ormDatabase, query string, args .
 	}
 	defer rows.Close()
 	out := []model.Customer{}
+	var row model.Customer
+	dest := []any{&row.ID, &row.Name, &row.Nickname}
 	for rows.Next() {
-		var row model.Customer
-		if err := rows.Scan(&row.ID, &row.Name, &row.Nickname); err != nil {
+		row = model.Customer{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read customers: %w", err)
 		}
 		out = append(out, row)
@@ -1197,9 +1216,11 @@ func ormQueryLineNotes(ctx context.Context, db ormDatabase, query string, args .
 	}
 	defer rows.Close()
 	out := []model.LineNote{}
+	var row model.LineNote
+	dest := []any{&row.OrderID, &row.LineNo, &row.Body}
 	for rows.Next() {
-		var row model.LineNote
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.Body); err != nil {
+		row = model.LineNote{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read line_notes: %w", err)
 		}
 		out = append(out, row)
@@ -1209,6 +1230,9 @@ func ormQueryLineNotes(ctx context.Context, db ormDatabase, query string, args .
 	}
 	return out, nil
 }
+
+// ormEachLineNotesLine reads the rows of order_lines for the keys of rows, as Line loads them.
+var ormEachLineNotesLine = impl.NewEach(impl.MySQL, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id", "line_no"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku"})
 
 // ormPreloadLineNotes loads into rows the relations q loads, each by the keys of the rows.
 func ormPreloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineNote, q impl.Of[model.LineNote]) error {
@@ -1220,28 +1244,27 @@ func ormPreloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineN
 			k0 model.OrderID
 			k1 int
 		}
-		keys := []parentKey{}
+		keys0 := make([]model.OrderID, 0, len(rows))
+		keys1 := make([]int, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
+				keys1 = append(keys1, key.k1)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.OrderLine{}, []int{}
-		for start := 0; start < len(keys); start += 500 {
-			chunk := keys[start:min(start+500, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0, key.k1}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id", "line_no"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku"}, inputs, start)
+		var flat []model.OrderLine
+		var numbers []int
+		for start := 0; start < len(keys0); start += 500 {
+			end := min(start+500, len(keys0))
+			text, args, err := sub.RenderEach(ormEachLineNotesLine, []any{keys0[start:end], keys1[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Line: %w", err)
 			}
@@ -1249,10 +1272,12 @@ func ormPreloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineN
 			if err != nil {
 				return fmt.Errorf("load Line: %w", err)
 			}
+			var number int
+			var row model.OrderLine
+			dest := []any{&number, &row.OrderID, &row.LineNo, &row.SKU}
 			for related.Next() {
-				var number int
-				var row model.OrderLine
-				if err := related.Scan(&number, &row.OrderID, &row.LineNo, &row.SKU); err != nil {
+				row = model.OrderLine{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Line: %w", err)
 				}
@@ -1267,12 +1292,9 @@ func ormPreloadLineNotes(ctx context.Context, db ormDatabase, rows []model.LineN
 		if err := ormPreloadOrderLines(ctx, db, flat, sub); err != nil {
 			return err
 		}
-		grouped := make([][]model.OrderLine, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
-			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
 				found := grouped[owners[i]][0]
 				rows[i].Line = &found
 			}
@@ -1308,9 +1330,11 @@ func ormQueryLineTags(ctx context.Context, db ormDatabase, query string, args ..
 	}
 	defer rows.Close()
 	out := []model.LineTag{}
+	var row model.LineTag
+	dest := []any{&row.OrderID, &row.LineNo, &row.TagID}
 	for rows.Next() {
-		var row model.LineTag
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.TagID); err != nil {
+		row = model.LineTag{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read line_tags: %w", err)
 		}
 		out = append(out, row)
@@ -1321,6 +1345,9 @@ func ormQueryLineTags(ctx context.Context, db ormDatabase, query string, args ..
 	return out, nil
 }
 
+// ormEachLineTagsTag reads the rows of tags for the keys of rows, as Tag loads them.
+var ormEachLineTagsTag = impl.NewEach(impl.MySQL, impl.Batch{Table: "tags", ChildKeys: []string{"name"}}, nil, []string{"name"})
+
 // ormPreloadLineTags loads into rows the relations q loads, each by the keys of the rows.
 func ormPreloadLineTags(ctx context.Context, db ormDatabase, rows []model.LineTag, q impl.Of[model.LineTag]) error {
 	if len(rows) == 0 {
@@ -1328,28 +1355,25 @@ func ormPreloadLineTags(ctx context.Context, db ormDatabase, rows []model.LineTa
 	}
 	if sub, ok := impl.Preloaded[model.Tag](q, "Tag"); ok {
 		type parentKey struct{ k0 string }
-		keys := []parentKey{}
+		keys0 := make([]string, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].TagID}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.Tag{}, []int{}
-		for start := 0; start < len(keys); start += 1000 {
-			chunk := keys[start:min(start+1000, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "tags", ChildKeys: []string{"name"}}, nil, []string{"name"}, inputs, start)
+		var flat []model.Tag
+		var numbers []int
+		for start := 0; start < len(keys0); start += 1000 {
+			end := min(start+1000, len(keys0))
+			text, args, err := sub.RenderEach(ormEachLineTagsTag, []any{keys0[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Tag: %w", err)
 			}
@@ -1357,10 +1381,12 @@ func ormPreloadLineTags(ctx context.Context, db ormDatabase, rows []model.LineTa
 			if err != nil {
 				return fmt.Errorf("load Tag: %w", err)
 			}
+			var number int
+			var row model.Tag
+			dest := []any{&number, &row.Name}
 			for related.Next() {
-				var number int
-				var row model.Tag
-				if err := related.Scan(&number, &row.Name); err != nil {
+				row = model.Tag{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Tag: %w", err)
 				}
@@ -1372,12 +1398,9 @@ func ormPreloadLineTags(ctx context.Context, db ormDatabase, rows []model.LineTa
 				return fmt.Errorf("load Tag: %w", err)
 			}
 		}
-		grouped := make([][]model.Tag, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
-			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
 				found := grouped[owners[i]][0]
 				rows[i].Tag = &found
 			}
@@ -1413,9 +1436,11 @@ func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args 
 	}
 	defer rows.Close()
 	out := []model.OrderLine{}
+	var row model.OrderLine
+	dest := []any{&row.OrderID, &row.LineNo, &row.SKU}
 	for rows.Next() {
-		var row model.OrderLine
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.SKU); err != nil {
+		row = model.OrderLine{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read order_lines: %w", err)
 		}
 		out = append(out, row)
@@ -1426,6 +1451,15 @@ func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args 
 	return out, nil
 }
 
+// ormEachOrderLinesOrder reads the rows of orders for the keys of rows, as Order loads them.
+var ormEachOrderLinesOrder = impl.NewEach(impl.MySQL, impl.Batch{Table: "orders", ChildKeys: []string{"id"}}, []string{`id`}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"})
+
+// ormEachOrderLinesNotes reads the rows of line_notes for the keys of rows, as Notes loads them.
+var ormEachOrderLinesNotes = impl.NewEach(impl.MySQL, impl.Batch{Table: "line_notes", ChildKeys: []string{"order_id", "line_no"}}, nil, []string{"order_id", "line_no", "body"})
+
+// ormEachOrderLinesTags reads the rows of line_tags for the keys of rows, as Tags loads them.
+var ormEachOrderLinesTags = impl.NewEach(impl.MySQL, impl.Batch{Table: "line_tags", ChildKeys: []string{"order_id", "line_no"}}, []string{`order_id`, `line_no`, `tag_id`}, []string{"order_id", "line_no", "tag_id"})
+
 // ormPreloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
 func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q impl.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
@@ -1433,28 +1467,25 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 	}
 	if sub, ok := impl.Preloaded[model.Order](q, "Order"); ok {
 		type parentKey struct{ k0 model.OrderID }
-		keys := []parentKey{}
+		keys0 := make([]model.OrderID, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].OrderID}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.Order{}, []int{}
-		for start := 0; start < len(keys); start += 1000 {
-			chunk := keys[start:min(start+1000, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "orders", ChildKeys: []string{"id"}}, []string{`id`}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, inputs, start)
+		var flat []model.Order
+		var numbers []int
+		for start := 0; start < len(keys0); start += 1000 {
+			end := min(start+1000, len(keys0))
+			text, args, err := sub.RenderEach(ormEachOrderLinesOrder, []any{keys0[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Order: %w", err)
 			}
@@ -1462,10 +1493,12 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			if err != nil {
 				return fmt.Errorf("load Order: %w", err)
 			}
+			var number int
+			var row model.Order
+			dest := []any{&number, &row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 			for related.Next() {
-				var number int
-				var row model.Order
-				if err := related.Scan(&number, &row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+				row = model.Order{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Order: %w", err)
 				}
@@ -1480,12 +1513,9 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 		if err := ormPreloadOrders(ctx, db, flat, sub); err != nil {
 			return err
 		}
-		grouped := make([][]model.Order, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
-			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
 				found := grouped[owners[i]][0]
 				rows[i].Order = &found
 			}
@@ -1496,28 +1526,27 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			k0 model.OrderID
 			k1 int
 		}
-		keys := []parentKey{}
+		keys0 := make([]model.OrderID, 0, len(rows))
+		keys1 := make([]int, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
+				keys1 = append(keys1, key.k1)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.LineNote{}, []int{}
-		for start := 0; start < len(keys); start += 500 {
-			chunk := keys[start:min(start+500, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0, key.k1}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "line_notes", ChildKeys: []string{"order_id", "line_no"}}, nil, []string{"order_id", "line_no", "body"}, inputs, start)
+		var flat []model.LineNote
+		var numbers []int
+		for start := 0; start < len(keys0); start += 500 {
+			end := min(start+500, len(keys0))
+			text, args, err := sub.RenderEach(ormEachOrderLinesNotes, []any{keys0[start:end], keys1[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Notes: %w", err)
 			}
@@ -1525,10 +1554,12 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			if err != nil {
 				return fmt.Errorf("load Notes: %w", err)
 			}
+			var number int
+			var row model.LineNote
+			dest := []any{&number, &row.OrderID, &row.LineNo, &row.Body}
 			for related.Next() {
-				var number int
-				var row model.LineNote
-				if err := related.Scan(&number, &row.OrderID, &row.LineNo, &row.Body); err != nil {
+				row = model.LineNote{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Notes: %w", err)
 				}
@@ -1543,10 +1574,7 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 		if err := ormPreloadLineNotes(ctx, db, flat, sub); err != nil {
 			return err
 		}
-		grouped := make([][]model.LineNote, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
 			rows[i].Notes = []model.LineNote{}
 			if owners[i] >= 0 && grouped[owners[i]] != nil {
@@ -1559,28 +1587,27 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			k0 model.OrderID
 			k1 int
 		}
-		keys := []parentKey{}
+		keys0 := make([]model.OrderID, 0, len(rows))
+		keys1 := make([]int, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].OrderID, rows[i].LineNo}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
+				keys1 = append(keys1, key.k1)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.LineTag{}, []int{}
-		for start := 0; start < len(keys); start += 500 {
-			chunk := keys[start:min(start+500, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0, key.k1}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "line_tags", ChildKeys: []string{"order_id", "line_no"}}, []string{`order_id`, `line_no`, `tag_id`}, []string{"order_id", "line_no", "tag_id"}, inputs, start)
+		var flat []model.LineTag
+		var numbers []int
+		for start := 0; start < len(keys0); start += 500 {
+			end := min(start+500, len(keys0))
+			text, args, err := sub.RenderEach(ormEachOrderLinesTags, []any{keys0[start:end], keys1[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1588,10 +1615,12 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
+			var number int
+			var row model.LineTag
+			dest := []any{&number, &row.OrderID, &row.LineNo, &row.TagID}
 			for related.Next() {
-				var number int
-				var row model.LineTag
-				if err := related.Scan(&number, &row.OrderID, &row.LineNo, &row.TagID); err != nil {
+				row = model.LineTag{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Tags: %w", err)
 				}
@@ -1606,10 +1635,7 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 		if err := ormPreloadLineTags(ctx, db, flat, sub); err != nil {
 			return err
 		}
-		grouped := make([][]model.LineTag, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
 			rows[i].Tags = []model.LineTag{}
 			if owners[i] >= 0 && grouped[owners[i]] != nil {
@@ -1647,9 +1673,11 @@ func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...a
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
 		out = append(out, row)
@@ -1660,6 +1688,15 @@ func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...a
 	return out, nil
 }
 
+// ormEachOrdersCustomer reads the rows of customers for the keys of rows, as Customer loads them.
+var ormEachOrdersCustomer = impl.NewEach(impl.MySQL, impl.Batch{Table: "customers", ChildKeys: []string{"id"}}, []string{`id`}, []string{"id", "name", "nickname"})
+
+// ormEachOrdersLines reads the rows of order_lines for the keys of rows, as Lines loads them.
+var ormEachOrdersLines = impl.NewEach(impl.MySQL, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku"})
+
+// ormEachOrdersTags reads the rows of tags for the keys of rows, as Tags loads them.
+var ormEachOrdersTags = impl.NewEach(impl.MySQL, impl.Batch{Table: "tags", Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}}, nil, []string{"name"})
+
 // ormPreloadOrders loads into rows the relations q loads, each by the keys of the rows.
 func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
@@ -1667,28 +1704,25 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.Customer](q, "Customer"); ok {
 		type parentKey struct{ k0 int64 }
-		keys := []parentKey{}
+		keys0 := make([]int64, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].CustomerID}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.Customer{}, []int{}
-		for start := 0; start < len(keys); start += 1000 {
-			chunk := keys[start:min(start+1000, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "customers", ChildKeys: []string{"id"}}, []string{`id`}, []string{"id", "name", "nickname"}, inputs, start)
+		var flat []model.Customer
+		var numbers []int
+		for start := 0; start < len(keys0); start += 1000 {
+			end := min(start+1000, len(keys0))
+			text, args, err := sub.RenderEach(ormEachOrdersCustomer, []any{keys0[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Customer: %w", err)
 			}
@@ -1696,10 +1730,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 			if err != nil {
 				return fmt.Errorf("load Customer: %w", err)
 			}
+			var number int
+			var row model.Customer
+			dest := []any{&number, &row.ID, &row.Name, &row.Nickname}
 			for related.Next() {
-				var number int
-				var row model.Customer
-				if err := related.Scan(&number, &row.ID, &row.Name, &row.Nickname); err != nil {
+				row = model.Customer{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Customer: %w", err)
 				}
@@ -1711,12 +1747,9 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Customer: %w", err)
 			}
 		}
-		grouped := make([][]model.Customer, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
-			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
 				found := grouped[owners[i]][0]
 				rows[i].Customer = &found
 			}
@@ -1724,28 +1757,25 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 model.OrderID }
-		keys := []parentKey{}
+		keys0 := make([]model.OrderID, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].ID}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.OrderLine{}, []int{}
-		for start := 0; start < len(keys); start += 1000 {
-			chunk := keys[start:min(start+1000, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku"}, inputs, start)
+		var flat []model.OrderLine
+		var numbers []int
+		for start := 0; start < len(keys0); start += 1000 {
+			end := min(start+1000, len(keys0))
+			text, args, err := sub.RenderEach(ormEachOrdersLines, []any{keys0[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -1753,10 +1783,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
+			var number int
+			var row model.OrderLine
+			dest := []any{&number, &row.OrderID, &row.LineNo, &row.SKU}
 			for related.Next() {
-				var number int
-				var row model.OrderLine
-				if err := related.Scan(&number, &row.OrderID, &row.LineNo, &row.SKU); err != nil {
+				row = model.OrderLine{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Lines: %w", err)
 				}
@@ -1771,10 +1803,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		if err := ormPreloadOrderLines(ctx, db, flat, sub); err != nil {
 			return err
 		}
-		grouped := make([][]model.OrderLine, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
 			rows[i].Lines = []model.OrderLine{}
 			if owners[i] >= 0 && grouped[owners[i]] != nil {
@@ -1784,28 +1813,25 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
 		type parentKey struct{ k0 model.OrderID }
-		keys := []parentKey{}
+		keys0 := make([]model.OrderID, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].ID}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.Tag{}, []int{}
-		for start := 0; start < len(keys); start += 1000 {
-			chunk := keys[start:min(start+1000, len(keys))]
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
-				inputs[i] = []any{key.k0}
-			}
-			text, args, err := sub.RenderEach(impl.MySQL, impl.Batch{Table: "tags", Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}}, nil, []string{"name"}, inputs, start)
+		var flat []model.Tag
+		var numbers []int
+		for start := 0; start < len(keys0); start += 1000 {
+			end := min(start+1000, len(keys0))
+			text, args, err := sub.RenderEach(ormEachOrdersTags, []any{keys0[start:end]}, start)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1813,10 +1839,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
+			var number int
+			var row model.Tag
+			dest := []any{&number, &row.Name}
 			for related.Next() {
-				var number int
-				var row model.Tag
-				if err := related.Scan(&number, &row.Name); err != nil {
+				row = model.Tag{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Tags: %w", err)
 				}
@@ -1828,10 +1856,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Tags: %w", err)
 			}
 		}
-		grouped := make([][]model.Tag, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
 			rows[i].Tags = []model.Tag{}
 			if owners[i] >= 0 && grouped[owners[i]] != nil {
@@ -1866,9 +1891,11 @@ func ormQueryTags(ctx context.Context, db ormDatabase, query string, args ...any
 	}
 	defer rows.Close()
 	out := []model.Tag{}
+	var row model.Tag
+	dest := []any{&row.Name}
 	for rows.Next() {
-		var row model.Tag
-		if err := rows.Scan(&row.Name); err != nil {
+		row = model.Tag{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read tags: %w", err)
 		}
 		out = append(out, row)

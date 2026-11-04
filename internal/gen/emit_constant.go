@@ -82,28 +82,49 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 		if m.lock != "" {
 			query += " " + m.lock
 		}
+		e.printf("const %s = %s\n", q, goString(query))
+		if m.verb != verbList {
+			e.constantRow(m, sc, recv, sig, call, err, notFound)
+			return true
+		}
 		read := e.helpers[m.target.table].queryRows + "(" + strings.Join(append([]string{sig.ctx, recv + ".db", q},
 			args...), ", ") + ")"
-		e.printf("const %s = %s\n", q, goString(query))
-		if m.verb == verbList && sig.recv == "" {
+		if sig.recv == "" {
 			e.printf("return %s\n", read)
 			return true
 		}
-		rows, model := sc.Name("rows"), types.TypeString(m.model, e.f.Qualifier)
-		zero := model + "{}"
-		if m.verb == verbList || m.optional {
-			zero = "nil"
-		}
-		e.printf("%[1]s, %[2]s := %[3]s\nif %[2]s != nil {\nreturn %[4]s, %[5]s\n}\n", rows, err, read, zero,
+		rows := sc.Name("rows")
+		e.printf("%[1]s, %[2]s := %[3]s\nif %[2]s != nil {\nreturn nil, %[4]s\n}\nreturn %[1]s, nil\n", rows, err, read,
 			sig.mapped(err))
-		switch {
-		case m.verb == verbList:
-			e.printf("return %s, nil\n", rows)
-		case m.optional:
-			e.printf("if len(%[1]s) == 0 {\nreturn nil, nil\n}\nreturn &%[1]s[0], nil\n", rows)
-		default:
-			e.printf("if len(%[1]s) == 0 {\nreturn %[2]s, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, zero, notFound())
-		}
 	}
 	return true
+}
+
+// constantRow writes the rest of the body of m, a Get, a Find, or a First of a query of its own, its arguments those
+// of call: the one row it reads, as a query written by hand reads one, by QueryRow, its error into err.
+func (e repoEmitter) constantRow(m repoMethod, sc gofile.Scope, recv string, sig signature, call, err string,
+	notFound func() string,
+) {
+	model := types.TypeString(m.model, e.f.Qualifier)
+	row := sc.Name("row")
+	e.printf("var %s %s\n", row, model)
+	dests, assignments := e.scanTargets(sc, row, e.models[m.target.table].columns)
+	e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).Scan(%[5]s)\n", err, recv, e.queryRow, call, strings.Join(dests, ", "))
+	zero := model + "{}"
+	if m.optional {
+		zero = "nil"
+		e.printf("if %s.Is(%s, %s.ErrNoRows) {\nreturn nil, nil\n}\n", e.f.Import("errors", "errors"), err,
+			e.driverPkg())
+	} else {
+		e.printf("if %s.Is(%s, %s.ErrNoRows) {\nreturn %s, %s\n}\n", e.f.Import("errors", "errors"), err,
+			e.driverPkg(), zero, notFound())
+	}
+	e.printf("if %s != nil {\nreturn %s, %s\n}\n", err, zero, sig.mapped(e.fmtPkg()+".Errorf("+
+		goString("read "+m.target.table+": %w")+", "+err+")"))
+	e.assignScanned(assignments)
+	if m.optional {
+		e.printf("return &%s, nil\n", row)
+		return
+	}
+	e.printf("return %s, nil\n", row)
 }

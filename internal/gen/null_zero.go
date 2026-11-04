@@ -45,10 +45,14 @@ func (e repoEmitter) assignScanned(assignments []string) {
 	}
 }
 
-func (e repoEmitter) scalarRows(n scanNames, typ string) {
-	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", n.out, typ, n.rows, n.row)
-	e.printf("if %[1]s := %[2]s.Scan(&%[3]s); %[1]s != nil {\nreturn nil, %[4]s\n}\n", n.err, n.rows,
-		n.row, n.wrap)
+// scalarRows writes the loop reading rows of one column of typ, as scanRows does rows of a struct: into one value, set
+// to its zero value before each row.
+func (e repoEmitter) scalarRows(n scanNames, typ string, sc gofile.Scope) {
+	none, dest := sc.Name("none"), sc.Name("dest")
+	e.printf("%[1]s := []%[2]s{}\nvar %[3]s, %[4]s %[2]s\n%[5]s := []any{&%[3]s}\nfor %[6]s.Next() {\n%[3]s = %[4]s\n",
+		n.out, typ, n.row, none, dest, n.rows)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s...); %[1]s != nil {\nreturn nil, %[4]s\n}\n", n.err, n.rows, dest,
+		n.wrap)
 	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", n.out, n.row)
 	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn nil, %[3]s\n}\n", n.err, n.rows, n.wrap)
 }

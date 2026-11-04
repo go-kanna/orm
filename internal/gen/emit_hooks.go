@@ -22,7 +22,7 @@ func (e repoEmitter) hooks() {
 	pgx := e.f.Import("github.com/jackc/pgx/v5", "pgx")
 	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) (%s.Rows, error) {\n", db, e.query, ctx, pgx)
 	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nrows,err := d.dbtx.%s(ctx,query,args...)\n", e.query)
-	e.printf("traced,err := trace.Rows(rows,err)\nif err != nil { return nil,err }\n"+
+	e.printf("traced,err := trace.Rows(rows,err)\nif err != nil { return nil,err }\nif trace == nil { return rows,nil }\n"+
 		"return %s{Rows:rows, traced:traced},nil\n}\n\n", e.rows)
 	e.printf("// %[1]s is pgx.Rows read through traced, for the hooks to see the rows read to the end.\n"+
 		"type %[1]s struct { %[2]s.Rows; traced %[3]s }\n"+
