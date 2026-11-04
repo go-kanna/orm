@@ -431,15 +431,18 @@ func TestRepositories_TableMistakes(t *testing.T) {
 func TestRepositories_TableOfItsName(t *testing.T) {
 	t.Parallel()
 
-	for _, tt := range []struct{ name, repository, want string }{
-		{"a name of no table", "CheckoutRepository", "repository.go:9:2: error: Delete: nothing tells the table it " +
-			"reads or writes\n  give it the scopes of the table, as in Delete(ctx context.Context, id model.OrderID) " +
-			"error, or DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error) or ([]model.Order, error)\n" +
+	const deleteMethod = "\tDelete(ctx context.Context, id int64) error\n"
+	for _, tt := range []struct{ name, repository, methods, want string }{
+		{"a name of no table", "CheckoutRepository", deleteMethod, "repository.go:9:2: error: Delete: nothing tells " +
+			"the table it reads or writes\n  give it the scopes of the table, as in Delete(ctx context.Context, " +
+			"id model.OrderID) error, or DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error) or " +
+			"([]model.Order, error)\n" +
 			"  or name the repository after the model of the table, as OrderRepository is after Order of orders\n" +
 			"  or name the table of the methods that tell none: //kanna:repository table=<table>"},
-		{"a table of no scope type", "AuditRepository", "repository.go:7:1: error: AuditRepository: no scope type is " +
-			"declared for audits, which AuditRepository is named after\n  declare one where audits are queried: " +
-			"//kanna:scope table=audits"},
+		// told once, however many methods tell no table
+		{"a table of no scope type", "AuditRepository", deleteMethod + "\tCount(ctx context.Context) (int64, error)\n",
+			"repository.go:7:1: error: AuditRepository: no scope type is declared for audits, which AuditRepository " +
+				"is named after\n  declare one where audits are queried: //kanna:scope table=audits"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -454,8 +457,7 @@ var _ context.Context
 
 //kanna:repository
 type `+tt.repository+` interface {
-	Delete(ctx context.Context, id int64) error
-}
+`+tt.methods+`}
 `)
 			set, err := packages.Load([]string{"./repository"}, packages.Config{Dir: dir})
 			if err != nil {
