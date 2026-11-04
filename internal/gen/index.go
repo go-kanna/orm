@@ -89,8 +89,13 @@ func readIndex(dir string, tables map[string]snapshot.Table) ([]indexed, error) 
 		hasTable := func(table string) bool { _, ok := tables[table]; return ok }
 		for _, m := range decls.Models {
 			for _, im := range decl.Imply(m, root, modPath, hasTable) {
+				// A scope type implied of a model of its own package is named apart from the model, as OrderScope.
+				name := im.Model
+				if im.ModelPath == pkgPath {
+					name += "Scope"
+				}
 				idx = append(idx, indexed{
-					pkgPath: pkgPath, pkgName: f.Name.Name, name: im.Model,
+					pkgPath: pkgPath, pkgName: f.Name.Name, name: name,
 					modelPath: im.ModelPath, modelName: im.Model, table: im.Table, pos: im.Pos, implied: true,
 				})
 			}
@@ -163,8 +168,9 @@ func importedPackages(pkgs []*packages.Package) map[string]*types.Package {
 func pendingScopeNames(idx []indexed) map[string]bool {
 	names := map[string]bool{}
 	for _, e := range idx {
-		names[e.pkgPath+"."+e.name+"Changes"] = true
-		names[e.pkgPath+"."+e.name+"ChangeSet"] = true
+		set, fn := changeSetNames(e.name)
+		names[e.pkgPath+"."+fn] = true
+		names[e.pkgPath+"."+set] = true
 		if e.implied {
 			names[e.pkgPath+"."+e.name] = true
 			if fn, ok := funcName(e.table); ok {

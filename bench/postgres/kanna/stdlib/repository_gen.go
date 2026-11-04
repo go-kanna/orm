@@ -128,7 +128,7 @@ var _ repository.OrderRepository = OrderRepository{}
 
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
 	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = $1`
-	rows, err := queryOrders(ctx, r.db, q, id)
+	rows, err := ormQueryOrders(ctx, r.db, q, id)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -144,7 +144,7 @@ func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.O
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
-	return selectOrders(ctx, r.db, q, "")
+	return ormSelectOrders(ctx, r.db, q, "")
 }
 
 func (r OrderRepository) InsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error) {
@@ -181,13 +181,13 @@ RETURNING id, order_id, sku, quantity`
 	return out, nil
 }
 
-// selectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+// ormSelectOrderLines reads the rows of order_lines that q matches, in its order. lock is the locking clause of the query, if any.
+func ormSelectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryOrderLines(ctx, db, `SELECT id, order_id, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryOrderLines(ctx, db, `SELECT id, order_id, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -197,8 +197,8 @@ func selectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.Order
 	return out, nil
 }
 
-// queryOrderLines runs query, a query of the rows of order_lines, and reads them.
-func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
+// ormQueryOrderLines runs query, a query of the rows of order_lines, and reads them.
+func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
@@ -218,27 +218,27 @@ func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...
 	return out, nil
 }
 
-// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
+// ormSelectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func ormSelectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
 	if rd.Reversed() {
 		slices.Reverse(out)
 	}
-	if err := preloadOrders(ctx, db, out, q); err != nil {
+	if err := ormPreloadOrders(ctx, db, out, q); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// queryOrders runs query, a query of the rows of orders, and reads them.
-func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
+// ormQueryOrders runs query, a query of the rows of orders, and reads them.
+func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
@@ -258,8 +258,8 @@ func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any)
 	return out, nil
 }
 
-// preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
+// ormPreloadOrders loads into rows the relations q loads, each by the keys of the rows.
+func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -318,7 +318,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[int64][]model.OrderLine{}
-		related, err := selectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
+		related, err := ormSelectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
 		if err != nil {
 			return err
 		}

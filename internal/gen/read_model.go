@@ -90,7 +90,8 @@ func loadable(model *types.Named, lk link) (diag.Diag, bool) {
 	return diag.Diag{}, true
 }
 
-// readNames names the functions reading the rows of each of models and loading their relations, by table.
+// readNames names the tables of models as the functions reading their rows and loading their relations end in: as
+// the function returning the scope is named, or else after the scope type.
 func readNames(models map[string]readModel) map[string]string {
 	names := map[string]string{}
 	for table, rm := range models {

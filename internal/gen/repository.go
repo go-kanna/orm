@@ -224,6 +224,10 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 		ds      []diag.Diag
 		methods []string
 	)
+	if at, ok := r.declared["DBTX"]; ok {
+		ds = append(ds, diag.Errorf(at, "DBTX is declared already, and kanna-orm writes it as what the repositories "+
+			"run on").WithHints("name yours otherwise"))
+	}
 	for _, file := range r.pkg.Syntax {
 		if ast.IsGenerated(file) {
 			continue
@@ -250,6 +254,12 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
 	_, manualConstructor := r.declared["New"+repo.name]
 	repo.publicConstructor = !manualConstructor
+	for _, name := range []string{repo.implementation(), repo.constructor()} {
+		if at, ok := r.declared[name]; ok {
+			return repo, []diag.Diag{diag.Errorf(at, "%s is declared already, and kanna-orm writes it for %s", name,
+				repo.name).WithHints("name yours otherwise")}
+		}
+	}
 	if r.local && !ts.Name.IsExported() {
 		return repo, []diag.Diag{diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
 			repo.name)}

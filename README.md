@@ -245,7 +245,8 @@ to one table: the scope type is the only place where the two are tied together.
 models that a table of the snapshot is named after: the struct's name in snake case with its last word made plural, as
 `order_lines` for `OrderLine`, `categories` for `Category`, and `people` for `Person`. `model-package=` takes an import
 path of the module or a path relative to the file, and more than one separated by commas, as
-`model-package=../model,../billing`. A struct no table is named after, such as a value type, gets none, and neither does
+`model-package=../model,../billing`. `model-package=.` names the directive's own package, where a scope type is named
+after its model and `Scope`, as `OrderScope`, apart from the model. A struct no table is named after, such as a value type, gets none, and neither does
 a table no struct is named after, such as one between two others. So a struct of those packages becomes a model once a
 table of its name is made: keep the structs that are not, such as those a query returns, in a package of their own.
 Methods of your own are written on the type as on any other, in another file of the package. One narrows the scope
@@ -550,7 +551,7 @@ Use `-destination .` to keep the interface and its implementation in the same pa
 `Category` generates an unexported `category`, a `newCategory(db DBTX, opts ...option.Option) category` constructor,
 and value receiver methods. It also generates `NewCategory(db DBTX, opts ...option.Option) Category` unless you
 already declare `NewCategory` yourself, which can call `newCategory`.
-Keep scope types in a separate package; their methods go into `scopes_gen.go`.
+The scope types may be in the package too: see [One package](#one-package).
 
 Declare `Bind(db DBTX) Category` to generate transaction binding, in either package. The argument may instead be a concrete database or
 transaction type implementing DBTX, or a type exposing a parameterless `DBTX()` method that returns one, such as
@@ -641,6 +642,39 @@ func NewOrder(db DBTX, opts ...option.Option) Order
 
 A transaction is begun and committed as it would be without kanna-orm: give the constructor the `pgx.Tx`, or the
 `*sql.Tx`.
+
+### One package
+
+The models, their scope types, the repositories, and their implementations can all be one package. This document
+shows a package for each, and one package changes no more than the names below.
+
+```go
+package store
+
+//go:generate go tool kanna-orm -destination .
+
+//kanna:scopes model-package=.
+
+type Order struct {
+	ID     int64
+	Status string
+}
+
+//kanna:repository
+type OrderRepository interface {
+	List(ctx context.Context, s ...OrderScope) ([]Order, error)
+	UpdateStatus(ctx context.Context, id int64, c OrderChangeSet) error
+}
+```
+
+- A scope type `//kanna:scopes` implies of a model of its own package is named after the model and `Scope`, as
+  `OrderScope`. The function returning it is named after the table as ever, `Orders()`, and its change set after the
+  scope type but for its `Scope`, `OrderChangeSet` and `OrderChanges()`.
+- One run writes both `scopes_gen.go` and `repository_gen.go`, each avoiding what the other declares.
+- One `.sql` file may hold the package's `-- scope:` and `-- query:` statements both.
+- A name kanna-orm writes that code written by hand sees, as `DBTX`, `newOrderRepository`, `Orders`, or
+  `OrderChangeSet`, stops generation when the package declares it already, but for a `NewOrderRepository` of your own,
+  which replaces the generated one. The helpers it writes for itself start with `orm` and take the first name free.
 
 ### Methods
 
@@ -945,7 +979,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 ### Updating selected columns
 
-Each scope generates a typed change set. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
+Each scope generates a typed change set, named after the scope type but for a `Scope` it ends in, so that `OrderScope` has `OrderChangeSet` too; two scope types of a package whose change sets would share the name stop generation. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
 
 ```go
 changes := scopes.CustomerChanges().

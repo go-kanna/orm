@@ -335,8 +335,9 @@ func SnakeCase(name string) string {
 	return b.String()
 }
 
-// structs names the exported structs the Go files in dir declare, but its tests, which a //kanna:scopes directive may
-// imply scope types for.
+// structs names the exported structs the Go files in dir declare, which a //kanna:scopes directive may imply scope
+// types for: neither those of its tests, nor those of the files kanna-orm writes there, nor the //kanna:scope types
+// written there by hand, which share the directory with their models when the scope types do.
 func structs(dir string) []string {
 	files, _ := filepath.Glob(filepath.Join(dir, "*.go"))
 	var names []string
@@ -345,10 +346,14 @@ func structs(dir string) []string {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
+		f, err := parser.ParseFile(fset, file, nil, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			continue // the build of its own package reports it
 		}
+		if slices.Contains(outputs, filepath.Base(file)) && ast.IsGenerated(f) {
+			continue
+		}
+		decls, _ := Read(fset, f) // the run of the package reports what is wrong with them
 		for _, node := range f.Decls {
 			gd, ok := node.(*ast.GenDecl)
 			if !ok || gd.Tok != token.TYPE {
@@ -356,7 +361,8 @@ func structs(dir string) []string {
 			}
 			for _, spec := range gd.Specs {
 				ts, ok := spec.(*ast.TypeSpec)
-				if !ok || !ts.Name.IsExported() || ts.TypeParams != nil || ts.Assign.IsValid() {
+				if !ok || !ts.Name.IsExported() || ts.TypeParams != nil || ts.Assign.IsValid() ||
+					slices.ContainsFunc(decls.Scopes, func(sc Scope) bool { return sc.Spec == ts }) {
 					continue
 				}
 				if _, ok := ts.Type.(*ast.StructType); ok {
@@ -367,3 +373,6 @@ func structs(dir string) []string {
 	}
 	return names
 }
+
+// outputs are the files kanna-orm writes into a package.
+var outputs = []string{"scopes_gen.go", "repository_gen.go"}

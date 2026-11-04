@@ -125,7 +125,7 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, custo
 
 func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
 	const q = `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`
-	rows, err := queryCustomers(ctx, r.db, q, id)
+	rows, err := ormQueryCustomers(ctx, r.db, q, id)
 	if err != nil {
 		return model.Customer{}, err
 	}
@@ -208,7 +208,7 @@ func (r Product) List(ctx context.Context, s ...scopes.Product) ([]model.Product
 		qs[i] = impl.Of[model.Product](x.Of())
 	}
 	q := impl.Combine(qs...)
-	return selectProducts(ctx, r.db, q, "")
+	return ormSelectProducts(ctx, r.db, q, "")
 }
 
 func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
@@ -321,7 +321,7 @@ func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*
 	if err := q.Unpaged("Find"); err != nil {
 		return nil, r.mapError(err)
 	}
-	rows, err := selectOrders(ctx, r.db, q, "")
+	rows, err := ormSelectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -341,7 +341,7 @@ func (r Order) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (mo
 	if err := q.Unpaged("Get"); err != nil {
 		return model.Order{}, r.mapError(err)
 	}
-	rows, err := selectOrders(ctx, r.db, q, "")
+	rows, err := ormSelectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return model.Order{}, r.mapError(err)
 	}
@@ -385,7 +385,7 @@ func (r Order) List(ctx context.Context, s ...scopes.Order) ([]model.Order, erro
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
-	rows, err := selectOrders(ctx, r.db, q, "")
+	rows, err := ormSelectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -595,7 +595,7 @@ func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ? FOR UPDATE`
-	rows, err := queryOrders(ctx, r.db, q, id)
+	rows, err := ormQueryOrders(ctx, r.db, q, id)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -615,7 +615,7 @@ func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.
 	}
 	q := impl.Combine(qs...)
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
-	rows, err := selectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
+	rows, err := ormSelectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -659,13 +659,13 @@ WHERE id = ?`
 	return nil
 }
 
-// selectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
-func selectApprovals(ctx context.Context, db ormDatabase, q impl.Of[model.Approval], lock string) ([]model.Approval, error) {
+// ormSelectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
+func ormSelectApprovals(ctx context.Context, db ormDatabase, q impl.Of[model.Approval], lock string) ([]model.Approval, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryApprovals(ctx, db, `SELECT id, order_id, revision, approver, approved_at, revoked_at FROM approvals`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryApprovals(ctx, db, `SELECT id, order_id, revision, approver, approved_at, revoked_at FROM approvals`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -675,8 +675,8 @@ func selectApprovals(ctx context.Context, db ormDatabase, q impl.Of[model.Approv
 	return out, nil
 }
 
-// queryApprovals runs query, a query of the rows of approvals, and reads them.
-func queryApprovals(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Approval, error) {
+// ormQueryApprovals runs query, a query of the rows of approvals, and reads them.
+func ormQueryApprovals(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Approval, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read approvals: %w", err)
@@ -696,13 +696,13 @@ func queryApprovals(ctx context.Context, db ormDatabase, query string, args ...a
 	return out, nil
 }
 
-// selectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
-func selectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Customer], lock string) ([]model.Customer, error) {
+// ormSelectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
+func ormSelectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryCustomers(ctx, db, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -712,8 +712,8 @@ func selectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Custom
 	return out, nil
 }
 
-// queryCustomers runs query, a query of the rows of customers, and reads them.
-func queryCustomers(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Customer, error) {
+// ormQueryCustomers runs query, a query of the rows of customers, and reads them.
+func ormQueryCustomers(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Customer, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
@@ -733,27 +733,27 @@ func queryCustomers(ctx context.Context, db ormDatabase, query string, args ...a
 	return out, nil
 }
 
-// selectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+// ormSelectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func ormSelectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`order_id`, `line_no`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryOrderLines(ctx, db, `SELECT order_id, line_no, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryOrderLines(ctx, db, `SELECT order_id, line_no, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
 	if rd.Reversed() {
 		slices.Reverse(out)
 	}
-	if err := preloadOrderLines(ctx, db, out, q); err != nil {
+	if err := ormPreloadOrderLines(ctx, db, out, q); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// queryOrderLines runs query, a query of the rows of order_lines, and reads them.
-func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
+// ormQueryOrderLines runs query, a query of the rows of order_lines, and reads them.
+func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
@@ -773,8 +773,8 @@ func queryOrderLines(ctx context.Context, db ormDatabase, query string, args ...
 	return out, nil
 }
 
-// preloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q impl.Of[model.OrderLine]) error {
+// ormPreloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
+func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q impl.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -789,7 +789,7 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 		}
 		byKey := map[model.SKU]model.Product{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectProducts(ctx, db, sub.Where(`sku IN (`, impl.List(chunk), `)`), "")
+			related, err := ormSelectProducts(ctx, db, sub.Where(`sku IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -806,27 +806,27 @@ func preloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLi
 	return nil
 }
 
-// selectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func selectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
+// ormSelectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func ormSelectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
 	if rd.Reversed() {
 		slices.Reverse(out)
 	}
-	if err := preloadOrders(ctx, db, out, q); err != nil {
+	if err := ormPreloadOrders(ctx, db, out, q); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// queryOrders runs query, a query of the rows of orders, and reads them.
-func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
+// ormQueryOrders runs query, a query of the rows of orders, and reads them.
+func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
@@ -848,8 +848,8 @@ func queryOrders(ctx context.Context, db ormDatabase, query string, args ...any)
 	return out, nil
 }
 
-// preloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
+// ormPreloadOrders loads into rows the relations q loads, each by the keys of the rows.
+func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -939,7 +939,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
-		if err := preloadOrderLines(ctx, db, flat, sub); err != nil {
+		if err := ormPreloadOrderLines(ctx, db, flat, sub); err != nil {
 			return err
 		}
 		grouped := map[parentKey][]model.OrderLine{}
@@ -1010,7 +1010,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 		}
 		byKey := map[model.OrderID][]model.Approval{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectApprovals(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
+			related, err := ormSelectApprovals(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1036,7 +1036,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 		}
 		byKey := map[model.CustomerID]model.Customer{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectCustomers(ctx, db, sub.Where(`id IN (`, impl.List(chunk), `)`), "")
+			related, err := ormSelectCustomers(ctx, db, sub.Where(`id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1057,7 +1057,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 		}
 		byKey := map[model.OrderID][]model.OrderLine{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectOrderLines(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
+			related, err := ormSelectOrderLines(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1079,7 +1079,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 		}
 		byKey := map[model.OrderID]model.Shipment{}
 		for chunk := range slices.Chunk(keys, 1000) {
-			related, err := selectShipments(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
+			related, err := ormSelectShipments(ctx, db, sub.Where(`order_id IN (`, impl.List(chunk), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1125,7 +1125,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 			if err := pairs.Err(); err != nil {
 				return fmt.Errorf("read order_tags: %w", err)
 			}
-			related, err := selectTags(ctx, db, sub.Where(`name IN (`, impl.List(targetKeys), `)`), "")
+			related, err := ormSelectTags(ctx, db, sub.Where(`name IN (`, impl.List(targetKeys), `)`), "")
 			if err != nil {
 				return err
 			}
@@ -1145,13 +1145,13 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 	return nil
 }
 
-// selectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
-func selectProducts(ctx context.Context, db ormDatabase, q impl.Of[model.Product], lock string) ([]model.Product, error) {
+// ormSelectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
+func ormSelectProducts(ctx context.Context, db ormDatabase, q impl.Of[model.Product], lock string) ([]model.Product, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`sku`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryProducts(ctx, db, `SELECT sku, name, price, currency FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryProducts(ctx, db, `SELECT sku, name, price, currency FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,8 +1161,8 @@ func selectProducts(ctx context.Context, db ormDatabase, q impl.Of[model.Product
 	return out, nil
 }
 
-// queryProducts runs query, a query of the rows of products, and reads them.
-func queryProducts(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Product, error) {
+// ormQueryProducts runs query, a query of the rows of products, and reads them.
+func ormQueryProducts(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Product, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read products: %w", err)
@@ -1182,13 +1182,13 @@ func queryProducts(ctx context.Context, db ormDatabase, query string, args ...an
 	return out, nil
 }
 
-// selectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
-func selectShipments(ctx context.Context, db ormDatabase, q impl.Of[model.Shipment], lock string) ([]model.Shipment, error) {
+// ormSelectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
+func ormSelectShipments(ctx context.Context, db ormDatabase, q impl.Of[model.Shipment], lock string) ([]model.Shipment, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`order_id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryShipments(ctx, db, `SELECT order_id, carrier, tracking FROM shipments`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryShipments(ctx, db, `SELECT order_id, carrier, tracking FROM shipments`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1198,8 +1198,8 @@ func selectShipments(ctx context.Context, db ormDatabase, q impl.Of[model.Shipme
 	return out, nil
 }
 
-// queryShipments runs query, a query of the rows of shipments, and reads them.
-func queryShipments(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Shipment, error) {
+// ormQueryShipments runs query, a query of the rows of shipments, and reads them.
+func ormQueryShipments(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Shipment, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read shipments: %w", err)
@@ -1219,13 +1219,13 @@ func queryShipments(ctx context.Context, db ormDatabase, query string, args ...a
 	return out, nil
 }
 
-// selectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
-func selectTags(ctx context.Context, db ormDatabase, q impl.Of[model.Tag], lock string) ([]model.Tag, error) {
+// ormSelectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
+func ormSelectTags(ctx context.Context, db ormDatabase, q impl.Of[model.Tag], lock string) ([]model.Tag, error) {
 	rd, err := q.Render(impl.MySQL, 1, []string{`name`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryTags(ctx, db, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := ormQueryTags(ctx, db, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1235,8 +1235,8 @@ func selectTags(ctx context.Context, db ormDatabase, q impl.Of[model.Tag], lock 
 	return out, nil
 }
 
-// queryTags runs query, a query of the rows of tags, and reads them.
-func queryTags(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Tag, error) {
+// ormQueryTags runs query, a query of the rows of tags, and reads them.
+func ormQueryTags(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Tag, error) {
 	rows, err := db.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read tags: %w", err)

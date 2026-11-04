@@ -4,13 +4,16 @@ import (
 	"errors"
 	"flag"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"io/fs"
 	"maps"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-kanna/internal/cli"
@@ -67,7 +70,7 @@ func run(dir string, cfg config, patterns []string) ([]output.Change, []diag.Dia
 			load = []string{".", dest.dir}
 		}
 	}
-	l, d := loadRun(dir, cfg, load, dest, nil)
+	l, d := loadRun(dir, cfg, load, nil)
 	if d != nil {
 		return nil, []diag.Diag{*d}
 	}
@@ -141,17 +144,22 @@ func planRun(dir string, cfg config, load []string, dest *destination, l loadedR
 	// The models //kanna:scopes implies scope types of are read from their packages, which are loaded too when
 	// nothing loaded imports them yet, as nothing does before the first run.
 	if missing := resolveModels(p.idx, p.set.Packages); len(missing) > 0 {
-		if p.loadedRun, d = loadRun(dir, cfg, load, dest, missing); d != nil {
+		if p.loadedRun, d = loadRun(dir, cfg, load, missing); d != nil {
 			return p, []diag.Diag{*d}
 		}
 		resolveModels(p.idx, p.set.Packages)
 	}
+	// The .sql files of a package holding both scope types and the implementations hold the scopes of the one and
+	// the queries of the other.
 	for _, pkg := range p.roots {
 		var stmts []sqlfile.Statement
 		if (slices.Contains(p.scopePkgs, pkg) || slices.Contains(p.repoPkgs, pkg)) && len(pkg.GoFiles) > 0 {
 			var sds []diag.Diag
 			stmts, sds = readSQL(filepath.Dir(pkg.GoFiles[0]))
-			p.ds = slices.Concat(p.ds, sds, misplacedQueries(stmts))
+			p.ds = append(p.ds, sds...)
+			if !dest.holds(pkg) {
+				p.ds = append(p.ds, misplacedQueries(stmts)...)
+			}
 		}
 		ps, pds := plan(pkg, p.s, p.idx, stmts)
 		p.plans[pkg] = ps
@@ -164,7 +172,15 @@ func planRun(dir string, cfg config, load []string, dest *destination, l loadedR
 		if dest != nil {
 			var sds []diag.Diag
 			queries, sds = readSQL(dest.dir)
-			p.ds = slices.Concat(p.ds, sds, misplacedScopes(queries))
+			// The loop above reports the files of a package of scope types or of repositories.
+			if !slices.ContainsFunc(p.roots, func(pkg *packages.Package) bool {
+				return dest.holds(pkg) && (slices.Contains(p.scopePkgs, pkg) || slices.Contains(p.repoPkgs, pkg))
+			}) {
+				p.ds = append(p.ds, sds...)
+			}
+			if !slices.ContainsFunc(p.scopePkgs, dest.holds) {
+				p.ds = append(p.ds, misplacedScopes(queries)...)
+			}
 		}
 		var rds []diag.Diag
 		p.repo, rds = planRepository(p.repoPkgs, p.set.Packages, p.s, p.idx, dest, cfg, queries)
@@ -186,8 +202,8 @@ type loadedRun struct {
 }
 
 // loadRun loads the packages load names for a run in dir, and those at the import paths of extra, which it reads but
-// does not generate for, and checks that dest is none of those it generates for.
-func loadRun(dir string, cfg config, load []string, dest *destination, extra []string) (loadedRun, *diag.Diag) {
+// does not generate for.
+func loadRun(dir string, cfg config, load, extra []string) (loadedRun, *diag.Diag) {
 	if len(extra) > 0 {
 		if len(load) == 0 {
 			load = []string{"."}
@@ -202,11 +218,8 @@ func loadRun(dir string, cfg config, load []string, dest *destination, extra []s
 		return loadedRun{}, &d
 	}
 	scopePkgs, repoPkgs := declarations(set.Packages)
-	if d := dest.check(cfg.destination, scopePkgs); d != nil {
-		return loadedRun{}, d
-	}
 	roots := slices.DeleteFunc(slices.Clone(set.Packages), func(p *packages.Package) bool {
-		return dest.holds(p) || slices.Contains(extra, p.PkgPath)
+		return slices.Contains(extra, p.PkgPath)
 	})
 	return loadedRun{set: set, scopePkgs: scopePkgs, repoPkgs: repoPkgs, roots: roots}, nil
 }
@@ -280,24 +293,30 @@ func readDestination(dir string, cfg config) (*destination, *diag.Diag) {
 
 // outputs writes scopes_gen.go for each of roots that plans has scope types of, and removes it from the others; and
 // writes the implementations of repo into dest, or, when no package of the run declares repositories, removes
-// those an earlier run left there.
+// those an earlier run left there. Where it writes both into one package, each avoids what the other declares: the
+// implementations' names that code written by hand sees, which the rules fix, and then all that scopes_gen.go
+// declares, which it writes first.
 func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan, d snapshot.Dialect, repo repoPlan,
 	dest *destination, repositories bool,
 ) ([]output.Change, []diag.Diag) {
 	var (
 		changes []output.Change
 		ds      []diag.Diag
+		// scopes are the names scopes_gen.go declares in dest, if the run writes it there.
+		scopes []string
 	)
-	write := func(dir, pkgName, outputName string, emit func(declared []string) ([]byte, []string, error)) bool {
+	both := func(dir string) bool { return len(repo.repos) > 0 && output.SameDir(dest.dir, dir) }
+	write := func(dir, outputName string, declared []string, emit func(declared []string) ([]byte, []string, error),
+	) ([]byte, bool) {
 		path := filepath.Join(dir, outputName)
-		src, imports, err := emit(slices.Sorted(maps.Keys(output.DeclaredNames(dir, outputName, pkgName))))
+		src, imports, err := emit(slices.Sorted(slices.Values(declared)))
 		if err != nil {
 			ds = append(ds, diag.Errorf(token.Position{Filename: path}, "%v", err))
-			return false
+			return nil, false
 		}
 		changes = append(changes, output.Change{Path: path, Data: src})
 		ds = append(ds, output.MissingRequires(path, imports)...)
-		return true
+		return src, true
 	}
 	for _, pkg := range roots {
 		if len(plans[pkg]) == 0 {
@@ -305,23 +324,86 @@ func outputs(roots []*packages.Package, plans map[*packages.Package][]scopePlan,
 			continue
 		}
 		dir := filepath.Dir(pkg.GoFiles[0])
-		if !write(dir, pkg.Name, scopesOutputName, func(declared []string) ([]byte, []string, error) {
+		declared := declaredBesides(dir, pkg.Name, scopesOutputName)
+		if both(dir) {
+			declared = slices.Concat(declaredBesides(dir, pkg.Name, scopesOutputName, repositoryOutputName),
+				repo.declares())
+		}
+		src, ok := write(dir, scopesOutputName, declared, func(declared []string) ([]byte, []string, error) {
 			return emit(pkg, d, plans[pkg], declared)
-		}) {
+		})
+		if !ok {
 			return nil, ds
+		}
+		if both(dir) {
+			scopes = topLevel(src)
 		}
 	}
 	switch {
 	case len(repo.repos) > 0:
-		if !write(dest.dir, dest.name, repositoryOutputName, func(declared []string) ([]byte, []string, error) {
+		declared := declaredBesides(dest.dir, dest.name, repositoryOutputName)
+		if scopes != nil {
+			declared = slices.Concat(declaredBesides(dest.dir, dest.name, repositoryOutputName, scopesOutputName),
+				scopes)
+		}
+		if _, ok := write(dest.dir, repositoryOutputName, declared, func(declared []string) ([]byte, []string, error) {
 			return emitRepositories(dest.pkgPath, dest.name, d, repo.driver, repo.repos, repo.models, declared)
-		}) {
+		}); !ok {
 			return nil, ds
 		}
 	case dest != nil && !repositories:
 		changes = append(changes, dest.removal()...)
 	}
 	return changes, ds
+}
+
+// declaredBesides names what the files of dir, of the package pkgName, declare at their top level but outputs, the
+// files the run writes there anew.
+func declaredBesides(dir, pkgName string, outputs ...string) []string {
+	var names []string
+	for name, pos := range output.DeclaredNames(dir, outputs[0], pkgName) {
+		if !slices.Contains(outputs, filepath.Base(pos.Filename)) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// topLevel names what src, a Go file, declares at its top level, and the names it imports packages by, which no name
+// of the package may be.
+func topLevel(src []byte) []string {
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, im := range f.Imports {
+		if im.Name != nil {
+			names = append(names, im.Name.Name)
+		} else if path, err := strconv.Unquote(im.Path.Value); err == nil {
+			names = append(names, pathpkg.Base(path))
+		}
+	}
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				names = append(names, d.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					names = append(names, spec.Name.Name)
+				case *ast.ValueSpec:
+					for _, id := range spec.Names {
+						names = append(names, id.Name)
+					}
+				}
+			}
+		}
+	}
+	return names
 }
 
 // nothingDeclared warns that roots, the packages patterns match, declare neither a //kanna:scope type nor a
@@ -344,6 +426,19 @@ type repoPlan struct {
 	repos  []repository
 	models map[string]readModel
 	driver driver
+}
+
+// declares names what the implementations of p declare that code written by hand sees, as the rules name it: DBTX,
+// and the implementation and the constructors of each repository.
+func (p repoPlan) declares() []string {
+	names := []string{"DBTX"}
+	for _, repo := range p.repos {
+		names = append(names, repo.implementation(), repo.constructor())
+		if repo.publicConstructor {
+			names = append(names, "New"+repo.name)
+		}
+	}
+	return names
 }
 
 // planRepository reads the repositories of the one package of repoPkgs, among pkgs, the packages the run loads, for
@@ -446,7 +541,10 @@ func generatedNames(plans map[*packages.Package][]scopePlan, d snapshot.Dialect)
 	names := map[string]bool{}
 	for pkg, ps := range plans {
 		for _, p := range ps {
+			set, fn := changeSetNames(p.name)
 			names[pkg.PkgPath+"."+p.fn] = true
+			names[pkg.PkgPath+"."+set] = true
+			names[pkg.PkgPath+"."+fn] = true
 			if p.implied {
 				names[pkg.PkgPath+"."+p.name] = true
 			}

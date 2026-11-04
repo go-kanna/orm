@@ -116,7 +116,7 @@ func checkNames(pkg *packages.Package, plans []scopePlan, d snapshot.Dialect) []
 }
 
 func checkChangeNames(pkg *packages.Package, p scopePlan) []diag.Diag {
-	name := p.name + "ChangeSet"
+	name, _ := changeSetNames(p.name)
 	obj := pkg.Types.Scope().Lookup(name)
 	if obj == nil {
 		return nil

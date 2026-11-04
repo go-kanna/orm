@@ -515,10 +515,6 @@ func TestCommand_RepositoryMistakes(t *testing.T) {
 			"error: -driver takes pgx or database/sql, not \"sqlite\"\n"},
 		{"pgx on MySQL", snapshot.MySQL, "repository", []string{"-destination", "../postgres", "-driver", "pgx"}, "",
 			"error: -driver pgx runs on PostgreSQL, but the snapshot is of MySQL\n"},
-		{"the destination the scope types are in", snapshot.PostgreSQL, "repository",
-			[]string{"-destination", "../scopes"}, "",
-			"error: -destination ../scopes holds the //kanna:scope types of example.com/shop/scopes, whose methods " +
-				"go into its scopes_gen.go\n  name a directory of the implementations' own\n"},
 		{"repositories in two packages", snapshot.PostgreSQL, ".", []string{"-destination", "postgres", "./..."},
 			"-- other/other.go --\npackage other\n\n//kanna:repository\ntype Other interface{}\n",
 			"error: example.com/shop/other and example.com/shop/repository both declare //kanna:repository " +
