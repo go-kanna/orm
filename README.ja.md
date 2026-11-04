@@ -232,7 +232,7 @@ func (s Order) InMonths(months []int) Order {
 //kanna:scope table=person
 type Person struct{ q scope.Of[model.Person] }
 
-// People は person の空のスコープを、独自の名前で返します。
+// People is the empty scope of person, under a name of its own.
 func People() Person { return Person{} }
 ```
 
