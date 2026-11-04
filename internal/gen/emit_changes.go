@@ -27,7 +27,7 @@ func (e emitter) changes() {
 
 func changeColumns(p scopePlan) []column {
 	return slices.DeleteFunc(slices.Clone(p.columns), func(c column) bool {
-		return c.col.Assigned || slices.Contains(p.definition.PrimaryKey, c.col.Name)
+		return c.col.Assigned || c.insertOnly || slices.Contains(p.definition.PrimaryKey, c.col.Name)
 	})
 }
 

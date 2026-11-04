@@ -51,8 +51,8 @@ type OrderRepository interface {
 	UpdateMany(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
 
 	UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error)
-	//kanna:conflict order keep=placed_at
-	UpsertByPosition(ctx context.Context, o model.Order) (model.Order, error)
+	//kanna:conflict order
+	UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error)
 	UpsertLines(ctx context.Context, lines []model.OrderLine) error
 	//kanna:conflict name
 	UpsertTag(ctx context.Context, tag model.Tag) (model.Tag, error)

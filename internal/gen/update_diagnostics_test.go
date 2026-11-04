@@ -24,17 +24,15 @@ func TestCommand_UpdateChangesDiagnostics(t *testing.T) {
 		{"neither keys nor scopes, error alone", "UpdateFields(ctx context.Context, c scopes.RecordChangeSet) error",
 			"but it takes neither", snapshot.PostgreSQL},
 		{"row and changes", "UpdateFields(ctx context.Context, r model.Record, c scopes.RecordChangeSet) error",
-			"change set is accepted only once", snapshot.PostgreSQL},
+			"a change set is taken once", snapshot.PostgreSQL},
 		{"wrong verb", "InsertFields(ctx context.Context, c scopes.RecordChangeSet) error",
-			"change set is accepted only once", snapshot.PostgreSQL},
+			"a change set is taken once", snapshot.PostgreSQL},
 		{"mysql returning", "UpdateFields(ctx context.Context, id int64, c scopes.RecordChangeSet) (model.Record,error)",
 			"MySQL has no UPDATE RETURNING", snapshot.MySQL},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			archive := strings.Replace(writeOptionsShop, `"example.com/shop/model"`+"\n)",
-				`"example.com/shop/model"`+"\n\"example.com/shop/scopes\"\n)", 1)
-			archive = strings.Replace(archive, "Update(ctx context.Context, record model.Record) error", tc.method, 1)
+			archive := strings.Replace(writeOptionsShop, "Update(ctx context.Context, record model.Record) error", tc.method, 1)
 			dir := writeModule(t, archive)
 			writeOptionsSnapshot(t, dir, tc.dialect)
 			if code, _, out := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {

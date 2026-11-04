@@ -260,6 +260,7 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 | `orm:"note"` | カラム `note` |
 | `orm:"note,nullzero"` | nullable な文字列カラム。NULL をゼロ値へ読み込み、ゼロ値は NULL として書き込む |
 | `orm:",default"` | 生成する INSERT からカラムを省略し、DB のデフォルト値を使う |
+| `orm:",insertonly"` | カラムを insert でだけ書く。update と、行と突き合わせた Upsert は変えない |
 | `orm:"-"` | カラムではない。kanna-orm はこのフィールドを読み書きしない |
 | `orm:"fk=order_id"` | [リレーション](#リレーション)で、候補が複数あるときにたどる外部キー |
 | `orm:"fk=order_lines.order_id"` | 同上。カラムだけでは特定できない場合のために、テーブルも指定する |
@@ -504,7 +505,7 @@ func NewOrder(db DBTX, opts ...option.Option) Order
 | `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)` | マッチする行があるかどうかを返す |
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`、または `error` のみを返す形 | 行を 1 つ、または[複数](#複数行の書き込み)書き込む |
 | `Update` | `Update(ctx, o model.Order) error`、または[変更セット](#指定したカラムだけを更新する)を受け取る形 | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
-| `Upsert` | `Upsert(ctx, o model.Order) error` | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
+| `Upsert` | `Upsert(ctx, o model.Order) error`、または[変更セット](#突き合わせた行に変更セットを書く)つき | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
 | `Delete` | `Delete(ctx, id model.OrderID) error`、または[スコープを受け取る形](#スコープで削除対象を選ぶ) | そのキーの行、またはスコープにマッチする行を削除する |
 
 `Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたはユニークキーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。ただし、`Limit`、`Offset`、`After`、`Before` で行の一部だけを残すスコープは、キーが指す行そのものを外しうるのでエラーになります。キー引数はポインタではなく値を受け取ります。nil は何にもマッチしない `= NULL` で比べることになるので、ポインタのキー引数は生成を止めます。NULL の行はスコープの `IsNull` で絞り込みます。複数行の候補から一つ選ぶ場合は `First` を使います。スコープの順序で先頭の行を、スコープに順序がなければ主キーの順で先頭の行を返します。ポインタを返す `Find...` は、結果の構造体へのポインタでもスカラーへのポインタでも、同じ不在時の契約を保ったまま手書き SQL でも実装できます。スカラーの場合は nil が「行がない」を表すので、NULL にならない列を読みます。
@@ -613,19 +614,30 @@ type Product struct {
 
 PostgreSQL では、モデルを返すメソッドが RETURNING で DB の値を読み戻します。例えば `ID uuid.UUID` に `orm:",default"` を指定すると、Go 側で採番せず `DEFAULT uuidv7()` の主キーを使えます。全カラムを省略する単一行の INSERT は DEFAULT VALUES を使います。一括書き込みには、少なくとも一つ入力カラムが必要です。
 
-UPDATE では、タグを指定した非キーのフィールドもモデルの値を書き込みます。Upsert は競合時に、タグを指定したカラムの保存済みの値を DB のデフォルト値に戻さずに保持します。`keep=` を指定する必要はありません。`updated_at` のようなカラムも競合時に更新しないので、トリガーで代入してください。
+UPDATE では、タグを指定した非キーのフィールドもモデルの値を書き込みます。Upsert は競合時に、タグを指定したカラムの保存済みの値を DB のデフォルト値に戻さずに保持します。`updated_at` のようなカラムも競合時に更新しないので、トリガーで代入するか、Upsert に[変更セット](#突き合わせた行に変更セットを書く)を渡してください。
 
 **MySQL では**、RETURNING がないので、モデルを返すメソッドは、AUTO_INCREMENT、書き込んだ主キー、または Upsert の衝突キーで行を読み戻します。その読み戻しに要るキーを `default` が省くと、モデルを返すメソッドは生成を止めます。`error` だけを返すメソッドは読み戻さないので、省いても構いません。MySQL の一括書き込みはモデルを返しません。
 
 ### Upsert
 
-`Upsert` は、主キーで既存の行と突き合わせます。別のユニークキーで突き合わせるには、`//kanna:conflict` でそのカラムを指定し、`keep=` で変更しないカラムを指定します:
+`Upsert` は、主キーで既存の行と突き合わせます。別のユニークキーで突き合わせるには、`//kanna:conflict` でそのカラムを指定します:
 
 ```go
+// package model
+type User struct {
+	ID        int64
+	TenantID  int64
+	Email     string
+	Name      string
+	CreatedAt time.Time `orm:",insertonly"`
+}
+
+// package repository
+
 //kanna:repository
 type User interface {
 	// UpsertByEmail meets the user of a tenant by their email address.
-	//kanna:conflict tenant_id,email keep=created_at
+	//kanna:conflict tenant_id,email
 	UpsertByEmail(ctx context.Context, u model.User) (model.User, error)
 }
 ```
@@ -640,32 +652,48 @@ RETURNING id, tenant_id, email, name, created_at
 -- MySQL, which then reads back by LAST_INSERT_ID() the row inserted or updated
 INSERT INTO users (tenant_id, email, name, created_at)
 VALUES (?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 ```
 
-カラムはテーブルの主キーかユニークキーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`keep=` で指定したカラムを除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。MySQL はどのユニークキーの競合でも更新するので、指定したキー以外のユニークキーを持つテーブルには警告が出ます:
+カラムはテーブルの主キーかユニークキーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`insertonly` を指定したカラムを除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。MySQL はどのユニークキーの競合でも更新するので、指定したキー以外のユニークキーを持つテーブルには警告が出ます:
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
 ```
 
-`coalesce=` を指定すると、入力の SQL 値が NULL の場合だけ既存値を保持します。
+`orm:",insertonly"` を指定したフィールドは、登録した日時のように insert でだけ書きます。`Update` と、行と突き合わせた Upsert はそのカラムを変えず、変更セットにもその setter はありません。insert から省く `default` と一緒に指定すると、どこでも書かれなくなるので、生成を止めます。
+
+#### 突き合わせた行に変更セットを書く
+
+[変更セット](#指定したカラムだけを更新する)を受け取る Upsert は、キーが一致する行がなければ行を insert し、突き合わせた行には変更セットだけを書きます:
 
 ```go
-//kanna:conflict email keep=created_at coalesce=phone
-UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
+//kanna:conflict email
+UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error)
 ```
 
-example の `Customer` repository は `Customer.Phone` に使っています。非 nil の電話番号なら更新し、nil なら既存値を保持します。`keep=created_at` は常に登録日時を保持します。二つのオプションの順序は自由です。COALESCE が扱うのは SQL NULL で、空文字や数値の 0 自体は対象になりません。文字列フィールドに `nullzero` を指定した場合、空文字を SQL NULL として扱います。キー、`keep=` の対象、存在しないカラムなど、実際に更新しないカラムへの `coalesce=` は生成エラーです。
+```go
+changes := scopes.CustomerChanges().SetName(c.Name)
+if c.Phone != nil {
+	changes = changes.SetPhone(c.Phone)
+}
+stored, err := repo.UpsertByEmail(ctx, c, changes)
+```
+
+example の `Customer` repository は、この形で顧客を登録します。登録済みの顧客は名前を書き換え、電話番号は渡されたときだけ書き換えます。行の値は insert にだけ使うので、変更セットは NULL や空文字も、ほかの値と同じように書きます。空の変更セットは、キーが一致する行がなければ行を insert し、あれば突き合わせた行をそのまま読み戻します。衝突キーのカラムを書く変更セットはエラーを返し、何も書きません。キーの変更は `Update` で行ってください。変更セットを受け取れるのは 1 行の Upsert だけです。複数行の Upsert が受け取ると、突き合わせたすべての行に同じ値を書くことになるので、生成を止めます。
+
+文は変更セットの中身によらず同じです。書けるカラムは、変更セットが値を渡せばその値に、渡さなければ保存済みの値のままになります。
 
 ```sql
 -- PostgreSQL
-phone = COALESCE(EXCLUDED.phone, customers.phone)
+ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.name END, phone = CASE WHEN $7 THEN $8 ELSE customers.phone END
 
 -- MySQL
-phone = COALESCE(new.phone, customers.phone)
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)
 ```
+
+`visits = visits + 1` のように突き合わせた行から計算する値は、[手書きの SQL](#手書きの-sql) で書きます。
 
 ### 複数行の書き込み
 
@@ -697,7 +725,7 @@ changes := scopes.CustomerChanges().
     SetPhone(nil)
 ```
 
-setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込み、同じカラムを再指定した場合は最後の値を使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・関連フィールドには setter を生成しません。空の変更セットはエラーになります。
+setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込み、同じカラムを再指定した場合は最後の値を使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・`insertonly` を指定したカラム・関連フィールドには setter を生成しません。空の変更セットの `Update` はエラーになります。[Upsert](#突き合わせた行に変更セットを書く) ではエラーになりません。
 
 対象の一意キーを更新値と分けて宣言し、通常の条件スコープを追加します。
 

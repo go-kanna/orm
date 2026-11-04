@@ -221,7 +221,7 @@ func TestRepositories(t *testing.T) {
 	Update(ctx context.Context, o model.Order) error
 	UpsertLine(ctx context.Context, line model.OrderLine) error
 	// UpsertUser meets the user of a tenant by their email address.
-	//kanna:conflict tenant_id,email keep=created_at
+	//kanna:conflict tenant_id,email
 	UpsertUser(ctx context.Context, u model.User) (model.User, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)
@@ -250,7 +250,7 @@ UPDATE orders SET status = 'closed' WHERE placed_at < :before
 		"OrderRepository.InsertLines Insert order_lines row=lines many error",
 		"OrderRepository.Update Update orders row=o error",
 		"OrderRepository.UpsertLine Upsert order_lines row=line error",
-		"OrderRepository.UpsertUser Upsert users row=u row conflict=tenant_id,email keep=created_at",
+		"OrderRepository.UpsertUser Upsert users row=u row conflict=tenant_id,email",
 		"OrderRepository.Delete Delete orders keys=id=id error",
 		"OrderRepository.DeleteStale Delete orders scoped count",
 		"OrderRepository.MonthCounts query \"SELECT date_trunc('month', placed_at) AS month, count(*) AS count\\nFROM " +

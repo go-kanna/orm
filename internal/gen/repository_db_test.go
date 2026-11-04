@@ -367,17 +367,25 @@ func TestGeneratedRepository_PostgresWrites(t *testing.T) {
 		}
 
 		moved, err := repo.UpsertByPosition(ctx, model.Order{
-			CustomerID: 10, Status: "moved", PlacedAt: placed.AddDate(1, 0, 0), Total: 500, Position: 4,
-		})
+			CustomerID: 10, Status: "given", PlacedAt: placed.AddDate(1, 0, 0), Total: 900, Position: 4,
+		}, pscopes.OrderChanges().SetStatus("moved").SetTotal(500))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if moved.ID != 4 || moved.Status != "moved" || moved.Total != 500 || !moved.PlacedAt.Equal(placed) {
-			t.Errorf("UpsertByPosition over order 4 = %+v; want it updated but for placed_at, which it keeps", moved)
+			t.Errorf("UpsertByPosition over order 4 = %+v; want its status and total alone changed", moved)
 		}
-		if added, err := repo.UpsertByPosition(ctx, model.Order{CustomerID: 10, Status: "new", Position: 5}); err != nil ||
-			added.ID != 6 {
-			t.Errorf("UpsertByPosition of a new position = %+v, %v; want order 6", added, err)
+		if added, err := repo.UpsertByPosition(ctx, model.Order{CustomerID: 10, Status: "new", Position: 5},
+			pscopes.OrderChanges().SetStatus("moved")); err != nil || added.ID != 6 || added.Status != "new" {
+			t.Errorf("UpsertByPosition of a new position = %+v, %v; want order 6 as given", added, err)
+		}
+		if kept, err := repo.UpsertByPosition(ctx, model.Order{Status: "given", Position: 4},
+			pscopes.OrderChanges()); err != nil || kept.ID != 4 || kept.Status != "moved" {
+			t.Errorf("UpsertByPosition of no changes over order 4 = %+v, %v; want it as it was", kept, err)
+		}
+		if _, err := repo.UpsertByPosition(ctx, model.Order{Position: 4},
+			pscopes.OrderChanges().SetPosition(9)); err == nil || !strings.Contains(err.Error(), "meets its row by order") {
+			t.Errorf("UpsertByPosition changing its key error = %v", err)
 		}
 
 		if c, err := repo.UpsertCustomer(ctx, model.Customer{ID: 10, Name: "Anne"}); err != nil || c.Name != "Anne" {

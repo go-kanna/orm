@@ -63,3 +63,28 @@ func (c Changes[M]) RenderUpdate(d Dialect, table string, allowed []string, q Of
 	text := "UPDATE " + quoted(d, table) + " SET " + strings.Join(sets, ", ") + rd.Where()
 	return text, append(args, rd.Args()...), nil
 }
+
+// UpsertValues is what method, an upsert taking c, writes over the row it meets: for each of allowed, in its order, a
+// flag telling whether c assigns the column, and the value it assigns, for a statement that writes each column the
+// flag of which is true and keeps the others. A column of key, which the row is met by, or one not allowed, is an
+// error.
+func (c Changes[M]) UpsertValues(method string, allowed, key []string) ([]any, error) {
+	for _, a := range c.values {
+		switch {
+		case slices.Contains(key, a.column):
+			return nil, fmt.Errorf("orm: %s meets its row by %s, which its change set cannot write", method, a.column)
+		case !slices.Contains(allowed, a.column):
+			return nil, fmt.Errorf("orm: %s cannot assign column %s", method, a.column)
+		}
+	}
+	values := make([]any, 0, 2*len(allowed))
+	for _, column := range allowed {
+		i := slices.IndexFunc(c.values, func(a assignment) bool { return a.column == column })
+		if i < 0 {
+			values = append(values, false, nil)
+			continue
+		}
+		values = append(values, true, c.values[i].value)
+	}
+	return values, nil
+}

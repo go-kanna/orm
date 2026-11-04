@@ -303,6 +303,7 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 | `orm:"note"`                    | the column `note`                                                               |
 | `orm:"note,nullzero"`           | a nullable string column: read NULL as the zero string and write the zero string as NULL |
 | `orm:",default"`                | omit this column from generated INSERT statements and use its database default |
+| `orm:",insertonly"`             | write this column by an insert alone: an update, and an upsert meeting its row, leave it as it was |
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
 | `orm:"fk=order_id"`             | on a [relation](#relations), the foreign key to follow when more than one could |
 | `orm:"fk=order_lines.order_id"` | the same, naming its table too, for when the column alone does not tell         |
@@ -641,7 +642,7 @@ The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not nam
 | `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)`                                         | reports whether any row matches                                                       |
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`, or with `error` alone               | writes a row, or [many](#writing-many-rows)                                           |
 | `Update` | `Update(ctx, o model.Order) error`, or with a [change set](#updating-selected-columns) | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
-| `Upsert` | `Upsert(ctx, o model.Order) error`                                                     | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
+| `Upsert` | `Upsert(ctx, o model.Order) error`, or with a [change set](#writing-a-change-set-over-the-row-met) | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
 | `Delete` | `Delete(ctx, id model.OrderID) error`, or [with scopes](#selecting-rows-to-delete)     | deletes the row with the key, or the rows the scopes match                            |
 
 `Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, with the same absence contract; a scalar one reads a column that is never NULL, as its nil means no row.
@@ -800,8 +801,8 @@ On PostgreSQL, a method returning the model reads database-generated values with
 A single row with every column omitted uses DEFAULT VALUES. Bulk writes still require at least one input column.
 
 UPDATE keeps writing the model's values for tagged non-key fields. An upsert keeps a tagged column's stored value on a
-conflict rather than reset it to its database default, with no `keep=` needed. It does not refresh a column such as
-`updated_at` on a conflict either: let a trigger assign one.
+conflict rather than reset it to its database default. It does not refresh a column such as `updated_at` on a conflict
+either: let a trigger assign one, or have the upsert take a [change set](#writing-a-change-set-over-the-row-met).
 
 **On MySQL**, which has no RETURNING, a method returning the model reads its row back by AUTO_INCREMENT, by a primary
 key it writes, or by an upsert's conflict key. When `default` leaves out the key that read needs, generation stops at a
@@ -811,13 +812,24 @@ no model on MySQL.
 ### Upserting
 
 `Upsert` meets an existing row by its primary key. To meet it by another unique key, name its columns with
-`//kanna:conflict`, and with `keep=` the columns to leave as they were:
+`//kanna:conflict`:
 
 ```go
+// package model
+type User struct {
+	ID        int64
+	TenantID  int64
+	Email     string
+	Name      string
+	CreatedAt time.Time `orm:",insertonly"`
+}
+
+// package repository
+
 //kanna:repository
 type User interface {
 	// UpsertByEmail meets the user of a tenant by their email address.
-	//kanna:conflict tenant_id,email keep=created_at
+	//kanna:conflict tenant_id,email
 	UpsertByEmail(ctx context.Context, u model.User) (model.User, error)
 }
 ```
@@ -832,39 +844,60 @@ RETURNING id, tenant_id, email, name, created_at
 -- MySQL, which then reads back by LAST_INSERT_ID() the row inserted or updated
 INSERT INTO users (tenant_id, email, name, created_at)
 VALUES (?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = new.name
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 ```
 
 The columns must be the primary key or a unique key of the table, exactly, and none the database always assigns, as an
 insert never gives those to meet a row by. The row met gets every column but those of the key, the primary key, and those
-`keep=` names; with none left, the key is set to itself, so that the row is still read back. MySQL updates on a conflict
-over any unique key, so a table with unique keys besides the one named gets a warning:
+tagged `insertonly`; with none left, the key is set to itself, so that the row is still read back. MySQL updates on a
+conflict over any unique key, so a table with unique keys besides the one named gets a warning:
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
 ```
 
-Use `coalesce=` on an upsert to keep the stored value only when the incoming SQL value is NULL:
+A field tagged `orm:",insertonly"` is written by an insert alone, as when a user joined: an `Update`, and an upsert
+meeting its row, leave its column as it was, and a change set has no setter for it. With `default`, which leaves it out
+of an insert, it would never be written, so the two together stop generation.
+
+#### Writing a change set over the row met
+
+An upsert taking a [change set](#updating-selected-columns) inserts its row when no row has the key, and writes the
+change set alone over the row it meets:
 
 ```go
-//kanna:conflict email keep=created_at coalesce=phone
-UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
+//kanna:conflict email
+UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error)
 ```
 
-The examples' `Customer` repository uses this for `Customer.Phone`: a non-nil phone replaces the old one, while nil
-keeps it. `keep=created_at` always preserves when the customer joined. The two options can appear in either order.
-Only SQL NULL triggers COALESCE; an empty string or numeric zero does not. A string field's `nullzero` option
-explicitly encodes its empty string as NULL. Columns in `coalesce=` must be columns the upsert actually updates; keys, kept columns, and unknown columns
-are rejected during generation.
+```go
+changes := scopes.CustomerChanges().SetName(c.Name)
+if c.Phone != nil {
+	changes = changes.SetPhone(c.Phone)
+}
+stored, err := repo.UpsertByEmail(ctx, c, changes)
+```
+
+The examples' `Customer` repository signs customers up this way: one met gets their new name, and their phone only when
+they give one. The row's values go to the insert alone, so the change set writes NULL or an empty string as it writes any
+other value. An empty change set inserts the row when none has the key, and otherwise reads back the row met as it was.
+A change set writing a column of the conflict key returns an error and writes nothing: change a key by an `Update`. Only
+an upsert of one row takes a change set; generation stops at a bulk upsert taking one, whose values would go over every
+row it meets.
+
+The statement is the same whatever the change set holds: a column it can write takes the change set's value when it
+gives one, and keeps the stored value otherwise.
 
 ```sql
 -- PostgreSQL
-phone = COALESCE(EXCLUDED.phone, customers.phone)
+ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.name END, phone = CASE WHEN $7 THEN $8 ELSE customers.phone END
 
 -- MySQL
-phone = COALESCE(new.phone, customers.phone)
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)
 ```
+
+A value computed from the row met, as `visits = visits + 1`, is [SQL written by hand](#hand-written-sql).
 
 ### Writing many rows
 
@@ -900,7 +933,7 @@ changes := scopes.CustomerChanges().
     SetPhone(nil)
 ```
 
-Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. Setting the same column again replaces its earlier value. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, and relations have no setters. An empty change set is an error.
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. Setting the same column again replaces its earlier value. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, columns tagged `insertonly`, and relations have no setters. An `Update` of an empty change set is an error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 

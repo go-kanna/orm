@@ -132,7 +132,9 @@ func (ex *example) catalog(ctx context.Context) error {
 	return nil
 }
 
-// signUp upserts by a natural key, the email address, keeping when the customer joined.
+// signUp upserts by a natural key, the email address: a customer signing up anew as given, and one signed up
+// already with their new name, and their phone when they give one. CreatedAt, written by an insert alone, keeps when
+// they joined.
 func (ex *example) signUp(ctx context.Context) error {
 	joined := time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)
 	for _, c := range []model.Customer{
@@ -141,7 +143,11 @@ func (ex *example) signUp(ctx context.Context) error {
 		{Email: "ann@example.com", Name: "Ann Lee", CreatedAt: time.Now()},
 		{Email: "bob@example.com", Name: "Bob", CreatedAt: joined},
 	} {
-		stored, err := ex.customers.UpsertByEmail(ctx, c)
+		changes := scopes.CustomerChanges().SetName(c.Name)
+		if c.Phone != nil {
+			changes = changes.SetPhone(c.Phone)
+		}
+		stored, err := ex.customers.UpsertByEmail(ctx, c, changes)
 		if err != nil {
 			return fmt.Errorf("%s: %w", c.Email, err)
 		}
@@ -151,8 +157,9 @@ func (ex *example) signUp(ctx context.Context) error {
 			ex.bob = stored
 		}
 	}
-	if ex.ann.Phone == nil || *ex.ann.Phone != "090-1234-5678" {
-		return errors.New("customer phone was not updated and preserved on NULL input")
+	if ex.ann.Name != "Ann Lee" || ex.ann.Phone == nil || *ex.ann.Phone != "090-1234-5678" ||
+		!ex.ann.CreatedAt.Equal(joined) {
+		return errors.New("customer was not updated with the changes alone")
 	}
 	fmt.Fprintf(ex.w, "customer %d: %s, joined %s\n", ex.ann.ID, ex.ann.Name,
 		ex.ann.CreatedAt.UTC().Format(time.DateOnly))

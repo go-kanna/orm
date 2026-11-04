@@ -15,7 +15,7 @@ import (
 //kanna:repository
 type CustomerRepository interface {
 	Insert(ctx context.Context, c model.Customer) (model.Customer, error)
-	//kanna:conflict email keep=created_at
+	//kanna:conflict email
 	UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
 }
 

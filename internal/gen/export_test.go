@@ -256,11 +256,8 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 			if len(m.conflict) > 0 {
 				line += " conflict=" + strings.Join(m.conflict, ",")
 			}
-			if len(m.keep) > 0 {
-				line += " keep=" + strings.Join(m.keep, ",")
-			}
-			if len(m.coalesce) > 0 {
-				line += " coalesce=" + strings.Join(m.coalesce, ",")
+			if m.changes != "" {
+				line += " changes=" + m.changes
 			}
 			if m.lock != "" {
 				line += fmt.Sprintf(" lock=%q", m.lock)

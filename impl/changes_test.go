@@ -44,3 +44,26 @@ func TestChanges(t *testing.T) {
 		}
 	}
 }
+
+func TestChanges_UpsertValues(t *testing.T) {
+	t.Parallel()
+
+	allowed, key := []string{"name", "phone"}, []string{"email"}
+	got, err := impl.Changes[int]{}.Set("phone", nil).UpsertValues("Upsert", allowed, key)
+	if want := []any{false, nil, true, nil}; err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("UpsertValues = %v, %v, want %v", got, err, want)
+	}
+	if got, err := (impl.Changes[int]{}).UpsertValues("Upsert", allowed, key); err != nil ||
+		!reflect.DeepEqual(got, []any{false, nil, false, nil}) {
+		t.Errorf("UpsertValues of no change = %v, %v", got, err)
+	}
+	for column, want := range map[string]string{
+		"email":      "orm: Upsert meets its row by email, which its change set cannot write",
+		"created_at": "orm: Upsert cannot assign column created_at",
+	} {
+		if _, err := (impl.Changes[int]{}).Set(column, 1).UpsertValues("Upsert", allowed, key); err == nil ||
+			err.Error() != want {
+			t.Errorf("UpsertValues of %s error = %v, want %q", column, err, want)
+		}
+	}
+}

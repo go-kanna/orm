@@ -92,17 +92,16 @@ func (e repoEmitter) unnestRows(cols []column, casts []string, given column, giv
 // insertGiven writes the body of m, an Insert or an Upsert on PostgreSQL of a row that holds given, writing the
 // column when the row's value is not zero, and leaving it to the database when it is: the statements of the two kept
 // as constants, and the row going by the one of its value.
-func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig signature, given column, tail,
-	what string,
+func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig signature, given column, set,
+	err string,
 ) {
 	model := types.TypeString(m.model, e.f.Qualifier)
 	cols := m.inserted()
 	withCols := slices.Concat(cols, []column{given})
 	without, with := sc.Name("without"+given.path[len(given.path)-1]), sc.Name("with"+given.path[len(given.path)-1])
-	e.printf("const %s = %s\n", without, goString(e.insertText(m, cols)+tail))
-	e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)+tail))
-	err := sc.Name("err")
-	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")"
+	e.printf("const %s = %s\n", without, goString(e.insertText(m, cols)+e.insertTail(m, len(cols)+1)))
+	e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)+e.insertTail(m, len(withCols)+1)))
+	wrap := e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", m.action()+": %w") + ", " + err + ")"
 	value := sig.row + "." + fieldPath(given)
 	q, args := sc.Name("q"), sc.Name("args")
 	values := make([]string, 0, len(cols))
@@ -111,14 +110,17 @@ func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig
 	}
 	e.printf("%s, %s := %s, []any{%s}\nif %s != 0 {\n%s, %s = %s, append(%s, %s)\n}\n", q, args, without,
 		strings.Join(values, ", "), value, q, args, with, args, value)
+	if set != "" {
+		e.printf("%[1]s = append(%[1]s, %[2]s...)\n", args, set)
+	}
 	call := sig.ctx + ", " + q + ", " + args + "..."
 	switch m.returns { //nolint:exhaustive // shaped turns the others down for a write
 	case returnsRow:
 		row := sc.Name("row")
 		e.printf("var %s %s\n", row, model)
 		dests, assignments := e.scanTargets(sc, row, m.columns)
-		e.printf("%[1]s := %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
-			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, sig.mapped(wrap))
+		e.printf("%[1]s %[8]s %[2]s.db.%[3]s(%[4]s).\nScan(%[5]s)\nif %[1]s != nil {\nreturn %[6]s{}, %[7]s\n}\n",
+			err, recv, e.queryRow, call, strings.Join(dests, ", "), model, sig.mapped(wrap), declare(set))
 		e.assignScanned(assignments)
 		e.printf("return %s, nil\n", row)
 	case returnsNone:
@@ -132,14 +134,13 @@ func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig
 // statement as its placeholders take, a row whose value is zero giving NULL, which AUTO_INCREMENT assigns, so that
 // the rows that give the column and those that do not go by one statement.
 func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string, sig signature, given column, tail,
-	what string,
+	set, err string,
 ) {
 	model := types.TypeString(m.model, e.f.Qualifier)
 	cols := m.inserted()
 	withCols := slices.Concat(cols, []column{given})
 	without, with := sc.Name("without"+given.path[len(given.path)-1]), sc.Name("with"+given.path[len(given.path)-1])
-	err := sc.Name("err")
-	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", what+": %w") + ", " + err + ")")
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", m.action()+": %w") + ", " + err + ")")
 	if m.many {
 		e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)))
 		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
@@ -177,6 +178,9 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 	e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)+tail))
 	e.printf("%s, %s := %s, []any{%s}\nif %s != 0 {\n%s, %s = %s, append(%s, %s)\n}\n", q, args, without,
 		strings.Join(values, ", "), value, q, args, with, args, value)
+	if set != "" {
+		e.printf("%[1]s = append(%[1]s, %[2]s...)\n", args, set)
+	}
 	call := sig.ctx + ", " + q + ", " + args + "..."
 	if m.returns != returnsRow {
 		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s); %[1]s != nil {\nreturn %[5]s\n}\nreturn nil\n", err, recv,

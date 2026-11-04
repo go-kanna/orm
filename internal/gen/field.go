@@ -24,6 +24,7 @@ type column struct {
 	pos           token.Position
 	nullzero      bool
 	insertDefault bool
+	insertOnly    bool
 	relationValue bool
 }
 
@@ -123,7 +124,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 			if name == "" {
 				name = columnName(f.Name())
 			}
-			m.column(label, fpath, f, pos, name, tag.nullzero, tag.insertDefault)
+			m.column(label, fpath, f, pos, name, tag)
 		case holdsModels(t):
 			if isModel(t) {
 				typ := types.TypeString(t, relativeTo(f.Pkg()))
@@ -137,7 +138,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 					label, written, f.Name()).WithHints(`name the foreign key it follows with orm:"fk=<column>"`))
 				continue
 			}
-			if tag.nullzero || tag.insertDefault {
+			if tag.nullzero || tag.insertDefault || tag.insertOnly {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is for a column, and %s is a relation`,
 					label, written, f.Name()))
 				continue
@@ -152,9 +153,8 @@ func (m *matcher) match(st *types.Struct, path []string) {
 }
 
 // column matches f, at path in the model, to the column of the table named name.
-func (m *matcher) column(label string, path []string, f *types.Var, pos token.Position, name string,
-	nullzero, insertDefault bool,
-) {
+func (m *matcher) column(label string, path []string, f *types.Var, pos token.Position, name string, tag fieldTag) {
+	nullzero, insertDefault := tag.nullzero, tag.insertDefault
 	i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
 	if i < 0 {
 		d := diag.Errorf(pos, "%s: %s has no column %s", label, m.sc.table, name)
@@ -174,6 +174,11 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 	if insertDefault && !col.Default && !col.Assigned {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: default requires %s.%s to have a database default",
 			label, m.sc.table, name))
+		return
+	}
+	if insertDefault && tag.insertOnly {
+		m.ds = append(m.ds, diag.Errorf(pos, "%s: default leaves %s.%s out of an insert, and insertonly out of every "+
+			"other write, so it would never be written", label, m.sc.table, name))
 		return
 	}
 
@@ -204,7 +209,7 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		return
 	}
 	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos,
-		nullzero: nullzero, insertDefault: insertDefault})
+		nullzero: nullzero, insertDefault: insertDefault, insertOnly: tag.insertOnly})
 }
 
 // holdsColumn reports whether a field of type t holds a column: t is a type a driver reads a column into, a pointer

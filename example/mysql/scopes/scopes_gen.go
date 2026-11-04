@@ -47,10 +47,6 @@ func (c CustomerChangeSet) SetPhone(v *string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("phone", v)}
 }
 
-func (c CustomerChangeSet) SetCreatedAt(v time.Time) CustomerChangeSet {
-	return CustomerChangeSet{c.changes.Set("created_at", v)}
-}
-
 // IDEq narrows to the rows whose id is v.
 func (s Customer) IDEq(v model.CustomerID) Customer {
 	return Customer{ormScope(ormRuntime(s.q).Where(`id = `, v))}

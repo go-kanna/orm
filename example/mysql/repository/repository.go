@@ -13,9 +13,9 @@ import (
 
 //kanna:repository
 type Customer interface {
-	// UpsertByEmail meets a customer by their email address, keeping when they joined.
-	//kanna:conflict email keep=created_at coalesce=phone
-	UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error)
+	// UpsertByEmail meets a customer by their email address, and writes the changes over one it meets.
+	//kanna:conflict email
+	UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error)
 	Get(ctx context.Context, id model.CustomerID) (model.Customer, error)
 	UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) error
 }
