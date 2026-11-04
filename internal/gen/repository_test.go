@@ -282,7 +282,19 @@ func TestRepositories_Mistakes(t *testing.T) {
 		{"a result the verb does not take", snapshot.PostgreSQL,
 			"\tList(ctx context.Context, s ...scopes.Order) (model.Order, error)\n",
 			at + "error: List: kanna-orm cannot implement it as declared\n" +
-				"  declare it as List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)"},
+				"  declare it in a form of List, as in List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)"},
+		{"a result of no scope type", snapshot.PostgreSQL,
+			"\tGetForUpdate(ctx context.Context, id model.OrderID) (MonthCount, error)\n",
+			at + "error: GetForUpdate: no scope type is declared for repository.MonthCount\n" +
+				"  declare one where its rows are queried: //kanna:scope table=<table>"},
+		{"a row of no scope type that may not be there", snapshot.PostgreSQL,
+			"\tFind(ctx context.Context, id model.OrderID) (*MonthCount, error)\n",
+			at + "error: Find: no scope type is declared for repository.MonthCount\n" +
+				"  declare one where its rows are queried: //kanna:scope table=<table>"},
+		{"a row of no scope type", snapshot.PostgreSQL,
+			"\tInsertCounts(ctx context.Context, counts []MonthCount) error\n",
+			at + "error: InsertCounts: no scope type is declared for repository.MonthCount\n" +
+				"  declare one where its rows are queried: //kanna:scope table=<table>"},
 		{"a variadic parameter of no scope type", snapshot.PostgreSQL,
 			"\tList(ctx context.Context, ids ...int64) ([]model.Order, error)\n",
 			at + "error: List: its last parameter, ids, takes no scope type"},

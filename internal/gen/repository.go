@@ -379,7 +379,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	m.verb = v
 	shapeError := func() []diag.Diag {
 		return []diag.Diag{diag.Errorf(m.pos, "%s: kanna-orm cannot implement it as declared", m.name).
-			WithHints("declare it as " + shapes[v])}
+			WithHints(fmt.Sprintf("declare it in a form of %s, as in %s", v, shapes[v]))}
 	}
 
 	if params.Len() == 0 || !isNamed(params.At(0).Type(), "context", "Context") {
@@ -405,6 +405,13 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		var ok bool
 		models, ok = r.resultModels(&m, results.At(0).Type(), models)
 		if !ok {
+			row := results.At(0).Type()
+			if p, isPointer := row.(*types.Pointer); isPointer && v == verbFind {
+				row = p.Elem()
+			}
+			if model, unscoped := r.unscoped(row); unscoped {
+				return m, noScopeType(m, model)
+			}
 			return m, shapeError()
 		}
 	}
@@ -857,6 +864,26 @@ func (r repoReader) rowModel(t types.Type) (model *types.Named, many bool, ok bo
 	return n, many, true
 }
 
+// unscoped tells the struct t is, or holds a slice of, when no scope type is declared for it: a row of no table
+// kanna-orm knows of.
+func (r repoReader) unscoped(t types.Type) (*types.Named, bool) {
+	if s, ok := t.Underlying().(*types.Slice); ok {
+		t = s.Elem()
+	}
+	n := asNamed(t)
+	if n == nil || !isModel(n) {
+		return nil, false
+	}
+	_, ok := r.l.scopeOf(n)
+	return n, !ok
+}
+
+// noScopeType tells that m reads or writes rows of model, for which no scope type is declared.
+func noScopeType(m repoMethod, model *types.Named) []diag.Diag {
+	return []diag.Diag{diag.Errorf(m.pos, "%s: no scope type is declared for %s", m.name, typeName(model)).
+		WithHints("declare one where its rows are queried: //kanna:scope table=<table>")}
+}
+
 // scopeModel tells the model of a scope type t: M, of its one field, an scope.Of[M].
 func scopeModel(t types.Type) (*types.Named, bool) { return scopeModelKind(t, "Of") }
 
@@ -1085,6 +1112,9 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			}
 			m.row, m.many, models = p.Name(), many, append(models, model)
 			continue
+		}
+		if model, ok := r.unscoped(p.Type()); ok {
+			return nil, nil, noScopeType(*m, model)
 		}
 		if p.Name() == "" || p.Name() == "_" {
 			return nil, nil, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
