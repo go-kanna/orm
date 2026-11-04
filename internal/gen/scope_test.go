@@ -158,7 +158,7 @@ func TestFindScopes_Mistakes(t *testing.T) {
 		{"a directive it cannot read", `
 //kanna:scope colour=red
 type Order struct{ q scope.Of[model.Order] }
-`, "scopes.go:10:1: error: //kanna:scope takes table= and func=, not \"colour=red\"\n" +
+`, "scopes.go:10:1: error: //kanna:scope takes table=… or func=…, not \"colour=red\"\n" +
 			"  as in //kanna:scope table=orders"},
 		{"a model named after no table", `
 //kanna:scope
