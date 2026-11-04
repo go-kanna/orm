@@ -38,7 +38,7 @@ import (
 //kanna:repository
 type Orders interface {
 	Insert(ctx context.Context, row model.Order) error
-	Bind(tx db.Tx) Orders
+	Bind(db db.Tx) Orders
 }
 
 -- repository/wiring_test.go --
@@ -78,7 +78,7 @@ func wiringModule(t *testing.T, driver string, accessor bool) string {
 	}
 	archive := fmt.Sprintf(wiringShop, path, reader, transaction, transaction, argument)
 	if !accessor {
-		archive = strings.ReplaceAll(archive, "Bind(tx db.Tx)", "Bind(tx DBTX)")
+		archive = strings.ReplaceAll(archive, "Bind(db db.Tx)", "Bind(db DBTX)")
 		archive = strings.Replace(archive, "\t\"example.com/shop/db\"\n", "", 1)
 	}
 	models, _, _ := strings.Cut(repositoryShop, "-- repository/repository.go --")
@@ -125,6 +125,18 @@ func TestCommand_RepositoryWiring(t *testing.T) {
 						t.Fatalf("kanna-orm = %d\n%s", code, errOut)
 					}
 				}
+				// Bind names its parameter as the interface does, and keeps the name of the package of its type.
+				want := "Bind(db DBTX) Orders {"
+				if accessor {
+					want = "Bind(db db.Tx) Orders {"
+				}
+				generated, err := os.ReadFile(filepath.Join(dir, "repository", "repository_gen.go")) //nolint:gosec // the output
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(generated), want) {
+					t.Errorf("repository_gen.go has no %q\n%s", want, generated)
+				}
 				if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
 					t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
 				}
@@ -157,7 +169,7 @@ func TestCommand_RepositoryWiringMistakes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			text := strings.Replace(string(data), "Bind(tx db.Tx) Orders", tt.bind, 1)
+			text := strings.Replace(string(data), "Bind(db db.Tx) Orders", tt.bind, 1)
 			if !strings.Contains(tt.bind, "db.Tx") {
 				text = strings.Replace(text, "\t\"example.com/shop/db\"\n", "", 1)
 			}

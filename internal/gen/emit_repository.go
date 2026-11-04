@@ -197,8 +197,6 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 		name, variadic := p.Name(), sig.Variadic() && i == sig.Params().Len()-1
 		if name == "" || name == "_" {
 			switch {
-			case i == 0 && m.bind != nil:
-				name = "db"
 			case i == 0:
 				name = "ctx"
 			case variadic:
@@ -208,11 +206,6 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 			}
 		}
 		local := sc.Name(name)
-		if m.bind != nil && m.bind.localDBTX {
-			s.ctx = local
-			params = append(params, local+" DBTX")
-			continue
-		}
 		switch {
 		case i == 0:
 			s.ctx = local
@@ -250,6 +243,31 @@ func (e repoEmitter) signature(m repoMethod, sc gofile.Scope) signature {
 	return s
 }
 
+// bind writes Bind, its parameter named as the interface names it. Its body refers to no package, so the package of
+// the parameter's type keeps its name, as in Bind(tx tx.Tx) written by hand.
+func (e repoEmitter) bind(repo repository, m repoMethod, sc gofile.Scope, recv string) {
+	sig := m.fn.Signature()
+	p := sig.Params().At(0)
+	typ := "DBTX"
+	if !m.bind.localDBTX {
+		typ = e.parameterType(m, p)
+	}
+	result := types.TypeString(sig.Results().At(0).Type(), e.f.Qualifier)
+	name := p.Name()
+	if name == "" || name == "_" {
+		name = "db"
+	}
+	if name == recv || name == repo.constructor() {
+		name = sc.Name(name)
+	}
+	input := name
+	if m.bind.accessor {
+		input += ".DBTX()"
+	}
+	e.printf("func (%s %s) %s(%s %s) %s {\nreturn %s(%s, %s.db.options.Option())\n}\n\n",
+		recv, repo.implementation(), m.name, name, typ, result, repo.constructor(), input, recv)
+}
+
 // dialect is the orm.Dialect of the database, as the file names it.
 func (e repoEmitter) dialect() string {
 	if e.d == snapshot.MySQL {
@@ -262,6 +280,10 @@ func (e repoEmitter) dialect() string {
 func (e repoEmitter) method(repo repository, m repoMethod) {
 	sc := e.f.Scope()
 	recv := sc.Name("r")
+	if m.bind != nil {
+		e.bind(repo, m, sc, recv)
+		return
+	}
 	sig := e.signature(m, sc)
 	// A helper of a method written by hand returns its errors as they are, for the method to map.
 	if repo.mapError && m.bind == nil && m.name == m.fn.Name() {
@@ -271,14 +293,6 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
 	}
 	e.printf("func (%s %s) %s%s {\n", recv, repo.implementation(), m.name, sig.text)
-	if m.bind != nil {
-		input := sig.ctx
-		if m.bind.accessor {
-			input += ".DBTX()"
-		}
-		e.printf("return %s(%s, %s.db.options.Option())\n}\n\n", repo.constructor(), input, recv)
-		return
-	}
 	switch m.verb {
 	case "":
 		e.handWritten(m, sc, recv, sig)
