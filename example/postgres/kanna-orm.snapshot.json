@@ -47,13 +47,13 @@
     "order_tags": {
       "columns": [
         {"name": "order_id", "type": "int8", "not_null": true},
-        {"name": "tag", "type": "text", "not_null": true}
+        {"name": "tag_id", "type": "text", "not_null": true}
       ],
-      "primary_key": ["order_id", "tag"],
+      "primary_key": ["order_id", "tag_id"],
       "unique_keys": [],
       "foreign_keys": [
         {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]},
-        {"columns": ["tag"], "references": "tags", "referenced_columns": ["name"]}
+        {"columns": ["tag_id"], "references": "tags", "referenced_columns": ["name"]}
       ]
     },
     "orders": {
@@ -126,7 +126,7 @@
       ]
     },
     "github.com/go-kanna/orm/example/postgres/postgres.Tag": {
-      "digest": "562d0cb98a094f54",
+      "digest": "4c72fc72da3b0b4c",
       "params": [
         {"name": "orderID", "type": "int8"},
         {"name": "tag", "type": "text"}

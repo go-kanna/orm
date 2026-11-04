@@ -47,13 +47,13 @@
     "order_tags": {
       "columns": [
         {"name": "order_id", "type": "bigint", "not_null": true},
-        {"name": "tag", "type": "varchar(64)", "not_null": true}
+        {"name": "tag_id", "type": "varchar(64)", "not_null": true}
       ],
-      "primary_key": ["order_id", "tag"],
+      "primary_key": ["order_id", "tag_id"],
       "unique_keys": [],
       "foreign_keys": [
         {"columns": ["order_id"], "references": "orders", "referenced_columns": ["id"]},
-        {"columns": ["tag"], "references": "tags", "referenced_columns": ["name"]}
+        {"columns": ["tag_id"], "references": "tags", "referenced_columns": ["name"]}
       ]
     },
     "orders": {
@@ -126,7 +126,7 @@
       ]
     },
     "github.com/go-kanna/orm/example/mysql/mysql.Tag": {
-      "digest": "2c109bd615c74f6f",
+      "digest": "7fb7e674bdd2b4a7",
       "params": [
         {"name": "orderID"},
         {"name": "tag"}

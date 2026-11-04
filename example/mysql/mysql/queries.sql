@@ -1,5 +1,5 @@
 -- query: Tag
-INSERT IGNORE INTO order_tags (order_id, tag) VALUES (:orderID, :tag);
+INSERT IGNORE INTO order_tags (order_id, tag_id) VALUES (:orderID, :tag);
 
 -- MySQL says a function of a column may be NULL, and a sum too, so COALESCE tells it they are not.
 -- query: MonthlySales

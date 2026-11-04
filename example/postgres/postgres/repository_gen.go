@@ -180,7 +180,7 @@ func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repo
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "products", []impl.SelectColumn{{Table: "products", Column: "name"}, {Table: "products", Column: "price"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`, []string{`sku`})
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "products", []impl.SelectColumn{{Table: "products", Column: "name"}, {Table: "products", Column: "price"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`, []string{`sku`})
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,7 @@ func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]reposito
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, r.mapError(err)
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`, []string{`id`})
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`, []string{`id`})
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -514,7 +514,7 @@ func (r Order) DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]reposi
 
 // Tag runs the query of its name in queries.sql.
 func (r Order) Tag(ctx context.Context, orderID model.OrderID, input repository.TagInput) error {
-	const q = `INSERT INTO order_tags (order_id, tag) VALUES ($1, $2)
+	const q = `INSERT INTO order_tags (order_id, tag_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING`
 	if _, err := r.db.Exec(ctx, q, orderID, input.Tag); err != nil {
 		return r.mapError(fmt.Errorf("query Tag: %w", err))
@@ -929,7 +929,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 			for i, key := range chunk {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag"}, TargetKeys: []string{"name"}}, []string{`name`}, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}}, []string{`name`}, []string{"name"}, inputs)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1052,7 +1052,7 @@ func preloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q im
 			keys = append(keys, rows[i].ID)
 		}
 		byKey := map[model.OrderID][]model.Tag{}
-		pairs, err := db.Query(ctx, `SELECT order_id, tag FROM order_tags WHERE order_id = ANY($1)`, keys)
+		pairs, err := db.Query(ctx, `SELECT order_id, tag_id FROM order_tags WHERE order_id = ANY($1)`, keys)
 		if err != nil {
 			return fmt.Errorf("read order_tags: %w", err)
 		}

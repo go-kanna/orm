@@ -733,7 +733,7 @@ func (s Order) Busy(since time.Time, n int64) Order {
 
 // Tagged narrows the scope as order_scopes.sql writes it.
 func (s Order) Tagged(tags ...string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id IN (SELECT order_id FROM order_tags WHERE tag = ANY(`, tags, `))`))}
+	return Order{ormScope(ormRuntime(s.q).Where(`id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY(`, tags, `))`))}
 }
 
 // Limit keeps the first n rows.
@@ -1272,9 +1272,9 @@ func (s OrderLine) WithNotes(sub ...LineNote) OrderLine {
 	return OrderLine{ormScope(impl.PreloadEach(ormRuntime(s.q), "Notes", impl.Combine(qs...)))}
 }
 
-// WithTags loads Tags, from tags through line_tags. A limit or an offset of the scopes keeps a page of the Tags of each row.
-func (s OrderLine) WithTags(sub ...Tag) OrderLine {
-	qs := make([]impl.Of[model.Tag], len(sub))
+// WithTags loads Tags, from line_tags by order_id and line_no. A limit or an offset of the scopes keeps a page of the Tags of each row.
+func (s OrderLine) WithTags(sub ...LineTag) OrderLine {
+	qs := make([]impl.Of[model.LineTag], len(sub))
 	for i, x := range sub {
 		qs[i] = ormRuntime(x.Of())
 	}
@@ -1746,6 +1746,302 @@ func (s LineNote) Or(alternatives ...LineNote) LineNote {
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s LineNote) Not(other LineNote) LineNote {
 	return LineNote{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+}
+
+// LineTags returns a scope over all the rows of line_tags.
+func LineTags() LineTag { return LineTag{} }
+
+// Of returns the scope as a repository reads it.
+func (s LineTag) Of() scope.Of[model.LineTag] { return s.q }
+
+// LineTagChangeSet holds explicitly assigned columns of line_tags.
+type LineTagChangeSet struct{ changes change.Set[model.LineTag] }
+
+func LineTagChanges() LineTagChangeSet { return LineTagChangeSet{} }
+
+func (c LineTagChangeSet) Of() change.Set[model.LineTag] { return c.changes }
+
+// OrderIDEq narrows to the rows whose order_id is v.
+func (s LineTag) OrderIDEq(v model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id = `, v))}
+}
+
+// OrderIDNe narrows to the rows whose order_id is not v.
+func (s LineTag) OrderIDNe(v model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id <> `, v))}
+}
+
+// OrderIDIn narrows to the rows whose order_id is one of vs.
+func (s LineTag) OrderIDIn(vs ...model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
+}
+
+// OrderIDNotIn narrows to the rows whose order_id is none of vs.
+func (s LineTag) OrderIDNotIn(vs ...model.OrderID) LineTag {
+	if len(vs) == 0 {
+		return s
+	}
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
+}
+
+// OrderIDLt narrows to the rows whose order_id is less than v.
+func (s LineTag) OrderIDLt(v model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id < `, v))}
+}
+
+// OrderIDLte narrows to the rows whose order_id is at most v.
+func (s LineTag) OrderIDLte(v model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id <= `, v))}
+}
+
+// OrderIDGt narrows to the rows whose order_id is greater than v.
+func (s LineTag) OrderIDGt(v model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id > `, v))}
+}
+
+// OrderIDGte narrows to the rows whose order_id is at least v.
+func (s LineTag) OrderIDGte(v model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id >= `, v))}
+}
+
+// OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
+func (s LineTag) OrderIDBetween(lo, hi model.OrderID) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
+}
+
+// OrderIDAsc orders the rows by order_id, smallest first.
+func (s LineTag) OrderIDAsc() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`order_id`, false))}
+}
+
+// OrderIDDesc orders the rows by order_id, largest first.
+func (s LineTag) OrderIDDesc() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`order_id`, true))}
+}
+
+// LineNoEq narrows to the rows whose line_no is v.
+func (s LineTag) LineNoEq(v int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no = `, v))}
+}
+
+// LineNoNe narrows to the rows whose line_no is not v.
+func (s LineTag) LineNoNe(v int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no <> `, v))}
+}
+
+// LineNoIn narrows to the rows whose line_no is one of vs.
+func (s LineTag) LineNoIn(vs ...int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
+}
+
+// LineNoNotIn narrows to the rows whose line_no is none of vs.
+func (s LineTag) LineNoNotIn(vs ...int) LineTag {
+	if len(vs) == 0 {
+		return s
+	}
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
+}
+
+// LineNoLt narrows to the rows whose line_no is less than v.
+func (s LineTag) LineNoLt(v int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no < `, v))}
+}
+
+// LineNoLte narrows to the rows whose line_no is at most v.
+func (s LineTag) LineNoLte(v int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no <= `, v))}
+}
+
+// LineNoGt narrows to the rows whose line_no is greater than v.
+func (s LineTag) LineNoGt(v int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no > `, v))}
+}
+
+// LineNoGte narrows to the rows whose line_no is at least v.
+func (s LineTag) LineNoGte(v int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no >= `, v))}
+}
+
+// LineNoBetween narrows to the rows whose line_no is between lo and hi, both included.
+func (s LineTag) LineNoBetween(lo, hi int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
+}
+
+// LineNoAsc orders the rows by line_no, smallest first.
+func (s LineTag) LineNoAsc() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`line_no`, false))}
+}
+
+// LineNoDesc orders the rows by line_no, largest first.
+func (s LineTag) LineNoDesc() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`line_no`, true))}
+}
+
+// TagIDEq narrows to the rows whose tag_id is v.
+func (s LineTag) TagIDEq(v string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id = `, v))}
+}
+
+// TagIDNe narrows to the rows whose tag_id is not v.
+func (s LineTag) TagIDNe(v string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id <> `, v))}
+}
+
+// TagIDIn narrows to the rows whose tag_id is one of vs.
+func (s LineTag) TagIDIn(vs ...string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id = ANY(`, vs, `)`))}
+}
+
+// TagIDNotIn narrows to the rows whose tag_id is none of vs.
+func (s LineTag) TagIDNotIn(vs ...string) LineTag {
+	if len(vs) == 0 {
+		return s
+	}
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id <> ALL(`, vs, `)`))}
+}
+
+// TagIDLt narrows to the rows whose tag_id is less than v.
+func (s LineTag) TagIDLt(v string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id < `, v))}
+}
+
+// TagIDLte narrows to the rows whose tag_id is at most v.
+func (s LineTag) TagIDLte(v string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id <= `, v))}
+}
+
+// TagIDGt narrows to the rows whose tag_id is greater than v.
+func (s LineTag) TagIDGt(v string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id > `, v))}
+}
+
+// TagIDGte narrows to the rows whose tag_id is at least v.
+func (s LineTag) TagIDGte(v string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id >= `, v))}
+}
+
+// TagIDBetween narrows to the rows whose tag_id is between lo and hi, both included.
+func (s LineTag) TagIDBetween(lo, hi string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id BETWEEN `, lo, ` AND `, hi))}
+}
+
+// TagIDLike narrows to the rows whose tag_id matches pattern, as LIKE does.
+func (s LineTag) TagIDLike(pattern string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id LIKE `, pattern))}
+}
+
+// TagIDILike narrows to the rows whose tag_id matches pattern, as ILIKE does, ignoring case.
+func (s LineTag) TagIDILike(pattern string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id ILIKE `, pattern))}
+}
+
+// TagIDHasPrefix narrows to the rows whose tag_id starts with prefix.
+func (s LineTag) TagIDHasPrefix(prefix string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+}
+
+// TagIDContains narrows to the rows whose tag_id contains substr.
+func (s LineTag) TagIDContains(substr string) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+}
+
+// TagIDAsc orders the rows by tag_id, in ascending order.
+func (s LineTag) TagIDAsc() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`tag_id`, false))}
+}
+
+// TagIDDesc orders the rows by tag_id, in descending order.
+func (s LineTag) TagIDDesc() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`tag_id`, true))}
+}
+
+// WithTag loads Tag, from tags by tag_id.
+func (s LineTag) WithTag(sub ...Tag) LineTag {
+	qs := make([]impl.Of[model.Tag], len(sub))
+	for i, x := range sub {
+		qs[i] = ormRuntime(x.Of())
+	}
+	return LineTag{ormScope(impl.Preload(ormRuntime(s.q), "Tag", impl.Combine(qs...)))}
+}
+
+// Limit keeps the first n rows.
+func (s LineTag) Limit(n int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Limit(n))}
+}
+
+// Offset skips the first n rows.
+func (s LineTag) Offset(n int) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Offset(n))}
+}
+
+// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
+func (s LineTag) Join(table string, on ...join.Condition) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
+}
+
+// JoinOrderLines joins order_lines through its foreign key for a read projection.
+func (s LineTag) JoinOrderLines() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).JoinTable("order_lines"))}
+}
+
+// JoinTags joins tags through its foreign key for a read projection.
+func (s LineTag) JoinTags() LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).JoinTable("tags"))}
+}
+
+// Or narrows to the rows any of alternatives matches, each holding conditions alone.
+func (s LineTag) Or(alternatives ...LineTag) LineTag {
+	qs := make([]impl.Of[model.LineTag], len(alternatives))
+	for i, a := range alternatives {
+		qs[i] = ormRuntime(a.q)
+	}
+	return LineTag{ormScope(ormRuntime(s.q).Or(qs...))}
+}
+
+// Not narrows to the rows other, holding conditions alone, does not match.
+func (s LineTag) Not(other LineTag) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+}
+
+// values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
+// holds MayBeNull, since no page continues by it.
+func (LineTag) values(row model.LineTag) map[string]any {
+	return map[string]any{
+		`order_id`: row.OrderID,
+		`line_no`:  row.LineNo,
+		`tag_id`:   row.TagID,
+	}
+}
+
+// After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
+func (s LineTag) After(row model.LineTag) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).After([]string{`order_id`, `line_no`, `tag_id`}, s.values(row)))}
+}
+
+// Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
+func (s LineTag) Before(row model.LineTag) LineTag {
+	return LineTag{ormScope(ormRuntime(s.q).Before([]string{`order_id`, `line_no`, `tag_id`}, s.values(row)))}
+}
+
+// Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
+func (s LineTag) Cursor(row model.LineTag) (string, error) {
+	return ormRuntime(s.q).Cursor([]string{`order_id`, `line_no`, `tag_id`}, s.values(row))
+}
+
+// AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
+func (s LineTag) AfterCursor(cursor string) (LineTag, error) {
+	if cursor == "" {
+		return s, nil
+	}
+	var row model.LineTag
+	if err := ormRuntime(s.q).DecodeCursor(cursor, []string{`order_id`, `line_no`, `tag_id`}, map[string]any{
+		`order_id`: &row.OrderID,
+		`line_no`:  &row.LineNo,
+		`tag_id`:   &row.TagID,
+	}); err != nil {
+		return LineTag{}, err
+	}
+	return s.After(row), nil
 }
 
 // Labels returns a scope over all the rows of labels.

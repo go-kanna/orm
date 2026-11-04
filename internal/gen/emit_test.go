@@ -70,19 +70,19 @@ var tables = map[string]snapshot.Table{
 		Columns: []snapshot.Column{
 			{Name: "order_id", Type: "int8", NotNull: true},
 			{Name: "line_no", Type: "int4", NotNull: true},
-			{Name: "tag", Type: "text", NotNull: true},
+			{Name: "tag_id", Type: "text", NotNull: true},
 		},
-		PrimaryKey: []string{"order_id", "line_no", "tag"},
+		PrimaryKey: []string{"order_id", "line_no", "tag_id"},
 		ForeignKeys: []snapshot.ForeignKey{
 			fk([]string{"order_id", "line_no"}, "order_lines", "order_id", "line_no"),
-			fk([]string{"tag"}, "tags", "name"),
+			fk([]string{"tag_id"}, "tags", "name"),
 		},
 	},
 	"order_tags": {
-		Columns: columns("order_id", "tag"), PrimaryKey: []string{"order_id", "tag"},
+		Columns: columns("order_id", "tag_id"), PrimaryKey: []string{"order_id", "tag_id"},
 		ForeignKeys: []snapshot.ForeignKey{
 			fk([]string{"order_id"}, "orders", "id"),
-			fk([]string{"tag"}, "tags", "name"),
+			fk([]string{"tag_id"}, "tags", "name"),
 		},
 	},
 }

@@ -32,9 +32,10 @@ type column struct {
 type relation struct {
 	path []string
 	typ  types.Type
-	// fk is the foreign key its tag names, if any.
-	fk           string
-	pos          token.Position
+	// fk names the columns of the foreign key its tag names, if it names any.
+	fk  []string
+	pos token.Position
+	// table is the table a scalar relation reads the values of, and value their column, when its tag names it.
 	table, value string
 }
 
@@ -98,12 +99,8 @@ func (m *matcher) match(st *types.Struct, path []string) {
 
 		switch t := f.Type(); {
 		case tag.relation != "":
-			value := tag.value
-			if value == "" {
-				value = columnName(f.Name())
-			}
 			m.relations = append(m.relations, relation{path: fpath, typ: t, fk: tag.fk, pos: pos,
-				table: tag.relation, value: value})
+				table: tag.relation, value: tag.value})
 		case f.Embedded() && isModel(t):
 			if written != "" {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is on an embedded struct, whose fields hold the columns`,
@@ -115,7 +112,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 			m.ds = append(m.ds, diag.Errorf(pos, "%s: an embedded pointer may be nil, and so cannot be read into", label).
 				WithHints(fmt.Sprintf(`embed %s itself, or leave it out with orm:"-"`, f.Name())))
 		case holdsColumn(t):
-			if tag.fk != "" {
+			if tag.fk != nil {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is for a relation, and %s holds a column`,
 					label, written, f.Name()))
 				continue

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -13,8 +14,8 @@ type fieldTag struct {
 	column string
 	// skip says the field is no column: kanna-orm neither reads nor writes it.
 	skip bool
-	// fk is the foreign key a relation follows, when more than one could serve.
-	fk            string
+	// fk names the columns of the foreign key a relation follows, when its names do not tell them.
+	fk            []string
 	nullzero      bool
 	relation      string
 	value         string
@@ -35,33 +36,7 @@ func parseTag(tag string) (fieldTag, error) {
 		return fieldTag{}, nil
 	}
 	if strings.HasPrefix(value, "relation=") {
-		var tag fieldTag
-		for part := range strings.SplitSeq(value, ",") {
-			key, val, valid := strings.Cut(part, "=")
-			if !valid || val == "" || strings.ContainsAny(val, "= \t\n") {
-				return fieldTag{}, fmt.Errorf("invalid scalar relation tag %q", value)
-			}
-			switch key {
-			case "relation":
-				if tag.relation != "" {
-					return fieldTag{}, errors.New("duplicate relation option")
-				}
-				tag.relation = val
-			case "column":
-				if tag.value != "" {
-					return fieldTag{}, errors.New("duplicate column option")
-				}
-				tag.value = val
-			case "fk":
-				if tag.fk != "" {
-					return fieldTag{}, errors.New("duplicate fk option")
-				}
-				tag.fk = val
-			default:
-				return fieldTag{}, fmt.Errorf("unknown scalar relation option %q", key)
-			}
-		}
-		return tag, nil
+		return parseRelationTag(value)
 	}
 	if name, options, ok := strings.Cut(value, ","); ok && name != "-" &&
 		!strings.ContainsAny(name, ",= ") {
@@ -83,10 +58,66 @@ func parseTag(tag string) (fieldTag, error) {
 	switch fk, isFK := strings.CutPrefix(value, "fk="); {
 	case value == "-":
 		return fieldTag{skip: true}, nil
-	case isFK && fk != "" && !strings.ContainsAny(fk, ",= "):
-		return fieldTag{fk: fk}, nil
+	case isFK && fk != "" && !strings.ContainsAny(fk, "= "):
+		var tag fieldTag
+		for column := range strings.SplitSeq(fk, ",") {
+			var err error
+			if tag.fk, err = fkColumn(tag.fk, column); err != nil {
+				return fieldTag{}, fmt.Errorf("orm:%q: %w", value, err)
+			}
+		}
+		return tag, nil
 	case value != "" && !strings.ContainsAny(value, ",= "):
 		return fieldTag{column: value}, nil
 	}
-	return fieldTag{}, fmt.Errorf(`orm:%q is neither a column, -, nor fk=<column>`, value)
+	return fieldTag{}, fmt.Errorf(`orm:%q is neither a column, -, nor fk=<columns>`, value)
+}
+
+// parseRelationTag reads the tag of a scalar relation: relation=, column=, and fk=, whose columns go on in the parts
+// after it with no =, as in relation=record_topics,fk=tenant_id,record_id.
+func parseRelationTag(value string) (fieldTag, error) {
+	var tag fieldTag
+	option := ""
+	for part := range strings.SplitSeq(value, ",") {
+		key, val, ok := strings.Cut(part, "=")
+		if ok {
+			option = key
+		} else {
+			key, val = option, part
+		}
+		if val == "" || strings.ContainsAny(val, "= \t\n") || !ok && option != "fk" {
+			return fieldTag{}, fmt.Errorf("invalid scalar relation tag %q", value)
+		}
+		switch {
+		case key == "relation" && tag.relation == "":
+			tag.relation = val
+		case key == "column" && tag.value == "":
+			tag.value = val
+		case key == "fk" && (!ok || tag.fk == nil):
+			var err error
+			if tag.fk, err = fkColumn(tag.fk, val); err != nil {
+				return fieldTag{}, fmt.Errorf("orm:%q: %w", value, err)
+			}
+		case key == "relation" || key == "column" || key == "fk":
+			return fieldTag{}, fmt.Errorf("duplicate %s option", key)
+		default:
+			return fieldTag{}, fmt.Errorf("unknown scalar relation option %q", key)
+		}
+	}
+	return tag, nil
+}
+
+// fkColumn adds column to columns, those of an fk= so far. It names a column once, and its table not at all: the kind
+// of the relation tells that.
+func fkColumn(columns []string, column string) ([]string, error) {
+	switch {
+	case column == "":
+		return nil, errors.New("fk= names no column between two commas")
+	case strings.Contains(column, "."):
+		return nil, fmt.Errorf("fk= names the columns of the foreign key alone, not %s, a table's: the kind of the "+
+			"relation tells which table they are of", column)
+	case slices.Contains(columns, column):
+		return nil, fmt.Errorf("fk= names %s twice", column)
+	}
+	return append(columns, column), nil
 }

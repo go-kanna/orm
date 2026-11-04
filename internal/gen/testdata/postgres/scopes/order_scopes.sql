@@ -14,4 +14,4 @@ placed_at >= :since
   AND id IN (SELECT order_id FROM order_lines GROUP BY order_id HAVING count(*) >= :n)
 
 -- scope: Order.Tagged(tags ...string)
-id IN (SELECT order_id FROM order_tags WHERE tag = ANY(:tags))
+id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY(:tags))

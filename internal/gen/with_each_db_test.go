@@ -25,7 +25,7 @@ func checkPagesOfEach(t *testing.T, order model.Order) {
 		if len(line.Notes) != 1 || line.Notes[0].Body != want {
 			t.Fatalf("line %d notes: %+v", line.LineNo, line.Notes)
 		}
-		if len(line.Tags) != 1 || line.Tags[0].Name != "gift" {
+		if len(line.Tags) != 1 || line.Tags[0].TagID != "gift" {
 			t.Fatalf("line %d tags: %+v", line.LineNo, line.Tags)
 		}
 	}
@@ -38,7 +38,7 @@ func TestWithPagesEach_Postgres(t *testing.T) {
 			WithTags(pscopes.Tags().NameAsc().Limit(1)).
 			WithLines(pscopes.OrderLines().LineNoAsc().
 				WithNotes(pscopes.LineNotes().BodyAsc().Limit(1)).
-				WithTags(pscopes.Tags().NameAsc().Limit(1))))
+				WithTags(pscopes.LineTags().TagIDAsc().Limit(1))))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,7 +53,7 @@ func TestWithPagesEach_MySQL(t *testing.T) {
 		WithTags(mscopes.Tags().NameAsc().Limit(1)).
 		WithLines(mscopes.OrderLines().LineNoAsc().
 			WithNotes(mscopes.LineNotes().BodyAsc().Limit(1)).
-			WithTags(mscopes.Tags().NameAsc().Limit(1))))
+			WithTags(mscopes.LineTags().TagIDAsc().Limit(1))))
 	if err != nil {
 		t.Fatal(err)
 	}
