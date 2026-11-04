@@ -1172,7 +1172,7 @@ make example    # migrate and describe the databases of db-up, regenerate the ex
 make bench      # run the benchmarks in a container next to the PostgreSQL of db-up
 ```
 
-[`bench/postgres`](bench/postgres) は、kanna-orm を pgx 単体、sqlc、GORM、bun、ent と比較して計測します。結果と計測方法は、その README にあります。
+[`bench/postgres`](bench/postgres/README.ja.md) は、kanna-orm を pgx 単体、sqlc、GORM、bun、ent と比較して計測します。結果と計測方法は、その README にあります。
 
 ## ライセンス
 
