@@ -46,6 +46,9 @@ func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (pgx.
 	if err != nil {
 		return nil, err
 	}
+	if trace == nil {
+		return rows, nil
+	}
 	return ormPgxRows{Rows: rows, traced: traced}, nil
 }
 
