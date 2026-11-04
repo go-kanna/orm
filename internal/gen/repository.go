@@ -335,7 +335,13 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		repo.mapError = true
 		ds = append(ds, mapErrorSignature(repo, implementation, m)...)
 	}
-	return repo, ds
+	// Each method that tells no table is told what is wrong with the one of the repository's name, which is told once.
+	seen := map[string]bool{}
+	return repo, slices.DeleteFunc(ds, func(d diag.Diag) bool {
+		told := seen[d.String()]
+		seen[d.String()] = true
+		return told
+	})
 }
 
 // method reads fn, a method of the repository ts declares, as field, its syntax, declares it. fallback is the model
