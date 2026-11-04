@@ -1370,6 +1370,41 @@ approvers, err := repo.ListApprovers(ctx, ids)
 
 The [examples](example/postgres/main.go) read the approvers of their orders this way.
 
+## Checking the scopes you pass
+
+Some scopes make a repository method fail every time, before it sends any SQL. `Count` takes conditions alone, so a
+scope that orders the rows makes it return `orm: Count takes conditions alone, but its scope orders the rows`.
+`kanna-orm vet` finds such calls without running them:
+
+```sh
+go tool kanna-orm vet ./...
+```
+
+```text
+usecase/orders.go:42:21: error: Count takes conditions alone, but its scope orders the rows
+  scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
+```
+
+It reports a call at the method it calls, in the words of the error the call would return, and, when what makes it
+fail is written elsewhere, such as in a scope of your own, where that is. It finds:
+
+- an order, paging, or a relation to load in a scope given to what takes conditions alone: `Count`, `Exists`, an
+  `Update` with a change set, and the alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a relation to
+  load given to a projection, a read of one column, or a `Delete`;
+- a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`
+  ordered without `Limit` or `Offset`; a paged `Delete` of a table with neither a primary key nor a non-null unique
+  key;
+- `After` or `Before` in the scope a relation is loaded by, and `Limit` or `Offset` in that of a relation to one row;
+- a negative constant given to `Limit` or `Offset`; a change set that assigns nothing, given to an `Update`; one that
+  assigns a column its method cannot write, such as the one an upsert meets its row by.
+
+vet follows a scope through the variables of a function, the branches that build it, the closures that read it, and
+the scope methods and functions you write. A call through an interface is checked as the implementations kanna-orm
+generated for it would run it. vet reports a call only when every path to it fails. It leaves alone a call that fails
+on some paths only, as one given a scope paged past the first page only does, and a scope it does not follow: one that a
+parameter, a field, a package variable, or a slice holds. Test files are not checked, as a test may make a call fail on
+purpose. A package that passes holds no call vet found to fail; that is not to say there is none.
+
 ## Drivers and dialects
 
 The snapshot knows which database it came from, so only the driver is chosen, with `-driver`:
@@ -1425,6 +1460,7 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 ```sh
 kanna-orm [flags] [packages]
 kanna-orm describe [flags] [packages]
+kanna-orm vet [flags] [packages]
 ```
 
 Generating:
@@ -1448,6 +1484,12 @@ Describing:
 | `-tags <list>`        | comma-separated build tags                                                           |
 | `-check`              | verify the snapshot is up to date with the database instead of writing it            |
 | `-v`                  | say whether the snapshot was written or left unchanged                               |
+
+Vetting:
+
+| Flag           | Meaning                    |
+|----------------|----------------------------|
+| `-tags <list>` | comma-separated build tags |
 
 The packages default to the one in the current directory, so `//go:generate go tool kanna-orm` needs no argument. As
 with every kanna generator, `KANNA_CHECK=1 go generate ./...` checks instead of writing. A run that succeeds prints

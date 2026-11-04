@@ -1,0 +1,328 @@
+package vet_test
+
+import (
+	"bytes"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/go-kanna/internal/cli"
+	"github.com/go-kanna/internal/diag"
+
+	"github.com/go-kanna/orm/internal/vet"
+)
+
+// TestMain loads every module the tests write outside any workspace. A GOWORK pinned by the Makefile or the
+// environment would otherwise put them outside the modules it lists, which the go command refuses to load.
+func TestMain(m *testing.M) {
+	// Before any test runs: t.Setenv would rule out t.Parallel.
+	if err := os.Setenv("GOWORK", "off"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
+// exampleModule copies example/name into a module of its own, on the runtime of this repository, with files added.
+func exampleModule(t *testing.T, name string, files map[string]string) string {
+	t.Helper()
+
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(root, "example", name)
+	dir := t.TempDir()
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // a file of the example
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel == "go.mod" {
+			data = append(data, []byte("\nreplace github.com/go-kanna/orm => "+root+"\n")...)
+		}
+		write(t, filepath.Join(dir, rel), data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range files {
+		write(t, filepath.Join(dir, filepath.FromSlash(name)), []byte(src))
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "mod", "tidy")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy: %v\n%s", err, out)
+	}
+	return dir
+}
+
+func write(t *testing.T, path string, data []byte) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // a file of the test's module
+		t.Fatal(err)
+	}
+}
+
+// report renders ds as diag does, naming each file by its base name.
+func report(ds []diag.Diag) string {
+	lines := make([]string, 0, len(ds))
+	for _, d := range ds {
+		d.Pos.Filename = filepath.Base(d.Pos.Filename)
+		lines = append(lines, d.String())
+	}
+	return strings.Join(lines, "\n")
+}
+
+const postgresUseCase = `package usecase
+
+import (
+	"context"
+
+	"github.com/go-kanna/orm/example/postgres/model"
+	"github.com/go-kanna/orm/example/postgres/repository"
+	"github.com/go-kanna/orm/example/postgres/scopes"
+)
+
+type UseCase struct {
+	orders      repository.Order
+	customers   repository.Customer
+	fulfillment repository.Fulfillment
+}
+
+func (u UseCase) Misuses(ctx context.Context, id model.OrderID) {
+	_, _ = u.orders.Count(ctx, scopes.Orders().PlacedAtDesc())
+	_, _ = u.orders.Count(ctx, scopes.Orders().Latest())
+	_, _ = u.orders.Count(ctx, scopes.Orders().WithRecentApprovals())
+	_, _ = u.orders.Count(ctx, scopes.Orders().Open().Limit(10))
+	_, _ = u.orders.Get(ctx, id, scopes.Orders().Offset(1))
+	_, _ = u.orders.ListSummaries(ctx, scopes.Orders().WithCustomer())
+	_, _ = u.orders.Delete(ctx)
+	_, _ = u.orders.Delete(ctx, scopes.Orders().WithLines().IDEq(id))
+	_, _ = u.orders.Delete(ctx, scopes.Orders().Open().IDAsc())
+	_, _ = u.orders.List(ctx, scopes.Orders().Limit(-1))
+	_, _ = u.orders.List(ctx, scopes.Orders().Or(scopes.Orders().IDAsc()))
+	_, _ = u.orders.List(ctx, scopes.Orders().WithCustomer(scopes.Customers().Limit(1)))
+	_, _ = u.orders.List(ctx, scopes.Orders().WithApprovals(scopes.Approvals().After(model.Approval{})))
+	_, _ = u.customers.UpdatePhone(ctx, 1, scopes.CustomerChanges())
+	_, _ = u.customers.UpdatePhone(ctx, 1, scopes.CustomerChanges().SetPhone(nil), scopes.Customers().NameAsc())
+	_, _ = u.customers.UpsertByEmail(ctx, model.Customer{}, scopes.CustomerChanges().SetEmail("a@example.com"))
+	_, _ = u.orders.List(ctx, scopes.Orders().Not(scopes.Orders().Limit(1)))
+}
+
+func (u UseCase) Branches(ctx context.Context, open bool) {
+	s := scopes.Orders().IDAsc()
+	if open {
+		s = s.Open()
+	}
+	_, _ = u.orders.Count(ctx, s)
+}
+
+func (u UseCase) Transaction(ctx context.Context, open bool, with func(func() error) error) error {
+	s := scopes.Orders().IDAsc()
+	switch {
+	case open:
+		s = s.Open()
+	default:
+	}
+	return with(func() error {
+		_, err := u.orders.Count(ctx, s)
+		return err
+	})
+}
+
+func (u UseCase) Deferred(ctx context.Context, id model.OrderID) {
+	s := scopes.Orders()
+	defer u.orders.Delete(ctx, s) //nolint:errcheck // what vet reads
+	s = s.IDEq(id)
+	_ = s
+}
+
+func (u UseCase) Concrete(ctx context.Context, orders interface {
+	Count(context.Context, ...scopes.Order) (int64, error)
+}) {
+	var s scopes.Order
+	_, _ = orders.Count(ctx, s.IDDesc())
+}
+
+// Passes holds calls that fail on some paths alone, or with scopes vet does not follow, which it leaves alone.
+func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, given scopes.Order, more []scopes.Order) {
+	s := scopes.Orders()
+	if page > 0 {
+		s = s.Limit(20).Offset(20 * page)
+	}
+	_, _ = u.orders.Count(ctx, s)
+	_, _ = u.orders.Delete(ctx, scopes.Orders().IDNotIn(ids...))
+	_, _ = u.orders.Count(ctx, given)
+	_, _ = u.orders.Count(ctx, more...)
+	_, _ = u.orders.Count(ctx, scopes.Orders().Open())
+	_, _ = u.orders.Delete(ctx, scopes.Orders().Open().IDAsc().Limit(10))
+	_, _ = u.orders.Get(ctx, 1, scopes.Orders().WithLines(scopes.OrderLines().Limit(3)))
+
+	_, _ = u.orders.Count(ctx, scopes.Orders().Or(scopes.Orders().Open(), scopes.Orders().IDEq(1)))
+	_, _ = u.orders.Count(ctx, scopes.Orders().Or())
+	_, _ = u.orders.Delete(ctx, scopes.Orders().Not(scopes.Orders().Open()))
+	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
+
+	c := scopes.CustomerChanges()
+	if page > 0 {
+		c = c.SetName("a")
+	}
+	_, _ = u.customers.UpdatePhone(ctx, 1, c)
+
+	t := scopes.Orders()
+	count := func() { _, _ = u.orders.Delete(ctx, t) }
+	t = t.Open()
+	count()
+}
+`
+
+const postgresUseCaseTest = `package usecase
+
+import (
+	"testing"
+
+	"github.com/go-kanna/orm/example/postgres/scopes"
+)
+
+func TestCount(t *testing.T) {
+	var u UseCase
+	_, _ = u.orders.Count(t.Context(), scopes.Orders().IDAsc())
+}
+`
+
+func TestRun_Postgres(t *testing.T) {
+	t.Parallel()
+
+	dir := exampleModule(t, "postgres", map[string]string{
+		"usecase/usecase.go":      postgresUseCase,
+		"usecase/usecase_test.go": postgresUseCaseTest,
+		"unrelated/unrelated.go":  "package unrelated\n\nvar broken int = \"not an int\"\n",
+	})
+	got := report(vet.Run(dir, "", []string{"./usecase"}))
+	want := `usecase.go:18:18: error: Count takes conditions alone, but its scope orders the rows
+usecase.go:19:18: error: Count takes conditions alone, but its scope orders the rows
+  scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
+usecase.go:20:18: error: Count takes conditions alone, but its scope loads Approvals
+  scopes/scopes.go:27:11: WithRecentApprovals loads Approvals by WithApprovals
+usecase.go:21:18: error: Count takes conditions alone, but its scope keeps only some of the rows
+usecase.go:22:18: error: Get reads one row by its key, but its scope keeps only some of the rows
+usecase.go:23:18: error: ListSummaries is a projection, but its scope loads relations
+usecase.go:24:18: error: Delete would delete every row of orders: give it a condition
+usecase.go:25:18: error: Delete cannot load relations
+usecase.go:26:18: error: Delete ordering requires Limit or Offset
+usecase.go:27:18: error: a limit of -1 rows
+usecase.go:28:18: error: Or takes conditions alone, but its scope orders the rows
+usecase.go:29:18: error: Customer keeps only some of the rows it loads, which would count those of every row together
+usecase.go:30:18: error: Approvals continues a page of the rows of each row by Offset, not by a row
+usecase.go:31:21: error: Update requires at least one assigned column
+usecase.go:32:21: error: Update takes conditions alone, but its scope orders the rows
+usecase.go:33:21: error: UpsertByEmail meets its row by email, which its change set cannot write
+usecase.go:34:18: error: Not takes conditions alone, but its scope keeps only some of the rows
+usecase.go:42:18: error: Count takes conditions alone, but its scope orders the rows
+  usecase/usecase.go:38:23: IDAsc orders them
+usecase.go:53:22: error: Count takes conditions alone, but its scope orders the rows
+  usecase/usecase.go:46:23: IDAsc orders them
+usecase.go:60:17: error: Delete would delete every row of orders: give it a condition
+usecase.go:69:16: error: Count takes conditions alone, but its scope orders the rows`
+	if got != want {
+		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
+	}
+}
+
+const mysqlUseCase = `package usecase
+
+import (
+	"context"
+
+	"github.com/go-kanna/orm/example/mysql/model"
+	"github.com/go-kanna/orm/example/mysql/repository"
+	"github.com/go-kanna/orm/example/mysql/scopes"
+)
+
+func Misuses(ctx context.Context, orders repository.Order, customers repository.Customer, id model.OrderID) {
+	_, _ = orders.Count(ctx, scopes.Orders().Latest())
+	_, _ = orders.Get(ctx, id, scopes.Orders().Limit(1))
+	_, _ = orders.ListSummaries(ctx, scopes.Orders().WithCustomer())
+	_, _ = orders.Delete(ctx, scopes.Orders().Open().IDAsc())
+	_, _ = orders.List(ctx, scopes.Orders().Offset(-1))
+	_ = customers.UpdatePhone(ctx, 1, scopes.CustomerChanges())
+	_, _ = customers.UpsertByEmail(ctx, model.Customer{}, scopes.CustomerChanges().SetEmail("a@example.com"))
+	_, _ = orders.Count(ctx, scopes.Orders().Open())
+}
+`
+
+func TestRun_MySQL(t *testing.T) {
+	t.Parallel()
+
+	dir := exampleModule(t, "mysql", map[string]string{"usecase/usecase.go": mysqlUseCase})
+	got := report(vet.Run(dir, "", []string{"./usecase"}))
+	want := `usecase.go:12:16: error: Count takes conditions alone, but its scope orders the rows
+  scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
+usecase.go:13:16: error: Get reads one row by its key, but its scope keeps only some of the rows
+usecase.go:14:16: error: ListSummaries is a projection, but its scope loads relations
+usecase.go:15:16: error: Delete ordering requires Limit or Offset
+usecase.go:16:16: error: an offset of -1 rows
+usecase.go:17:16: error: Update requires at least one assigned column
+usecase.go:18:19: error: UpsertByEmail meets its row by email, which its change set cannot write`
+	if got != want {
+		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestExec(t *testing.T) {
+	t.Parallel()
+
+	dir := exampleModule(t, "postgres", map[string]string{
+		"clean/clean.go": "package clean\n",
+		"usecase/usecase.go": `package usecase
+
+import (
+	"context"
+
+	"github.com/go-kanna/orm/example/postgres/repository"
+	"github.com/go-kanna/orm/example/postgres/scopes"
+)
+
+func Count(ctx context.Context, orders repository.Order) (int64, error) {
+	return orders.Count(ctx, scopes.Orders().IDAsc())
+}
+`,
+		"unrelated/unrelated.go": "package unrelated\n\nvar broken int = \"not an int\"\n",
+	})
+	for _, tt := range []struct {
+		dir    string
+		args   []string
+		code   int
+		stderr string
+	}{
+		{filepath.Join(dir, "clean"), nil, cli.ExitOK, ""},
+		{dir, []string{"./usecase"}, cli.ExitFailure,
+			"usecase/usecase.go:11:16: error: Count takes conditions alone, but its scope orders the rows\n"},
+		{filepath.Join(dir, "usecase"), nil, cli.ExitFailure,
+			"./usecase.go:11:16: error: Count takes conditions alone, but its scope orders the rows\n"},
+		{dir, []string{"./..."}, cli.ExitFailure, ""},
+		{dir, []string{"-h"}, cli.ExitOK, ""},
+		{dir, []string{"-unknown"}, cli.ExitUsage, ""},
+	} {
+		var out, errOut bytes.Buffer
+		code := vet.Exec(cli.Env{Out: &out, Err: &errOut, Dir: tt.dir}, tt.args)
+		if code != tt.code || (tt.stderr != "" && errOut.String() != tt.stderr) {
+			t.Errorf("vet %v in %s = %d, want %d\n%s", tt.args, tt.dir, code, tt.code, errOut.String())
+		}
+	}
+}

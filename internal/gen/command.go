@@ -40,7 +40,9 @@ func Command() cli.Command[config] {
 		Args: "[packages]",
 		Help: "The packages default to the one in the current directory, so that\n" +
 			"//go:generate go tool " + generator + " needs no argument.\n\n" +
-			"kanna-orm describe [flags] [packages] writes the snapshot; kanna-orm describe -h tells more.",
+			"kanna-orm describe [flags] [packages] writes the snapshot; kanna-orm describe -h tells more.\n" +
+			"kanna-orm vet [flags] [packages] finds the scopes that make a repository fail every time;\n" +
+			"kanna-orm vet -h tells more.",
 		Flags: func(fs *flag.FlagSet, cfg *config) {
 			fs.StringVar(&cfg.destination, "destination", "", "write the implementations of the package's "+
 				"//kanna:repository interfaces into `dir`; required if it has any")
