@@ -96,7 +96,7 @@ func checkExecutions(t *testing.T, done []hook.Execution) {
 	if len(done) != 5 {
 		t.Fatalf("got %d executions, want parent, preload, count, custom SQL, failed insert: %+v", len(done), done)
 	}
-	statements := []string{"FROM orders", "FROM order_lines", "count(*)", "UPDATE orders", "INSERT INTO order_lines"}
+	statements := []string{"FROM orders", "order_lines", "count(*)", "UPDATE orders", "INSERT INTO order_lines"}
 	for i, text := range statements {
 		e := done[i]
 		if !strings.Contains(e.SQL, text) || e.Duration <= 0 || (e.Err != nil) != (i == 4) {

@@ -26,9 +26,9 @@ func TestCommand_ScalarRelations(t *testing.T) {
 					"type Record struct {\nTopics []State `orm:\"relation=record_states,column=state\"`", 1)
 				if driver == "database/sql" {
 					runtime := strings.Replace(typedQueryRuntime, "lastArgs = args\n\tif strings.HasPrefix", `lastArgs = args
-    if strings.Contains(query, "FROM record_states") {
-        if relationValue == "" { return &fakeRows{[]string{"record_id", "state"}, nil}, nil }
-        return &fakeRows{[]string{"record_id", "state"}, [][]driver.Value{{int64(7), relationValue}}}, nil
+    if strings.Contains(query, "\"record_states\"") {
+        if relationValue == "" { return &fakeRows{[]string{"orm_n", "state"}, nil}, nil }
+        return &fakeRows{[]string{"orm_n", "state"}, [][]driver.Value{{int64(0), relationValue}}}, nil
     }
     if strings.HasPrefix`, 1)
 					runtime = strings.Replace(runtime, "invalidState = true", `

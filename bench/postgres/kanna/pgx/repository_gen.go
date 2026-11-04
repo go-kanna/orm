@@ -252,25 +252,29 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 int64 }
 		keys := []parentKey{}
-		seen := map[parentKey]bool{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
 		for i := range rows {
+			owners[i] = -1
 			key := parentKey{rows[i].ID}
-			if !seen[key] {
-				seen[key] = true
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
 				keys = append(keys, key)
 			}
+			owners[i] = at
 		}
-		flat := []model.OrderLine{}
-		owners := []parentKey{}
-		for chunk := range slices.Chunk(keys, 1000) {
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
+		flat, numbers := []model.OrderLine{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`id`}, []string{"id", "order_id", "sku", "quantity"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "sku", "quantity"}, inputs, 0)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -279,53 +283,28 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Lines: %w", err)
 			}
 			for related.Next() {
-				var key parentKey
+				var number int
 				var row model.OrderLine
-				if err := related.Scan(&key.k0, &row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
+				if err := related.Scan(&number, &row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
 					related.Close()
 					return fmt.Errorf("load Lines: %w", err)
 				}
 				flat = append(flat, row)
-				owners = append(owners, key)
+				numbers = append(numbers, number)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
-		grouped := map[parentKey][]model.OrderLine{}
+		grouped := make([][]model.OrderLine, len(keys))
 		for i := range flat {
-			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
 		}
 		for i := range rows {
 			rows[i].Lines = []model.OrderLine{}
-			key := parentKey{rows[i].ID}
-			if values, ok := grouped[key]; ok {
-				rows[i].Lines = values
-			}
-		}
-	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
-		keys := make([]int64, 0, len(rows))
-		seen := map[int64]bool{}
-		for i := range rows {
-			if !seen[rows[i].ID] {
-				seen[rows[i].ID] = true
-				keys = append(keys, rows[i].ID)
-			}
-		}
-		byKey := map[int64][]model.OrderLine{}
-		related, err := ormSelectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			byKey[related[j].OrderID] = append(byKey[related[j].OrderID], related[j])
-		}
-		for i := range rows {
-			rows[i].Lines = []model.OrderLine{}
-			if found, ok := byKey[rows[i].ID]; ok {
-				rows[i].Lines = found
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
+				rows[i].Lines = grouped[owners[i]]
 			}
 		}
 	}

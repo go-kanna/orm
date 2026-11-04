@@ -29,13 +29,14 @@ type fakeConn struct{}
 type fakeRows struct { columns []string; values [][]driver.Value }
 var parentCount = 3
 var relationQueries int
+var unnested bool
 func (fakeDriver) Open(string) (driver.Conn, error) { return fakeConn{}, nil }
 func (fakeConn) Close() error { return nil }
 func (fakeConn) Begin() (driver.Tx, error) { return nil, errors.New("unused") }
 func (fakeConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unused") }
 func (fakeConn) CheckNamedValue(*driver.NamedValue) error { return nil }
 func (fakeConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
- if !strings.Contains(query, "FROM record_topics") {
+ if !strings.Contains(query, "record_topics") {
   rows := &fakeRows{columns: []string{"id", "tenant_id", "state", "note"}}
   for tenant := 1; tenant <= parentCount; tenant++ {
    rows.values = append(rows.values, []driver.Value{int64(7), int64(tenant), nil, nil})
@@ -43,26 +44,31 @@ func (fakeConn) QueryContext(_ context.Context, query string, args []driver.Name
   return rows, nil
  }
  relationQueries++
- if !strings.Contains(query, "(tenant_id, record_id) IN (") {
-  return nil, fmt.Errorf("missing composite condition: %s", query)
+ if !strings.Contains(query, "orm_key") {
+  return nil, fmt.Errorf("missing the keys joined: %s", query)
  }
- var tenants, ids []int64
+ var numbers, tenants, ids []int64
  if strings.Contains(query, "unnest") {
-  tenants = args[0].Value.([]int64)
-  ids = args[1].Value.([]int64)
- } else {
-  for i := 0; i < len(args); i += 2 {
-   tenants = append(tenants, args[i].Value.(int64))
-   ids = append(ids, args[i+1].Value.(int64))
+  unnested = true
+  numbers = args[0].Value.([]int64)
+  for i := range args[1].Value.([]any) {
+   tenants = append(tenants, args[1].Value.([]any)[i].(int64))
+   ids = append(ids, args[2].Value.([]any)[i].(int64))
   }
+ } else {
+  for i := 0; i < len(args); i += 3 {
+   numbers = append(numbers, int64(args[i].Value.(int)))
+   tenants = append(tenants, args[i+1].Value.(int64))
+   ids = append(ids, args[i+2].Value.(int64))
+  }
+  if len(tenants) > 500 { return nil, errors.New("composite relation exceeded batch size") }
  }
- if len(tenants) > 500 { return nil, errors.New("composite relation exceeded batch size") }
- rows := &fakeRows{columns: []string{"tenant_id", "record_id", "topic"}}
+ rows := &fakeRows{columns: []string{"orm_n", "topic"}}
  for i, tenant := range tenants {
   if ids[i] != 7 { return nil, fmt.Errorf("unexpected key: %d, %d", tenant, ids[i]) }
   if tenant == 3 { continue }
-  rows.values = append(rows.values, []driver.Value{tenant, ids[i], "news"})
-  if tenant == 2 { rows.values = append(rows.values, []driver.Value{tenant, ids[i], "updates"}) }
+  rows.values = append(rows.values, []driver.Value{numbers[i], "news"})
+  if tenant == 2 { rows.values = append(rows.values, []driver.Value{numbers[i], "updates"}) }
  }
  return rows, nil
 }
@@ -91,7 +97,9 @@ func TestCompositeRelations(t *testing.T) {
     t.Fatalf("tenant %d: got %v, want %d topics", row.TenantID, row.Topics, want)
    }
   }
-  if relationQueries != (count+499)/500 { t.Fatalf("related queries: %d", relationQueries) }
+  want := (count + 499) / 500
+  if unnested { want = 1 }
+  if relationQueries != want { t.Fatalf("related queries: %d, want %d", relationQueries, want) }
  }
 }
 `

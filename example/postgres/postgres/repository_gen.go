@@ -742,24 +742,57 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 		return nil
 	}
 	if sub, ok := impl.Preloaded[model.Product](q, "Product"); ok {
-		keys := make([]model.SKU, 0, len(rows))
-		seen := map[model.SKU]bool{}
+		type parentKey struct{ k0 model.SKU }
+		keys := []parentKey{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
 		for i := range rows {
-			if !seen[rows[i].SKU] {
-				seen[rows[i].SKU] = true
-				keys = append(keys, rows[i].SKU)
+			owners[i] = -1
+			key := parentKey{rows[i].SKU}
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
+				keys = append(keys, key)
+			}
+			owners[i] = at
+		}
+		flat, numbers := []model.Product{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "products", ChildKeys: []string{"sku"}, KeyTypes: []string{"text"}}, []string{`sku`}, []string{"sku", "name", "price", "currency"}, inputs, 0)
+			if err != nil {
+				return fmt.Errorf("load Product: %w", err)
+			}
+			related, err := db.Query(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("load Product: %w", err)
+			}
+			for related.Next() {
+				var number int
+				var row model.Product
+				if err := related.Scan(&number, &row.SKU, &row.Name, &row.Price, &row.Currency); err != nil {
+					related.Close()
+					return fmt.Errorf("load Product: %w", err)
+				}
+				flat = append(flat, row)
+				numbers = append(numbers, number)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return fmt.Errorf("load Product: %w", err)
 			}
 		}
-		byKey := map[model.SKU]model.Product{}
-		related, err := ormSelectProducts(ctx, db, sub.Where(`sku = ANY(`, keys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			byKey[related[j].SKU] = related[j]
+		grouped := make([][]model.Product, len(keys))
+		for i := range flat {
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
 		}
 		for i := range rows {
-			if found, ok := byKey[rows[i].SKU]; ok {
+			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+				found := grouped[owners[i]][0]
 				rows[i].Product = &found
 			}
 		}
@@ -814,25 +847,29 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if len(rows) == 0 {
 		return nil
 	}
-	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok && sub.PagesEach() {
+	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
-		seen := map[parentKey]bool{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
 		for i := range rows {
+			owners[i] = -1
 			key := parentKey{rows[i].ID}
-			if !seen[key] {
-				seen[key] = true
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
 				keys = append(keys, key)
 			}
+			owners[i] = at
 		}
-		flat := []model.Approval{}
-		owners := []parentKey{}
-		for chunk := range slices.Chunk(keys, 1000) {
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
+		flat, numbers := []model.Approval{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}, inputs, 0)
 			if err != nil {
 				return fmt.Errorf("load Approvals: %w", err)
 			}
@@ -841,51 +878,110 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Approvals: %w", err)
 			}
 			for related.Next() {
-				var key parentKey
+				var number int
 				var row model.Approval
-				if err := related.Scan(&key.k0, &row.ID, &row.OrderID, &row.Revision, &row.Approver, &row.ApprovedAt, &row.RevokedAt); err != nil {
+				if err := related.Scan(&number, &row.ID, &row.OrderID, &row.Revision, &row.Approver, &row.ApprovedAt, &row.RevokedAt); err != nil {
 					related.Close()
 					return fmt.Errorf("load Approvals: %w", err)
 				}
 				flat = append(flat, row)
-				owners = append(owners, key)
+				numbers = append(numbers, number)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
 				return fmt.Errorf("load Approvals: %w", err)
 			}
 		}
-		grouped := map[parentKey][]model.Approval{}
+		grouped := make([][]model.Approval, len(keys))
 		for i := range flat {
-			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
 		}
 		for i := range rows {
 			rows[i].Approvals = []model.Approval{}
-			key := parentKey{rows[i].ID}
-			if values, ok := grouped[key]; ok {
-				rows[i].Approvals = values
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
+				rows[i].Approvals = grouped[owners[i]]
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
-		type parentKey struct{ k0 model.OrderID }
+	if sub, ok := impl.Preloaded[model.Customer](q, "Customer"); ok {
+		type parentKey struct{ k0 model.CustomerID }
 		keys := []parentKey{}
-		seen := map[parentKey]bool{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
 		for i := range rows {
-			key := parentKey{rows[i].ID}
-			if !seen[key] {
-				seen[key] = true
+			owners[i] = -1
+			key := parentKey{rows[i].CustomerID}
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
 				keys = append(keys, key)
 			}
+			owners[i] = at
 		}
-		flat := []model.OrderLine{}
-		owners := []parentKey{}
-		for chunk := range slices.Chunk(keys, 1000) {
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
+		flat, numbers := []model.Customer{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "customers", ChildKeys: []string{"id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at"}, inputs, 0)
+			if err != nil {
+				return fmt.Errorf("load Customer: %w", err)
+			}
+			related, err := db.Query(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("load Customer: %w", err)
+			}
+			for related.Next() {
+				var number int
+				var row model.Customer
+				if err := related.Scan(&number, &row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
+					related.Close()
+					return fmt.Errorf("load Customer: %w", err)
+				}
+				flat = append(flat, row)
+				numbers = append(numbers, number)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return fmt.Errorf("load Customer: %w", err)
+			}
+		}
+		grouped := make([][]model.Customer, len(keys))
+		for i := range flat {
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
+		}
+		for i := range rows {
+			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+				found := grouped[owners[i]][0]
+				rows[i].Customer = &found
+			}
+		}
+	}
+	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
+		for i := range rows {
+			owners[i] = -1
+			key := parentKey{rows[i].ID}
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
+				keys = append(keys, key)
+			}
+			owners[i] = at
+		}
+		flat, numbers := []model.OrderLine{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"}, inputs, 0)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -894,14 +990,14 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Lines: %w", err)
 			}
 			for related.Next() {
-				var key parentKey
+				var number int
 				var row model.OrderLine
-				if err := related.Scan(&key.k0, &row.OrderID, &row.LineNo, &row.SKU, &row.Quantity); err != nil {
+				if err := related.Scan(&number, &row.OrderID, &row.LineNo, &row.SKU, &row.Quantity); err != nil {
 					related.Close()
 					return fmt.Errorf("load Lines: %w", err)
 				}
 				flat = append(flat, row)
-				owners = append(owners, key)
+				numbers = append(numbers, number)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
@@ -911,37 +1007,96 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		if err := ormPreloadOrderLines(ctx, db, flat, sub); err != nil {
 			return err
 		}
-		grouped := map[parentKey][]model.OrderLine{}
+		grouped := make([][]model.OrderLine, len(keys))
 		for i := range flat {
-			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
 		}
 		for i := range rows {
 			rows[i].Lines = []model.OrderLine{}
-			key := parentKey{rows[i].ID}
-			if values, ok := grouped[key]; ok {
-				rows[i].Lines = values
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
+				rows[i].Lines = grouped[owners[i]]
 			}
 		}
 	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && sub.PagesEach() {
+	if sub, ok := impl.Preloaded[model.Shipment](q, "Shipment"); ok {
 		type parentKey struct{ k0 model.OrderID }
 		keys := []parentKey{}
-		seen := map[parentKey]bool{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
 		for i := range rows {
+			owners[i] = -1
 			key := parentKey{rows[i].ID}
-			if !seen[key] {
-				seen[key] = true
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
 				keys = append(keys, key)
 			}
+			owners[i] = at
 		}
-		flat := []model.Tag{}
-		owners := []parentKey{}
-		for chunk := range slices.Chunk(keys, 1000) {
-			inputs := make([][]any, len(chunk))
-			for i, key := range chunk {
+		flat, numbers := []model.Shipment{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
 				inputs[i] = []any{key.k0}
 			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", ChildKeys: []string{"name"}, Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}}, []string{`name`}, []string{"name"}, inputs)
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "shipments", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`}, []string{"order_id", "carrier", "tracking"}, inputs, 0)
+			if err != nil {
+				return fmt.Errorf("load Shipment: %w", err)
+			}
+			related, err := db.Query(ctx, text, args...)
+			if err != nil {
+				return fmt.Errorf("load Shipment: %w", err)
+			}
+			for related.Next() {
+				var number int
+				var row model.Shipment
+				if err := related.Scan(&number, &row.OrderID, &row.Carrier, &row.Tracking); err != nil {
+					related.Close()
+					return fmt.Errorf("load Shipment: %w", err)
+				}
+				flat = append(flat, row)
+				numbers = append(numbers, number)
+			}
+			related.Close()
+			if err := related.Err(); err != nil {
+				return fmt.Errorf("load Shipment: %w", err)
+			}
+		}
+		grouped := make([][]model.Shipment, len(keys))
+		for i := range flat {
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
+		}
+		for i := range rows {
+			if owners[i] >= 0 && len(grouped[owners[i]]) > 0 {
+				found := grouped[owners[i]][0]
+				rows[i].Shipment = &found
+			}
+		}
+	}
+	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok {
+		type parentKey struct{ k0 model.OrderID }
+		keys := []parentKey{}
+		owners := make([]int, len(rows))
+		seen := map[parentKey]int{}
+		for i := range rows {
+			owners[i] = -1
+			key := parentKey{rows[i].ID}
+			at, ok := seen[key]
+			if !ok {
+				at = len(keys)
+				seen[key] = at
+				keys = append(keys, key)
+			}
+			owners[i] = at
+		}
+		flat, numbers := []model.Tag{}, []int{}
+		if len(keys) > 0 {
+			inputs := make([][]any, len(keys))
+			for i, key := range keys {
+				inputs[i] = []any{key.k0}
+			}
+			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "tags", Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}, KeyTypes: []string{"int8"}}, []string{`name`}, []string{"name"}, inputs, 0)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -950,170 +1105,28 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Tags: %w", err)
 			}
 			for related.Next() {
-				var key parentKey
+				var number int
 				var row model.Tag
-				if err := related.Scan(&key.k0, &row.Name); err != nil {
+				if err := related.Scan(&number, &row.Name); err != nil {
 					related.Close()
 					return fmt.Errorf("load Tags: %w", err)
 				}
 				flat = append(flat, row)
-				owners = append(owners, key)
+				numbers = append(numbers, number)
 			}
 			related.Close()
 			if err := related.Err(); err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
 		}
-		grouped := map[parentKey][]model.Tag{}
+		grouped := make([][]model.Tag, len(keys))
 		for i := range flat {
-			grouped[owners[i]] = append(grouped[owners[i]], flat[i])
+			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
 		}
 		for i := range rows {
 			rows[i].Tags = []model.Tag{}
-			key := parentKey{rows[i].ID}
-			if values, ok := grouped[key]; ok {
-				rows[i].Tags = values
-			}
-		}
-	}
-	if sub, ok := impl.Preloaded[model.Approval](q, "Approvals"); ok && !sub.PagesEach() {
-		keys := make([]model.OrderID, 0, len(rows))
-		seen := map[model.OrderID]bool{}
-		for i := range rows {
-			if !seen[rows[i].ID] {
-				seen[rows[i].ID] = true
-				keys = append(keys, rows[i].ID)
-			}
-		}
-		byKey := map[model.OrderID][]model.Approval{}
-		related, err := ormSelectApprovals(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			byKey[related[j].OrderID] = append(byKey[related[j].OrderID], related[j])
-		}
-		for i := range rows {
-			rows[i].Approvals = []model.Approval{}
-			if found, ok := byKey[rows[i].ID]; ok {
-				rows[i].Approvals = found
-			}
-		}
-	}
-	if sub, ok := impl.Preloaded[model.Customer](q, "Customer"); ok {
-		keys := make([]model.CustomerID, 0, len(rows))
-		seen := map[model.CustomerID]bool{}
-		for i := range rows {
-			if !seen[rows[i].CustomerID] {
-				seen[rows[i].CustomerID] = true
-				keys = append(keys, rows[i].CustomerID)
-			}
-		}
-		byKey := map[model.CustomerID]model.Customer{}
-		related, err := ormSelectCustomers(ctx, db, sub.Where(`id = ANY(`, keys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			byKey[related[j].ID] = related[j]
-		}
-		for i := range rows {
-			if found, ok := byKey[rows[i].CustomerID]; ok {
-				rows[i].Customer = &found
-			}
-		}
-	}
-	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
-		keys := make([]model.OrderID, 0, len(rows))
-		seen := map[model.OrderID]bool{}
-		for i := range rows {
-			if !seen[rows[i].ID] {
-				seen[rows[i].ID] = true
-				keys = append(keys, rows[i].ID)
-			}
-		}
-		byKey := map[model.OrderID][]model.OrderLine{}
-		related, err := ormSelectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			byKey[related[j].OrderID] = append(byKey[related[j].OrderID], related[j])
-		}
-		for i := range rows {
-			rows[i].Lines = []model.OrderLine{}
-			if found, ok := byKey[rows[i].ID]; ok {
-				rows[i].Lines = found
-			}
-		}
-	}
-	if sub, ok := impl.Preloaded[model.Shipment](q, "Shipment"); ok {
-		keys := make([]model.OrderID, 0, len(rows))
-		seen := map[model.OrderID]bool{}
-		for i := range rows {
-			if !seen[rows[i].ID] {
-				seen[rows[i].ID] = true
-				keys = append(keys, rows[i].ID)
-			}
-		}
-		byKey := map[model.OrderID]model.Shipment{}
-		related, err := ormSelectShipments(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			byKey[related[j].OrderID] = related[j]
-		}
-		for i := range rows {
-			if found, ok := byKey[rows[i].ID]; ok {
-				rows[i].Shipment = &found
-			}
-		}
-	}
-	if sub, ok := impl.Preloaded[model.Tag](q, "Tags"); ok && !sub.PagesEach() {
-		keys := make([]model.OrderID, 0, len(rows))
-		seen := map[model.OrderID]bool{}
-		for i := range rows {
-			if !seen[rows[i].ID] {
-				seen[rows[i].ID] = true
-				keys = append(keys, rows[i].ID)
-			}
-		}
-		byKey := map[model.OrderID][]model.Tag{}
-		pairs, err := db.Query(ctx, `SELECT order_id, tag_id FROM order_tags WHERE order_id = ANY($1)`, keys)
-		if err != nil {
-			return fmt.Errorf("read order_tags: %w", err)
-		}
-		parentsOf := map[string][]model.OrderID{}
-		var targetKeys []string
-		for pairs.Next() {
-			var pk model.OrderID
-			var tk string
-			if err := pairs.Scan(&pk, &tk); err != nil {
-				pairs.Close()
-				return fmt.Errorf("read order_tags: %w", err)
-			}
-			if _, ok := parentsOf[tk]; !ok {
-				targetKeys = append(targetKeys, tk)
-			}
-			parentsOf[tk] = append(parentsOf[tk], pk)
-		}
-		if err := pairs.Err(); err != nil {
-			return fmt.Errorf("read order_tags: %w", err)
-		}
-		related, err := ormSelectTags(ctx, db, sub.Where(`name = ANY(`, targetKeys, `)`), "")
-		if err != nil {
-			return err
-		}
-		for j := range related {
-			for _, pk := range parentsOf[related[j].Name] {
-				byKey[pk] = append(byKey[pk], related[j])
-			}
-		}
-		for i := range rows {
-			rows[i].Tags = []model.Tag{}
-			if found, ok := byKey[rows[i].ID]; ok {
-				rows[i].Tags = found
+			if owners[i] >= 0 && grouped[owners[i]] != nil {
+				rows[i].Tags = grouped[owners[i]]
 			}
 		}
 	}
