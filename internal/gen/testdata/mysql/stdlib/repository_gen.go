@@ -527,14 +527,15 @@ func (r OrderRepository) DeleteTags(ctx context.Context, s ...scopes.Tag) (int64
 
 func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lineNo int) (model.OrderLine, error) {
 	const q = `SELECT order_id, line_no, sku FROM order_lines WHERE order_id = ? AND line_no = ?`
-	rows, err := ormQueryOrderLines(ctx, r.db, q, orderID, lineNo)
-	if err != nil {
-		return model.OrderLine{}, r.mapError(err)
-	}
-	if len(rows) == 0 {
+	var row model.OrderLine
+	err := r.db.queryRow(ctx, q, orderID, lineNo).Scan(&row.OrderID, &row.LineNo, &row.SKU)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.OrderLine{}, r.mapError(fmt.Errorf("order_lines with order_id %v and line_no %v: %w", orderID, lineNo, orm.ErrNotFound))
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.OrderLine{}, r.mapError(fmt.Errorf(`read order_lines: %w`, err))
+	}
+	return row, nil
 }
 
 func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
@@ -542,14 +543,15 @@ func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (mo
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	const q = "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ? FOR UPDATE"
-	rows, err := ormQueryOrders(ctx, r.db, q, id)
-	if err != nil {
-		return model.Order{}, r.mapError(err)
-	}
-	if len(rows) == 0 {
+	var row model.Order
+	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf(`read orders: %w`, err))
+	}
+	return row, nil
 }
 
 func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (model.Order, error) {
@@ -557,14 +559,15 @@ func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (mod
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	const q = "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ? FOR SHARE"
-	rows, err := ormQueryOrders(ctx, r.db, q, id)
-	if err != nil {
-		return model.Order{}, r.mapError(err)
-	}
-	if len(rows) == 0 {
+	var row model.Order
+	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.Order{}, r.mapError(fmt.Errorf(`read orders: %w`, err))
+	}
+	return row, nil
 }
 
 func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
