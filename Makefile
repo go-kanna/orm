@@ -35,10 +35,10 @@ db-down:
 example:
 	cd example/postgres && go run ./migrate '$(EXAMPLE_POSTGRES)' && \
 		go tool kanna-orm describe -database-url '$(EXAMPLE_POSTGRES)' ./... && \
-		go generate ./... && go vet ./... && go run . '$(EXAMPLE_POSTGRES)'
+		go generate ./... && go vet ./... && go tool kanna-orm vet ./... && go run . '$(EXAMPLE_POSTGRES)'
 	cd example/mysql && go run ./migrate '$(EXAMPLE_MYSQL_DSN)' && \
 		go tool kanna-orm describe -database-url '$(EXAMPLE_MYSQL)' ./... && \
-		go generate ./... && go vet ./... && go run . '$(EXAMPLE_MYSQL_DSN)'
+		go generate ./... && go vet ./... && go tool kanna-orm vet ./... && go run . '$(EXAMPLE_MYSQL_DSN)'
 
 .PHONY: bench
 bench:

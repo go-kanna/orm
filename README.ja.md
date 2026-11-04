@@ -1193,7 +1193,7 @@ vet:
 
 ## サンプル
 
-[`example`](example) は、顧客、商品、注文と、注文の明細、出荷、タグを扱う注文サービスです。pgx 経由の PostgreSQL 向けに [`example/postgres`](example/postgres) に、database/sql 経由の MySQL 向けに [`example/mysql`](example/mysql) に、それぞれ生成しています。1 つのモジュールではテーブルにスコープ型が 1 つなので、それぞれが独立したモジュールです。Go と SQL で書いた独自のスコープ、カーソルによるキーセットページング、各種のリレーション、自然キーによる upsert、複数行の一括書き込み、手書きのクエリ、トランザクションの中での行ロックが含まれます。`make example` は `make db-up` のデータベースをマイグレーションして内容を読み取り、サンプルを再生成して、それぞれに対して実行します。CI も同じことを行い、出力が変わる場合は失敗します。
+[`example`](example) は、顧客、商品、注文と、注文の明細、出荷、タグを扱う注文サービスです。pgx 経由の PostgreSQL 向けに [`example/postgres`](example/postgres) に、database/sql 経由の MySQL 向けに [`example/mysql`](example/mysql) に、それぞれ生成しています。1 つのモジュールではテーブルにスコープ型が 1 つなので、それぞれが独立したモジュールです。Go と SQL で書いた独自のスコープ、カーソルによるキーセットページング、各種のリレーション、自然キーによる upsert、複数行の一括書き込み、手書きのクエリ、トランザクションの中での行ロックが含まれます。`make example` は `make db-up` のデータベースをマイグレーションして内容を読み取り、サンプルを再生成し、`kanna-orm vet` で検査して、それぞれに対して実行します。CI も同じことを行い、出力が変わる場合や vet が呼び出しを報告した場合は失敗します。
 
 ## 開発
 
@@ -1202,7 +1202,7 @@ make test       # unit tests
 make db-up      # start the PostgreSQL and the MySQL of compose.yaml, on ports 15432 and 13306
 make test-db    # unit tests, and the tests against those databases
 make lint       # golangci-lint
-make example    # migrate and describe the databases of db-up, regenerate the example, and run it
+make example    # migrate and describe the databases of db-up, regenerate the example, vet it, and run it
 make bench      # run the benchmarks in a container next to the PostgreSQL of db-up
 ```
 
