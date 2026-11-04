@@ -246,23 +246,22 @@ func isUUID(t types.Type) bool {
 	return isNamed(t, "uuid", "UUID")
 }
 
-// scanner reports whether a *t has the method Scan(any) error, which makes it a sql.Scanner.
+// scanner reports whether a *t is a sql.Scanner.
 func scanner(t types.Type) bool {
 	if types.IsInterface(t) {
 		return false
 	}
-	obj, _, _ := types.LookupFieldOrMethod(t, true, nil, "Scan")
-	fn, ok := obj.(*types.Func)
-	if !ok {
-		return false
+	if _, ok := t.Underlying().(*types.Pointer); !ok {
+		t = types.NewPointer(t)
 	}
-	sig := fn.Signature()
-	if sig.Params().Len() != 1 || sig.Results().Len() != 1 {
-		return false
-	}
-	iface, ok := sig.Params().At(0).Type().Underlying().(*types.Interface)
-	return ok && iface.Empty() && types.Identical(sig.Results().At(0).Type(), types.Universe.Lookup("error").Type())
+	return types.Implements(t, sqlScanner)
 }
+
+// sqlScanner is the interface sql.Scanner, which the packages a run loads need not import.
+var sqlScanner = types.NewInterfaceType([]*types.Func{types.NewFunc(token.NoPos, nil, "Scan", types.NewSignatureType(
+	nil, nil, nil,
+	types.NewTuple(types.NewParam(token.NoPos, nil, "src", types.Universe.Lookup("any").Type())),
+	types.NewTuple(types.NewParam(token.NoPos, nil, "", types.Universe.Lookup("error").Type())), false))}, nil).Complete()
 
 // isModel reports whether t is a named struct that no driver reads a column into.
 func isModel(t types.Type) bool {

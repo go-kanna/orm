@@ -189,6 +189,13 @@ func TestFields_Mistakes(t *testing.T) {
 				"  declare it as []int64, or as a type of your own with Scan and Value methods"},
 		{"a type of its own for an integer", "\tCustomerID Customer\n",
 			"type Customer struct{ id int64 }\n\nfunc (c *Customer) Scan(any) error { return nil }\n", ""},
+		{"a type of its own scanning an interface{}", "\tCustomerID Customer\n",
+			"type Customer struct{ id int64 }\n\nfunc (c *Customer) Scan(src interface{}) error { return nil }\n", ""},
+		{"a type of its own whose Scan is no sql.Scanner's", "\tCustomerID Customer\n",
+			"type Input interface{}\n\ntype Customer struct{ id int64 }\n\n" +
+				"func (c *Customer) Scan(Input) error { return nil }\n",
+			"model.go:8:1: error: Order.CustomerID: a relation of one row is held by a pointer, nil when its row is " +
+				"not loaded or not there\n  declare it as *Customer, or, for a column, give Customer a Scan method"},
 		{"a foreign key on a column", "\tCustomerID int64 `orm:\"fk=customer_id\"`\n", "",
 			`model.go:8:1: error: Order.CustomerID: orm:"fk=customer_id" is for a relation, and CustomerID holds a column`},
 		{"a column on a relation", "\tLines []OrderLine `orm:\"lines\"`\n", "type OrderLine struct{ ID int64 }\n",
