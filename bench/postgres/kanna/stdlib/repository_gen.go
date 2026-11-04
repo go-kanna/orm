@@ -266,9 +266,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && sub.PagesEach() {
 		type parentKey struct{ k0 int64 }
 		keys := []parentKey{}
+		seen := map[parentKey]bool{}
 		for i := range rows {
 			key := parentKey{rows[i].ID}
-			keys = append(keys, key)
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
 		}
 		flat := []model.OrderLine{}
 		owners := []parentKey{}
@@ -314,8 +318,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok && !sub.PagesEach() {
 		keys := make([]int64, 0, len(rows))
+		seen := map[int64]bool{}
 		for i := range rows {
-			keys = append(keys, rows[i].ID)
+			if !seen[rows[i].ID] {
+				seen[rows[i].ID] = true
+				keys = append(keys, rows[i].ID)
+			}
 		}
 		byKey := map[int64][]model.OrderLine{}
 		related, err := ormSelectOrderLines(ctx, db, sub.Where(`order_id = ANY(`, keys, `)`), "")

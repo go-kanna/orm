@@ -18,8 +18,10 @@ func (e repoEmitter) preloadEach(lk link, n preloadNames) {
 	target := e.models[lk.target.table]
 	e.printf("if sub, ok := %s[%s](%s, %q); ok && sub.PagesEach() {\n", e.ref("Preloaded"), model, n.q, field)
 	e.printf("type parentKey struct { %s }\n", e.keyFields(lk.keys))
-	e.printf("keys := []parentKey{}\nfor i := range %s {\n%s\n}\n", n.rows, keyOf("parentKey", "key", n.rows+
-		"[i]", lk.keys, func(k string) string { return "keys=append(keys," + k + ")" }))
+	e.printf("keys := []parentKey{}\nseen := map[parentKey]bool{}\nfor i := range %s {\n%s\n}\n", n.rows,
+		keyOf("parentKey", "key", n.rows+"[i]", lk.keys, func(k string) string {
+			return "if !seen[" + k + "] {\nseen[" + k + "] = true\nkeys = append(keys, " + k + ")\n}"
+		}))
 	e.printf("flat := []%s{}\nowners := []parentKey{}\n", model)
 	batch := e.ref("Batch") + "{Table:" + strconv.Quote(lk.target.table) + ",ChildKeys:" +
 		columnNamesLiteral(lk.targetKeys)

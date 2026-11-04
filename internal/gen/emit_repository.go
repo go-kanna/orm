@@ -1007,6 +1007,17 @@ func (e repoEmitter) preloadRows(rm readModel) {
 	e.printf("return nil\n}\n\n")
 }
 
+// keysOnce declares n.seen, a set of keyType, and returns what appends a key to n.keys unless it is there already. A
+// foreign key repeats among rows, and so does the key of a row a query written by hand returns twice: the rows related
+// to it are read once, so that the chunks of the keys do not read them again.
+func (e repoEmitter) keysOnce(n preloadNames, keyType string) func(key string) string {
+	e.printf("%s := map[%s]bool{}\n", n.seen, keyType)
+	return func(key string) string {
+		return "if !" + n.seen + "[" + key + "] {\n" + n.seen + "[" + key + "] = true\n" + n.keys + " = append(" +
+			n.keys + ", " + key + ")\n}"
+	}
+}
+
 // preload writes the block loading the relation lk into the rows, when the scope loads it: the keys of the rows, each
 // once; the rows related to them, in the order of the scope given for the relation; and these handed to the rows they
 // are related to. On MySQL, the keys go in chunks, so that the rows related to one row come in one chunk, in their
@@ -1031,14 +1042,7 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 	e.printf("if %[1]s, %[2]s := %[3]s[%[4]s](%[5]s, %[6]q); %[2]s%[7]s {\n", n.sub, n.ok, e.ref("Preloaded"),
 		types.TypeString(lk.model, e.f.Qualifier), n.q, strings.Join(lk.field.path, "."), unpaged)
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, keyType, n.rows)
-	add := func(v string) string { return n.keys + " = append(" + n.keys + ", " + v + ")" }
-	if lk.way.kind == belongsTo { // the foreign keys of the rows, which may repeat
-		e.printf("%s := map[%s]bool{}\n", n.seen, keyType)
-		add = func(v string) string {
-			return "if !" + n.seen + "[" + v + "] {\n" + n.seen + "[" + v + "] = true\n" + n.keys + " = append(" + n.keys +
-				", " + v + ")\n}"
-		}
-	}
+	add := e.keysOnce(n, keyType)
 	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows,
 		ifSet(n.rows+"["+n.i+"]."+fieldPath(own), isPointer(own.typ), add))
 	e.printf("%s := map[%s]%s{}\n", n.byKey, keyType, valueType)

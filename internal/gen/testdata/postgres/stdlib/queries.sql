@@ -27,3 +27,8 @@ JOIN customers c ON c.id = o.customer_id;
 SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
 FROM orders o
 WHERE o.placed_at >= :since;
+
+-- query: ListRepeated
+SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
+FROM orders o
+CROSS JOIN (WITH RECURSIVE n (i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 10) SELECT a.i FROM n a, n b, n c) AS r;

@@ -65,13 +65,8 @@ func (e repoEmitter) preloadComposite(lk link, n preloadNames, c compositeNames)
 		types.TypeString(lk.model, e.f.Qualifier), n.q, strings.Join(lk.field.path, "."), unpaged)
 	e.printf("type %s struct{ %s }\n", c.key, e.keyFields(lk.keys))
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, c.key, n.rows)
-	add := n.keys + " = append(" + n.keys + ", %s)"
-	if lk.way.kind == belongsTo { // the foreign keys of the rows, which may repeat
-		e.printf("%s := map[%s]bool{}\n", n.seen, c.key)
-		add = "if !" + n.seen + "[%[1]s] {\n" + n.seen + "[%[1]s] = true\n" + n.keys + " = append(" + n.keys + ", %[1]s)\n}"
-	}
-	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows,
-		keyOf(c.key, c.k, n.rows+"["+n.i+"]", lk.keys, func(k string) string { return fmt.Sprintf(add, k) }))
+	add := e.keysOnce(n, c.key)
+	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows, keyOf(c.key, c.k, n.rows+"["+n.i+"]", lk.keys, add))
 	e.printf("%s := map[%s]%s{}\n", n.byKey, c.key, valueType)
 
 	keys := n.keys

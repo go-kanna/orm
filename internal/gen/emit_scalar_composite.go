@@ -13,10 +13,8 @@ func (e repoEmitter) preloadScalarComposite(lk link, n preloadNames, c composite
 	e.printf("if _, %s := %s[%s](%s, %q); %s {\n", n.ok, e.ref("Preloaded"), valueType, n.q, field, n.ok)
 	e.printf("type %s struct{ %s }\n", c.key, e.keyFields(lk.keys))
 	e.printf("%s := make([]%s, 0, len(%s))\n", n.keys, c.key, n.rows)
-	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows,
-		keyOf(c.key, c.k, n.rows+"["+n.i+"]", lk.keys, func(k string) string {
-			return n.keys + " = append(" + n.keys + ", " + k + ")"
-		}))
+	add := e.keysOnce(n, c.key)
+	e.printf("for %s := range %s {\n%s\n}\n", n.i, n.rows, keyOf(c.key, c.k, n.rows+"["+n.i+"]", lk.keys, add))
 	e.printf("%s := map[%s][]%s{}\n", n.byKey, c.key, valueType)
 	e.printf("for %s := range %s.Chunk(%s, %d) {\n", n.chunk, e.f.Import("slices", "slices"), n.keys,
 		max(1, inChunk/len(lk.keys)))
