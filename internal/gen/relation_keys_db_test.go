@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kanna/internal/cli"
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/go-kanna/orm/internal/describe"
 )
