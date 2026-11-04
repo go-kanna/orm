@@ -127,14 +127,14 @@ func (e repoEmitter) scanJoinedRows(n scanNames, typ string, p *readProjection, 
 		values := make([]string, 0, len(j.columns))
 		for _, c := range j.columns {
 			field := c.path[len(c.path)-1]
-			local := sc.Name(lowerFirst(j.field) + field)
-			held, value := types.TypeString(c.typ, e.f.Qualifier), local
+			held, v := types.TypeString(c.typ, e.f.Qualifier), ""
 			if !nilable(c.typ) {
-				held, value = e.f.Import("database/sql", "sql")+".Null["+held+"]", local+".V"
+				held, v = e.f.Import("database/sql", "sql")+".Null["+held+"]", ".V"
 			}
+			local := sc.Name(lowerFirst(j.field) + field)
 			e.printf("var %s %s\n", local, held)
 			targets = append(targets, "&"+local)
-			values = append(values, field+": "+value)
+			values = append(values, field+": "+local+v)
 		}
 		joined = append(joined, fmt.Sprintf("if %s {\n%s.%s = &%s{%s}\n}", found, n.row, j.field,
 			types.TypeString(elemOf(j.typ), e.f.Qualifier), strings.Join(values, ", ")))

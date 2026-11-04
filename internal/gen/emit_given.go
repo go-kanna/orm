@@ -144,6 +144,11 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 	if m.many {
 		e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)))
 		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
+		// The packages come first, so that they keep their names and the locals, one named after a field, yield.
+		chunks, repeat := e.f.Import("slices", "slices"), e.f.Import("strings", "strings")
+		for _, c := range withCols {
+			e.storageType(c)
+		}
 		inner := e.f.Scope()
 		chunk, args, row, value := inner.Name("chunk"), inner.Name("args"), inner.Name("row"),
 			inner.Name(lowerFirst(given.path[len(given.path)-1]))
@@ -152,14 +157,14 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 			fields = append(fields, e.storageValue(c, row+"."+fieldPath(c)))
 		}
 		fields = append(fields, value)
-		query := with + "+" + e.f.Import("strings", "strings") + ".Repeat(" +
+		query := with + "+" + repeat + ".Repeat(" +
 			goString(", "+mysqlValues(len(withCols))) + ", len(" + chunk + ")-1)"
 		if tail != "" {
 			query += "+" + goString(tail)
 		}
 		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, len(%[1]s)*%[6]d)\n"+
 			"for _, %[7]s := range %[1]s {\nvar %[8]s any\nif %[7]s.%[9]s != 0 {\n%[8]s = %[10]s\n}\n"+
-			"%[5]s = append(%[5]s, %[11]s)\n}\n", chunk, e.f.Import("slices", "slices"), sig.row, 65535/len(withCols),
+			"%[5]s = append(%[5]s, %[11]s)\n}\n", chunk, chunks, sig.row, 65535/len(withCols),
 			args, len(withCols), row, value, fieldPath(given), e.storageValue(given, row+"."+fieldPath(given)),
 			strings.Join(fields, ", "))
 		e.printf("if _, %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s...); %[1]s != nil {\nreturn %[7]s\n}\n}\n", err,
