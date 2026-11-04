@@ -48,7 +48,10 @@ func (q Of[M]) Where(parts ...any) Of[M] {
 	if len(parts) == 0 {
 		panic("orm: Where without a condition")
 	}
-	var c cond
+	c := cond{pieces: make([]string, 0, len(parts)/2+1)}
+	if len(parts) > 1 {
+		c.args = make([]any, 0, len(parts)/2)
+	}
 	for i, p := range parts {
 		if i%2 == 1 {
 			c.args = append(c.args, p)
@@ -133,6 +136,9 @@ func (q Of[M]) Not(s Of[M]) Of[M] {
 // Combine makes one scope of qs, as if each were chained onto the one before: their conditions and orders add up, and a
 // later limit or offset replaces an earlier one.
 func Combine[M any](qs ...Of[M]) Of[M] {
+	if len(qs) == 1 {
+		return qs[0]
+	}
 	var q Of[M]
 	for _, s := range qs {
 		q.conds = slices.Concat(q.conds, s.conds)

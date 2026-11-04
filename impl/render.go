@@ -6,11 +6,12 @@ import (
 	"strings"
 )
 
-// Rendered is a scope as SQL: the pieces a query is put together from, and the arguments of their placeholders.
+// Rendered is a scope as SQL: the pieces a query is put together from, and the arguments of their placeholders. The
+// clauses are parts of one string, written at once.
 type Rendered struct {
-	conds, orders, limit string
-	args                 []any
-	reversed             bool
+	where, conds, orderBy, orders, limit string
+	args                                 []any
+	reversed                             bool
 }
 
 // Render writes q as SQL for d, numbering the placeholders of PostgreSQL from first, so that they can follow those of
@@ -22,9 +23,6 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 	}
 	var r Rendered
 	conds, orders := q.conds, q.orders
-	if len(orders) > 0 {
-		orders = q.ordersWith(key)
-	}
 	if q.seeking {
 		orders = q.ordersWith(q.seek.key)
 		c, err := q.seek.cond(orders, d)
@@ -38,26 +36,40 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 			}
 			r.reversed = true
 		}
+		key = nil
 	}
 
+	size, args := renderedSize(conds, orders, key)
+	if size == 0 && !q.hasLimit && !q.hasOffset {
+		return r, nil
+	}
+	if args > 0 {
+		r.args = make([]any, 0, args)
+	}
 	var (
-		b strings.Builder
-		n = first
+		b      strings.Builder
+		digits [20]byte
+		n      = first
 	)
+	b.Grow(size + 64)
 	placeholder := func(arg any) {
 		r.args = append(r.args, arg)
 		if d == MySQL {
 			b.WriteByte('?')
 			return
 		}
-		b.WriteString("$" + strconv.Itoa(n))
+		b.WriteByte('$')
+		b.Write(strconv.AppendInt(digits[:0], int64(n), 10))
 		n++
 	}
 	for i, c := range conds {
-		if i > 0 {
+		if i == 0 {
+			b.WriteString(" WHERE ")
+		} else {
 			b.WriteString(" AND ")
 		}
-		b.WriteString("(" + c.pieces[0])
+		b.WriteByte('(')
+		b.WriteString(c.pieces[0])
 		for j, arg := range c.args {
 			if l, ok := arg.(list); ok {
 				if len(l.values) == 0 {
@@ -76,43 +88,102 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 		}
 		b.WriteByte(')')
 	}
-	r.conds = b.String()
-
-	columns := make([]string, 0, len(orders))
-	for _, o := range orders {
-		if o.desc {
-			columns = append(columns, o.column+" DESC")
-		} else {
-			columns = append(columns, o.column)
-		}
+	where := b.Len()
+	if len(orders) > 0 {
+		b.WriteString(" ORDER BY ")
+		writeOrders(&b, orders, key)
 	}
-	r.orders = strings.Join(columns, ", ")
-
+	order := b.Len()
 	switch {
 	case q.hasLimit:
-		r.limit = " LIMIT " + strconv.Itoa(q.limit)
+		b.WriteString(" LIMIT ")
+		b.Write(strconv.AppendInt(digits[:0], int64(q.limit), 10))
 	case q.hasOffset && d == MySQL:
-		r.limit = " LIMIT 18446744073709551615" // MySQL has no OFFSET without a LIMIT.
+		b.WriteString(" LIMIT 18446744073709551615") // MySQL has no OFFSET without a LIMIT.
 	}
 	if q.hasOffset {
-		r.limit += " OFFSET " + strconv.Itoa(q.offset)
+		b.WriteString(" OFFSET ")
+		b.Write(strconv.AppendInt(digits[:0], int64(q.offset), 10))
+	}
+
+	s := b.String()
+	r.where, r.orderBy, r.limit = s[:where], s[where:order], s[order:]
+	if where > 0 {
+		r.conds = s[len(" WHERE "):where]
+	}
+	if order > where {
+		r.orders = s[where+len(" ORDER BY ") : order]
 	}
 	return r, nil
 }
 
+// renderedSize is about how long the SQL of conds and orders, ended in key, is, and how many arguments conds have.
+func renderedSize(conds []cond, orders []order, key []string) (size, args int) {
+	for _, c := range conds {
+		size += len(" AND ()")
+		for _, p := range c.pieces {
+			size += len(p)
+		}
+		for _, a := range c.args {
+			if l, ok := a.(list); ok {
+				args += len(l.values)
+				size += len(l.none) + 8*len(l.values)
+				continue
+			}
+			args++
+			size += 6
+		}
+	}
+	if len(orders) > 0 {
+		size += len(" ORDER BY ")
+		for _, o := range orders {
+			size += len(o.column) + len(", DESC")
+		}
+		for _, k := range key {
+			size += len(k) + len(", DESC")
+		}
+	}
+	return size, args
+}
+
+// writeOrders writes orders, then those of the columns of key it has none of, each the way the last of orders goes:
+// orders ended in key, as ordersWith makes them.
+func writeOrders(b *strings.Builder, orders []order, key []string) {
+	desc := orders[len(orders)-1].desc
+	for i, o := range orders {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(o.column)
+		if o.desc {
+			b.WriteString(" DESC")
+		}
+	}
+	for _, k := range key {
+		if slices.ContainsFunc(orders, func(o order) bool { return o.column == k }) {
+			continue
+		}
+		b.WriteString(", ")
+		b.WriteString(k)
+		if desc {
+			b.WriteString(" DESC")
+		}
+	}
+}
+
 // Where returns the conditions as a WHERE clause, or nothing when there are none.
-func (r Rendered) Where() string { return r.clause(" WHERE ") }
+func (r Rendered) Where() string { return r.where }
 
 // And returns the conditions for a WHERE clause the query has of its own, or nothing when there are none.
-func (r Rendered) And() string { return r.clause(" AND ") }
-
-// OrderBy returns the order as an ORDER BY clause, or nothing when there is none.
-func (r Rendered) OrderBy() string {
-	if r.orders == "" {
+func (r Rendered) And() string {
+	if r.conds == "" {
 		return ""
 	}
-	return " ORDER BY " + r.orders
+	return " AND " + r.conds
 }
+
+// OrderBy returns the order as an ORDER BY clause, or nothing when there is none.
+func (r Rendered) OrderBy() string { return r.orderBy }
 
 // Limit returns the LIMIT and OFFSET clauses, or nothing when the scope keeps every row.
 func (r Rendered) Limit() string { return r.limit }
@@ -123,13 +194,6 @@ func (r Rendered) Args() []any { return r.args }
 // Reversed reports whether the rows come in the reverse of the scope's order, as they do for Before, for the caller to
 // turn them around.
 func (r Rendered) Reversed() bool { return r.reversed }
-
-func (r Rendered) clause(keyword string) string {
-	if r.conds == "" {
-		return ""
-	}
-	return keyword + r.conds
-}
 
 func qualified(d Dialect, alias, column string) string {
 	return quoted(d, alias) + "." + quoted(d, column)
