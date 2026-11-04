@@ -176,6 +176,10 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	_, _ = u.orders.Count(ctx, scopes.Orders().Or(scopes.Orders().Open(), scopes.Orders().IDEq(1)))
 	_, _ = u.orders.Count(ctx, scopes.Orders().Or())
 	_, _ = u.orders.Delete(ctx, scopes.Orders().Not(scopes.Orders().Open()))
+	_, _ = u.orders.Delete(ctx, scopes.Orders().After(model.Order{ID: 1}))
+	ss := []scopes.Order{scopes.Orders()}
+	replace(ss)
+	_, _ = u.orders.Delete(ctx, ss...)
 	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
 
 	c := scopes.CustomerChanges()
@@ -189,6 +193,8 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	t = t.Open()
 	count()
 }
+
+func replace(ss []scopes.Order) { ss[0] = scopes.Orders().IDEq(1) }
 `
 
 const postgresUseCaseTest = `package usecase
@@ -316,6 +322,10 @@ func Count(ctx context.Context, orders repository.Order) (int64, error) {
 		{filepath.Join(dir, "usecase"), nil, cli.ExitFailure,
 			"./usecase.go:11:16: error: Count takes conditions alone, but its scope orders the rows\n"},
 		{dir, []string{"./..."}, cli.ExitFailure, ""},
+		{dir, []string{"./does-not-exist"}, cli.ExitFailure, ""},
+		{dir, []string{"./usecas/..."}, cli.ExitFailure, ""},
+		{dir, []string{"fmt"}, cli.ExitFailure,
+			"error: fmt is outside module github.com/go-kanna/orm/example/postgres, whose packages vet checks\n"},
 		{dir, []string{"-h"}, cli.ExitOK, ""},
 		{dir, []string{"-unknown"}, cli.ExitUsage, ""},
 	} {
