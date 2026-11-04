@@ -180,7 +180,7 @@ func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repo
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, err
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "products", []impl.SelectColumn{{Table: "products", Column: "name"}, {Table: "products", Column: "price"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "orders", Fields: []string{"revision", "id", "customer_id", "status", "placed_at", "note"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"sku", "name", "price", "currency"}, `SELECT name, price FROM products`, []string{`sku`})
+	text, args, reversed, err := q.RenderProjection(impl.Postgres, `SELECT name, price FROM products`, []string{`sku`})
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,7 @@ func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]reposito
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, r.mapError(err)
 	}
-	text, args, reversed, err := q.RenderProjection(impl.Postgres, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "status"}}, []impl.TableJoin{{Table: "approvals", Fields: []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"}}, {Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "email", "name", "phone", "created_at"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku", "quantity"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "products", Fields: []string{"sku", "name", "price", "currency"}}, {Table: "shipments", Fields: []string{"order_id", "carrier", "tracking"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, `SELECT id, name, status FROM orders`, []string{`id`})
+	text, args, reversed, err := q.RenderJoinedProjection(impl.Postgres, "orders", `SELECT orders.id, orders.status, customer.name`, ` INNER JOIN customers AS customer ON customer.id = orders.customer_id`, []string{"id", "status", "customer_id"}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, []string{`id`})
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -371,7 +371,7 @@ func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]reposito
 	out := []repository.OrderSummary{}
 	for rows.Next() {
 		var row repository.OrderSummary
-		if err := rows.Scan(&row.ID, &row.CustomerName, &row.Status); err != nil {
+		if err := rows.Scan(&row.ID, &row.Status, &row.Customer.Name); err != nil {
 			return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 		}
 		out = append(out, row)

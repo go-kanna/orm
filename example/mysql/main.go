@@ -487,12 +487,12 @@ func (ex *example) updateSelectedColumns(ctx context.Context) error {
 }
 
 func (ex *example) joinedSummaries(ctx context.Context) error {
-	rows, err := ex.orders.ListSummaries(ctx, scopes.Orders().JoinCustomers().IDAsc().Limit(2))
+	rows, err := ex.orders.ListSummaries(ctx, scopes.Orders().IDAsc().Limit(2))
 	if err != nil {
 		return fmt.Errorf("read order summaries: %w", err)
 	}
 	for _, row := range rows {
-		fmt.Fprintf(ex.w, "order %d: customer %s, status %s\n", row.ID, row.CustomerName, row.Status)
+		fmt.Fprintf(ex.w, "order %d: customer %s, status %s\n", row.ID, row.Customer.Name, row.Status)
 	}
 	return nil
 }

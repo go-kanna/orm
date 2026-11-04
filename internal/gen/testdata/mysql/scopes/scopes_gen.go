@@ -8,7 +8,6 @@ import (
 	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
-	"github.com/go-kanna/orm/join"
 	"github.com/go-kanna/orm/scope"
 )
 
@@ -724,16 +723,6 @@ func (s Order) Offset(n int) Order {
 	return Order{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Order) Join(table string, on ...join.Condition) Order {
-	return Order{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinCustomers joins customers through its foreign key for a read projection.
-func (s Order) JoinCustomers() Order {
-	return Order{ormScope(ormRuntime(s.q).JoinTable("customers"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
 	qs := make([]impl.Of[model.Order], len(alternatives))
@@ -815,6 +804,10 @@ func (c CustomerChangeSet) Of() change.Set[model.Customer] { return c.changes }
 
 func (c CustomerChangeSet) SetName(v string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("name", v)}
+}
+
+func (c CustomerChangeSet) SetNickname(v *string) CustomerChangeSet {
+	return CustomerChangeSet{c.changes.Set("nickname", v)}
 }
 
 // IDEq narrows to the rows whose id is v.
@@ -948,6 +941,89 @@ func (s Customer) NameDesc() Customer {
 	return Customer{ormScope(ormRuntime(s.q).OrderBy(`name`, true))}
 }
 
+// NicknameEq narrows to the rows whose nickname is v.
+func (s Customer) NicknameEq(v string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname = `, v))}
+}
+
+// NicknameNe narrows to the rows whose nickname is not v.
+func (s Customer) NicknameNe(v string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname <> `, v))}
+}
+
+// NicknameIn narrows to the rows whose nickname is one of vs.
+func (s Customer) NicknameIn(vs ...string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname IN (`, impl.List(vs), `)`))}
+}
+
+// NicknameNotIn narrows to the rows whose nickname is none of vs.
+func (s Customer) NicknameNotIn(vs ...string) Customer {
+	if len(vs) == 0 {
+		return s
+	}
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname NOT IN (`, impl.List(vs), `)`))}
+}
+
+// NicknameLt narrows to the rows whose nickname is less than v.
+func (s Customer) NicknameLt(v string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname < `, v))}
+}
+
+// NicknameLte narrows to the rows whose nickname is at most v.
+func (s Customer) NicknameLte(v string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname <= `, v))}
+}
+
+// NicknameGt narrows to the rows whose nickname is greater than v.
+func (s Customer) NicknameGt(v string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname > `, v))}
+}
+
+// NicknameGte narrows to the rows whose nickname is at least v.
+func (s Customer) NicknameGte(v string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname >= `, v))}
+}
+
+// NicknameBetween narrows to the rows whose nickname is between lo and hi, both included.
+func (s Customer) NicknameBetween(lo, hi string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname BETWEEN `, lo, ` AND `, hi))}
+}
+
+// NicknameLike narrows to the rows whose nickname matches pattern, as LIKE does.
+func (s Customer) NicknameLike(pattern string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname LIKE `, pattern))}
+}
+
+// NicknameHasPrefix narrows to the rows whose nickname starts with prefix.
+func (s Customer) NicknameHasPrefix(prefix string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+}
+
+// NicknameContains narrows to the rows whose nickname contains substr.
+func (s Customer) NicknameContains(substr string) Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+}
+
+// NicknameIsNull narrows to the rows whose nickname is NULL.
+func (s Customer) NicknameIsNull() Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname IS NULL`))}
+}
+
+// NicknameIsNotNull narrows to the rows whose nickname is not NULL.
+func (s Customer) NicknameIsNotNull() Customer {
+	return Customer{ormScope(ormRuntime(s.q).Where(`nickname IS NOT NULL`))}
+}
+
+// NicknameAsc orders the rows by nickname, in ascending order.
+func (s Customer) NicknameAsc() Customer {
+	return Customer{ormScope(ormRuntime(s.q).OrderBy(`nickname`, false))}
+}
+
+// NicknameDesc orders the rows by nickname, in descending order.
+func (s Customer) NicknameDesc() Customer {
+	return Customer{ormScope(ormRuntime(s.q).OrderBy(`nickname`, true))}
+}
+
 // Limit keeps the first n rows.
 func (s Customer) Limit(n int) Customer {
 	return Customer{ormScope(ormRuntime(s.q).Limit(n))}
@@ -956,11 +1032,6 @@ func (s Customer) Limit(n int) Customer {
 // Offset skips the first n rows.
 func (s Customer) Offset(n int) Customer {
 	return Customer{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Customer) Join(table string, on ...join.Condition) Customer {
-	return Customer{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
@@ -981,8 +1052,9 @@ func (s Customer) Not(other Customer) Customer {
 // holds MayBeNull, since no page continues by it.
 func (Customer) values(row model.Customer) map[string]any {
 	return map[string]any{
-		`id`:   row.ID,
-		`name`: row.Name,
+		`id`:       row.ID,
+		`name`:     row.Name,
+		`nickname`: impl.MayBeNull,
 	}
 }
 
@@ -1259,16 +1331,6 @@ func (s OrderLine) Offset(n int) OrderLine {
 	return OrderLine{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s OrderLine) Join(table string, on ...join.Condition) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrders joins orders through its foreign key for a read projection.
-func (s OrderLine) JoinOrders() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable("orders"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
 	qs := make([]impl.Of[model.OrderLine], len(alternatives))
@@ -1425,11 +1487,6 @@ func (s Tag) Limit(n int) Tag {
 // Offset skips the first n rows.
 func (s Tag) Offset(n int) Tag {
 	return Tag{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Tag) Join(table string, on ...join.Condition) Tag {
-	return Tag{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
@@ -1682,16 +1739,6 @@ func (s LineNote) Offset(n int) LineNote {
 	return LineNote{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s LineNote) Join(table string, on ...join.Condition) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrderLines joins order_lines through its foreign key for a read projection.
-func (s LineNote) JoinOrderLines() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).JoinTable("order_lines"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s LineNote) Or(alternatives ...LineNote) LineNote {
 	qs := make([]impl.Of[model.LineNote], len(alternatives))
@@ -1925,21 +1972,6 @@ func (s LineTag) Limit(n int) LineTag {
 // Offset skips the first n rows.
 func (s LineTag) Offset(n int) LineTag {
 	return LineTag{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s LineTag) Join(table string, on ...join.Condition) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrderLines joins order_lines through its foreign key for a read projection.
-func (s LineTag) JoinOrderLines() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).JoinTable("order_lines"))}
-}
-
-// JoinTags joins tags through its foreign key for a read projection.
-func (s LineTag) JoinTags() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).JoinTable("tags"))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.

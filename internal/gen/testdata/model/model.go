@@ -30,20 +30,26 @@ type Order struct {
 }
 
 type Customer struct {
-	ID   int64
-	Name string
+	ID       int64
+	Name     string
+	Nickname *string
 }
 
-type OrderTagSummary struct {
-	ID      OrderID
-	TagName string `orm:"tags.name"`
-}
-
+// OrderSummary is an order with the name of its customer, which an INNER JOIN of customers reads.
 type OrderSummary struct {
-	ID    OrderID
-	Name  string
-	Total int64
-	Memo  *string
+	ID       OrderID
+	Total    int64
+	Memo     *string
+	Customer struct{ Name string }
+}
+
+// OrderContact is an order with its customer, if there is one, which a LEFT JOIN of customers reads.
+type OrderContact struct {
+	ID       OrderID
+	Customer *struct {
+		Name     string
+		Nickname *string
+	}
 }
 
 type OrderLine struct {

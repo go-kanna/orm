@@ -26,7 +26,6 @@ type Of[M any] struct {
 	limit, offset       int
 	hasLimit, hasOffset bool
 	preloads            []preload
-	joins               []tableJoin
 	seek                seek
 	seeking             bool
 	err                 error
@@ -147,9 +146,6 @@ func Combine[M any](qs ...Of[M]) Of[M] {
 		for _, p := range s.preloads {
 			q.preloads = addPreload(q.preloads, p)
 		}
-		for _, join := range s.joins {
-			q = q.JoinTable(join.table, join.on...)
-		}
 		if s.seeking {
 			q.seek, q.seeking = s.seek, true
 		}
@@ -165,8 +161,6 @@ func (q Of[M]) ConditionsOnly(what string) error {
 	switch {
 	case q.err != nil:
 		return q.err
-	case len(q.joins) > 0:
-		return fmt.Errorf("orm: %s takes conditions alone, but its scope joins tables", what)
 	case len(q.orders) > 0:
 		return fmt.Errorf("orm: %s takes conditions alone, but its scope orders the rows", what)
 	case q.hasLimit || q.hasOffset || q.seeking:

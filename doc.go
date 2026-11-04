@@ -2,7 +2,6 @@
 // packages:
 //
 //   - [github.com/go-kanna/orm/scope]: Of, the one field of a scope type declared by hand.
-//   - [github.com/go-kanna/orm/join]: the explicit conditions of a joined projection.
 //   - [github.com/go-kanna/orm/option]: the options a repository's constructor takes.
 //   - [github.com/go-kanna/orm/hook]: the functions those options take, called around each statement.
 //

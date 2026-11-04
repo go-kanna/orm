@@ -9,7 +9,6 @@ import (
 	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/example/mysql/model"
 	"github.com/go-kanna/orm/impl"
-	"github.com/go-kanna/orm/join"
 	"github.com/go-kanna/orm/scope"
 )
 
@@ -402,11 +401,6 @@ func (s Customer) Offset(n int) Customer {
 	return Customer{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Customer) Join(table string, on ...join.Condition) Customer {
-	return Customer{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Customer) Or(alternatives ...Customer) Customer {
 	qs := make([]impl.Of[model.Customer], len(alternatives))
@@ -778,11 +772,6 @@ func (s Product) Limit(n int) Product {
 // Offset skips the first n rows.
 func (s Product) Offset(n int) Product {
 	return Product{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Product) Join(table string, on ...join.Condition) Product {
-	return Product{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
@@ -1264,16 +1253,6 @@ func (s Order) Offset(n int) Order {
 	return Order{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Order) Join(table string, on ...join.Condition) Order {
-	return Order{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinCustomers joins customers through its foreign key for a read projection.
-func (s Order) JoinCustomers() Order {
-	return Order{ormScope(ormRuntime(s.q).JoinTable("customers"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
 	qs := make([]impl.Of[model.Order], len(alternatives))
@@ -1622,21 +1601,6 @@ func (s OrderLine) Offset(n int) OrderLine {
 	return OrderLine{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s OrderLine) Join(table string, on ...join.Condition) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrders joins orders through its foreign key for a read projection.
-func (s OrderLine) JoinOrders() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable("orders"))}
-}
-
-// JoinProducts joins products through its foreign key for a read projection.
-func (s OrderLine) JoinProducts() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable("products"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
 	qs := make([]impl.Of[model.OrderLine], len(alternatives))
@@ -1932,16 +1896,6 @@ func (s Shipment) Offset(n int) Shipment {
 	return Shipment{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Shipment) Join(table string, on ...join.Condition) Shipment {
-	return Shipment{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrders joins orders through its foreign key for a read projection.
-func (s Shipment) JoinOrders() Shipment {
-	return Shipment{ormScope(ormRuntime(s.q).JoinTable("orders"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Shipment) Or(alternatives ...Shipment) Shipment {
 	qs := make([]impl.Of[model.Shipment], len(alternatives))
@@ -2094,11 +2048,6 @@ func (s Tag) Limit(n int) Tag {
 // Offset skips the first n rows.
 func (s Tag) Offset(n int) Tag {
 	return Tag{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Tag) Join(table string, on ...join.Condition) Tag {
-	return Tag{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
@@ -2569,16 +2518,6 @@ func (s Approval) Limit(n int) Approval {
 // Offset skips the first n rows.
 func (s Approval) Offset(n int) Approval {
 	return Approval{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Approval) Join(table string, on ...join.Condition) Approval {
-	return Approval{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrders joins orders through its foreign key for a read projection.
-func (s Approval) JoinOrders() Approval {
-	return Approval{ormScope(ormRuntime(s.q).JoinTable("orders"))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
