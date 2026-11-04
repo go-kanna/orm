@@ -128,6 +128,8 @@ type plannedRun struct {
 func planRun(dir string, cfg config, load []string, dest *destination, l loadedRun) (plannedRun, []diag.Diag) {
 	p := plannedRun{loadedRun: l, plans: map[*packages.Package][]scopePlan{}}
 	if len(p.scopePkgs) == 0 && len(p.repoPkgs) == 0 {
+		// A directive whose arguments are wrong declares nothing, but what is wrong with it is told all the same.
+		p.ds = directiveDiags(p.roots)
 		return p, nil
 	}
 
@@ -494,6 +496,21 @@ func declarations(pkgs []*packages.Package) (scoped, repos []*packages.Package) 
 		}
 	}
 	return scoped, repos
+}
+
+// directiveDiags tells what is wrong with the //kanna:scope, //kanna:scopes, and //kanna:repository directives of
+// pkgs.
+func directiveDiags(pkgs []*packages.Package) []diag.Diag {
+	var ds []diag.Diag
+	for _, pkg := range pkgs {
+		for _, f := range pkg.Syntax {
+			if !ast.IsGenerated(f) {
+				_, fds := decl.Read(pkg.Fset, f)
+				ds = append(ds, fds...)
+			}
+		}
+	}
+	return ds
 }
 
 // removals removes the output an earlier run left in pkgs, whose declarations are all gone.
