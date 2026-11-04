@@ -86,7 +86,7 @@ CREATE TABLE order_lines (
 	sku varchar(64) NOT NULL,
 	PRIMARY KEY (order_id, line_no)
 );
-CREATE TABLE customers (id bigint PRIMARY KEY, name varchar(255) NOT NULL);
+CREATE TABLE customers (id bigint PRIMARY KEY, name varchar(255) NOT NULL, nickname varchar(255));
 CREATE TABLE tags (name varchar(64) PRIMARY KEY);
 CREATE TABLE line_notes (
 	order_id bigint NOT NULL,
@@ -114,7 +114,7 @@ INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, 
 	(10, 'closed', '2026-10-02 00:00:00', NULL, 200, true, NULL, NULL, 2),
 	(20, 'open', '2026-10-03 00:00:00', NULL, 300, false, NULL, NULL, 3);
 INSERT INTO order_lines VALUES (1, 1, 'A'), (1, 2, 'B');
-INSERT INTO customers VALUES (10, 'Ann'), (20, 'Bob');
+INSERT INTO customers VALUES (10, 'Ann', NULL), (20, 'Bob', 'bobby');
 INSERT INTO tags VALUES ('gift'), ('rush');
 INSERT INTO order_tags VALUES (1, 'rush'), (1, 'gift'), (3, 'rush');
 INSERT INTO line_notes VALUES (1, 1, 'wrap it'), (1, 1, 'fragile'), (1, 2, 'spare');

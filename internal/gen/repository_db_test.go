@@ -111,7 +111,7 @@ CREATE TABLE order_lines (
 	sku text NOT NULL,
 	PRIMARY KEY (order_id, line_no)
 );
-CREATE TABLE customers (id bigint PRIMARY KEY, name text NOT NULL);
+CREATE TABLE customers (id bigint PRIMARY KEY, name text NOT NULL, nickname text);
 CREATE TABLE tags (name text PRIMARY KEY);
 CREATE TABLE order_tags (
 	order_id bigint NOT NULL REFERENCES orders ON DELETE CASCADE,
@@ -137,7 +137,7 @@ INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, 
 	(10, 'closed', '2026-10-02T00:00:00Z', NULL, 200, true, NULL, NULL, 2),
 	(20, 'open', '2026-10-03T00:00:00Z', NULL, 300, false, NULL, NULL, 3);
 INSERT INTO order_lines VALUES (1, 1, 'A'), (1, 2, 'B');
-INSERT INTO customers VALUES (10, 'Ann'), (20, 'Bob');
+INSERT INTO customers VALUES (10, 'Ann', NULL), (20, 'Bob', 'bobby');
 INSERT INTO tags VALUES ('gift'), ('rush');
 INSERT INTO order_tags VALUES (1, 'rush'), (1, 'gift'), (3, 'rush');
 INSERT INTO labels VALUES (1, '{a,b}');

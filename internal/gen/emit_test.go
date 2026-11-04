@@ -41,6 +41,7 @@ var tables = map[string]snapshot.Table{
 		Columns: []snapshot.Column{
 			{Name: "id", Type: "int8", NotNull: true},
 			{Name: "name", Type: "text", NotNull: true},
+			{Name: "nickname", Type: "text"},
 		},
 		PrimaryKey: []string{"id"},
 	},

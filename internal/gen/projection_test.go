@@ -91,11 +91,14 @@ func TestCommand_ReadProjections(t *testing.T) {
 func TestCommand_ReadProjectionMistakes(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct{ name, before, after, want string }{
-		{"unknown field", "Caption string\n}", "Missing string\n}", "no column missing"},
-		{"type mismatch", "Caption string\n}", "Note *string\n}", "model field has type"},
-		{"relation", "Caption string\n}", "Caption string\nOwner *Record\n}", "cannot contain relations"},
+		{"unknown field", "Caption string\n}", "Missing string\n}", "the model of records has no field Missing"},
+		{"field named as the column", "Caption string\n}", "Note string\n}", "the model of records has no field Note"},
+		{"type mismatch", "Caption string\n}", "Caption *string\n}", "model field has type"},
+		{"relation", "Caption string\n}", "Caption string\nOwners []Record\n}", "cannot contain relations"},
+		{"model", "Caption string\n}", "Caption string\nOwner *Record\n}", "Owner is a model"},
 		{"empty", "Caption string\n}", "Ignored string `orm:\"-\"`\n}", "must select at least one"},
-		{"duplicate column", "Caption string\n}", "Caption string\nOther State `orm:\"state\"`\n}", "is held by"},
+		{"duplicate column", "Caption string\n}", "Caption string\nOther State `orm:\"state\"`\n}",
+			"projection selects column state more than once"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -114,20 +117,11 @@ func TestCommand_ReadProjectionMistakes(t *testing.T) {
 	}
 }
 
-func TestCommand_ReadProjectionAmbiguousNames(t *testing.T) {
+// TestCommand_ReadProjectionNames checks that a field of a projection selects the column of the model's field of its
+// name, and not the column of its name.
+func TestCommand_ReadProjectionNames(t *testing.T) {
 	t.Parallel()
-	for _, selected := range []bool{false, true} {
-		name := "unused collision"
-		if selected {
-			name = "selected collision"
-		}
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			field := "ID int64"
-			if selected {
-				field = "Note string"
-			}
-			dir := writeModule(t, `
+	dir := writeModule(t, `
 -- model/model.go --
 package model
 type Record struct {
@@ -135,7 +129,7 @@ type Record struct {
  Caption string `+"`orm:\"note\"`"+`
  Note string `+"`orm:\"other\"`"+`
 }
-type Summary struct { `+field+` }
+type Summary struct { Note string }
 -- scopes/scopes.go --
 package scopes
 import (
@@ -156,27 +150,27 @@ type Records interface {
  ListSummaries(ctx context.Context, s ...scopes.Record) ([]model.Summary, error)
 }
 `)
-			s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
-				"records": {Columns: []snapshot.Column{
-					{Name: "id", Type: "int8", NotNull: true}, {Name: "note", Type: "text", NotNull: true},
-					{Name: "other", Type: "text", NotNull: true},
-				}, PrimaryKey: []string{"id"}},
-			}}
-			if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
-				t.Fatal(errOut)
-			}
-			code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl")
-			if selected {
-				if code != cli.ExitFailure || !strings.Contains(errOut, "matches multiple model columns") {
-					t.Fatalf("generate = %d\n%s", code, errOut)
-				}
-			} else if code != cli.ExitOK {
-				t.Fatalf("generate = %d\n%s", code, errOut)
-			}
-		})
+	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
+		"records": {Columns: []snapshot.Column{
+			{Name: "id", Type: "int8", NotNull: true}, {Name: "note", Type: "text", NotNull: true},
+			{Name: "other", Type: "text", NotNull: true},
+		}, PrimaryKey: []string{"id"}},
+	}}
+	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+		t.Fatal(errOut)
+	}
+	if code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl"); code != cli.ExitOK {
+		t.Fatalf("generate = %d\n%s", code, errOut)
+	}
+	generated, err := os.ReadFile(filepath.Join(dir, "impl", "repository_gen.go")) //nolint:gosec // the test's module
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(generated), "SELECT other FROM records") {
+		t.Errorf("ListSummaries reads\n%s\nwant SELECT other FROM records", generated)
 	}
 }
 

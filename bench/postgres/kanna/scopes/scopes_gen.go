@@ -8,7 +8,6 @@ import (
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
 	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/impl"
-	"github.com/go-kanna/orm/join"
 	"github.com/go-kanna/orm/scope"
 )
 
@@ -322,11 +321,6 @@ func (s Customer) Limit(n int) Customer {
 // Offset skips the first n rows.
 func (s Customer) Offset(n int) Customer {
 	return Customer{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Customer) Join(table string, on ...join.Condition) Customer {
-	return Customer{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
@@ -777,16 +771,6 @@ func (s Order) Offset(n int) Order {
 	return Order{ormScope(ormRuntime(s.q).Offset(n))}
 }
 
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s Order) Join(table string, on ...join.Condition) Order {
-	return Order{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinCustomers joins customers through its foreign key for a read projection.
-func (s Order) JoinCustomers() Order {
-	return Order{ormScope(ormRuntime(s.q).JoinTable("customers"))}
-}
-
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
 	qs := make([]impl.Of[model.Order], len(alternatives))
@@ -1133,16 +1117,6 @@ func (s OrderLine) Limit(n int) OrderLine {
 // Offset skips the first n rows.
 func (s OrderLine) Offset(n int) OrderLine {
 	return OrderLine{ormScope(ormRuntime(s.q).Offset(n))}
-}
-
-// Join joins a snapshot table for a read projection, using its foreign key or explicit On conditions.
-func (s OrderLine) Join(table string, on ...join.Condition) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable(table, on...))}
-}
-
-// JoinOrders joins orders through its foreign key for a read projection.
-func (s OrderLine) JoinOrders() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).JoinTable("orders"))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.

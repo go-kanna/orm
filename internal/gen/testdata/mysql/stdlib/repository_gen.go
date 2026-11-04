@@ -211,53 +211,48 @@ func (r OrderRepository) FindMemo(ctx context.Context, id model.OrderID) (**stri
 	return &out[0], nil
 }
 
-func (r OrderRepository) GetTagSummary(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.OrderTagSummary, error) {
+func (r OrderRepository) ListContacts(ctx context.Context, s ...scopes.Order) ([]model.OrderContact, error) {
 	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
-	q = q.Where(`id = `, id)
-	read := func() ([]model.OrderTagSummary, error) {
-		if err := q.ProjectionOnly("GetTagSummary"); err != nil {
-			return nil, err
-		}
-		if err := q.Unpaged("GetTagSummary"); err != nil {
-			return nil, err
-		}
-		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "tags", Column: "name"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name FROM orders`, []string{`id`})
-		if err != nil {
-			return nil, err
-		}
-		rows, err := r.db.query(ctx, text+"", args...)
-		if err != nil {
-			return nil, fmt.Errorf("project orders: %w", err)
-		}
-		defer rows.Close()
-		out := []model.OrderTagSummary{}
-		for rows.Next() {
-			var row model.OrderTagSummary
-			if err := rows.Scan(&row.ID, &row.TagName); err != nil {
-				return nil, fmt.Errorf("project orders: %w", err)
-			}
-			out = append(out, row)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("project orders: %w", err)
-		}
-		if reversed {
-			slices.Reverse(out)
-		}
-		return out, nil
+	if err := q.ProjectionOnly("ListContacts"); err != nil {
+		return nil, r.mapError(err)
 	}
-	out, err := read()
+	text, args, reversed, err := q.RenderJoinedProjection(impl.MySQL, "orders", `SELECT orders.id, customer.id IS NOT NULL, customer.name, customer.nickname`, ` LEFT JOIN customers AS customer ON customer.id = orders.customer_id`, []string{"id", "customer_id"}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{`id`})
 	if err != nil {
-		return model.OrderTagSummary{}, r.mapError(err)
+		return nil, r.mapError(err)
 	}
-	if len(out) == 0 {
-		return model.OrderTagSummary{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
+	rows, err := r.db.query(ctx, text+"", args...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 	}
-	return out[0], nil
+	defer rows.Close()
+	out := []model.OrderContact{}
+	for rows.Next() {
+		var row model.OrderContact
+		var customerJoined bool
+		var customerName sql.Null[string]
+		var customerNickname *string
+		if err := rows.Scan(&row.ID, &customerJoined, &customerName, &customerNickname); err != nil {
+			return nil, r.mapError(fmt.Errorf("project orders: %w", err))
+		}
+		if customerJoined {
+			row.Customer = &struct {
+				Name     string
+				Nickname *string
+			}{Name: customerName.V, Nickname: customerNickname}
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
+	}
+	if reversed {
+		slices.Reverse(out)
+	}
+	return out, nil
 }
 
 func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.OrderSummary, error) {
@@ -274,7 +269,7 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 		if err := q.Unpaged("GetSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
+		text, args, reversed, err := q.RenderJoinedProjection(impl.MySQL, "orders", `SELECT orders.id, orders.total, orders.note, customer.name`, ` INNER JOIN customers AS customer ON customer.id = orders.customer_id`, []string{"id", "total", "note", "customer_id"}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{`id`})
 		if err != nil {
 			return nil, err
 		}
@@ -286,7 +281,7 @@ func (r OrderRepository) GetSummary(ctx context.Context, id model.OrderID, s ...
 		out := []model.OrderSummary{}
 		for rows.Next() {
 			var row model.OrderSummary
-			if err := rows.Scan(&row.ID, &row.Name, &row.Total, &row.Memo); err != nil {
+			if err := rows.Scan(&row.ID, &row.Total, &row.Memo, &row.Customer.Name); err != nil {
 				return nil, fmt.Errorf("project orders: %w", err)
 			}
 			out = append(out, row)
@@ -323,7 +318,7 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 		if err := q.Unpaged("FindSummary"); err != nil {
 			return nil, err
 		}
-		text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
+		text, args, reversed, err := q.RenderJoinedProjection(impl.MySQL, "orders", `SELECT orders.id, orders.total, orders.note, customer.name`, ` INNER JOIN customers AS customer ON customer.id = orders.customer_id`, []string{"id", "total", "note", "customer_id"}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{`id`})
 		if err != nil {
 			return nil, err
 		}
@@ -335,7 +330,7 @@ func (r OrderRepository) FindSummary(ctx context.Context, id model.OrderID, s ..
 		out := []model.OrderSummary{}
 		for rows.Next() {
 			var row model.OrderSummary
-			if err := rows.Scan(&row.ID, &row.Name, &row.Total, &row.Memo); err != nil {
+			if err := rows.Scan(&row.ID, &row.Total, &row.Memo, &row.Customer.Name); err != nil {
 				return nil, fmt.Errorf("project orders: %w", err)
 			}
 			out = append(out, row)
@@ -367,7 +362,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
 		return nil, r.mapError(err)
 	}
-	text, args, reversed, err := q.RenderProjection(impl.MySQL, "orders", []impl.SelectColumn{{Table: "orders", Column: "id"}, {Table: "customers", Column: "name"}, {Table: "orders", Column: "total"}, {Table: "orders", Column: "note"}}, []impl.TableJoin{{Table: "customers", ParentColumns: []string{"customer_id"}, Columns: []string{"id"}, Fields: []string{"id", "name"}}, {Table: "labels", Fields: []string{"order_id", "names"}}, {Table: "line_notes", Fields: []string{"order_id", "line_no", "body"}}, {Table: "line_tags", Fields: []string{"order_id", "line_no", "tag_id"}}, {Table: "order_lines", Fields: []string{"order_id", "line_no", "sku"}}, {Table: "order_tags", Fields: []string{"order_id", "tag_id"}}, {Table: "tags", Fields: []string{"name"}}}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, `SELECT id, name, total, note FROM orders`, []string{`id`})
+	text, args, reversed, err := q.RenderJoinedProjection(impl.MySQL, "orders", `SELECT orders.id, orders.total, orders.note, customer.name`, ` INNER JOIN customers AS customer ON customer.id = orders.customer_id`, []string{"id", "total", "note", "customer_id"}, []string{"id", "customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{`id`})
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -379,7 +374,7 @@ func (r OrderRepository) ListSummaries(ctx context.Context, s ...scopes.Order) (
 	out := []model.OrderSummary{}
 	for rows.Next() {
 		var row model.OrderSummary
-		if err := rows.Scan(&row.ID, &row.Name, &row.Total, &row.Memo); err != nil {
+		if err := rows.Scan(&row.ID, &row.Total, &row.Memo, &row.Customer.Name); err != nil {
 			return nil, r.mapError(fmt.Errorf("project orders: %w", err))
 		}
 		out = append(out, row)
@@ -839,15 +834,15 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c scopes.OrderChangeSet
 }
 
 func (r OrderRepository) UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error) {
-	const q = `INSERT INTO customers (id, name)
-VALUES (?, ?) AS new
-ON DUPLICATE KEY UPDATE name = new.name`
-	if _, err := r.db.ExecContext(ctx, q, c.ID, c.Name); err != nil {
+	const q = `INSERT INTO customers (id, name, nickname)
+VALUES (?, ?, ?) AS new
+ON DUPLICATE KEY UPDATE name = new.name, nickname = new.nickname`
+	if _, err := r.db.ExecContext(ctx, q, c.ID, c.Name, c.Nickname); err != nil {
 		return model.Customer{}, r.mapError(fmt.Errorf("upsert into customers: %w", err))
 	}
 	var row model.Customer
-	err := r.db.queryRow(ctx, `SELECT id, name FROM customers WHERE id = ?`, c.ID).
-		Scan(&row.ID, &row.Name)
+	err := r.db.queryRow(ctx, `SELECT id, name, nickname FROM customers WHERE id = ?`, c.ID).
+		Scan(&row.ID, &row.Name, &row.Nickname)
 	if err != nil {
 		return model.Customer{}, r.mapError(fmt.Errorf("upsert into customers: %w", err))
 	}
@@ -1106,7 +1101,7 @@ func selectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Custom
 	if err != nil {
 		return nil, err
 	}
-	out, err := queryCustomers(ctx, db, `SELECT id, name FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := queryCustomers(ctx, db, `SELECT id, name, nickname FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,7 +1121,7 @@ func queryCustomers(ctx context.Context, db ormDatabase, query string, args ...a
 	out := []model.Customer{}
 	for rows.Next() {
 		var row model.Customer
-		if err := rows.Scan(&row.ID, &row.Name); err != nil {
+		if err := rows.Scan(&row.ID, &row.Name, &row.Nickname); err != nil {
 			return nil, fmt.Errorf("read customers: %w", err)
 		}
 		out = append(out, row)

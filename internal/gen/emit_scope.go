@@ -172,14 +172,6 @@ func (e emitter) scope() {
 	s, n := sc.Name("s"), sc.Name("n")
 	e.method("keeps the first "+n+" rows.", s, "Limit", n+" int", e.q(s)+".Limit("+n+")")
 	e.method("skips the first "+n+" rows.", s, "Offset", n+" int", e.q(s)+".Offset("+n+")")
-	table, on := sc.Name("table"), sc.Name("on")
-	e.method("joins a snapshot table for a read projection, using its foreign key or explicit On conditions.", s, "Join",
-		table+" string, "+on+" ..."+e.f.Import("github.com/go-kanna/orm/join", "join")+".Condition",
-		e.q(s)+".JoinTable("+table+", "+on+"...)")
-	for _, join := range joinMethods(p) {
-		e.method("joins "+join.table+" through its foreign key for a read projection.", s, join.name, "",
-			e.q(s)+".JoinTable("+strconv.Quote(join.table)+")")
-	}
 
 	sc = e.f.Scope()
 	s, alternatives, qs, i, a := sc.Name("s"), sc.Name("alternatives"), sc.Name("qs"), sc.Name("i"), sc.Name("a")

@@ -23,7 +23,6 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 |--------------|-----------------------------------------------------------------------------|
 | `orm`        | repository が返すエラー `ErrNotFound`                                       |
 | `orm/scope`  | 手書きで宣言するスコープ型のフィールド `Of` と、Go で SQL を書く `Raw`        |
-| `orm/join`   | 結合した projection の明示的な条件 `On`                                     |
 | `orm/option` | repository の constructor に渡す option `WithHook`                          |
 | `orm/hook`   | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution` |
 | `orm/pgx`    | pgx で repository を動かす `DBTX`。DI で 1 度だけ渡す |
@@ -899,30 +898,39 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールド名または対応するカラム名で元モデルのフィールドに結び付け、カラム名のタグと `nullzero` の扱いを引き継ぎます。別の Go フィールド名で受け取る場合は `orm` カラムタグを指定できます。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。集計・式は従来どおり手書き SQL と DTO で表現できます。
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールドは、同じ名前の元モデルのフィールドに結び付け、そのカラム名のタグと `nullzero` の扱いを引き継ぎます。別の名前のフィールドは、`orm:"note"` のようにカラム名のタグで指定します。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。集計・式は従来どおり手書き SQL と DTO で表現できます。
 
 
 ### JOIN する projection
 
-scope で JOIN 先を指定すると、専用の返却型へ関連テーブルの列を取得できます。元モデルに関連フィールドを足す必要はありません。
+projection は、元のテーブルが参照するテーブルの列を、入れ子の struct で読めます。struct なら INNER JOIN、struct のポインタなら LEFT JOIN で、結合する行がなければ nil です:
 
 ```go
 type MembershipSummary struct {
-    UserID      uuid.UUID
-    Role        Role
-    DisplayName string // inferred from users.display_name when it has no base-model match
+    UserID  uuid.UUID
+    Role    Role
+    User    struct{ DisplayName string }  // user_id の先の users を INNER JOIN
+    Inviter *struct{ DisplayName string } // inviter_id の先の users を LEFT JOIN
 }
 
 GetSummary(ctx context.Context, userID uuid.UUID, s ...scopes.Membership) (MembershipSummary, error)
-
-summary, err := repo.GetSummary(ctx, userID, scopes.Memberships().JoinUsers())
 ```
 
-一意に定まる直接の外部キーから型付きの `Join<Table>()` メソッドを生成します。`JoinUsers()` は元テーブルから `users` への外部キーを使って INNER JOIN を生成し、複合キーにも対応します。文字列の `Join("users")` も同じ外部キーを利用できます。FK がない場合は `Join("users", join.On("user_id", "id"))` のように等値条件を明示します。`github.com/go-kanna/orm/join` を import し、`join.On` には元テーブルの列、JOIN 先の列の順に渡します。複合条件は複数の `join.On` を渡します。テーブルと列は SQL 実行前にスナップショットと照合します。条件の明示により、複数の外部キーがある場合や逆向きの JOIN にも対応できます。直接の外部キーがないテーブルの取得列には `orm:"users.display_name"` のように修飾タグを指定します。自己 JOIN・別名・任意の ON 式は手書き SQL を使います。専用の読み取り projection が対象で、通常モデルの取得・関連取得 scope・書き込み・Count・Exists では JOIN を拒否します。
+```sql
+SELECT memberships.user_id, memberships.role, "user".display_name, inviter.id IS NOT NULL, inviter.display_name
+FROM "memberships"
+INNER JOIN users AS "user" ON "user".id = memberships.user_id
+LEFT JOIN users AS inviter ON inviter.id = memberships.inviter_id
+```
 
-元モデルのフィールド対応と型の要件は維持し、JOIN 先に同名の列があっても元のテーブルの列を取得します。追加フィールドは参照先テーブルの一意なカラムから推論し、DB の型と nullable を検証します。JOIN 先の `id` のように取得元を明示する場合は、`orm:"users.id"` のようにテーブル付きの列名を指定します。必要な JOIN の不足は SQL 実行前にエラー、存在しないフィールドや参照先を特定できないフィールドは生成時エラーです。nullable な JOIN 先の列は nullable なフィールド、または文字列への明示した `nullzero` で受け取ります。
+- 結合するテーブルは、[リレーション](#リレーション)と同じく、フィールド名と `_id` の外部キーが参照するテーブルです。ほかのカラムの外部キーは `orm:"fk=created_by"` のようにタグで指定し、複数カラムなら `orm:"fk=tenant_id,customer_id"` と並べます。
+- 入れ子の struct のフィールドは、projection のフィールドが元モデルに結び付くのと同じく、結合するテーブルのモデルのフィールドに、名前かカラム名のタグで結び付きます。結合するテーブルには、そのモデルを示す scope 型が要ります。その scope の条件や関連は持ち込みません。
+- テーブルの別名はフィールド名の snake case です。そのため、同じテーブルを 2 回結合することも、`parent_id` で categories の `Parent *struct{ Name string }` を読むような自己結合もできます。元のテーブルや別のフィールドと別名が重なれば、生成を止めます。
+- LEFT JOIN は、外部キーが参照するカラムで結合する行があるかを見分けます。結合した行のカラムが NULL でも、nil か `nullzero` のゼロ値として読み、struct はそのまま残ります。
+- 入れ子の型は専用の struct で、モデルにはしません。モデルは[リレーション](#リレーション)で読みます。入れ子の struct の中の struct、元のテーブルの外部キーが参照しないテーブル、Delete での結合は、手書きの SQL で書きます。
+- scope の条件は元のテーブルだけを読み、並び順と LIMIT は結合のあとに付きます。そのため、INNER JOIN で落ちた行は数えず、`First` は結合結果の先頭を読みます。並び順は元のテーブルの列で指定します。テーブルを結合する projection には `//kanna:lock` を付けられません。モデルを読んで行をロックするか、`FOR UPDATE OF` のように対象のテーブルを指定してロックするクエリを手で書いてください。
 
-元テーブルの scope で絞り込み・並び順・カーソルを指定できます。条件は元テーブルの名前空間で評価し、並び順とページングは JOIN 後に適用します。JOIN 時の並び順には元テーブルの列を指定します。レンダラーは結果・結合・並び順に必要な列を選び、絞り込み済みの元テーブルを派生テーブルにする場合があります。別途 Preload せず、1本の SQL で取得します。両 DB の example に注文の summary へ顧客名を取得する例があります。
+両 DB の example に、注文の summary へ顧客名をこの形で読み込む例があります。
 
 ## 手書きの SQL
 

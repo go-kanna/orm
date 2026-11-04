@@ -1,7 +1,6 @@
 package impl
 
 import (
-	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,10 +20,6 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 	if q.err != nil {
 		return Rendered{}, q.err
 	}
-	if len(q.joins) > 0 {
-		return Rendered{}, errors.New("orm: joins require a read projection")
-	}
-
 	var r Rendered
 	conds, orders := q.conds, q.orders
 	if len(orders) > 0 {

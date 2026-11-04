@@ -53,6 +53,11 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	if !reads {
 		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, or a List")}
 	}
+	if m.projection != nil && len(m.projection.joins) > 0 {
+		return []diag.Diag{errorf("%s joins a table, and a projection joining one is read without a lock",
+			m.projection.joins[0].field).WithHints("lock the rows by reading the model, and read the values joined apart",
+			"or write the query by hand, locking the rows of the tables meant, as FOR UPDATE OF does")}
+	}
 	fields := strings.Fields(d.Args)
 	if len(fields) == 0 || len(fields) > 2 {
 		return []diag.Diag{errorf("//kanna:lock takes the strength of the lock, then nowait or skip-locked if any").

@@ -24,7 +24,7 @@ func TestCommand_DeleteReturningDiagnostics(t *testing.T) {
 		{"single result", "Delete(ctx context.Context, id int64, s ...scopes.Record) (model.Card, error)",
 			"kanna-orm cannot implement it as declared", snapshot.PostgreSQL},
 		{"invalid projection", "Delete(ctx context.Context, s ...scopes.Record) ([]model.Card, error)",
-			"no column missing", snapshot.PostgreSQL},
+			"the model of records has no field Missing", snapshot.PostgreSQL},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

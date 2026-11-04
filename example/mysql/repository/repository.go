@@ -81,8 +81,9 @@ type ProductSummary struct {
 	Price int64
 }
 
+// OrderSummary is an order with the name of its customer, whose table customer_id joins.
 type OrderSummary struct {
-	ID           model.OrderID
-	CustomerName string `orm:"customers.name"`
-	Status       model.OrderStatus
+	ID       model.OrderID
+	Status   model.OrderStatus
+	Customer struct{ Name string }
 }
