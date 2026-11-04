@@ -189,6 +189,76 @@ func TestCommand_NothingDeclared(t *testing.T) {
 	}
 }
 
+func TestCommand_DirectiveDeclaringNothing(t *testing.T) {
+	t.Parallel()
+
+	const model = "-- model/model.go --\npackage model\n\ntype Order struct{ ID int64 }\n"
+	tests := []struct {
+		name, pkg, src, want string
+		code                 int
+	}{
+		{"scopes of no model package", "scopes", "package scopes\n\n//kanna:scopes ../model\n",
+			"./scopes.go:3:1: error: //kanna:scopes takes model-package=…, not \"../model\"\n" +
+				"  as in //kanna:scopes model-package=../model\n", cli.ExitFailure},
+		{"scope of a misspelled key", "scopes", "package scopes\n\nimport (\n\t\"example.com/shop/model\"\n" +
+			"\t\"github.com/go-kanna/orm/scope\"\n)\n\n//kanna:scope tabel=orders\n" +
+			"type Order struct{ q scope.Of[model.Order] }\n",
+			"./scopes.go:8:1: error: //kanna:scope takes table=… or func=…, not \"tabel=orders\"\n" +
+				"  did you mean \"table\"?\n  as in //kanna:scope table=orders\n", cli.ExitFailure},
+		{"repository of a misspelled key", "repository", "package repository\n\nimport \"context\"\n\n" +
+			"//kanna:repository tabel=orders\ntype Order interface {\n\tDelete(ctx context.Context, id int64) error\n}\n",
+			"./repository.go:5:1: error: //kanna:repository takes table=…, not \"tabel=orders\"\n" +
+				"  did you mean \"table\"?\n  as in //kanna:repository table=orders\n", cli.ExitFailure},
+		{"loose repository", "repository", "package repository\n\n//kanna:repository\n\ntype Order interface{}\n",
+			"./repository.go:3:1: warning: //kanna:repository is not attached to a declaration, so nothing reads it\n" +
+				"  write it right above what it marks, with no blank line between\n" +
+				"warning: no type is marked //kanna:scope or //kanna:repository in example.com/shop/repository\n",
+			cli.ExitOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, model+"-- "+tt.pkg+"/"+tt.pkg+".go --\n"+tt.src)
+			describeShop(t, dir)
+			code, _, errOut := run(t, filepath.Join(dir, tt.pkg))
+			if code != tt.code || errOut != tt.want {
+				t.Errorf("kanna-orm = %d\n%s\nwant %d\n%s", code, errOut, tt.code, tt.want)
+			}
+		})
+	}
+}
+
+// A directive gone wrong keeps what an earlier run wrote for it, rather than removing it as if the directive were
+// gone.
+func TestCommand_DirectiveGoneWrongKeepsOutput(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, shopModule)
+	describeShop(t, dir)
+	scopes := filepath.Join(dir, "scopes")
+	if code, _, errOut := run(t, scopes); code != cli.ExitOK {
+		t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+	}
+
+	path := filepath.Join(scopes, "scopes.go")
+	src, err := os.ReadFile(path) //nolint:gosec // the file written above
+	if err != nil {
+		t.Fatal(err)
+	}
+	src = bytes.Replace(src, []byte("table=orders"), []byte("tabel=orders"), 1)
+	if err := os.WriteFile(path, src, 0o600); err != nil { //nolint:gosec // the file written above
+		t.Fatal(err)
+	}
+	code, _, errOut := run(t, scopes)
+	if code != cli.ExitFailure || !strings.HasPrefix(errOut, "./scopes.go:8:1: error: //kanna:scope takes table=…") {
+		t.Errorf("kanna-orm = %d\n%s", code, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(scopes, "scopes_gen.go")); err != nil {
+		t.Errorf("scopes_gen.go is gone: %v", err)
+	}
+}
+
 func TestCommand_KeepsWhatCodeStillCalls(t *testing.T) {
 	t.Parallel()
 
