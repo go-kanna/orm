@@ -520,13 +520,17 @@ type scanNames struct {
 	rows, out, row, err, wrap, zero string
 }
 
-// scanRows writes the loop reading the rows of model, each column into the field holding it.
+// scanRows writes the loop reading the rows of model, each column into the field holding it. The row and what Scan
+// writes into are made once, for every row to be read into: a row is set to the zero value before it is read, and
+// copied into out after.
 func (e repoEmitter) scanRows(n scanNames, model string, columns []column, sc gofile.Scope) {
 	zero := cmp.Or(n.zero, "nil")
-	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[2]s\n", n.out, model, n.rows, n.row)
+	dest := sc.Name("dest")
+	e.printf("%[1]s := []%[2]s{}\nvar %[3]s %[2]s\n", n.out, model, n.row)
 	dests, assignments := e.scanTargets(sc, n.row, columns)
-	e.printf("if %[1]s := %[2]s.Scan(%[3]s); %[1]s != nil {\nreturn %[5]s, %[4]s\n}\n", n.err, n.rows,
-		strings.Join(dests, ", "), n.wrap, zero)
+	e.printf("%s := []any{%s}\nfor %s.Next() {\n%s = %s{}\n", dest, strings.Join(dests, ", "), n.rows, n.row, model)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s...); %[1]s != nil {\nreturn %[5]s, %[4]s\n}\n", n.err, n.rows, dest,
+		n.wrap, zero)
 	e.assignScanned(assignments)
 	e.printf("%[1]s = append(%[1]s, %[2]s)\n}\n", n.out, n.row)
 	e.printf("if %[1]s := %[2]s.Err(); %[1]s != nil {\nreturn %[4]s, %[3]s\n}\n", n.err, n.rows, n.wrap, zero)
@@ -914,7 +918,7 @@ func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig
 			"defer %[1]s.Close()\n", rows, err, recv, e.query, call, wrap)
 		n := scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}
 		if m.query.scalar {
-			e.scalarRows(n, typ)
+			e.scalarRows(n, typ, sc)
 		} else {
 			e.scanRows(n, typ, m.query.fields, sc)
 		}
@@ -1026,8 +1030,11 @@ func (e repoEmitter) pluckRead(m repoMethod, sc gofile.Scope, recv string, sig s
 	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s.Args()...)\n", rows, err, recv, e.query, sig.ctx, text,
 		rd)
 	e.printf("if %s != nil {\nreturn %s, %s\n}\ndefer %s.Close()\n", err, zero, wrap, rows)
-	e.printf("%[1]s := []%[2]s{}\nfor %[3]s.Next() {\nvar %[4]s %[5]s\n", out, typ, rows, row, e.storageType(*column))
-	e.printf("if %[1]s := %[2]s.Scan(&%[3]s); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, rows, row, zero, wrap)
+	none, dest := sc.Name("none"), sc.Name("dest")
+	e.printf("%[1]s := []%[2]s{}\nvar %[3]s, %[4]s %[5]s\n%[6]s := []any{&%[3]s}\nfor %[7]s.Next() {\n%[3]s = %[4]s\n",
+		out, typ, row, none, e.storageType(*column), dest, rows)
+	e.printf("if %[1]s := %[2]s.Scan(%[3]s...); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, rows, dest, zero,
+		wrap)
 	value := row
 	if column.nullzero {
 		value = row + ".V"

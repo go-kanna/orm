@@ -153,9 +153,11 @@ func (r OrderRepository) ListIDs(ctx context.Context, s ...scopes.Order) ([]mode
 	}
 	defer rows.Close()
 	out := []model.OrderID{}
+	var row, none model.OrderID
+	dest := []any{&row}
 	for rows.Next() {
-		var row model.OrderID
-		if err := rows.Scan(&row); err != nil {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read orders.id: %w", err)
 		}
 		out = append(out, row)
@@ -188,9 +190,11 @@ func (r OrderRepository) FindMemo(ctx context.Context, id model.OrderID) (**stri
 	}
 	defer rows.Close()
 	out := []*string{}
+	var row, none *string
+	dest := []any{&row}
 	for rows.Next() {
-		var row *string
-		if err := rows.Scan(&row); err != nil {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read orders.note: %w", err)
 		}
 		out = append(out, row)
@@ -487,9 +491,11 @@ func (r OrderRepository) DeleteReturning(ctx context.Context, s ...scopes.Order)
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err2 := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err2 != nil {
+		row = model.Order{}
+		if err2 := rows.Scan(dest...); err2 != nil {
 			return nil, fmt.Errorf(`delete from orders: %w`, err2)
 		}
 		out = append(out, row)
@@ -516,9 +522,11 @@ func (r OrderRepository) DeleteSummaries(ctx context.Context, s ...scopes.Order)
 	}
 	defer rows.Close()
 	out := []repository.DeletedOrder{}
+	var row repository.DeletedOrder
+	dest := []any{&row.ID, &row.Memo}
 	for rows.Next() {
-		var row repository.DeletedOrder
-		if err2 := rows.Scan(&row.ID, &row.Memo); err2 != nil {
+		row = repository.DeletedOrder{}
+		if err2 := rows.Scan(dest...); err2 != nil {
 			return nil, fmt.Errorf(`delete from orders: %w`, err2)
 		}
 		out = append(out, row)
@@ -546,9 +554,11 @@ func (r OrderRepository) DeleteByCustomer(ctx context.Context, customerID int64,
 	}
 	defer rows.Close()
 	out := []repository.DeletedOrder{}
+	var row repository.DeletedOrder
+	dest := []any{&row.ID, &row.Memo}
 	for rows.Next() {
-		var row repository.DeletedOrder
-		if err2 := rows.Scan(&row.ID, &row.Memo); err2 != nil {
+		row = repository.DeletedOrder{}
+		if err2 := rows.Scan(dest...); err2 != nil {
 			return nil, fmt.Errorf(`delete from orders: %w`, err2)
 		}
 		out = append(out, row)
@@ -783,9 +793,11 @@ RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receip
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("insert into orders: %w", err)
 		}
 		out = append(out, row)
@@ -848,9 +860,11 @@ RETURNING order_id, line_no, sku`
 	}
 	defer rows.Close()
 	out := []model.OrderLine{}
+	var row model.OrderLine
+	dest := []any{&row.OrderID, &row.LineNo, &row.SKU}
 	for rows.Next() {
-		var row model.OrderLine
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.SKU); err != nil {
+		row = model.OrderLine{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("insert into order_lines: %w", err)
 		}
 		out = append(out, row)
@@ -985,9 +999,11 @@ func (r OrderRepository) UpdateManyReturning(ctx context.Context, c scopes.Order
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf(`update orders: %w`, err)
 		}
 		out = append(out, row)
@@ -1132,9 +1148,11 @@ RETURNING name`
 	}
 	defer rows.Close()
 	out := []model.Tag{}
+	var row model.Tag
+	dest := []any{&row.Name}
 	for rows.Next() {
-		var row model.Tag
-		if err := rows.Scan(&row.Name); err != nil {
+		row = model.Tag{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("upsert into tags: %w", err)
 		}
 		out = append(out, row)
@@ -1184,9 +1202,11 @@ ORDER BY 1`
 	}
 	defer rows.Close()
 	out := []repository.MonthCount{}
+	var row repository.MonthCount
+	dest := []any{&row.Month, &row.Count}
 	for rows.Next() {
-		var row repository.MonthCount
-		if err := rows.Scan(&row.Month, &row.Count); err != nil {
+		row = repository.MonthCount{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("query MonthCounts: %w", err)
 		}
 		out = append(out, row)
@@ -1219,9 +1239,11 @@ SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.no
 	}
 	defer rows.Close()
 	out := []repository.OrderWithCustomer{}
+	var row repository.OrderWithCustomer
+	dest := []any{&row.Order.ID, &row.Order.CustomerID, &row.Order.Status, &row.Order.PlacedAt, &row.Order.Memo, &row.Order.Total, &row.Order.Paid, &row.Order.Contact, &row.Order.Receipt, &row.Order.Position, &row.CustomerName}
 	for rows.Next() {
-		var row repository.OrderWithCustomer
-		if err := rows.Scan(&row.Order.ID, &row.Order.CustomerID, &row.Order.Status, &row.Order.PlacedAt, &row.Order.Memo, &row.Order.Total, &row.Order.Paid, &row.Order.Contact, &row.Order.Receipt, &row.Order.Position, &row.CustomerName); err != nil {
+		row = repository.OrderWithCustomer{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("query ListWithCustomers: %w", err)
 		}
 		out = append(out, row)
@@ -1268,9 +1290,11 @@ SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.no
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return model.Order{}, fmt.Errorf("query FirstPlacedSince: %w", err)
 		}
 		out = append(out, row)
@@ -1312,9 +1336,11 @@ SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.no
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("query ListRepeated: %w", err)
 		}
 		out = append(out, row)
@@ -1397,9 +1423,11 @@ func ormQueryCustomers(ctx context.Context, db ormDatabase, query string, args .
 	}
 	defer rows.Close()
 	out := []model.Customer{}
+	var row model.Customer
+	dest := []any{&row.ID, &row.Name, &row.Nickname}
 	for rows.Next() {
-		var row model.Customer
-		if err := rows.Scan(&row.ID, &row.Name, &row.Nickname); err != nil {
+		row = model.Customer{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read customers: %w", err)
 		}
 		out = append(out, row)
@@ -1434,9 +1462,11 @@ func ormQueryLabels(ctx context.Context, db ormDatabase, query string, args ...a
 	}
 	defer rows.Close()
 	out := []model.Label{}
+	var row model.Label
+	dest := []any{&row.OrderID, &row.Names}
 	for rows.Next() {
-		var row model.Label
-		if err := rows.Scan(&row.OrderID, &row.Names); err != nil {
+		row = model.Label{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read labels: %w", err)
 		}
 		out = append(out, row)
@@ -1474,9 +1504,11 @@ func ormQueryLineNotes(ctx context.Context, db ormDatabase, query string, args .
 	}
 	defer rows.Close()
 	out := []model.LineNote{}
+	var row model.LineNote
+	dest := []any{&row.OrderID, &row.LineNo, &row.Body}
 	for rows.Next() {
-		var row model.LineNote
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.Body); err != nil {
+		row = model.LineNote{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read line_notes: %w", err)
 		}
 		out = append(out, row)
@@ -1584,9 +1616,11 @@ func ormQueryLineTags(ctx context.Context, db ormDatabase, query string, args ..
 	}
 	defer rows.Close()
 	out := []model.LineTag{}
+	var row model.LineTag
+	dest := []any{&row.OrderID, &row.LineNo, &row.TagID}
 	for rows.Next() {
-		var row model.LineTag
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.TagID); err != nil {
+		row = model.LineTag{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read line_tags: %w", err)
 		}
 		out = append(out, row)
@@ -1688,9 +1722,11 @@ func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args 
 	}
 	defer rows.Close()
 	out := []model.OrderLine{}
+	var row model.OrderLine
+	dest := []any{&row.OrderID, &row.LineNo, &row.SKU}
 	for rows.Next() {
-		var row model.OrderLine
-		if err := rows.Scan(&row.OrderID, &row.LineNo, &row.SKU); err != nil {
+		row = model.OrderLine{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read order_lines: %w", err)
 		}
 		out = append(out, row)
@@ -1919,9 +1955,11 @@ func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...a
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
 		out = append(out, row)
@@ -2135,9 +2173,11 @@ func ormQueryTags(ctx context.Context, db ormDatabase, query string, args ...any
 	}
 	defer rows.Close()
 	out := []model.Tag{}
+	var row model.Tag
+	dest := []any{&row.Name}
 	for rows.Next() {
-		var row model.Tag
-		if err := rows.Scan(&row.Name); err != nil {
+		row = model.Tag{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read tags: %w", err)
 		}
 		out = append(out, row)
