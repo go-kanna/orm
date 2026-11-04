@@ -177,6 +177,9 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	_, _ = u.orders.Count(ctx, scopes.Orders().Or())
 	_, _ = u.orders.Delete(ctx, scopes.Orders().Not(scopes.Orders().Open()))
 	_, _ = u.orders.Delete(ctx, scopes.Orders().After(model.Order{ID: 1}))
+	ss := []scopes.Order{scopes.Orders()}
+	replace(ss)
+	_, _ = u.orders.Delete(ctx, ss...)
 	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
 
 	c := scopes.CustomerChanges()
@@ -190,6 +193,8 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	t = t.Open()
 	count()
 }
+
+func replace(ss []scopes.Order) { ss[0] = scopes.Orders().IDEq(1) }
 `
 
 const postgresUseCaseTest = `package usecase

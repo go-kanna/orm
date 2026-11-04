@@ -135,8 +135,8 @@ func (a *analysis) callPos(instr ssa.CallInstruction) token.Pos {
 	return p
 }
 
-// tracked reports whether vet follows what the allocation a holds: a scope or a change set, or an array of them or
-// of strings, which nothing but loads and stores reach, and closures that only read it.
+// tracked reports whether vet follows what the allocation a holds: a scope or a change set, which nothing but loads
+// and stores reach, and closures that only read it, or an array of them or of strings handed to one call.
 func (a *analysis) tracked(alloc *ssa.Alloc) bool {
 	if t, ok := a.tracks[alloc]; ok {
 		return t
@@ -149,15 +149,11 @@ func (a *analysis) tracked(alloc *ssa.Alloc) bool {
 func trackable(alloc *ssa.Alloc) bool {
 	t := deref(alloc.Type())
 	if arr, ok := t.Underlying().(*types.Array); ok {
-		t = arr.Elem()
-		if b, ok := t.Underlying().(*types.Basic); ok && b.Info()&types.IsString != 0 {
-			return onlyAccessed(alloc)
-		}
+		e := arr.Elem()
+		b, isBasic := e.Underlying().(*types.Basic)
+		return (isScope(e) || isChange(e) || isBasic && b.Info()&types.IsString != 0) && handedOnce(alloc)
 	}
-	if !isScope(t) && !isChange(t) {
-		return false
-	}
-	return onlyAccessed(alloc)
+	return (isScope(t) || isChange(t)) && onlyAccessed(alloc)
 }
 
 func onlyAccessed(alloc *ssa.Alloc) bool {
@@ -175,11 +171,6 @@ func onlyAccessed(alloc *ssa.Alloc) bool {
 			if r.Field != 0 || !loadsAndStores(r) {
 				return false
 			}
-		case *ssa.IndexAddr:
-			if _, ok := constInt(r.Index); !ok || !loadsAndStores(r) {
-				return false
-			}
-		case *ssa.Slice:
 		case *ssa.MakeClosure:
 			fn, ok := r.Fn.(*ssa.Function)
 			if !ok {
@@ -195,6 +186,48 @@ func onlyAccessed(alloc *ssa.Alloc) bool {
 		}
 	}
 	return true
+}
+
+// handedOnce reports whether the array alloc is written element by element and then sliced for one call, all in one
+// block, as the arguments of a variadic call, or a slice literal given to one, are: what the call gets is what was
+// written, as nothing else holds the array.
+func handedOnce(alloc *ssa.Alloc) bool {
+	b := alloc.Block()
+	var (
+		slice  *ssa.Slice
+		stores []ssa.Instruction
+	)
+	for _, r := range *alloc.Referrers() {
+		switch r := r.(type) {
+		case *ssa.IndexAddr:
+			if _, ok := constInt(r.Index); !ok {
+				return false
+			}
+			for _, w := range *r.Referrers() {
+				if s, ok := w.(*ssa.Store); !ok || s.Addr != r || s.Block() != b {
+					return false
+				}
+				stores = append(stores, w)
+			}
+		case *ssa.Slice:
+			if slice != nil || r.Block() != b {
+				return false
+			}
+			slice = r
+		case *ssa.DebugRef:
+		default:
+			return false
+		}
+	}
+	if slice == nil || len(*slice.Referrers()) != 1 {
+		return false
+	}
+	call, ok := (*slice.Referrers())[0].(ssa.CallInstruction)
+	if !ok || call.Block() != b || !slices.Contains(call.Common().Args, ssa.Value(slice)) {
+		return false
+	}
+	at := slices.Index(b.Instrs, ssa.Instruction(slice))
+	return !slices.ContainsFunc(stores, func(s ssa.Instruction) bool { return slices.Index(b.Instrs, s) > at })
 }
 
 func loadsAndStores(addr ssa.Value) bool {
