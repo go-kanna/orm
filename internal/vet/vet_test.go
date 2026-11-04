@@ -15,6 +15,16 @@ import (
 	"github.com/go-kanna/orm/internal/vet"
 )
 
+// TestMain loads every module the tests write outside any workspace. A GOWORK pinned by the Makefile or the
+// environment would otherwise put them outside the modules it lists, which the go command refuses to load.
+func TestMain(m *testing.M) {
+	// Before any test runs: t.Setenv would rule out t.Parallel.
+	if err := os.Setenv("GOWORK", "off"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 // exampleModule copies example/name into a module of its own, on the runtime of this repository, with files added.
 func exampleModule(t *testing.T, name string, files map[string]string) string {
 	t.Helper()
@@ -51,7 +61,6 @@ func exampleModule(t *testing.T, name string, files map[string]string) string {
 	}
 	cmd := exec.CommandContext(t.Context(), "go", "mod", "tidy")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy: %v\n%s", err, out)
 	}
