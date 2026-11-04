@@ -193,7 +193,9 @@ The database is the one `-database-url` names, or else `$DATABASE_URL`:
 
 The types are what the database itself answers, so kanna-orm has no SQL parser of its own to disagree with it. MySQL
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
-wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows.
+wrapped as `SELECT t.* FROM (...) AS t LIMIT 0`, which returns no rows. On PostgreSQL, a type is named as SQL writes
+it: one of `pg_catalog` by its name, as `int8`, and another by its schema and its name, quoted where they need it, as
+`public."OrderState"`, so that the SQL generated names it whatever the search path. A domain is named as its base type.
 
 The snapshot records what generation needs, and no more, so `describe -check` tells that the code was generated from
 the schema there is, not that two schemas are the same:

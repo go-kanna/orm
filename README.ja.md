@@ -174,7 +174,7 @@ $ go generate ./...
 - `postgres://user:password@host:5432/database` は pgx 経由の PostgreSQL です。テーブルはカレントスキーマのもので、カレントスキーマは `?search_path=` で選びます。
 - `mysql://user:password@host:3306/database` は go-sql-driver/mysql 経由の MySQL で、`?` の後にこのドライバのオプションを指定できます。テーブルは URL で指定したデータベースのものです。
 
-型はデータベース自身が答えたものなので、kanna-orm にはデータベースと食い違う独自の SQL パーサがありません。MySQL はプリペアした文の結果の情報を返さないので、MySQL では `describe` は文を `SELECT t.* FROM (...) AS t LIMIT 0` で包んでカラムを読み取ります。この文は行を返しません。
+型はデータベース自身が答えたものなので、kanna-orm にはデータベースと食い違う独自の SQL パーサがありません。MySQL はプリペアした文の結果の情報を返さないので、MySQL では `describe` は文を `SELECT t.* FROM (...) AS t LIMIT 0` で包んでカラムを読み取ります。この文は行を返しません。PostgreSQL では、型を SQL に書ける名前で記録します。`pg_catalog` の型は `int8` のように名前だけで、それ以外の型は `public."OrderState"` のようにスキーマと名前で、必要なところは引用して書きます。生成する SQL が、search_path に関係なくその型を指せるようにするためです。domain は基底型の名前で記録します。
 
 スナップショットは生成に必要なものだけを記録します。そのため、`describe -check` で分かるのは、コードが現在のスキーマから生成されたことであり、2 つのスキーマが同じであることではありません:
 

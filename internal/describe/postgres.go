@@ -16,30 +16,37 @@ const postgresTablesOfSchema = `c.relnamespace = current_schema()::regnamespace
   AND c.relkind IN ('r', 'p')
   AND NOT c.relispartition`
 
+// sqlTypeName is the name of the type alias, a row of pg_type, as SQL writes it: one of pg_catalog by its name, and
+// another qualified by its schema and quoted where it needs it, so that a cast to it names it whatever the search path.
+func sqlTypeName(alias string) string {
+	return "CASE WHEN " + alias + ".typnamespace = 'pg_catalog'::regnamespace THEN " + alias + ".typname::text ELSE " +
+		alias + ".typnamespace::regnamespace::text || '.' || quote_ident(" + alias + ".typname) END"
+}
+
 // The name of the type t, given the joins postgresTypeJoins makes: a domain is named as its base type, and an array
 // as its element type followed by [].
-const (
-	postgresTypeName = `CASE
-         WHEN t.typtype = 'd' THEN bt.typname
-         WHEN t.typcategory = 'A' THEN et.typname || '[]'
-         ELSE t.typname
+var postgresTypeName = `CASE
+         WHEN t.typtype = 'd' THEN ` + sqlTypeName("bt") + `
+         WHEN t.typcategory = 'A' THEN ` + sqlTypeName("et") + ` || '[]'
+         ELSE ` + sqlTypeName("t") + `
        END`
-	postgresTypeJoins = `LEFT JOIN pg_type bt ON bt.oid = t.typbasetype
+
+const postgresTypeJoins = `LEFT JOIN pg_type bt ON bt.oid = t.typbasetype
 LEFT JOIN pg_type et ON et.oid = t.typelem`
 
-	// postgresColumnTypeName is postgresTypeName with the length or precision a column declares, varchar(100) or
-	// numeric(10,2), as MySQL's types spell it: what format_type writes in parentheses, after the name.
-	postgresColumnTypeName = `CASE
+// postgresColumnTypeName is postgresTypeName with the length or precision a column declares, varchar(100) or
+// numeric(10,2), as MySQL's types spell it: what format_type writes in parentheses, after the name.
+var postgresColumnTypeName = `CASE
          WHEN t.typtype = 'd'
-           THEN bt.typname || coalesce(substring(format_type(t.typbasetype, t.typtypmod) from '\(.*\)'), '')
+           THEN ` + sqlTypeName("bt") + ` ||
+             coalesce(substring(format_type(t.typbasetype, t.typtypmod) from '\(.*\)'), '')
          WHEN t.typcategory = 'A'
-           THEN et.typname || coalesce(substring(format_type(a.atttypid, a.atttypmod) from '\(.*\)'), '')
-             || '[]'
-         ELSE t.typname || coalesce(substring(format_type(a.atttypid, a.atttypmod) from '\(.*\)'), '')
+           THEN ` + sqlTypeName("et") + ` ||
+             coalesce(substring(format_type(a.atttypid, a.atttypmod) from '\(.*\)'), '') || '[]'
+         ELSE ` + sqlTypeName("t") + ` || coalesce(substring(format_type(a.atttypid, a.atttypmod) from '\(.*\)'), '')
        END`
-)
 
-const postgresColumnsQuery = `
+var postgresColumnsQuery = `
 SELECT c.relname,
        a.attname,
        ` + postgresColumnTypeName + `,
@@ -166,7 +173,7 @@ func postgresTables(ctx context.Context, conn *pgx.Conn) (map[string]snapshot.Ta
 	return tables, nil
 }
 
-const postgresTypesQuery = `
+var postgresTypesQuery = `
 SELECT t.oid, ` + postgresTypeName + `
 FROM pg_type t
 ` + postgresTypeJoins + `

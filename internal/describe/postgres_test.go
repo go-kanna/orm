@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,9 +55,10 @@ func postgresExec(t *testing.T, conn *pgx.Conn, sql string) {
 func TestPostgresTables(t *testing.T) {
 	t.Parallel()
 
-	conn, _ := postgres(t)
+	conn, schema := postgres(t)
 	postgresExec(t, conn, `
 CREATE TYPE mood AS ENUM ('ok', 'meh');
+CREATE TYPE "OrderState" AS ENUM ('open', 'closed');
 CREATE DOMAIN email AS text;
 
 CREATE TABLE customers (
@@ -73,6 +75,8 @@ CREATE TABLE orders (
 	number text NOT NULL,
 	status text NOT NULL DEFAULT 'open',
 	mood mood,
+	state "OrderState",
+	moods mood[],
 	tags text[] NOT NULL DEFAULT '{}',
 	total numeric(10, 2) NOT NULL,
 	total_with_tax numeric GENERATED ALWAYS AS (total * 1.1) STORED,
@@ -116,7 +120,7 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
 	// unique keys leave out the expression, partial, and deferrable ones, the INCLUDE column, and the duplicate; and
 	// neither the partition nor the view is a table.
 	//nolint:lll // a column of the snapshot is a line of its own
-	const want = `{
+	want := `{
   "dialect": "postgresql",
   "tables": {
     "customers": {
@@ -166,7 +170,9 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
         {"name": "customer_id", "type": "int8", "not_null": true},
         {"name": "number", "type": "text", "not_null": true},
         {"name": "status", "type": "text", "not_null": true, "default": true},
-        {"name": "mood", "type": "mood"},
+        {"name": "mood", "type": "<schema>.mood"},
+        {"name": "state", "type": "<schema>.\"OrderState\""},
+        {"name": "moods", "type": "<schema>.mood[]"},
         {"name": "tags", "type": "text[]", "not_null": true, "default": true},
         {"name": "total", "type": "numeric(10,2)", "not_null": true},
         {"name": "total_with_tax", "type": "numeric", "assigned": true},
@@ -184,6 +190,7 @@ CREATE VIEW open_orders AS SELECT id, number FROM orders WHERE status = 'open';
   "statements": {}
 }
 `
+	want = strings.ReplaceAll(want, "<schema>", schema)
 	got := snapshot.Marshal(snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: tables})
 	if string(got) != want {
 		t.Errorf("tables:\n%s\nwant:\n%s", got, want)
@@ -304,11 +311,11 @@ func TestPostgresStatement(t *testing.T) {
 			 WHERE o.mood = :mood AND c.email = :email AND o.tags @> :tags`,
 			snapshot.Statement{
 				Params: []snapshot.Param{
-					{Name: "mood", Type: "mood"}, {Name: "email", Type: "text"}, {Name: "tags", Type: "text[]"},
+					{Name: "mood", Type: "<schema>.mood"}, {Name: "email", Type: "text"}, {Name: "tags", Type: "text[]"},
 				},
 				Columns: []snapshot.OutputColumn{
 					{Name: "email", Type: "text", NotNull: true},
-					{Name: "mood", Type: "mood", Nullable: true},
+					{Name: "mood", Type: "<schema>.mood", Nullable: true},
 					{Name: "tags", Type: "text[]", NotNull: true},
 				},
 			}},
@@ -333,14 +340,15 @@ func TestPostgresStatement(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			conn, _ := postgres(t)
+			conn, schema := postgres(t)
 			postgresExec(t, conn, postgresShop)
 			got, err := describe.PostgresStatement(t.Context(), conn, tt.sql)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("PostgresStatement =\n%+v\nwant\n%+v", got, tt.want)
+			want := inSchema(tt.want, schema)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("PostgresStatement =\n%+v\nwant\n%+v", got, want)
 			}
 		})
 	}
@@ -371,4 +379,16 @@ func TestPostgresStatement_Errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// inSchema is st with <schema> in the names of its types replaced by schema, the one the types of a test are made in.
+func inSchema(st snapshot.Statement, schema string) snapshot.Statement {
+	st.Params, st.Columns = slices.Clone(st.Params), slices.Clone(st.Columns)
+	for i := range st.Params {
+		st.Params[i].Type = strings.ReplaceAll(st.Params[i].Type, "<schema>", schema)
+	}
+	for i := range st.Columns {
+		st.Columns[i].Type = strings.ReplaceAll(st.Columns[i].Type, "<schema>", schema)
+	}
+	return st
 }
