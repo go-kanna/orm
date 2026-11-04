@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
@@ -51,6 +52,9 @@ func load(dir, tags string, patterns []string) (loaded, []diag.Diag) {
 	}, patterns...)
 	if err != nil {
 		return errorf(err)
+	}
+	if ds := targetDiags(targets, modPath, patterns); len(ds) > 0 {
+		return loaded{}, ds
 	}
 	checked := map[string]bool{}
 	reached := map[string]bool{}
@@ -129,6 +133,48 @@ func load(dir, tags string, patterns []string) (loaded, []diag.Diag) {
 	l.prog.Build()
 	l.functions = functionsOf(l.prog, ssaPkgs)
 	return l, nil
+}
+
+// targetDiags tells why the packages patterns match cannot be checked: one the go command could not find or list, one
+// outside module modPath, whose packages vet checks, or none at all.
+func targetDiags(targets []*gopackages.Package, modPath string, patterns []string) []diag.Diag {
+	if len(targets) == 0 {
+		return []diag.Diag{diag.Errorf(token.Position{}, "%s matched no packages", strings.Join(patterns, " "))}
+	}
+	var ds []diag.Diag
+	for _, p := range targets {
+		for _, e := range p.Errors {
+			ds = append(ds, diag.Errorf(errorPosition(e.Pos), "%s", e.Msg))
+		}
+		if len(p.Errors) == 0 && (p.Module == nil || p.Module.Path != modPath) {
+			ds = append(ds, diag.Errorf(token.Position{}, "%s is outside module %s, whose packages vet checks",
+				p.PkgPath, modPath))
+		}
+	}
+	return ds
+}
+
+// errorPosition reads the position of an error of the go command, file:line:col, or none, as "-".
+func errorPosition(s string) token.Position {
+	rest, col, ok := cutNumber(s)
+	if !ok {
+		return token.Position{}
+	}
+	file, line, ok := cutNumber(rest)
+	if !ok {
+		return token.Position{Filename: rest, Line: col}
+	}
+	return token.Position{Filename: file, Line: line, Column: col}
+}
+
+// cutNumber cuts the number after the last colon of s off it.
+func cutNumber(s string) (string, int, bool) {
+	i := strings.LastIndexByte(s, ':')
+	if i < 0 {
+		return s, 0, false
+	}
+	n, err := strconv.Atoi(s[i+1:])
+	return s[:i], n, err == nil
 }
 
 // holdsRepositories reports whether p has a file of repositories kanna-orm generated.

@@ -322,6 +322,10 @@ func Count(ctx context.Context, orders repository.Order) (int64, error) {
 		{filepath.Join(dir, "usecase"), nil, cli.ExitFailure,
 			"./usecase.go:11:16: error: Count takes conditions alone, but its scope orders the rows\n"},
 		{dir, []string{"./..."}, cli.ExitFailure, ""},
+		{dir, []string{"./does-not-exist"}, cli.ExitFailure, ""},
+		{dir, []string{"./usecas/..."}, cli.ExitFailure, ""},
+		{dir, []string{"fmt"}, cli.ExitFailure,
+			"error: fmt is outside module github.com/go-kanna/orm/example/postgres, whose packages vet checks\n"},
 		{dir, []string{"-h"}, cli.ExitOK, ""},
 		{dir, []string{"-unknown"}, cli.ExitUsage, ""},
 	} {
