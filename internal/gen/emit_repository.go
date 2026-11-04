@@ -31,10 +31,17 @@ type repoEmitter struct {
 	// exec, query, and queryRow are the names of the methods of DBTX running a statement.
 	exec, query, queryRow string
 	database, rows        string
-	// models are the models whose whole rows the repositories read, by table, and names the names of the functions
-	// reading them, select<name>, and loading their relations, preload<name>.
-	models map[string]readModel
-	names  map[string]string
+	// models are the models whose whole rows the repositories read, by table, and helpers the functions reading them
+	// and loading their relations.
+	models  map[string]readModel
+	helpers map[string]tableHelpers
+}
+
+// tableHelpers name the functions of the implementations reading the whole rows of a table that a scope matches,
+// those a query reads, and loading the relations of rows: ormSelect<name>, ormQuery<name>, and ormPreload<name>, or
+// the first of ormSelect<name>2, ... that the package does not declare.
+type tableHelpers struct {
+	selectRows, queryRows, preload string
 }
 
 // emitRepositories writes repository_gen.go into the destination package pkgName at pkgPath: the implementation of each
@@ -53,12 +60,17 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 		}
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
-		names: readNames(models)}
+		helpers: map[string]tableHelpers{}}
 	if drv == driverSQL {
 		e.exec, e.query, e.queryRow = "ExecContext", "query", "queryRow"
 	}
-	for _, name := range e.names {
-		f.Reserve("select"+name, "query"+name, "preload"+name)
+	names := readNames(models)
+	for _, table := range slices.Sorted(maps.Keys(names)) {
+		sc := f.Scope()
+		h := tableHelpers{selectRows: sc.Name("ormSelect" + names[table]), queryRows: sc.Name("ormQuery" + names[table]),
+			preload: sc.Name("ormPreload" + names[table])}
+		f.Reserve(h.selectRows, h.queryRows, h.preload)
+		e.helpers[table] = h
 	}
 	rows := "ormSQLRows"
 	if drv == driverPgx {
@@ -358,7 +370,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 			e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s%[5]s\n}\n", err, q, m.name, zero,
 				sig.mapped(err))
 		}
-		e.printf("%s, %s := select%s(%s, %s.db, %s, %s)\n", rows, err, e.names[m.target.table], sig.ctx, recv, q,
+		e.printf("%s, %s := %s(%s, %s.db, %s, %s)\n", rows, err, e.helpers[m.target.table].selectRows, sig.ctx, recv, q,
 			lockClause(m))
 		if m.optional {
 			e.printf("if %s != nil { return nil, %s }\n", err, sig.mapped(err))
@@ -368,7 +380,8 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("if %[1]s != nil {\nreturn %[2]s{}, %[3]s\n}\n", err, model, sig.mapped(err))
 		e.printf("if len(%[1]s) == 0 {\nreturn %[2]s{}, %[3]s\n}\nreturn %[1]s[0], nil\n", rows, model, notFound())
 	case verbList:
-		read := fmt.Sprintf("select%s(%s, %s.db, %s, %s)", e.names[m.target.table], sig.ctx, recv, q, lockClause(m))
+		read := fmt.Sprintf("%s(%s, %s.db, %s, %s)", e.helpers[m.target.table].selectRows, sig.ctx, recv, q,
+			lockClause(m))
 		if sig.recv == "" {
 			e.printf("return %s\n", read)
 			break
@@ -446,7 +459,7 @@ func lockClause(m repoMethod) string {
 // selectRows writes the function reading the whole rows of rm that a scope matches, in its order, with the relations
 // the scope loads. A method that locks them gives the locking clause, and the relations are read without it.
 func (e repoEmitter) selectRows(rm readModel) {
-	name := "select" + e.names[rm.target.table]
+	name := e.helpers[rm.target.table].selectRows
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
 	ctx, db, q, lock := sc.Name("ctx"), sc.Name("db"), sc.Name("q"), sc.Name("lock")
@@ -463,20 +476,20 @@ func (e repoEmitter) selectRows(rm readModel) {
 		ctx, e.f.Import("context", "context"), db, q, e.ref("Of"), model, lock, e.database)
 	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, %[5]s)\n"+
 		"if %[2]s != nil {\nreturn nil, %[2]s\n}\n", rd, err, q, e.dialect(), e.orderKey(rm.table))
-	e.printf("%[1]s, %[2]s := query%[3]s(%[4]s, %[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
-		"%[7]s.Args()...)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", out, err, e.names[rm.target.table], ctx, db,
-		goString(query), rd, lock)
+	e.printf("%[1]s, %[2]s := %[3]s(%[4]s, %[5]s, %[6]s+%[7]s.Where()+%[7]s.OrderBy()+%[7]s.Limit()+%[8]s, "+
+		"%[7]s.Args()...)\nif %[2]s != nil {\nreturn nil, %[2]s\n}\n", out, err, e.helpers[rm.target.table].queryRows,
+		ctx, db, goString(query), rd, lock)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	if len(rm.links) > 0 {
-		e.printf("if %[1]s := preload%[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
-			e.names[rm.target.table], ctx, db, out, q)
+		e.printf("if %[1]s := %[2]s(%[3]s, %[4]s, %[5]s, %[6]s); %[1]s != nil {\nreturn nil, %[1]s\n}\n", err,
+			e.helpers[rm.target.table].preload, ctx, db, out, q)
 	}
 	e.printf("return %s, nil\n}\n\n", out)
 }
 
 // queryRows writes the function running a query of the whole rows of rm, and reading them.
 func (e repoEmitter) queryRows(rm readModel) {
-	name := "query" + e.names[rm.target.table]
+	name := e.helpers[rm.target.table].queryRows
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
 	ctx, db, query, args := sc.Name("ctx"), sc.Name("db"), sc.Name("query"), sc.Name("args")
@@ -947,7 +960,7 @@ type preloadNames struct {
 
 // preloadRows writes the function loading into rows of rm the relations a scope loads, each by the keys of the rows.
 func (e repoEmitter) preloadRows(rm readModel) {
-	name := "preload" + e.names[rm.target.table]
+	name := e.helpers[rm.target.table].preload
 	model := types.TypeString(rm.model, e.f.Qualifier)
 	sc := e.f.Scope()
 	n := preloadNames{
@@ -1041,9 +1054,9 @@ func (e repoEmitter) preload(lk link, n preloadNames) {
 	if e.d == snapshot.MySQL {
 		cond = goString(sqlName(e.d, other.col.Name)+" IN (") + ", " + e.ref("List") + "(" + keys + ")"
 	}
-	e.printf("%[1]s, %[2]s := select%[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s, %[8]s), \"\")\n"+
-		"if %[2]s != nil {\nreturn %[2]s\n}\n", n.related, n.err, e.names[lk.target.table], n.ctx, n.db, n.sub, cond,
-		goString(")"))
+	e.printf("%[1]s, %[2]s := %[3]s(%[4]s, %[5]s, %[6]s.Where(%[7]s, %[8]s), \"\")\n"+
+		"if %[2]s != nil {\nreturn %[2]s\n}\n", n.related, n.err, e.helpers[lk.target.table].selectRows, n.ctx, n.db,
+		n.sub, cond, goString(")"))
 
 	elem := n.related + "[" + n.j + "]"
 	if strings.HasPrefix(elemType, "*") {
@@ -1191,7 +1204,7 @@ func (e repoEmitter) pluckRead(m repoMethod, sc gofile.Scope, recv string, sig s
 func (e repoEmitter) parameterType(m repoMethod, p *types.Var) string {
 	typ := types.TypeString(p.Type(), e.f.Qualifier)
 	if p.Name() == m.changes && m.changes != "" && packages.Invalid(p.Type()) {
-		typ = m.target.name + "ChangeSet"
+		typ, _ = changeSetNames(m.target.name)
 		if pkg := e.f.Import(m.target.pkgPath, m.target.pkgName); pkg != "" {
 			typ = pkg + "." + typ
 		}

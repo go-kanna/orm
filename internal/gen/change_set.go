@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/types"
 	"slices"
-	"strings"
 
 	"github.com/go-kanna/internal/packages"
 )
@@ -35,12 +34,8 @@ func (r repoReader) changesParam(p *types.Var, field *ast.Field, ts *ast.TypeSpe
 			}
 			pkgPath, name = r.importPath(ts, id.Name), expr.Sel.Name
 		}
-		name, ok := strings.CutSuffix(name, "ChangeSet")
-		if !ok {
-			return nil, false
-		}
 		for _, entry := range slices.Concat(r.l.loaded, r.l.idx) {
-			if entry.pkgPath != pkgPath || entry.name != name {
+			if set, _ := changeSetNames(entry.name); entry.pkgPath != pkgPath || set != name {
 				continue
 			}
 			if entry.model != nil {

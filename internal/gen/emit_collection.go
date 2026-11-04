@@ -50,7 +50,7 @@ func (e repoEmitter) preloadEach(lk link, n preloadNames) {
 	e.printf("flat=append(flat,row)\nowners=append(owners,key)\n}\nrelated.Close()\nif"+
 		" err:=related.Err();err!=nil{return %s.Errorf(%q,err)}\n}\n", e.fmtPkg(), "load "+field+": %w")
 	if len(target.links) > 0 {
-		e.printf("if err:=preload%s(%s,%s,flat,sub);err!=nil{return err}\n", e.names[lk.target.table], n.ctx, n.db)
+		e.printf("if err:=%s(%s,%s,flat,sub);err!=nil{return err}\n", e.helpers[lk.target.table].preload, n.ctx, n.db)
 	}
 	slice, ok := lk.field.typ.Underlying().(*types.Slice)
 	if !ok {

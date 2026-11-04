@@ -27,7 +27,7 @@ func reportDeps(dir string, cfg config, patterns []string) (deps.Report, error) 
 			load = []string{".", dest.dir}
 		}
 	}
-	l, d := loadRun(dir, cfg, load, dest, nil)
+	l, d := loadRun(dir, cfg, load, nil)
 	if d != nil {
 		return deps.Report{}, errors.New(d.String())
 	}

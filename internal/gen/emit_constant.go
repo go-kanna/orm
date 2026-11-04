@@ -82,8 +82,8 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 		if m.lock != "" {
 			query += " " + m.lock
 		}
-		read := "query" + e.names[m.target.table] + "(" + strings.Join(append([]string{sig.ctx, recv + ".db", q}, args...),
-			", ") + ")"
+		read := e.helpers[m.target.table].queryRows + "(" + strings.Join(append([]string{sig.ctx, recv + ".db", q},
+			args...), ", ") + ")"
 		e.printf("const %s = %s\n", q, goString(query))
 		if m.verb == verbList && sig.recv == "" {
 			e.printf("return %s\n", read)

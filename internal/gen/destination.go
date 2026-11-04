@@ -42,17 +42,6 @@ func (d *destination) holds(pkg *packages.Package) bool {
 	return d != nil && len(pkg.GoFiles) > 0 && output.SameDir(d.dir, filepath.Dir(pkg.GoFiles[0]))
 }
 
-// check keeps scope types and repository implementations in separate packages.
-func (d *destination) check(flag string, scopePkgs []*packages.Package) *diag.Diag {
-	if i := slices.IndexFunc(scopePkgs, d.holds); i >= 0 {
-		e := diag.Errorf(token.Position{}, "-destination %s holds the //kanna:scope types of %s, whose methods go "+
-			"into its %s", flag, scopePkgs[i].PkgPath, scopesOutputName).
-			WithHints("name a directory of the implementations' own")
-		return &e
-	}
-	return nil
-}
-
 // hasCode reports whether dir holds Go files besides the output and tests, which a run loads.
 func hasCode(dir string) bool {
 	names, _ := filepath.Glob(filepath.Join(dir, "*.go"))

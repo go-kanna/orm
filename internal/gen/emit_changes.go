@@ -4,14 +4,24 @@ import (
 	"go/types"
 	"slices"
 	"strconv"
+	"strings"
 )
+
+// changeSetNames name the change set of the scope type named scope, and the function returning an empty one: after
+// scope, but for a Scope it ends in, as OrderChangeSet and OrderChanges are of Order and of OrderScope alike.
+func changeSetNames(scope string) (set, fn string) {
+	if trimmed, ok := strings.CutSuffix(scope, "Scope"); ok && trimmed != "" {
+		scope = trimmed
+	}
+	return scope + "ChangeSet", scope + "Changes"
+}
 
 func (e emitter) changes() {
 	model := types.TypeString(e.p.model, e.f.Qualifier)
-	name := e.p.name + "ChangeSet"
+	name, fn := changeSetNames(e.p.name)
 	e.printf("// %s holds explicitly assigned columns of %s.\n", name, e.p.table)
 	e.printf("type %s struct { changes %s[%s] }\n\n", name, e.ref("Set"), model)
-	e.printf("func %sChanges() %s { return %s{} }\n\n", e.p.name, name, name)
+	e.printf("func %s() %s { return %s{} }\n\n", fn, name, name)
 	e.printf("func (c %s) Of() %s[%s] { return c.changes }\n\n", name, e.ref("Set"), model)
 	for _, col := range changeColumns(e.p) {
 		field := col.path[len(col.path)-1]

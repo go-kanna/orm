@@ -216,7 +216,7 @@ $ go tool kanna-orm describe -check ./...
 
 スコープ型は、フィールドが非公開の `scope.Of[M]` だけの構造体です。`M` はテーブルの行を読み込むモデルです。これにより、スコープを絞り込めるのはそのメソッドだけになります。kanna-orm が読み書きするテーブルにはそれぞれスコープ型が 1 つあり、各モデルは 1 つのテーブルに属します。テーブルとモデルを結び付けるのはスコープ型だけです。
 
-`//kanna:scopes model-package=../model` と書くと、モデルのパッケージの構造体のうち、スナップショットに対応する名前のテーブルがあるものそれぞれについて、`scopes_gen.go` にスコープ型を宣言します。対応するテーブルの名前は、構造体の名前をスネークケースにして最後の単語を複数形にしたもの（`OrderLine` なら `order_lines`、`Category` なら `categories`、`Person` なら `people`）です。`model-package=` には、モジュールのパッケージのインポートパスか、ファイルからの相対パスを書きます。`model-package=../model,../billing` のように、カンマで区切って複数書けます。値オブジェクトのように対応するテーブルがない構造体にはスコープ型が宣言されず、中間テーブルのように対応する構造体がないテーブルにも宣言されません。そのため、これらのパッケージの構造体は、その名前のテーブルができるとモデルになります。クエリが返す型のように、モデルでない構造体は別のパッケージに置いてください。自分のメソッドは、他の型と同じように、パッケージの別のファイルでこの型に書きます。スコープを絞るには、下の `Open` のように kanna-orm が書いたメソッドを使うか、形の決まった SQL を `.sql` ファイルに書きます（`describe` が確かめます。[手書きの SQL](#手書きの-sql) を参照）。実行時にプログラムが形を決める SQL は、`InMonths` のように `Raw` で書きます。こちらは実行するまで何も確かめません。`Raw` が持つのは `Where` と `OrderBy` だけで、どちらもそれまでの内容をすべて保ったスコープを返します。
+`//kanna:scopes model-package=../model` と書くと、モデルのパッケージの構造体のうち、スナップショットに対応する名前のテーブルがあるものそれぞれについて、`scopes_gen.go` にスコープ型を宣言します。対応するテーブルの名前は、構造体の名前をスネークケースにして最後の単語を複数形にしたもの（`OrderLine` なら `order_lines`、`Category` なら `categories`、`Person` なら `people`）です。`model-package=` には、モジュールのパッケージのインポートパスか、ファイルからの相対パスを書きます。`model-package=../model,../billing` のように、カンマで区切って複数書けます。`model-package=.` は directive のあるパッケージそのものを指し、そのときのスコープ型は、モデルと分けて `OrderScope` のようにモデルの名前に `Scope` を付けた名前になります。値オブジェクトのように対応するテーブルがない構造体にはスコープ型が宣言されず、中間テーブルのように対応する構造体がないテーブルにも宣言されません。そのため、これらのパッケージの構造体は、その名前のテーブルができるとモデルになります。クエリが返す型のように、モデルでない構造体は別のパッケージに置いてください。自分のメソッドは、他の型と同じように、パッケージの別のファイルでこの型に書きます。スコープを絞るには、下の `Open` のように kanna-orm が書いたメソッドを使うか、形の決まった SQL を `.sql` ファイルに書きます（`describe` が確かめます。[手書きの SQL](#手書きの-sql) を参照）。実行時にプログラムが形を決める SQL は、`InMonths` のように `Raw` で書きます。こちらは実行するまで何も確かめません。`Raw` が持つのは `Where` と `OrderBy` だけで、どちらもそれまでの内容をすべて保ったスコープを返します。
 
 ```go
 func (s Order) Open() Order { return s.StatusNe("closed") }
@@ -438,7 +438,7 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 ### 同じパッケージに実装する
 
-`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) category` コンストラクタ、値レシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。自分で宣言する `NewCategory` からは `newCategory` を呼べます。スコープのメソッドは `scopes_gen.go` に出力されます。スコープ型は別のパッケージに置いてください。
+`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) category` コンストラクタ、値レシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。自分で宣言する `NewCategory` からは `newCategory` を呼べます。スコープ型も同じパッケージに置けます（[1 つのパッケージにまとめる](#1-つのパッケージにまとめる)を参照）。
 
 `Bind(db DBTX) Category` を宣言すると、どちらのパッケージに実装するときも、トランザクションへの接続を生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
 
@@ -504,6 +504,34 @@ func NewOrder(db DBTX, opts ...option.Option) Order
 ```
 
 トランザクションは、kanna-orm がない場合と同じように開始してコミットします。コンストラクタに `pgx.Tx` か `*sql.Tx` を渡してください。
+
+### 1 つのパッケージにまとめる
+
+モデル、そのスコープ型、repository とその実装を、すべて 1 つのパッケージに置けます。この文書ではそれぞれを別のパッケージに置いた形で説明しますが、1 つにまとめても変わるのは次の名前だけです。
+
+```go
+package store
+
+//go:generate go tool kanna-orm -destination .
+
+//kanna:scopes model-package=.
+
+type Order struct {
+	ID     int64
+	Status string
+}
+
+//kanna:repository
+type OrderRepository interface {
+	List(ctx context.Context, s ...OrderScope) ([]Order, error)
+	UpdateStatus(ctx context.Context, id int64, c OrderChangeSet) error
+}
+```
+
+- `//kanna:scopes` が同じパッケージのモデルについて宣言するスコープ型は、モデルの名前に `Scope` を付けた名前（`OrderScope`）になります。スコープを返す関数は今までどおりテーブルの名前（`Orders()`）で、変更セットはスコープ型の名前から `Scope` を除いた名前（`OrderChangeSet` と `OrderChanges()`）です。
+- 1 回の実行で `scopes_gen.go` と `repository_gen.go` の両方を書き、どちらももう一方が宣言する名前を避けます。
+- 1 つの `.sql` ファイルに、パッケージの `-- scope:` と `-- query:` の両方を書けます。
+- `DBTX`、`newOrderRepository`、`Orders`、`OrderChangeSet` のように、手書きのコードから見える名前をパッケージがすでに宣言していれば、生成を止めます。ただし、自分で宣言する `NewOrderRepository` は生成するものを置き換えます。kanna-orm が自分のために書く helper は `orm` で始まり、空いている最初の名前を使います。
 
 ### メソッド
 
@@ -731,7 +759,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 
 ### 指定したカラムだけを更新する
 
-各 scope に型付きの変更セットを生成します。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
+各 scope に型付きの変更セットを生成します。名前はスコープ型の名前から末尾の `Scope` を除いたもので、`OrderScope` の変更セットも `OrderChangeSet` です。同じパッケージの 2 つのスコープ型の変更セットが同じ名前になるときは、生成を止めます。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
 
 ```go
 changes := scopes.CustomerChanges().

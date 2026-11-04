@@ -44,8 +44,15 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 	ds = append(ds, checkUnique(pkg, scopes, idx)...)
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	plans := make([]scopePlan, 0, len(scopes))
+	changeSets := map[string]string{}
 	for _, sc := range scopes {
-		for _, name := range []string{sc.name + "Changes", sc.name + "ChangeSet"} {
+		set, fn := changeSetNames(sc.name)
+		if other, ok := changeSets[set]; ok {
+			ds = append(ds, diag.Errorf(sc.pos, "%s: its change set would be %s, as that of %s is", sc.name, set, other).
+				WithHints("name one of the two scope types otherwise"))
+		}
+		changeSets[set] = sc.name
+		for _, name := range []string{fn, set} {
 			if at, ok := declared(pkg, name); ok {
 				ds = append(ds, diag.Errorf(at, "%s is reserved for generated scope helpers", name))
 			}
@@ -110,16 +117,22 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	f := gofile.New(generator, pkg.PkgPath, pkg.Name)
 	f.Reserve(declared...)
 	for _, p := range plans {
-		f.Reserve(p.name, p.fn, p.name+"Changes", p.name+"ChangeSet")
+		set, fn := changeSetNames(p.name)
+		f.Reserve(p.name, p.fn, fn, set)
 	}
+	var toRuntime, toScope string
 	if len(plans) > 0 {
+		sc := f.Scope()
+		toRuntime, toScope = sc.Name("ormRuntime"), sc.Name("ormScope")
+		f.Reserve(toRuntime, toScope)
 		scope, impl := f.Import(scopePath, "scope"), f.Import(implPath, "impl")
-		fmt.Fprintf(f, "// ormRuntime is q, the field of a scope type, as the runtime reads it, and ormScope is the "+
-			"runtime's scope as the\n// field again.\nfunc ormRuntime[M any](q %[1]s.Of[M]) %[2]s.Of[M] { return "+
-			"%[2]s.Of[M](q) }\n\nfunc ormScope[M any](q %[2]s.Of[M]) %[1]s.Of[M] { return %[1]s.Of[M](q) }\n\n", scope, impl)
+		fmt.Fprintf(f, "// %[3]s is q, the field of a scope type, as the runtime reads it, and %[4]s is the "+
+			"runtime's scope as the\n// field again.\nfunc %[3]s[M any](q %[1]s.Of[M]) %[2]s.Of[M] { return "+
+			"%[2]s.Of[M](q) }\n\nfunc %[4]s[M any](q %[2]s.Of[M]) %[1]s.Of[M] { return %[1]s.Of[M](q) }\n\n", scope, impl,
+			toRuntime, toScope)
 	}
 	for _, p := range plans {
-		e := emitter{f: f, d: d, p: p}
+		e := emitter{f: f, d: d, p: p, toRuntime: toRuntime, toScope: toScope}
 		e.scope()
 	}
 	src, err := f.Bytes()
@@ -132,7 +145,9 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 type emitter struct {
 	f *gofile.File
 	d snapshot.Dialect
-	p scopePlan
+	// toRuntime and toScope name the functions turning the field of a scope type into the runtime's scope, and back.
+	toRuntime, toScope string
+	p                  scopePlan
 }
 
 // ref names name of the runtime.
@@ -179,7 +194,7 @@ func (e emitter) scope() {
 	e.printf("func (%[1]s %[2]s) Or(%[3]s ...%[2]s) %[2]s {\n", s, p.name, alternatives)
 	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), model, alternatives)
 	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s\n}\n", i, a, alternatives, qs, e.q(a))
-	e.printf("return %s{ormScope(%s.Or(%s...))}\n}\n\n", p.name, e.q(s), qs)
+	e.printf("return %s{%s(%s.Or(%s...))}\n}\n\n", p.name, e.toScope, e.q(s), qs)
 
 	sc = e.f.Scope()
 	s, other := sc.Name("s"), sc.Name("other")
@@ -214,7 +229,7 @@ func (e emitter) with(lk link) {
 	if lk.scalar != nil {
 		name := lk.field.path[len(lk.field.path)-1]
 		e.printf("func (s %s) With%s() %s {\n", e.p.name, name, e.p.name)
-		e.printf("return %s{ormScope(%s(%s, %q, %s[%s]{}))}\n}\n\n", e.p.name, e.ref("Preload"), e.q("s"),
+		e.printf("return %s{%s(%s(%s, %q, %s[%s]{}))}\n}\n\n", e.p.name, e.toScope, e.ref("Preload"), e.q("s"),
 			strings.Join(lk.field.path, "."), e.ref("Of"), types.TypeString(lk.scalar.typ, e.f.Qualifier))
 		return
 	}
@@ -237,8 +252,8 @@ func (e emitter) with(lk link) {
 	e.printf("// With%s loads %s, from %s %s.%s\n", name, name, lk.target.table, by, each)
 	e.printf("func (%[1]s %[2]s) With%[3]s(%[4]s ...%[5]s) %[2]s {\n", s, e.p.name, name, sub, target)
 	e.printf("%s := make([]%s[%s], len(%s))\n", qs, e.ref("Of"), types.TypeString(lk.model, e.f.Qualifier), sub)
-	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = ormRuntime(%[2]s.Of())\n}\n", i, x, sub, qs)
-	e.printf("return %s{ormScope(%s(%s, %s, %s(%s...)))}\n}\n\n", e.p.name, e.ref(preload), e.q(s),
+	e.printf("for %[1]s, %[2]s := range %[3]s {\n%[4]s[%[1]s] = %[5]s(%[2]s.Of())\n}\n", i, x, sub, qs, e.toRuntime)
+	e.printf("return %s{%s(%s(%s, %s, %s(%s...)))}\n}\n\n", e.p.name, e.toScope, e.ref(preload), e.q(s),
 		strconv.Quote(strings.Join(lk.field.path, ".")), e.ref("Combine"), qs)
 }
 
@@ -337,13 +352,13 @@ func (e emitter) method(doc, s, name, params, expr string) {
 // fn writes a method of the scope type, on the receiver s, named name and taking params, which returns the scope made
 // of the scope.Of expr returns.
 func (e emitter) fn(s, name, params, expr string) {
-	e.printf("func (%[1]s %[2]s) %[3]s(%[4]s) %[2]s {\nreturn %[2]s{ormScope(%[5]s)}\n}\n\n", s, e.p.name, name, params,
-		expr)
+	e.printf("func (%[1]s %[2]s) %[3]s(%[4]s) %[2]s {\nreturn %[2]s{%[6]s(%[5]s)}\n}\n\n", s, e.p.name, name, params,
+		expr, e.toScope)
 }
 
 // q is the scope of the receiver s, as the runtime reads it.
 func (e emitter) q(s string) string {
-	return "ormRuntime(" + s + "." + e.p.field + ")"
+	return e.toRuntime + "(" + s + "." + e.p.field + ")"
 }
 
 // where is the scope.Of of the receiver s narrowed by the condition parts make.
@@ -383,7 +398,7 @@ func (e emitter) column(c column) {
 		e.method(fmt.Sprintf("narrows to the rows whose %s is one of %s.", col, vs), s, name+"In", vs+" ..."+typ, in)
 		e.printf("// %sNotIn narrows to the rows whose %s is none of %s.\n", name, col, vs)
 		e.printf("func (%[1]s %[2]s) %[3]sNotIn(%[4]s ...%[5]s) %[2]s {\nif len(%[4]s) == 0 {\nreturn %[1]s\n}\n"+
-			"return %[2]s{ormScope(%[6]s)}\n}\n\n", s, e.p.name, name, vs, typ, notIn)
+			"return %[2]s{%[7]s(%[6]s)}\n}\n\n", s, e.p.name, name, vs, typ, notIn, e.toScope)
 	}
 
 	if k.ordered {

@@ -80,7 +80,7 @@ func (e repoEmitter) scopedQuery(m repoMethod, sc gofile.Scope, recv string, sig
 		m.query.fields, sc)
 	e.printf("if %s.Reversed() {\n%s.Reverse(%s)\n}\n", rd, e.f.Import("slices", "slices"), out)
 	if rm := e.models[m.target.table]; len(rm.links) > 0 {
-		preload := "preload" + e.names[m.target.table]
+		preload := e.helpers[m.target.table].preload
 		if field := embedded(m.query.row, m.model); field == "" {
 			e.printf("if %[1]s := %[2]s(%[3]s, %[4]s.db, %[5]s, %[6]s); %[1]s != nil {\nreturn %[7]s, %[8]s\n}\n", err,
 				preload, sig.ctx, recv, out, q, zero, sig.mapped(err))
