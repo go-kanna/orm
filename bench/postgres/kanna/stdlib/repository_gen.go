@@ -5,6 +5,7 @@ package stdlib
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -128,14 +129,15 @@ var _ repository.OrderRepository = OrderRepository{}
 
 func (r OrderRepository) Get(ctx context.Context, id int64) (model.Order, error) {
 	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = $1`
-	rows, err := ormQueryOrders(ctx, r.db, q, id)
-	if err != nil {
-		return model.Order{}, err
-	}
-	if len(rows) == 0 {
+	var row model.Order
+	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Note)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Order{}, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
 	}
-	return rows[0], nil
+	if err != nil {
+		return model.Order{}, fmt.Errorf(`read orders: %w`, err)
+	}
+	return row, nil
 }
 
 func (r OrderRepository) List(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
@@ -168,9 +170,11 @@ RETURNING id, order_id, sku, quantity`
 	}
 	defer rows.Close()
 	out := []model.OrderLine{}
+	var row model.OrderLine
+	dest := []any{&row.ID, &row.OrderID, &row.SKU, &row.Quantity}
 	for rows.Next() {
-		var row model.OrderLine
-		if err := rows.Scan(&row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
+		row = model.OrderLine{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("insert into order_lines: %w", err)
 		}
 		out = append(out, row)
@@ -205,9 +209,11 @@ func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args 
 	}
 	defer rows.Close()
 	out := []model.OrderLine{}
+	var row model.OrderLine
+	dest := []any{&row.ID, &row.OrderID, &row.SKU, &row.Quantity}
 	for rows.Next() {
-		var row model.OrderLine
-		if err := rows.Scan(&row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
+		row = model.OrderLine{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read order_lines: %w", err)
 		}
 		out = append(out, row)
@@ -245,9 +251,11 @@ func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...a
 	}
 	defer rows.Close()
 	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Note}
 	for rows.Next() {
-		var row model.Order
-		if err := rows.Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Note); err != nil {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("read orders: %w", err)
 		}
 		out = append(out, row)
@@ -258,6 +266,9 @@ func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...a
 	return out, nil
 }
 
+// ormEachOrdersLines reads the rows of order_lines for the keys of rows, as Lines loads them.
+var ormEachOrdersLines = impl.NewEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "sku", "quantity"})
+
 // ormPreloadOrders loads into rows the relations q loads, each by the keys of the rows.
 func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
@@ -265,27 +276,24 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	}
 	if sub, ok := impl.Preloaded[model.OrderLine](q, "Lines"); ok {
 		type parentKey struct{ k0 int64 }
-		keys := []parentKey{}
+		keys0 := make([]int64, 0, len(rows))
 		owners := make([]int, len(rows))
-		seen := map[parentKey]int{}
+		seen := make(map[parentKey]int, len(rows))
 		for i := range rows {
 			owners[i] = -1
 			key := parentKey{rows[i].ID}
 			at, ok := seen[key]
 			if !ok {
-				at = len(keys)
+				at = len(keys0)
 				seen[key] = at
-				keys = append(keys, key)
+				keys0 = append(keys0, key.k0)
 			}
 			owners[i] = at
 		}
-		flat, numbers := []model.OrderLine{}, []int{}
-		if len(keys) > 0 {
-			inputs := make([][]any, len(keys))
-			for i, key := range keys {
-				inputs[i] = []any{key.k0}
-			}
-			text, args, err := sub.RenderEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "sku", "quantity"}, inputs, 0)
+		var flat []model.OrderLine
+		var numbers []int
+		if len(keys0) > 0 {
+			text, args, err := sub.RenderEach(ormEachOrdersLines, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -293,10 +301,12 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
+			var number int
+			var row model.OrderLine
+			dest := []any{&number, &row.ID, &row.OrderID, &row.SKU, &row.Quantity}
 			for related.Next() {
-				var number int
-				var row model.OrderLine
-				if err := related.Scan(&number, &row.ID, &row.OrderID, &row.SKU, &row.Quantity); err != nil {
+				row = model.OrderLine{}
+				if err := related.Scan(dest...); err != nil {
 					related.Close()
 					return fmt.Errorf("load Lines: %w", err)
 				}
@@ -308,10 +318,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
-		grouped := make([][]model.OrderLine, len(keys))
-		for i := range flat {
-			grouped[numbers[i]] = append(grouped[numbers[i]], flat[i])
-		}
+		grouped := impl.Group(flat, numbers, len(keys0))
 		for i := range rows {
 			rows[i].Lines = []model.OrderLine{}
 			if owners[i] >= 0 && grouped[owners[i]] != nil {
