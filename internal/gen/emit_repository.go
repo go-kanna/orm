@@ -574,8 +574,10 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		e.printf("if len(%s) == 0 {\nreturn %s\n}\n", sig.row, none)
 		casts := make([]string, 0, len(inserted))
 		for _, c := range inserted {
+			// The type comes first, so that its package keeps its name and the local named after the field yields.
+			typ := e.storageType(c)
 			v := sc.Name(lowerFirst(c.path[len(c.path)-1]))
-			e.printf("%s := make([]%s, len(%s))\n", v, e.storageType(c), sig.row)
+			e.printf("%s := make([]%s, len(%s))\n", v, typ, sig.row)
 			args = append(args, v)
 			casts = append(casts, fmt.Sprintf("$%d::%s[]", len(casts)+1, castType(c.col.Type)))
 		}
