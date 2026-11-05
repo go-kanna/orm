@@ -1,18 +1,17 @@
 package vet
 
 import (
-	"bytes"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
-	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/go-kanna/internal/diag"
+	"github.com/go-kanna/internal/gofile"
 	"github.com/go-kanna/internal/packages"
 	gopackages "golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
@@ -188,14 +187,8 @@ func holdsRepositories(p *gopackages.Package) bool {
 }
 
 func startsGenerated(path string) bool {
-	f, err := os.Open(path) //nolint:gosec // a file of a package of the module
-	if err != nil {
-		return false
-	}
-	defer func() { _ = f.Close() }()
-	head := make([]byte, 256)
-	n, _ := io.ReadFull(f, head)
-	return bytes.Contains(head[:n], []byte(generatedHeader))
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.PackageClauseOnly|parser.ParseComments)
+	return err == nil && gofile.GeneratedBy(f, generator)
 }
 
 // functionsOf are the functions and methods pkgs declare, in the order of their source.
