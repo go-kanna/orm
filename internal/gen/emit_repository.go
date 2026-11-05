@@ -56,10 +56,7 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	f.Reserve(declared...)
 	f.Reserve("DBTX")
 	for _, repo := range repos {
-		f.Reserve(repo.implementation(), repo.constructor())
-		if repo.publicConstructor {
-			f.Reserve("New" + repo.name)
-		}
+		f.Reserve(repo.generates()...)
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
 		helpers: map[string]tableHelpers{}, eachNames: map[string]string{}}
@@ -158,6 +155,7 @@ func (e repoEmitter) repository(repo repository) {
 			"return %[3]s(db, opts...) }\n\n", repo.name, result, constructor, e.ref("Option"))
 	}
 	e.printf("var _ %s = %s{}\n\n", iface, name)
+	e.operations(repo)
 	for _, m := range repo.methods {
 		e.method(repo, m)
 	}
@@ -176,6 +174,22 @@ func (r repository) constructor() string {
 	return "new" + r.name
 }
 
+// operations writes the operations of repo, which its mapError takes, if it does: a constant of the type for each
+// method, holding the method's name.
+func (e repoEmitter) operations(repo repository) {
+	if len(repo.operations) == 0 {
+		return
+	}
+	typ := repo.operation()
+	e.printf("// %s is the method of %s an error comes from, as %s.%s takes it.\ntype %s string\n\n", typ, repo.name,
+		repo.implementation(), mapErrorName, typ)
+	e.printf("const (\n")
+	for _, m := range repo.operations {
+		e.printf("%s %s = %q\n", repo.operationOf(m), typ, m)
+	}
+	e.printf(")\n\n")
+}
+
 // signature is the signature of a method as written, with the names of its parameters in the body.
 type signature struct {
 	text string
@@ -183,8 +197,9 @@ type signature struct {
 	// interface gives them.
 	ctx, scopes, row string
 	params           map[string]string
-	// recv is the receiver, when the errors the method returns go through its mapError.
-	recv string
+	// recv is the receiver, when the errors the method returns go through its mapError, and op the operation of the
+	// method, when mapError takes it.
+	recv, op string
 }
 
 // signature writes the parameters and the results of m, naming each parameter in sc.
@@ -288,6 +303,9 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	// A helper of a method written by hand returns its errors as they are, for the method to map.
 	if repo.mapError && m.bind == nil && m.name == m.fn.Name() {
 		sig.recv = recv
+		if len(repo.operations) > 0 {
+			sig.op = repo.operationOf(m.name)
+		}
 	}
 	if m.query != nil {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)

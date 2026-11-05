@@ -94,6 +94,37 @@ type repository struct {
 	// mapError reports whether the implementation has a mapError method, which the errors its methods return go
 	// through.
 	mapError bool
+	// operations are the methods of the interface but Bind, when mapError takes the operation an error comes from,
+	// for which the implementation declares the operations, and none when it does not.
+	operations []string
+}
+
+// operation names the type of the operations of r, as mapError takes them: orderOperation for Order.
+func (r repository) operation() string { return lowerFirst(r.name) + "Operation" }
+
+// operationOf names the operation of the method name, a constant of r.operation().
+func (r repository) operationOf(name string) string { return r.operation() + name }
+
+// operationNames names the type of the operations of r and its constants, if mapError takes them.
+func (r repository) operationNames() []string {
+	if len(r.operations) == 0 {
+		return nil
+	}
+	names := []string{r.operation()}
+	for _, m := range r.operations {
+		names = append(names, r.operationOf(m))
+	}
+	return names
+}
+
+// generates names what the implementation of r declares: its struct, its constructors, and the operations of its
+// methods, if mapError takes them.
+func (r repository) generates() []string {
+	names := []string{r.implementation(), r.constructor()}
+	if r.publicConstructor {
+		names = append(names, "New"+r.name)
+	}
+	return append(names, r.operationNames()...)
 }
 
 // repoMethod is a method of a repository, with what it reads or writes.
@@ -245,7 +276,39 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 		}
 		ds = append(ds, strayDirectives(r.pkg.Fset, file, decls.Repositories)...)
 	}
+	ds = append(ds, generatedTwice(repos)...)
 	return repos, append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
+}
+
+// declaredAlready reports each of names, which the implementation of repo declares, that the destination declares
+// by hand.
+func (r repoReader) declaredAlready(repo repository, names []string) []diag.Diag {
+	var ds []diag.Diag
+	for _, name := range names {
+		if at, ok := r.declared[name]; ok {
+			ds = append(ds, diag.Errorf(at, "%s is declared already, and kanna-orm writes it for %s", name,
+				repo.name).WithHints("name yours otherwise"))
+		}
+	}
+	return ds
+}
+
+// generatedTwice reports each name the implementations of two of repos both declare, which the second of them is told
+// of.
+func generatedTwice(repos []repository) []diag.Diag {
+	var ds []diag.Diag
+	owners := map[string]repository{}
+	for _, repo := range repos {
+		for _, name := range repo.generates() {
+			if other, ok := owners[name]; ok {
+				ds = append(ds, diag.Errorf(repo.pos, "%s: kanna-orm writes %s for it, and for %s as well", repo.name,
+					name, other.name).WithHints("rename one of the repositories"))
+				continue
+			}
+			owners[name] = repo
+		}
+	}
+	return ds
 }
 
 func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
@@ -254,11 +317,8 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
 	_, manualConstructor := r.declared["New"+repo.name]
 	repo.publicConstructor = !manualConstructor
-	for _, name := range []string{repo.implementation(), repo.constructor()} {
-		if at, ok := r.declared[name]; ok {
-			return repo, []diag.Diag{diag.Errorf(at, "%s is declared already, and kanna-orm writes it for %s", name,
-				repo.name).WithHints("name yours otherwise")}
-		}
+	if ds := r.declaredAlready(repo, []string{repo.implementation(), repo.constructor()}); ds != nil {
+		return repo, ds
 	}
 	if r.local && !ts.Name.IsExported() {
 		return repo, []diag.Diag{diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
@@ -333,7 +393,16 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	}
 	if m, ok := r.skip[implementation][mapErrorName]; ok {
 		repo.mapError = true
-		ds = append(ds, mapErrorSignature(repo, implementation, m)...)
+		takesOperation, mds := mapErrorSignature(repo, implementation, m)
+		ds = append(ds, mds...)
+		if takesOperation {
+			for _, fn := range methods {
+				if fn.Name() != "Bind" {
+					repo.operations = append(repo.operations, fn.Name())
+				}
+			}
+			ds = append(ds, r.declaredAlready(repo, repo.operationNames())...)
+		}
 	}
 	// Each method that tells no table is told what is wrong with the one of the repository's name, which is told once.
 	seen := map[string]bool{}

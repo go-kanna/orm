@@ -277,6 +277,25 @@ func NewOrder(db DBTX, opts ...option.Option) Order { return newOrder(db, opts..
 
 var _ repository.Order = Order{}
 
+// orderOperation is the method of Order an error comes from, as Order.mapError takes it.
+type orderOperation string
+
+const (
+	orderOperationFind            orderOperation = "Find"
+	orderOperationGet             orderOperation = "Get"
+	orderOperationListApprovers   orderOperation = "ListApprovers"
+	orderOperationList            orderOperation = "List"
+	orderOperationListSummaries   orderOperation = "ListSummaries"
+	orderOperationCount           orderOperation = "Count"
+	orderOperationInsert          orderOperation = "Insert"
+	orderOperationInsertLines     orderOperation = "InsertLines"
+	orderOperationInsertApprovals orderOperation = "InsertApprovals"
+	orderOperationDelete          orderOperation = "Delete"
+	orderOperationDeleteSummaries orderOperation = "DeleteSummaries"
+	orderOperationTag             orderOperation = "Tag"
+	orderOperationMonthlySales    orderOperation = "MonthlySales"
+)
+
 func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
 	qs := make([]impl.Of[model.Order], len(s))
 	for i, x := range s {
@@ -285,11 +304,11 @@ func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	if err := q.Unpaged("Find"); err != nil {
-		return nil, r.mapError(err)
+		return nil, r.mapError(orderOperationFind, err)
 	}
 	rows, err := ormSelectOrders(ctx, r.db, q, "")
 	if err != nil {
-		return nil, r.mapError(err)
+		return nil, r.mapError(orderOperationFind, err)
 	}
 	if len(rows) == 0 {
 		return nil, nil
@@ -305,14 +324,14 @@ func (r Order) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (mo
 	q := impl.Combine(qs...)
 	q = q.Where(`id = `, id)
 	if err := q.Unpaged("Get"); err != nil {
-		return model.Order{}, r.mapError(err)
+		return model.Order{}, r.mapError(orderOperationGet, err)
 	}
 	rows, err := ormSelectOrders(ctx, r.db, q, "")
 	if err != nil {
-		return model.Order{}, r.mapError(err)
+		return model.Order{}, r.mapError(orderOperationGet, err)
 	}
 	if len(rows) == 0 {
-		return model.Order{}, r.mapError(fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
+		return model.Order{}, r.mapError(orderOperationGet, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound))
 	}
 	return rows[0], nil
 }
@@ -328,7 +347,7 @@ WHERE o.id = ANY($1)
 ORDER BY o.id`
 	rows, err := r.db.Query(ctx, q, ids)
 	if err != nil {
-		return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))
+		return nil, r.mapError(orderOperationListApprovers, fmt.Errorf("query ListApprovers: %w", err))
 	}
 	defer rows.Close()
 	out := []repository.OrderApprover{}
@@ -337,12 +356,12 @@ ORDER BY o.id`
 	for rows.Next() {
 		row = repository.OrderApprover{}
 		if err := rows.Scan(dest...); err != nil {
-			return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))
+			return nil, r.mapError(orderOperationListApprovers, fmt.Errorf("query ListApprovers: %w", err))
 		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, r.mapError(fmt.Errorf("query ListApprovers: %w", err))
+		return nil, r.mapError(orderOperationListApprovers, fmt.Errorf("query ListApprovers: %w", err))
 	}
 	return out, nil
 }
@@ -355,7 +374,7 @@ func (r Order) List(ctx context.Context, s ...scopes.Order) ([]model.Order, erro
 	q := impl.Combine(qs...)
 	rows, err := ormSelectOrders(ctx, r.db, q, "")
 	if err != nil {
-		return nil, r.mapError(err)
+		return nil, r.mapError(orderOperationList, err)
 	}
 	return rows, nil
 }
@@ -367,27 +386,27 @@ func (r Order) ListSummaries(ctx context.Context, s ...scopes.Order) ([]reposito
 	}
 	q := impl.Combine(qs...)
 	if err := q.ProjectionOnly("ListSummaries"); err != nil {
-		return nil, r.mapError(err)
+		return nil, r.mapError(orderOperationListSummaries, err)
 	}
 	text, args, reversed, err := q.RenderJoinedProjection(impl.Postgres, "orders", `SELECT orders.id, orders.status, customer.name`, ` INNER JOIN customers AS customer ON customer.id = orders.customer_id`, []string{"id", "status", "customer_id"}, []string{"revision", "id", "customer_id", "status", "placed_at", "note"}, []string{`id`})
 	if err != nil {
-		return nil, r.mapError(err)
+		return nil, r.mapError(orderOperationListSummaries, err)
 	}
 	rows, err := r.db.Query(ctx, text+"", args...)
 	if err != nil {
-		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
+		return nil, r.mapError(orderOperationListSummaries, fmt.Errorf("project orders: %w", err))
 	}
 	defer rows.Close()
 	out := []repository.OrderSummary{}
 	for rows.Next() {
 		var row repository.OrderSummary
 		if err := rows.Scan(&row.ID, &row.Status, &row.Customer.Name); err != nil {
-			return nil, r.mapError(fmt.Errorf("project orders: %w", err))
+			return nil, r.mapError(orderOperationListSummaries, fmt.Errorf("project orders: %w", err))
 		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, r.mapError(fmt.Errorf("project orders: %w", err))
+		return nil, r.mapError(orderOperationListSummaries, fmt.Errorf("project orders: %w", err))
 	}
 	if reversed {
 		slices.Reverse(out)
@@ -402,15 +421,15 @@ func (r Order) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
 	}
 	q := impl.Combine(qs...)
 	if err := q.ConditionsOnly("Count"); err != nil {
-		return 0, r.mapError(err)
+		return 0, r.mapError(orderOperationCount, err)
 	}
 	rd, err := q.Render(impl.Postgres, 1, nil)
 	if err != nil {
-		return 0, r.mapError(err)
+		return 0, r.mapError(orderOperationCount, err)
 	}
 	var n int64
 	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM orders`+rd.Where(), rd.Args()...).Scan(&n); err != nil {
-		return 0, r.mapError(fmt.Errorf("count orders: %w", err))
+		return 0, r.mapError(orderOperationCount, fmt.Errorf("count orders: %w", err))
 	}
 	return n, nil
 }
@@ -424,7 +443,7 @@ RETURNING id, customer_id, status, placed_at, note`
 	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, sql.Null[string]{V: o.Memo, Valid: o.Memo != ""}).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
 	if err != nil {
-		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
+		return model.Order{}, r.mapError(orderOperationInsert, fmt.Errorf("insert into orders: %w", err))
 	}
 	row.Memo = nullableMemo.V
 	return row, nil
@@ -447,7 +466,7 @@ func (r Order) InsertLines(ctx context.Context, lines []model.OrderLine) error {
 	const q = `INSERT INTO order_lines (order_id, line_no, sku, quantity)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::int4[])`
 	if _, err := r.db.Exec(ctx, q, orderID, lineNo, sku, quantity); err != nil {
-		return r.mapError(fmt.Errorf("insert into order_lines: %w", err))
+		return r.mapError(orderOperationInsertLines, fmt.Errorf("insert into order_lines: %w", err))
 	}
 	return nil
 }
@@ -471,7 +490,7 @@ func (r Order) InsertApprovals(ctx context.Context, approvals []model.Approval) 
 	const q = `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
 SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::timestamptz[], $5::timestamptz[])`
 	if _, err := r.db.Exec(ctx, q, orderID, revision, approver, approvedAt, revokedAt); err != nil {
-		return r.mapError(fmt.Errorf("insert into approvals: %w", err))
+		return r.mapError(orderOperationInsertApprovals, fmt.Errorf("insert into approvals: %w", err))
 	}
 	return nil
 }
@@ -484,11 +503,11 @@ func (r Order) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {
 	q := impl.Combine(qs...)
 	text, args, err2 := q.RenderDelete(impl.Postgres, "orders", []string{"id"})
 	if err2 != nil {
-		return 0, r.mapError(err2)
+		return 0, r.mapError(orderOperationDelete, err2)
 	}
 	tag, err2 := r.db.Exec(ctx, text, args...)
 	if err2 != nil {
-		return 0, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
+		return 0, r.mapError(orderOperationDelete, fmt.Errorf(`delete from orders: %w`, err2))
 	}
 	return tag.RowsAffected(), nil
 }
@@ -501,11 +520,11 @@ func (r Order) DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]reposi
 	q := impl.Combine(qs...)
 	text, args, err2 := q.RenderDelete(impl.Postgres, "orders", []string{"id"})
 	if err2 != nil {
-		return nil, r.mapError(err2)
+		return nil, r.mapError(orderOperationDeleteSummaries, err2)
 	}
 	rows, err2 := r.db.Query(ctx, text+` RETURNING id, customer_id`, args...)
 	if err2 != nil {
-		return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
+		return nil, r.mapError(orderOperationDeleteSummaries, fmt.Errorf(`delete from orders: %w`, err2))
 	}
 	defer rows.Close()
 	out := []repository.DeletedOrder{}
@@ -514,12 +533,12 @@ func (r Order) DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]reposi
 	for rows.Next() {
 		row = repository.DeletedOrder{}
 		if err2 := rows.Scan(dest...); err2 != nil {
-			return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
+			return nil, r.mapError(orderOperationDeleteSummaries, fmt.Errorf(`delete from orders: %w`, err2))
 		}
 		out = append(out, row)
 	}
 	if err2 := rows.Err(); err2 != nil {
-		return nil, r.mapError(fmt.Errorf(`delete from orders: %w`, err2))
+		return nil, r.mapError(orderOperationDeleteSummaries, fmt.Errorf(`delete from orders: %w`, err2))
 	}
 	return out, nil
 }
@@ -529,7 +548,7 @@ func (r Order) Tag(ctx context.Context, orderID model.OrderID, input repository.
 	const q = `INSERT INTO order_tags (order_id, tag_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING`
 	if _, err := r.db.Exec(ctx, q, orderID, input.Tag); err != nil {
-		return r.mapError(fmt.Errorf("query Tag: %w", err))
+		return r.mapError(orderOperationTag, fmt.Errorf("query Tag: %w", err))
 	}
 	return nil
 }
@@ -547,7 +566,7 @@ GROUP BY 1
 ORDER BY 1`
 	rows, err := r.db.Query(ctx, q, since)
 	if err != nil {
-		return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
+		return nil, r.mapError(orderOperationMonthlySales, fmt.Errorf("query MonthlySales: %w", err))
 	}
 	defer rows.Close()
 	out := []repository.MonthSales{}
@@ -556,12 +575,12 @@ ORDER BY 1`
 	for rows.Next() {
 		row = repository.MonthSales{}
 		if err := rows.Scan(dest...); err != nil {
-			return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
+			return nil, r.mapError(orderOperationMonthlySales, fmt.Errorf("query MonthlySales: %w", err))
 		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, r.mapError(fmt.Errorf("query MonthlySales: %w", err))
+		return nil, r.mapError(orderOperationMonthlySales, fmt.Errorf("query MonthlySales: %w", err))
 	}
 	return out, nil
 }

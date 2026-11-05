@@ -8,9 +8,9 @@ import (
 	"github.com/go-kanna/orm/example/mysql/model"
 )
 
-// mapError says in the words of the model that an order is not there.
-func (Order) mapError(err error) error {
-	if errors.Is(err, orm.ErrNotFound) {
+// mapError says in the words of the model that the order Get reads is not there.
+func (Order) mapError(op orderOperation, err error) error {
+	if op == orderOperationGet && errors.Is(err, orm.ErrNotFound) {
 		return model.ErrOrderNotFound
 	}
 	return err
