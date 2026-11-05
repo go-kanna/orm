@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -191,14 +192,36 @@ func repositoryNames(pkg *packages.Package, pkgPath string) map[string]bool {
 			}
 			names[pkgPath+"."+name] = true
 			names[pkgPath+"."+constructor] = true
-			if it, ok := ts.Type.(*ast.InterfaceType); ok {
-				for _, f := range it.Methods.List {
-					for _, n := range f.Names {
-						names[pkgPath+"."+name+"."+n.Name] = true
-						if pkgPath == pkg.PkgPath {
-							names[pkgPath+"."+name+"."+lowerFirst(n.Name)] = true
-						}
-					}
+			operation := lowerFirst(ts.Name.Name) + "Operation"
+			names[pkgPath+"."+operation] = true
+			for _, m := range interfaceMethods(pkg, ts) {
+				names[pkgPath+"."+name+"."+m] = true
+				names[pkgPath+"."+operation+m] = true
+				if pkgPath == pkg.PkgPath {
+					names[pkgPath+"."+name+"."+lowerFirst(m)] = true
+				}
+			}
+		}
+	}
+	return names
+}
+
+// interfaceMethods names the methods of the interface ts declares in pkg, those of the interfaces it embeds too, as
+// far as pkg type-checks.
+func interfaceMethods(pkg *packages.Package, ts *ast.TypeSpec) []string {
+	var names []string
+	if obj, ok := pkg.Types.Scope().Lookup(ts.Name.Name).(*types.TypeName); ok {
+		if iface, ok := obj.Type().Underlying().(*types.Interface); ok {
+			for m := range iface.Methods() {
+				names = append(names, m.Name())
+			}
+		}
+	}
+	if it, ok := ts.Type.(*ast.InterfaceType); ok {
+		for _, f := range it.Methods.List {
+			for _, n := range f.Names {
+				if !slices.Contains(names, n.Name) {
+					names = append(names, n.Name)
 				}
 			}
 		}

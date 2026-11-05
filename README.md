@@ -616,28 +616,51 @@ func (r category) Upsert(ctx context.Context, c model.Category) error {
 
 Write a `mapError` method on the implementation, and the error each generated method returns goes through it: the
 error of a statement, of a scan, of a relation loaded, and `orm.ErrNotFound`, as wrapped with what the method was
-doing. The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples turn a missing order into
+doing. The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples turn the missing order `Get` reads into
 `model.ErrOrderNotFound` in [postgres/errors.go](example/postgres/postgres/errors.go), next to the generated
 implementation, so that the code using the repository sees no error of the database:
 
 ```go
-func (Order) mapError(err error) error {
-    if errors.Is(err, orm.ErrNotFound) {
+func (Order) mapError(op orderOperation, err error) error {
+    if op == orderOperationGet && errors.Is(err, orm.ErrNotFound) {
         return model.ErrOrderNotFound
     }
     return err
 }
 ```
 
-- The generator finds the method when it runs, and writes `return ..., r.mapError(err)` where a method returns an
-  error. A method returning nil calls nothing.
-- It takes an error and returns one, or generation stops. Its receiver is the implementation, a value or a pointer.
-  For a repository implemented in its own package, that is the unexported type, as `func (*category) mapError`.
-- Each repository has its own. One without it returns the errors as they are.
-- A method written by hand calls it itself. The helper generated for it, as `r.upsert`, returns its errors as they
-  are, for the method to map once.
-- To tell the methods apart, write the method by hand. Return an error mapError does not know unchanged, to keep its
-  chain.
+- The generator finds the method when it runs, and writes `return ..., r.mapError(orderOperationGet, err)` where a
+  method returns an error. A method returning nil calls nothing.
+- It takes an error, or the operation the error comes from and the error, and returns one, or generation stops. Its
+  receiver is the implementation, a value or a pointer. For a repository implemented in its own package, that is the
+  unexported type, as `func (*category) mapError`.
+- Taking the operation, as `mapError(op orderOperation, err error) error`, it has kanna-orm write `orderOperation`, a
+  string type named after the repository, and a constant of it for each method of the interface but `Bind`, holding
+  the method's name: `orderOperationGet`, `orderOperationInsert`. An error of a relation the method loads, or of the
+  row it reads back after a write, comes with the method's own operation. Taking the error alone, it has kanna-orm
+  write neither, and maps the errors of every method alike.
+- Each repository has its own. One without it returns the errors as they are. The names kanna-orm writes for one
+  repository, declared by hand or written for another as well, stop generation.
+- A method written by hand calls it itself, with its own operation if mapError takes one, as
+  `r.mapError(orderOperationTag, err)`. The helper generated for it, as `r.upsert`, returns its errors as they are, for
+  the method to map once.
+- Return an error mapError does not know unchanged, to keep its chain.
+
+The operation tells apart what one error means to each method. A foreign key violated is a missing customer to
+`Insert`, and lines still there to `Delete`:
+
+```go
+func (Order) mapError(op orderOperation, err error) error {
+    var pg *pgconn.PgError
+    if errors.As(err, &pg) && pg.Code == "23503" { // foreign_key_violation
+        if op == orderOperationDelete {
+            return model.ErrOrderHasLines
+        }
+        return model.ErrCustomerNotFound
+    }
+    return err
+}
+```
 
 ### Separate-package implementations
 

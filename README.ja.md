@@ -480,22 +480,38 @@ func (r category) Upsert(ctx context.Context, c model.Category) error {
 
 ### エラーの対応づけ
 
-実装の型に `mapError` メソッドを書くと、生成するメソッドが返すエラーはすべてそれを通ります。文の実行、行の読み取り、関連の読み込みのエラーと、`orm.ErrNotFound` で、どれもメソッドが何をしていたかを付けたあとのエラーです。[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example は、生成した実装の隣の [postgres/errors.go](example/postgres/postgres/errors.go) で、注文が見つからないエラーを `model.ErrOrderNotFound` に変えます。repository を使う側に、データベースのエラーを見せないためです。
+実装の型に `mapError` メソッドを書くと、生成するメソッドが返すエラーはすべてそれを通ります。文の実行、行の読み取り、関連の読み込みのエラーと、`orm.ErrNotFound` で、どれもメソッドが何をしていたかを付けたあとのエラーです。[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example は、生成した実装の隣の [postgres/errors.go](example/postgres/postgres/errors.go) で、`Get` が読む注文が見つからないエラーを `model.ErrOrderNotFound` に変えます。repository を使う側に、データベースのエラーを見せないためです。
 
 ```go
-func (Order) mapError(err error) error {
-    if errors.Is(err, orm.ErrNotFound) {
+func (Order) mapError(op orderOperation, err error) error {
+    if op == orderOperationGet && errors.Is(err, orm.ErrNotFound) {
         return model.ErrOrderNotFound
     }
     return err
 }
 ```
 
-- 生成器は生成のときにメソッドを見つけ、メソッドがエラーを返すところに `return ..., r.mapError(err)` と書きます。nil を返すときは呼びません。
-- error を 1 つ受け取って error を 1 つ返す形でなければ、生成を止めます。レシーバーは実装の型で、値でもポインタでも構いません。インターフェースと同じパッケージに実装する repository では、非公開の型です（`func (*category) mapError`）。
-- repository ごとに持てます。持たない repository は、エラーをそのまま返します。
-- 手で書いたメソッドは、自分で呼びます。そのために生成するヘルパー（`r.upsert` など）はエラーをそのまま返すので、対応づけはメソッドで 1 回です。
-- メソッドごとに区別したいときは、そのメソッドを手で書きます。知らないエラーは、チェーンを保つためにそのまま返してください。
+- 生成器は生成のときにメソッドを見つけ、メソッドがエラーを返すところに `return ..., r.mapError(orderOperationGet, err)` と書きます。nil を返すときは呼びません。
+- error を 1 つ受け取るか、エラーの起きた操作と error を受け取って、error を 1 つ返す形でなければ、生成を止めます。レシーバーは実装の型で、値でもポインタでも構いません。インターフェースと同じパッケージに実装する repository では、非公開の型です（`func (*category) mapError`）。
+- 操作を受け取る形（`mapError(op orderOperation, err error) error`）なら、kanna-orm は repository の名前から付けた string の型 `orderOperation` と、`Bind` を除くインターフェースのメソッドごとに、メソッド名を値に持つその型の定数（`orderOperationGet`、`orderOperationInsert`）を書きます。メソッドが読み込む関連や、書き込んだあとに読み戻す行のエラーにも、そのメソッドの操作が付きます。error だけを受け取る形なら、どちらも書かず、どのメソッドのエラーも同じように対応づけます。
+- repository ごとに持てます。持たない repository は、エラーをそのまま返します。kanna-orm がある repository のために書く名前を、手で宣言していたり、別の repository のためにも書いたりするときは、生成を止めます。
+- 手で書いたメソッドは、自分で呼びます。操作を受け取る形なら、自分の操作を付けます（`r.mapError(orderOperationTag, err)`）。そのために生成するヘルパー（`r.upsert` など）はエラーをそのまま返すので、対応づけはメソッドで 1 回です。
+- 知らないエラーは、チェーンを保つためにそのまま返してください。
+
+操作を受け取ると、同じエラーがメソッドごとに持つ意味を分けられます。外部キーの違反は、`Insert` では顧客がないこと、`Delete` では明細がまだあることです。
+
+```go
+func (Order) mapError(op orderOperation, err error) error {
+    var pg *pgconn.PgError
+    if errors.As(err, &pg) && pg.Code == "23503" { // foreign_key_violation
+        if op == orderOperationDelete {
+            return model.ErrOrderHasLines
+        }
+        return model.ErrCustomerNotFound
+    }
+    return err
+}
+```
 
 ### 別のパッケージに実装する
 
