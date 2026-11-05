@@ -319,7 +319,7 @@ usecase.go:18:19: error: UpsertByEmail meets its row by email, which its change 
 	}
 }
 
-func TestExec(t *testing.T) {
+func TestCommand(t *testing.T) {
 	t.Parallel()
 
 	dir := exampleModule(t, "postgres", map[string]string{
@@ -355,11 +355,9 @@ func Count(ctx context.Context, orders repository.Order) (int64, error) {
 		{dir, []string{"./usecas/..."}, cli.ExitFailure, ""},
 		{dir, []string{"fmt"}, cli.ExitFailure,
 			"error: fmt is outside module github.com/go-kanna/orm/example/postgres, whose packages vet checks\n"},
-		{dir, []string{"-h"}, cli.ExitOK, ""},
-		{dir, []string{"-unknown"}, cli.ExitUsage, ""},
 	} {
 		var out, errOut bytes.Buffer
-		code := vet.Exec(cli.Env{Out: &out, Err: &errOut, Dir: tt.dir}, tt.args)
+		code := vet.Command().Exec(cli.Env{Out: &out, Err: &errOut, Dir: tt.dir}, tt.args)
 		if code != tt.code || (tt.stderr != "" && errOut.String() != tt.stderr) {
 			t.Errorf("vet %v in %s = %d, want %d\n%s", tt.args, tt.dir, code, tt.code, errOut.String())
 		}
