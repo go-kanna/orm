@@ -5,8 +5,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-kanna/internal v0.0.27 h1:QrTI2iwIhCBc1V8+hmWj5qP68DNwcdKC5yTmY97Hjt8=
 github.com/go-kanna/internal v0.0.27/go.mod h1:Df477EkeFmw5w4hFNoBGUZfZJfgKJnaemuReERxK7to=
-github.com/go-kanna/orm v0.0.31 h1:eP7dMOoxi7Sy5FIUHOFKJUm1MekWgA/yMrbzOxyrXHc=
-github.com/go-kanna/orm v0.0.31/go.mod h1:03fMocEbkIKqhUxsTtqIOzk0cdLBTm52msO3adcRNTI=
+github.com/go-kanna/orm v0.0.32 h1:eL+5H/hXCRtQnchtEypDWuItLWi99N6gotF0Agb5/gI=
+github.com/go-kanna/orm v0.0.32/go.mod h1:BmyTl4+FURn1axe0VGYgl+ceJFmgxIhyK6xjm6/uZaA=
 github.com/go-sql-driver/mysql v1.10.1 h1:arlSnNLq6a5yxGxV7qg9lF4j0C+KwD6NbQyKr9QL6ME=
 github.com/go-sql-driver/mysql v1.10.1/go.mod h1:M+cqaI7+xxXGG9swrdeUIoPG3Y3KCkF0pZej+SK+nWk=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
