@@ -16,29 +16,29 @@ import (
 	"github.com/go-kanna/orm/example/postgres/scopes"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/option"
-	ormpgx "github.com/go-kanna/orm/pgx"
+	kpgx "github.com/go-kanna/orm/pgx"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
-type DBTX = ormpgx.DBTX
+type DBTX = kpgx.DBTX
 
-// ormDatabase runs statements on dbtx between the hooks of options, as the methods of the repositories, and those
+// kDatabase runs statements on dbtx between the hooks of options, as the methods of the repositories, and those
 // written by hand, run them.
-type ormDatabase struct {
+type kDatabase struct {
 	dbtx    DBTX
 	options impl.Options
 }
 
-func (d ormDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+func (d kDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	result, err := d.dbtx.Exec(ctx, query, args...)
 	trace.End(err)
 	return result, err
 }
 
-func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+func (d kDatabase) Query(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	rows, err := d.dbtx.Query(ctx, query, args...)
 	traced, err := trace.Rows(rows, err)
@@ -48,29 +48,29 @@ func (d ormDatabase) Query(ctx context.Context, query string, args ...any) (pgx.
 	if trace == nil {
 		return rows, nil
 	}
-	return ormPgxRows{Rows: rows, traced: traced}, nil
+	return kPgxRows{Rows: rows, traced: traced}, nil
 }
 
-// ormPgxRows is pgx.Rows read through traced, for the hooks to see the rows read to the end.
-type ormPgxRows struct {
+// kPgxRows is pgx.Rows read through traced, for the hooks to see the rows read to the end.
+type kPgxRows struct {
 	pgx.Rows
 	traced impl.Rows
 }
 
-func (r ormPgxRows) Next() bool             { return r.traced.Next() }
-func (r ormPgxRows) Scan(dest ...any) error { return r.traced.Scan(dest...) }
-func (r ormPgxRows) Close()                 { r.traced.Close() }
+func (r kPgxRows) Next() bool             { return r.traced.Next() }
+func (r kPgxRows) Scan(dest ...any) error { return r.traced.Scan(dest...) }
+func (r kPgxRows) Close()                 { r.traced.Close() }
 
-func (d ormDatabase) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
+func (d kDatabase) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.dbtx.QueryRow(ctx, query, args...))
 }
 
 // Customer implements repository.Customer on PostgreSQL through pgx.
-type Customer struct{ db ormDatabase }
+type Customer struct{ db kDatabase }
 
 func newCustomer(db DBTX, opts ...option.Option) Customer {
-	return Customer{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+	return Customer{db: kDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 // NewCustomer returns Customer running on db.
@@ -134,10 +134,10 @@ func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes
 }
 
 // Product implements repository.Product on PostgreSQL through pgx.
-type Product struct{ db ormDatabase }
+type Product struct{ db kDatabase }
 
 func newProduct(db DBTX, opts ...option.Option) Product {
-	return Product{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+	return Product{db: kDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 // NewProduct returns Product running on db.
@@ -172,7 +172,7 @@ func (r Product) List(ctx context.Context, s ...scopes.Product) ([]model.Product
 		qs[i] = impl.Of[model.Product](x.Of())
 	}
 	q := impl.Combine(qs...)
-	return ormSelectProducts(ctx, r.db, q, "")
+	return kSelectProducts(ctx, r.db, q, "")
 }
 
 func (r Product) ListSummaries(ctx context.Context, s ...scopes.Product) ([]repository.ProductSummary, error) {
@@ -266,10 +266,10 @@ SELECT * FROM unnest($1::text[])`
 }
 
 // Order implements repository.Order on PostgreSQL through pgx.
-type Order struct{ db ormDatabase }
+type Order struct{ db kDatabase }
 
 func newOrder(db DBTX, opts ...option.Option) Order {
-	return Order{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+	return Order{db: kDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 // NewOrder returns Order running on db.
@@ -306,7 +306,7 @@ func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*
 	if err := q.Unpaged("Find"); err != nil {
 		return nil, r.mapError(orderOperationFind, err)
 	}
-	rows, err := ormSelectOrders(ctx, r.db, q, "")
+	rows, err := kSelectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return nil, r.mapError(orderOperationFind, err)
 	}
@@ -326,7 +326,7 @@ func (r Order) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (mo
 	if err := q.Unpaged("Get"); err != nil {
 		return model.Order{}, r.mapError(orderOperationGet, err)
 	}
-	rows, err := ormSelectOrders(ctx, r.db, q, "")
+	rows, err := kSelectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return model.Order{}, r.mapError(orderOperationGet, err)
 	}
@@ -372,7 +372,7 @@ func (r Order) List(ctx context.Context, s ...scopes.Order) ([]model.Order, erro
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
-	rows, err := ormSelectOrders(ctx, r.db, q, "")
+	rows, err := kSelectOrders(ctx, r.db, q, "")
 	if err != nil {
 		return nil, r.mapError(orderOperationList, err)
 	}
@@ -586,10 +586,10 @@ ORDER BY 1`
 }
 
 // Fulfillment implements repository.Fulfillment on PostgreSQL through pgx.
-type Fulfillment struct{ db ormDatabase }
+type Fulfillment struct{ db kDatabase }
 
 func newFulfillment(db DBTX, opts ...option.Option) Fulfillment {
-	return Fulfillment{db: ormDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
+	return Fulfillment{db: kDatabase{dbtx: db, options: impl.NewOptions(opts...)}}
 }
 
 // NewFulfillment returns Fulfillment running on db.
@@ -598,7 +598,7 @@ func NewFulfillment(db DBTX, opts ...option.Option) Fulfillment { return newFulf
 var _ repository.Fulfillment = Fulfillment{}
 
 func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !ormpgx.InTransaction(r.db.dbtx) {
+	if !kpgx.InTransaction(r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a pgx.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = $1 FOR UPDATE`
@@ -616,7 +616,7 @@ func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.
 }
 
 func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if !ormpgx.InTransaction(r.db.dbtx) {
+	if !kpgx.InTransaction(r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a pgx.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -625,7 +625,7 @@ func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.
 	}
 	q := impl.Combine(qs...)
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
-	rows, err := ormSelectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
+	rows, err := kSelectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return model.Order{}, err
 	}
@@ -658,13 +658,13 @@ WHERE id = $5`
 	return nil
 }
 
-// ormSelectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
-func ormSelectApprovals(ctx context.Context, db ormDatabase, q impl.Of[model.Approval], lock string) ([]model.Approval, error) {
+// kSelectApprovals reads the rows of approvals that q matches, in its order. lock is the locking clause of the query, if any.
+func kSelectApprovals(ctx context.Context, db kDatabase, q impl.Of[model.Approval], lock string) ([]model.Approval, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryApprovals(ctx, db, `SELECT id, order_id, revision, approver, approved_at, revoked_at FROM approvals`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryApprovals(ctx, db, `SELECT id, order_id, revision, approver, approved_at, revoked_at FROM approvals`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -674,8 +674,8 @@ func ormSelectApprovals(ctx context.Context, db ormDatabase, q impl.Of[model.App
 	return out, nil
 }
 
-// ormQueryApprovals runs query, a query of the rows of approvals, and reads them.
-func ormQueryApprovals(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Approval, error) {
+// kQueryApprovals runs query, a query of the rows of approvals, and reads them.
+func kQueryApprovals(ctx context.Context, db kDatabase, query string, args ...any) ([]model.Approval, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read approvals: %w", err)
@@ -697,13 +697,13 @@ func ormQueryApprovals(ctx context.Context, db ormDatabase, query string, args .
 	return out, nil
 }
 
-// ormSelectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
-func ormSelectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Customer], lock string) ([]model.Customer, error) {
+// kSelectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
+func kSelectCustomers(ctx context.Context, db kDatabase, q impl.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -713,8 +713,8 @@ func ormSelectCustomers(ctx context.Context, db ormDatabase, q impl.Of[model.Cus
 	return out, nil
 }
 
-// ormQueryCustomers runs query, a query of the rows of customers, and reads them.
-func ormQueryCustomers(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Customer, error) {
+// kQueryCustomers runs query, a query of the rows of customers, and reads them.
+func kQueryCustomers(ctx context.Context, db kDatabase, query string, args ...any) ([]model.Customer, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read customers: %w", err)
@@ -736,27 +736,27 @@ func ormQueryCustomers(ctx context.Context, db ormDatabase, query string, args .
 	return out, nil
 }
 
-// ormSelectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func ormSelectOrderLines(ctx context.Context, db ormDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
+// kSelectOrderLines reads the rows of order_lines that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func kSelectOrderLines(ctx context.Context, db kDatabase, q impl.Of[model.OrderLine], lock string) ([]model.OrderLine, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`order_id`, `line_no`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryOrderLines(ctx, db, `SELECT order_id, line_no, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryOrderLines(ctx, db, `SELECT order_id, line_no, sku, quantity FROM order_lines`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
 	if rd.Reversed() {
 		slices.Reverse(out)
 	}
-	if err := ormPreloadOrderLines(ctx, db, out, q); err != nil {
+	if err := kPreloadOrderLines(ctx, db, out, q); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ormQueryOrderLines runs query, a query of the rows of order_lines, and reads them.
-func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.OrderLine, error) {
+// kQueryOrderLines runs query, a query of the rows of order_lines, and reads them.
+func kQueryOrderLines(ctx context.Context, db kDatabase, query string, args ...any) ([]model.OrderLine, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read order_lines: %w", err)
@@ -778,11 +778,11 @@ func ormQueryOrderLines(ctx context.Context, db ormDatabase, query string, args 
 	return out, nil
 }
 
-// ormEachOrderLinesProduct reads the rows of products for the keys of rows, as Product loads them.
-var ormEachOrderLinesProduct = impl.NewEach(impl.Postgres, impl.Batch{Table: "products", ChildKeys: []string{"sku"}, KeyTypes: []string{"text"}}, []string{`sku`}, []string{"sku", "name", "price", "currency"})
+// kEachOrderLinesProduct reads the rows of products for the keys of rows, as Product loads them.
+var kEachOrderLinesProduct = impl.NewEach(impl.Postgres, impl.Batch{Table: "products", ChildKeys: []string{"sku"}, KeyTypes: []string{"text"}}, []string{`sku`}, []string{"sku", "name", "price", "currency"})
 
-// ormPreloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
-func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.OrderLine, q impl.Of[model.OrderLine]) error {
+// kPreloadOrderLines loads into rows the relations q loads, each by the keys of the rows.
+func kPreloadOrderLines(ctx context.Context, db kDatabase, rows []model.OrderLine, q impl.Of[model.OrderLine]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -805,7 +805,7 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 		var flat []model.Product
 		var numbers []int
 		if len(keys0) > 0 {
-			text, args, err := sub.RenderEach(ormEachOrderLinesProduct, []any{keys0}, 0)
+			text, args, err := sub.RenderEach(kEachOrderLinesProduct, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Product: %w", err)
 			}
@@ -841,27 +841,27 @@ func ormPreloadOrderLines(ctx context.Context, db ormDatabase, rows []model.Orde
 	return nil
 }
 
-// ormSelectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
-func ormSelectOrders(ctx context.Context, db ormDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
+// kSelectOrders reads the rows of orders that q matches, in its order, with the relations it loads. lock is the locking clause of the query, if any.
+func kSelectOrders(ctx context.Context, db kDatabase, q impl.Of[model.Order], lock string) ([]model.Order, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryOrders(ctx, db, `SELECT id, customer_id, status, placed_at, note FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
 	if rd.Reversed() {
 		slices.Reverse(out)
 	}
-	if err := ormPreloadOrders(ctx, db, out, q); err != nil {
+	if err := kPreloadOrders(ctx, db, out, q); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ormQueryOrders runs query, a query of the rows of orders, and reads them.
-func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Order, error) {
+// kQueryOrders runs query, a query of the rows of orders, and reads them.
+func kQueryOrders(ctx context.Context, db kDatabase, query string, args ...any) ([]model.Order, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read orders: %w", err)
@@ -885,23 +885,23 @@ func ormQueryOrders(ctx context.Context, db ormDatabase, query string, args ...a
 	return out, nil
 }
 
-// ormEachOrdersApprovals reads the rows of approvals for the keys of rows, as Approvals loads them.
-var ormEachOrdersApprovals = impl.NewEach(impl.Postgres, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"})
+// kEachOrdersApprovals reads the rows of approvals for the keys of rows, as Approvals loads them.
+var kEachOrdersApprovals = impl.NewEach(impl.Postgres, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"})
 
-// ormEachOrdersCustomer reads the rows of customers for the keys of rows, as Customer loads them.
-var ormEachOrdersCustomer = impl.NewEach(impl.Postgres, impl.Batch{Table: "customers", ChildKeys: []string{"id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at"})
+// kEachOrdersCustomer reads the rows of customers for the keys of rows, as Customer loads them.
+var kEachOrdersCustomer = impl.NewEach(impl.Postgres, impl.Batch{Table: "customers", ChildKeys: []string{"id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at"})
 
-// ormEachOrdersLines reads the rows of order_lines for the keys of rows, as Lines loads them.
-var ormEachOrdersLines = impl.NewEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"})
+// kEachOrdersLines reads the rows of order_lines for the keys of rows, as Lines loads them.
+var kEachOrdersLines = impl.NewEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"})
 
-// ormEachOrdersShipment reads the rows of shipments for the keys of rows, as Shipment loads them.
-var ormEachOrdersShipment = impl.NewEach(impl.Postgres, impl.Batch{Table: "shipments", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`}, []string{"order_id", "carrier", "tracking"})
+// kEachOrdersShipment reads the rows of shipments for the keys of rows, as Shipment loads them.
+var kEachOrdersShipment = impl.NewEach(impl.Postgres, impl.Batch{Table: "shipments", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`}, []string{"order_id", "carrier", "tracking"})
 
-// ormEachOrdersTags reads the rows of tags for the keys of rows, as Tags loads them.
-var ormEachOrdersTags = impl.NewEach(impl.Postgres, impl.Batch{Table: "tags", Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}, KeyTypes: []string{"int8"}}, []string{`name`}, []string{"name"})
+// kEachOrdersTags reads the rows of tags for the keys of rows, as Tags loads them.
+var kEachOrdersTags = impl.NewEach(impl.Postgres, impl.Batch{Table: "tags", Through: "order_tags", ThroughParent: []string{"order_id"}, ThroughChild: []string{"tag_id"}, TargetKeys: []string{"name"}, KeyTypes: []string{"int8"}}, []string{`name`}, []string{"name"})
 
-// ormPreloadOrders loads into rows the relations q loads, each by the keys of the rows.
-func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q impl.Of[model.Order]) error {
+// kPreloadOrders loads into rows the relations q loads, each by the keys of the rows.
+func kPreloadOrders(ctx context.Context, db kDatabase, rows []model.Order, q impl.Of[model.Order]) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -924,7 +924,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		var flat []model.Approval
 		var numbers []int
 		if len(keys0) > 0 {
-			text, args, err := sub.RenderEach(ormEachOrdersApprovals, []any{keys0}, 0)
+			text, args, err := sub.RenderEach(kEachOrdersApprovals, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Approvals: %w", err)
 			}
@@ -976,7 +976,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		var flat []model.Customer
 		var numbers []int
 		if len(keys0) > 0 {
-			text, args, err := sub.RenderEach(ormEachOrdersCustomer, []any{keys0}, 0)
+			text, args, err := sub.RenderEach(kEachOrdersCustomer, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Customer: %w", err)
 			}
@@ -1028,7 +1028,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		var flat []model.OrderLine
 		var numbers []int
 		if len(keys0) > 0 {
-			text, args, err := sub.RenderEach(ormEachOrdersLines, []any{keys0}, 0)
+			text, args, err := sub.RenderEach(kEachOrdersLines, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Lines: %w", err)
 			}
@@ -1053,7 +1053,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 				return fmt.Errorf("load Lines: %w", err)
 			}
 		}
-		if err := ormPreloadOrderLines(ctx, db, flat, sub); err != nil {
+		if err := kPreloadOrderLines(ctx, db, flat, sub); err != nil {
 			return err
 		}
 		grouped := impl.Group(flat, numbers, len(keys0))
@@ -1083,7 +1083,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		var flat []model.Shipment
 		var numbers []int
 		if len(keys0) > 0 {
-			text, args, err := sub.RenderEach(ormEachOrdersShipment, []any{keys0}, 0)
+			text, args, err := sub.RenderEach(kEachOrdersShipment, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Shipment: %w", err)
 			}
@@ -1135,7 +1135,7 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 		var flat []model.Tag
 		var numbers []int
 		if len(keys0) > 0 {
-			text, args, err := sub.RenderEach(ormEachOrdersTags, []any{keys0}, 0)
+			text, args, err := sub.RenderEach(kEachOrdersTags, []any{keys0}, 0)
 			if err != nil {
 				return fmt.Errorf("load Tags: %w", err)
 			}
@@ -1171,13 +1171,13 @@ func ormPreloadOrders(ctx context.Context, db ormDatabase, rows []model.Order, q
 	return nil
 }
 
-// ormSelectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
-func ormSelectProducts(ctx context.Context, db ormDatabase, q impl.Of[model.Product], lock string) ([]model.Product, error) {
+// kSelectProducts reads the rows of products that q matches, in its order. lock is the locking clause of the query, if any.
+func kSelectProducts(ctx context.Context, db kDatabase, q impl.Of[model.Product], lock string) ([]model.Product, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`sku`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryProducts(ctx, db, `SELECT sku, name, price, currency FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryProducts(ctx, db, `SELECT sku, name, price, currency FROM products`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1187,8 +1187,8 @@ func ormSelectProducts(ctx context.Context, db ormDatabase, q impl.Of[model.Prod
 	return out, nil
 }
 
-// ormQueryProducts runs query, a query of the rows of products, and reads them.
-func ormQueryProducts(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Product, error) {
+// kQueryProducts runs query, a query of the rows of products, and reads them.
+func kQueryProducts(ctx context.Context, db kDatabase, query string, args ...any) ([]model.Product, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read products: %w", err)
@@ -1210,13 +1210,13 @@ func ormQueryProducts(ctx context.Context, db ormDatabase, query string, args ..
 	return out, nil
 }
 
-// ormSelectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
-func ormSelectShipments(ctx context.Context, db ormDatabase, q impl.Of[model.Shipment], lock string) ([]model.Shipment, error) {
+// kSelectShipments reads the rows of shipments that q matches, in its order. lock is the locking clause of the query, if any.
+func kSelectShipments(ctx context.Context, db kDatabase, q impl.Of[model.Shipment], lock string) ([]model.Shipment, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`order_id`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryShipments(ctx, db, `SELECT order_id, carrier, tracking FROM shipments`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryShipments(ctx, db, `SELECT order_id, carrier, tracking FROM shipments`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1226,8 +1226,8 @@ func ormSelectShipments(ctx context.Context, db ormDatabase, q impl.Of[model.Shi
 	return out, nil
 }
 
-// ormQueryShipments runs query, a query of the rows of shipments, and reads them.
-func ormQueryShipments(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Shipment, error) {
+// kQueryShipments runs query, a query of the rows of shipments, and reads them.
+func kQueryShipments(ctx context.Context, db kDatabase, query string, args ...any) ([]model.Shipment, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read shipments: %w", err)
@@ -1249,13 +1249,13 @@ func ormQueryShipments(ctx context.Context, db ormDatabase, query string, args .
 	return out, nil
 }
 
-// ormSelectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
-func ormSelectTags(ctx context.Context, db ormDatabase, q impl.Of[model.Tag], lock string) ([]model.Tag, error) {
+// kSelectTags reads the rows of tags that q matches, in its order. lock is the locking clause of the query, if any.
+func kSelectTags(ctx context.Context, db kDatabase, q impl.Of[model.Tag], lock string) ([]model.Tag, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`name`})
 	if err != nil {
 		return nil, err
 	}
-	out, err := ormQueryTags(ctx, db, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryTags(ctx, db, `SELECT name FROM tags`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1265,8 +1265,8 @@ func ormSelectTags(ctx context.Context, db ormDatabase, q impl.Of[model.Tag], lo
 	return out, nil
 }
 
-// ormQueryTags runs query, a query of the rows of tags, and reads them.
-func ormQueryTags(ctx context.Context, db ormDatabase, query string, args ...any) ([]model.Tag, error) {
+// kQueryTags runs query, a query of the rows of tags, and reads them.
+func kQueryTags(ctx context.Context, db kDatabase, query string, args ...any) ([]model.Tag, error) {
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read tags: %w", err)
