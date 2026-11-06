@@ -1,6 +1,6 @@
 package gen
 
-// hooks writes ormDatabase, which the repositories run their statements on: DBTX between the hooks of their options.
+// hooks writes kDatabase, which the repositories run their statements on: DBTX between the hooks of their options.
 func (e repoEmitter) hooks() {
 	ctx := e.f.Import("context", "context")
 	db := e.database
@@ -34,7 +34,7 @@ func (e repoEmitter) hooks() {
 		e.queryRow)
 }
 
-// sqlQueries writes the queries of ormDatabase on database/sql: QueryContext and QueryRowContext, for methods written
+// sqlQueries writes the queries of kDatabase on database/sql: QueryContext and QueryRowContext, for methods written
 // by hand, return *sql.Rows and *sql.Row as they are, which nothing can read through, and query and queryRow, for the
 // repositories, read the rows through the hooks.
 func (e repoEmitter) sqlQueries(ctx string) {

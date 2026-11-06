@@ -126,7 +126,7 @@ func emit(pkg *packages.Package, d snapshot.Dialect, plans []scopePlan, declared
 	var toRuntime, toScope string
 	if len(plans) > 0 {
 		sc := f.Scope()
-		toRuntime, toScope = sc.Name("ormRuntime"), sc.Name("ormScope")
+		toRuntime, toScope = sc.Name("kRuntime"), sc.Name("kScope")
 		f.Reserve(toRuntime, toScope)
 		scope, impl := f.Import(scopePath, "scope"), f.Import(implPath, "impl")
 		fmt.Fprintf(f, "// %[3]s is q, the field of a scope type, as the runtime reads it, and %[4]s is the "+

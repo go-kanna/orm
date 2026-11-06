@@ -12,7 +12,7 @@ import (
 	ppgx "github.com/go-kanna/orm/internal/gen/testdata/postgres/pgx"
 	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 	pstdlib "github.com/go-kanna/orm/internal/gen/testdata/postgres/stdlib"
-	ormpgx "github.com/go-kanna/orm/pgx"
+	kpgx "github.com/go-kanna/orm/pgx"
 	"github.com/go-kanna/orm/scope"
 	"github.com/go-kanna/orm/stdlib"
 )
@@ -20,7 +20,7 @@ import (
 // The DBTX of each package of repositories is the runtime's of its driver, the very type, so that one value provided
 // once serves them all.
 var (
-	_ *ormpgx.DBTX = new(ppgx.DBTX)
+	_ *kpgx.DBTX   = new(ppgx.DBTX)
 	_ *stdlib.DBTX = new(pstdlib.DBTX)
 	_ *stdlib.DBTX = new(mstdlib.DBTX)
 )

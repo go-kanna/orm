@@ -40,8 +40,8 @@ type repoEmitter struct {
 }
 
 // tableHelpers name the functions of the implementations reading the whole rows of a table that a scope matches,
-// those a query reads, and loading the relations of rows: ormSelect<name>, ormQuery<name>, and ormPreload<name>, or
-// the first of ormSelect<name>2, ... that the package does not declare.
+// those a query reads, and loading the relations of rows: kSelect<name>, kQuery<name>, and kPreload<name>, or
+// the first of kSelect<name>2, ... that the package does not declare.
 type tableHelpers struct {
 	selectRows, queryRows, preload string
 }
@@ -66,21 +66,21 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	names := readNames(models)
 	for _, table := range slices.Sorted(maps.Keys(names)) {
 		sc := f.Scope()
-		h := tableHelpers{selectRows: sc.Name("ormSelect" + names[table]), queryRows: sc.Name("ormQuery" + names[table]),
-			preload: sc.Name("ormPreload" + names[table])}
+		h := tableHelpers{selectRows: sc.Name("kSelect" + names[table]), queryRows: sc.Name("kQuery" + names[table]),
+			preload: sc.Name("kPreload" + names[table])}
 		f.Reserve(h.selectRows, h.queryRows, h.preload)
 		e.helpers[table] = h
 		for _, lk := range models[table].links {
-			name := sc.Name("ormEach" + names[table] + strings.Join(lk.field.path, ""))
+			name := sc.Name("kEach" + names[table] + strings.Join(lk.field.path, ""))
 			f.Reserve(name)
 			e.eachNames[eachKey(table, lk)] = name
 		}
 	}
-	rows := "ormSQLRows"
+	rows := "kSQLRows"
 	if drv == driverPgx {
-		rows = "ormPgxRows"
+		rows = "kPgxRows"
 	}
-	e.database, e.rows = f.Scope().Name("ormDatabase"), f.Scope().Name(rows)
+	e.database, e.rows = f.Scope().Name("kDatabase"), f.Scope().Name(rows)
 	f.Reserve(e.database, e.rows)
 
 	e.db()
@@ -124,7 +124,7 @@ func (e repoEmitter) db() {
 	}
 	e.f.Import("github.com/jackc/pgx/v5", "pgx") // the pgx the code reads, and the runtime's under another name
 	e.printf("// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DBTX = %s.DBTX\n\n",
-		e.f.Import(pgxPath, "ormpgx"))
+		e.f.Import(pgxPath, "kpgx"))
 }
 
 // repository writes the implementation of repo: its struct, constructor, and methods.
@@ -467,7 +467,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 func (e repoEmitter) inTransaction(m repoMethod, recv string, sig signature, zero string) {
 	path, name, tx := stdlibPath, "stdlib", "*sql.Tx"
 	if e.drv == driverPgx {
-		path, name, tx = pgxPath, "ormpgx", "pgx.Tx"
+		path, name, tx = pgxPath, "kpgx", "pgx.Tx"
 	}
 	pkg := e.f.Import(path, name)
 	e.printf("if !%s.InTransaction(%s.db.dbtx) {\nreturn %s, %s\n}\n", pkg, recv, zero,

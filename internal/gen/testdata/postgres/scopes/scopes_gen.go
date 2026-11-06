@@ -11,11 +11,11 @@ import (
 	"github.com/go-kanna/orm/scope"
 )
 
-// ormRuntime is q, the field of a scope type, as the runtime reads it, and ormScope is the runtime's scope as the
+// kRuntime is q, the field of a scope type, as the runtime reads it, and kScope is the runtime's scope as the
 // field again.
-func ormRuntime[M any](q scope.Of[M]) impl.Of[M] { return impl.Of[M](q) }
+func kRuntime[M any](q scope.Of[M]) impl.Of[M] { return impl.Of[M](q) }
 
-func ormScope[M any](q impl.Of[M]) scope.Of[M] { return scope.Of[M](q) }
+func kScope[M any](q impl.Of[M]) scope.Of[M] { return scope.Of[M](q) }
 
 // Of returns the scope as a repository reads it.
 func (s Order) Of() scope.Of[model.Order] { return s.q }
@@ -65,17 +65,17 @@ func (c OrderChangeSet) SetPosition(v int) OrderChangeSet {
 
 // IDEq narrows to the rows whose id is v.
 func (s Order) IDEq(v model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`id = `, v))}
 }
 
 // IDNe narrows to the rows whose id is not v.
 func (s Order) IDNe(v model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`id <> `, v))}
 }
 
 // IDIn narrows to the rows whose id is one of vs.
 func (s Order) IDIn(vs ...model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`id = ANY(`, vs, `)`))}
 }
 
 // IDNotIn narrows to the rows whose id is none of vs.
@@ -83,57 +83,57 @@ func (s Order) IDNotIn(vs ...model.OrderID) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`id <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`id <> ALL(`, vs, `)`))}
 }
 
 // IDLt narrows to the rows whose id is less than v.
 func (s Order) IDLt(v model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`id < `, v))}
 }
 
 // IDLte narrows to the rows whose id is at most v.
 func (s Order) IDLte(v model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`id <= `, v))}
 }
 
 // IDGt narrows to the rows whose id is greater than v.
 func (s Order) IDGt(v model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`id > `, v))}
 }
 
 // IDGte narrows to the rows whose id is at least v.
 func (s Order) IDGte(v model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`id >= `, v))}
 }
 
 // IDBetween narrows to the rows whose id is between lo and hi, both included.
 func (s Order) IDBetween(lo, hi model.OrderID) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // IDAsc orders the rows by id, smallest first.
 func (s Order) IDAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`id`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`id`, false))}
 }
 
 // IDDesc orders the rows by id, largest first.
 func (s Order) IDDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`id`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`id`, true))}
 }
 
 // CustomerIDEq narrows to the rows whose customer_id is v.
 func (s Order) CustomerIDEq(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id = `, v))}
 }
 
 // CustomerIDNe narrows to the rows whose customer_id is not v.
 func (s Order) CustomerIDNe(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id <> `, v))}
 }
 
 // CustomerIDIn narrows to the rows whose customer_id is one of vs.
 func (s Order) CustomerIDIn(vs ...int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id = ANY(`, vs, `)`))}
 }
 
 // CustomerIDNotIn narrows to the rows whose customer_id is none of vs.
@@ -141,57 +141,57 @@ func (s Order) CustomerIDNotIn(vs ...int64) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id <> ALL(`, vs, `)`))}
 }
 
 // CustomerIDLt narrows to the rows whose customer_id is less than v.
 func (s Order) CustomerIDLt(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id < `, v))}
 }
 
 // CustomerIDLte narrows to the rows whose customer_id is at most v.
 func (s Order) CustomerIDLte(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id <= `, v))}
 }
 
 // CustomerIDGt narrows to the rows whose customer_id is greater than v.
 func (s Order) CustomerIDGt(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id > `, v))}
 }
 
 // CustomerIDGte narrows to the rows whose customer_id is at least v.
 func (s Order) CustomerIDGte(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id >= `, v))}
 }
 
 // CustomerIDBetween narrows to the rows whose customer_id is between lo and hi, both included.
 func (s Order) CustomerIDBetween(lo, hi int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`customer_id BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // CustomerIDAsc orders the rows by customer_id, smallest first.
 func (s Order) CustomerIDAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`customer_id`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`customer_id`, false))}
 }
 
 // CustomerIDDesc orders the rows by customer_id, largest first.
 func (s Order) CustomerIDDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`customer_id`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`customer_id`, true))}
 }
 
 // StatusEq narrows to the rows whose status is v.
 func (s Order) StatusEq(v model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`status = `, v))}
 }
 
 // StatusNe narrows to the rows whose status is not v.
 func (s Order) StatusNe(v model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`status <> `, v))}
 }
 
 // StatusIn narrows to the rows whose status is one of vs.
 func (s Order) StatusIn(vs ...model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`status = ANY(`, vs, `)`))}
 }
 
 // StatusNotIn narrows to the rows whose status is none of vs.
@@ -199,77 +199,77 @@ func (s Order) StatusNotIn(vs ...model.OrderStatus) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`status <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`status <> ALL(`, vs, `)`))}
 }
 
 // StatusLt narrows to the rows whose status is less than v.
 func (s Order) StatusLt(v model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`status < `, v))}
 }
 
 // StatusLte narrows to the rows whose status is at most v.
 func (s Order) StatusLte(v model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`status <= `, v))}
 }
 
 // StatusGt narrows to the rows whose status is greater than v.
 func (s Order) StatusGt(v model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`status > `, v))}
 }
 
 // StatusGte narrows to the rows whose status is at least v.
 func (s Order) StatusGte(v model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`status >= `, v))}
 }
 
 // StatusBetween narrows to the rows whose status is between lo and hi, both included.
 func (s Order) StatusBetween(lo, hi model.OrderStatus) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`status BETWEEN `, lo, ` AND `, hi))}
 }
 
 // StatusLike narrows to the rows whose status matches pattern, as LIKE does.
 func (s Order) StatusLike(pattern string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status LIKE `, pattern))}
+	return Order{kScope(kRuntime(s.q).Where(`status LIKE `, pattern))}
 }
 
 // StatusILike narrows to the rows whose status matches pattern, as ILIKE does, ignoring case.
 func (s Order) StatusILike(pattern string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status ILIKE `, pattern))}
+	return Order{kScope(kRuntime(s.q).Where(`status ILIKE `, pattern))}
 }
 
 // StatusHasPrefix narrows to the rows whose status starts with prefix.
 func (s Order) StatusHasPrefix(prefix string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return Order{kScope(kRuntime(s.q).Where(`status LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // StatusContains narrows to the rows whose status contains substr.
 func (s Order) StatusContains(substr string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return Order{kScope(kRuntime(s.q).Where(`status LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // StatusAsc orders the rows by status, in ascending order.
 func (s Order) StatusAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`status`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`status`, false))}
 }
 
 // StatusDesc orders the rows by status, in descending order.
 func (s Order) StatusDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`status`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`status`, true))}
 }
 
 // PlacedAtEq narrows to the rows whose placed_at is v.
 func (s Order) PlacedAtEq(v time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at = `, v))}
 }
 
 // PlacedAtNe narrows to the rows whose placed_at is not v.
 func (s Order) PlacedAtNe(v time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at <> `, v))}
 }
 
 // PlacedAtIn narrows to the rows whose placed_at is one of vs.
 func (s Order) PlacedAtIn(vs ...time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at = ANY(`, vs, `)`))}
 }
 
 // PlacedAtNotIn narrows to the rows whose placed_at is none of vs.
@@ -277,57 +277,57 @@ func (s Order) PlacedAtNotIn(vs ...time.Time) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at <> ALL(`, vs, `)`))}
 }
 
 // PlacedAtLt narrows to the rows whose placed_at is less than v.
 func (s Order) PlacedAtLt(v time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at < `, v))}
 }
 
 // PlacedAtLte narrows to the rows whose placed_at is at most v.
 func (s Order) PlacedAtLte(v time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at <= `, v))}
 }
 
 // PlacedAtGt narrows to the rows whose placed_at is greater than v.
 func (s Order) PlacedAtGt(v time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at > `, v))}
 }
 
 // PlacedAtGte narrows to the rows whose placed_at is at least v.
 func (s Order) PlacedAtGte(v time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at >= `, v))}
 }
 
 // PlacedAtBetween narrows to the rows whose placed_at is between lo and hi, both included.
 func (s Order) PlacedAtBetween(lo, hi time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at BETWEEN `, lo, ` AND `, hi))}
 }
 
 // PlacedAtAsc orders the rows by placed_at, earliest first.
 func (s Order) PlacedAtAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`placed_at`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`placed_at`, false))}
 }
 
 // PlacedAtDesc orders the rows by placed_at, latest first.
 func (s Order) PlacedAtDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`placed_at`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`placed_at`, true))}
 }
 
 // MemoEq narrows to the rows whose note is v.
 func (s Order) MemoEq(v string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`note = `, v))}
 }
 
 // MemoNe narrows to the rows whose note is not v.
 func (s Order) MemoNe(v string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`note <> `, v))}
 }
 
 // MemoIn narrows to the rows whose note is one of vs.
 func (s Order) MemoIn(vs ...string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`note = ANY(`, vs, `)`))}
 }
 
 // MemoNotIn narrows to the rows whose note is none of vs.
@@ -335,87 +335,87 @@ func (s Order) MemoNotIn(vs ...string) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`note <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`note <> ALL(`, vs, `)`))}
 }
 
 // MemoLt narrows to the rows whose note is less than v.
 func (s Order) MemoLt(v string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`note < `, v))}
 }
 
 // MemoLte narrows to the rows whose note is at most v.
 func (s Order) MemoLte(v string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`note <= `, v))}
 }
 
 // MemoGt narrows to the rows whose note is greater than v.
 func (s Order) MemoGt(v string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`note > `, v))}
 }
 
 // MemoGte narrows to the rows whose note is at least v.
 func (s Order) MemoGte(v string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`note >= `, v))}
 }
 
 // MemoBetween narrows to the rows whose note is between lo and hi, both included.
 func (s Order) MemoBetween(lo, hi string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`note BETWEEN `, lo, ` AND `, hi))}
 }
 
 // MemoLike narrows to the rows whose note matches pattern, as LIKE does.
 func (s Order) MemoLike(pattern string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note LIKE `, pattern))}
+	return Order{kScope(kRuntime(s.q).Where(`note LIKE `, pattern))}
 }
 
 // MemoILike narrows to the rows whose note matches pattern, as ILIKE does, ignoring case.
 func (s Order) MemoILike(pattern string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note ILIKE `, pattern))}
+	return Order{kScope(kRuntime(s.q).Where(`note ILIKE `, pattern))}
 }
 
 // MemoHasPrefix narrows to the rows whose note starts with prefix.
 func (s Order) MemoHasPrefix(prefix string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return Order{kScope(kRuntime(s.q).Where(`note LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // MemoContains narrows to the rows whose note contains substr.
 func (s Order) MemoContains(substr string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return Order{kScope(kRuntime(s.q).Where(`note LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // MemoIsNull narrows to the rows whose note is NULL.
 func (s Order) MemoIsNull() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note IS NULL`))}
+	return Order{kScope(kRuntime(s.q).Where(`note IS NULL`))}
 }
 
 // MemoIsNotNull narrows to the rows whose note is not NULL.
 func (s Order) MemoIsNotNull() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`note IS NOT NULL`))}
+	return Order{kScope(kRuntime(s.q).Where(`note IS NOT NULL`))}
 }
 
 // MemoAsc orders the rows by note, in ascending order.
 func (s Order) MemoAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`note`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`note`, false))}
 }
 
 // MemoDesc orders the rows by note, in descending order.
 func (s Order) MemoDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`note`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`note`, true))}
 }
 
 // TotalEq narrows to the rows whose total is v.
 func (s Order) TotalEq(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`total = `, v))}
 }
 
 // TotalNe narrows to the rows whose total is not v.
 func (s Order) TotalNe(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`total <> `, v))}
 }
 
 // TotalIn narrows to the rows whose total is one of vs.
 func (s Order) TotalIn(vs ...int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`total = ANY(`, vs, `)`))}
 }
 
 // TotalNotIn narrows to the rows whose total is none of vs.
@@ -423,57 +423,57 @@ func (s Order) TotalNotIn(vs ...int64) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`total <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`total <> ALL(`, vs, `)`))}
 }
 
 // TotalLt narrows to the rows whose total is less than v.
 func (s Order) TotalLt(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`total < `, v))}
 }
 
 // TotalLte narrows to the rows whose total is at most v.
 func (s Order) TotalLte(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`total <= `, v))}
 }
 
 // TotalGt narrows to the rows whose total is greater than v.
 func (s Order) TotalGt(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`total > `, v))}
 }
 
 // TotalGte narrows to the rows whose total is at least v.
 func (s Order) TotalGte(v int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`total >= `, v))}
 }
 
 // TotalBetween narrows to the rows whose total is between lo and hi, both included.
 func (s Order) TotalBetween(lo, hi int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`total BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`total BETWEEN `, lo, ` AND `, hi))}
 }
 
 // TotalAsc orders the rows by total, smallest first.
 func (s Order) TotalAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`total`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`total`, false))}
 }
 
 // TotalDesc orders the rows by total, largest first.
 func (s Order) TotalDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`total`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`total`, true))}
 }
 
 // PaidEq narrows to the rows whose paid is v.
 func (s Order) PaidEq(v bool) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`paid = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`paid = `, v))}
 }
 
 // PaidNe narrows to the rows whose paid is not v.
 func (s Order) PaidNe(v bool) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`paid <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`paid <> `, v))}
 }
 
 // PaidIn narrows to the rows whose paid is one of vs.
 func (s Order) PaidIn(vs ...bool) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`paid = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`paid = ANY(`, vs, `)`))}
 }
 
 // PaidNotIn narrows to the rows whose paid is none of vs.
@@ -481,32 +481,32 @@ func (s Order) PaidNotIn(vs ...bool) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`paid <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`paid <> ALL(`, vs, `)`))}
 }
 
 // PaidAsc orders the rows by paid, in ascending order.
 func (s Order) PaidAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`paid`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`paid`, false))}
 }
 
 // PaidDesc orders the rows by paid, in descending order.
 func (s Order) PaidDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`paid`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`paid`, true))}
 }
 
 // ContactEq narrows to the rows whose contact is v.
 func (s Order) ContactEq(v model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`contact = `, v))}
 }
 
 // ContactNe narrows to the rows whose contact is not v.
 func (s Order) ContactNe(v model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`contact <> `, v))}
 }
 
 // ContactIn narrows to the rows whose contact is one of vs.
 func (s Order) ContactIn(vs ...model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact = ANY(`, vs, `)`))}
 }
 
 // ContactNotIn narrows to the rows whose contact is none of vs.
@@ -514,87 +514,87 @@ func (s Order) ContactNotIn(vs ...model.Email) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`contact <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact <> ALL(`, vs, `)`))}
 }
 
 // ContactLt narrows to the rows whose contact is less than v.
 func (s Order) ContactLt(v model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`contact < `, v))}
 }
 
 // ContactLte narrows to the rows whose contact is at most v.
 func (s Order) ContactLte(v model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`contact <= `, v))}
 }
 
 // ContactGt narrows to the rows whose contact is greater than v.
 func (s Order) ContactGt(v model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`contact > `, v))}
 }
 
 // ContactGte narrows to the rows whose contact is at least v.
 func (s Order) ContactGte(v model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`contact >= `, v))}
 }
 
 // ContactBetween narrows to the rows whose contact is between lo and hi, both included.
 func (s Order) ContactBetween(lo, hi model.Email) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`contact BETWEEN `, lo, ` AND `, hi))}
 }
 
 // ContactLike narrows to the rows whose contact matches pattern, as LIKE does.
 func (s Order) ContactLike(pattern string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact LIKE `, pattern))}
+	return Order{kScope(kRuntime(s.q).Where(`contact LIKE `, pattern))}
 }
 
 // ContactILike narrows to the rows whose contact matches pattern, as ILIKE does, ignoring case.
 func (s Order) ContactILike(pattern string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact ILIKE `, pattern))}
+	return Order{kScope(kRuntime(s.q).Where(`contact ILIKE `, pattern))}
 }
 
 // ContactHasPrefix narrows to the rows whose contact starts with prefix.
 func (s Order) ContactHasPrefix(prefix string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // ContactContains narrows to the rows whose contact contains substr.
 func (s Order) ContactContains(substr string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // ContactIsNull narrows to the rows whose contact is NULL.
 func (s Order) ContactIsNull() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact IS NULL`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact IS NULL`))}
 }
 
 // ContactIsNotNull narrows to the rows whose contact is not NULL.
 func (s Order) ContactIsNotNull() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`contact IS NOT NULL`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact IS NOT NULL`))}
 }
 
 // ContactAsc orders the rows by contact, in ascending order.
 func (s Order) ContactAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`contact`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`contact`, false))}
 }
 
 // ContactDesc orders the rows by contact, in descending order.
 func (s Order) ContactDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`contact`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`contact`, true))}
 }
 
 // ReceiptEq narrows to the rows whose receipt is v.
 func (s Order) ReceiptEq(v []byte) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`receipt = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt = `, v))}
 }
 
 // ReceiptNe narrows to the rows whose receipt is not v.
 func (s Order) ReceiptNe(v []byte) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`receipt <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt <> `, v))}
 }
 
 // ReceiptIn narrows to the rows whose receipt is one of vs.
 func (s Order) ReceiptIn(vs ...[]byte) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`receipt = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt = ANY(`, vs, `)`))}
 }
 
 // ReceiptNotIn narrows to the rows whose receipt is none of vs.
@@ -602,42 +602,42 @@ func (s Order) ReceiptNotIn(vs ...[]byte) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`receipt <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt <> ALL(`, vs, `)`))}
 }
 
 // ReceiptIsNull narrows to the rows whose receipt is NULL.
 func (s Order) ReceiptIsNull() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`receipt IS NULL`))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt IS NULL`))}
 }
 
 // ReceiptIsNotNull narrows to the rows whose receipt is not NULL.
 func (s Order) ReceiptIsNotNull() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`receipt IS NOT NULL`))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt IS NOT NULL`))}
 }
 
 // ReceiptAsc orders the rows by receipt, in ascending order.
 func (s Order) ReceiptAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`receipt`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`receipt`, false))}
 }
 
 // ReceiptDesc orders the rows by receipt, in descending order.
 func (s Order) ReceiptDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`receipt`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`receipt`, true))}
 }
 
 // PositionEq narrows to the rows whose order is v.
 func (s Order) PositionEq(v int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" = `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" = `, v))}
 }
 
 // PositionNe narrows to the rows whose order is not v.
 func (s Order) PositionNe(v int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" <> `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" <> `, v))}
 }
 
 // PositionIn narrows to the rows whose order is one of vs.
 func (s Order) PositionIn(vs ...int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" = ANY(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" = ANY(`, vs, `)`))}
 }
 
 // PositionNotIn narrows to the rows whose order is none of vs.
@@ -645,115 +645,115 @@ func (s Order) PositionNotIn(vs ...int) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" <> ALL(`, vs, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" <> ALL(`, vs, `)`))}
 }
 
 // PositionLt narrows to the rows whose order is less than v.
 func (s Order) PositionLt(v int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" < `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" < `, v))}
 }
 
 // PositionLte narrows to the rows whose order is at most v.
 func (s Order) PositionLte(v int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" <= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" <= `, v))}
 }
 
 // PositionGt narrows to the rows whose order is greater than v.
 func (s Order) PositionGt(v int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" > `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" > `, v))}
 }
 
 // PositionGte narrows to the rows whose order is at least v.
 func (s Order) PositionGte(v int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" >= `, v))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" >= `, v))}
 }
 
 // PositionBetween narrows to the rows whose order is between lo and hi, both included.
 func (s Order) PositionBetween(lo, hi int) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`"order" BETWEEN `, lo, ` AND `, hi))}
+	return Order{kScope(kRuntime(s.q).Where(`"order" BETWEEN `, lo, ` AND `, hi))}
 }
 
 // PositionAsc orders the rows by order, smallest first.
 func (s Order) PositionAsc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`"order"`, false))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`"order"`, false))}
 }
 
 // PositionDesc orders the rows by order, largest first.
 func (s Order) PositionDesc() Order {
-	return Order{ormScope(ormRuntime(s.q).OrderBy(`"order"`, true))}
+	return Order{kScope(kRuntime(s.q).OrderBy(`"order"`, true))}
 }
 
 // WithCustomer loads Customer, from customers by customer_id.
 func (s Order) WithCustomer(sub ...Customer) Order {
 	qs := make([]impl.Of[model.Customer], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return Order{ormScope(impl.Preload(ormRuntime(s.q), "Customer", impl.Combine(qs...)))}
+	return Order{kScope(impl.Preload(kRuntime(s.q), "Customer", impl.Combine(qs...)))}
 }
 
 // WithLines loads Lines, from order_lines by order_id. A limit or an offset of the scopes keeps a page of the Lines of each row.
 func (s Order) WithLines(sub ...OrderLine) Order {
 	qs := make([]impl.Of[model.OrderLine], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return Order{ormScope(impl.PreloadEach(ormRuntime(s.q), "Lines", impl.Combine(qs...)))}
+	return Order{kScope(impl.PreloadEach(kRuntime(s.q), "Lines", impl.Combine(qs...)))}
 }
 
 // WithTags loads Tags, from tags through order_tags. A limit or an offset of the scopes keeps a page of the Tags of each row.
 func (s Order) WithTags(sub ...Tag) Order {
 	qs := make([]impl.Of[model.Tag], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return Order{ormScope(impl.PreloadEach(ormRuntime(s.q), "Tags", impl.Combine(qs...)))}
+	return Order{kScope(impl.PreloadEach(kRuntime(s.q), "Tags", impl.Combine(qs...)))}
 }
 
 // PlacedInMonth narrows to the orders placed in the month of at,
 // by the time zone of the database.
 func (s Order) PlacedInMonth(at time.Time) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`date_trunc('month', placed_at) = date_trunc('month', `, at, `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`date_trunc('month', placed_at) = date_trunc('month', `, at, `)`))}
 }
 
 // Open narrows the scope as order_scopes.sql writes it.
 func (s Order) Open() Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`status <> 'closed'`))}
+	return Order{kScope(kRuntime(s.q).Where(`status <> 'closed'`))}
 }
 
 // Busy narrows to the orders placed since since with n lines or more.
 func (s Order) Busy(since time.Time, n int64) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`placed_at >= `, since, `
+	return Order{kScope(kRuntime(s.q).Where(`placed_at >= `, since, `
   AND id IN (SELECT order_id FROM order_lines GROUP BY order_id HAVING count(*) >= `, n, `)`))}
 }
 
 // Tagged narrows the scope as order_scopes.sql writes it.
 func (s Order) Tagged(tags ...string) Order {
-	return Order{ormScope(ormRuntime(s.q).Where(`id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY(`, tags, `))`))}
+	return Order{kScope(kRuntime(s.q).Where(`id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY(`, tags, `))`))}
 }
 
 // Limit keeps the first n rows.
 func (s Order) Limit(n int) Order {
-	return Order{ormScope(ormRuntime(s.q).Limit(n))}
+	return Order{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s Order) Offset(n int) Order {
-	return Order{ormScope(ormRuntime(s.q).Offset(n))}
+	return Order{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Order) Or(alternatives ...Order) Order {
 	qs := make([]impl.Of[model.Order], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return Order{ormScope(ormRuntime(s.q).Or(qs...))}
+	return Order{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s Order) Not(other Order) Order {
-	return Order{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return Order{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
@@ -775,17 +775,17 @@ func (Order) values(row model.Order) map[string]any {
 
 // After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
 func (s Order) After(row model.Order) Order {
-	return Order{ormScope(ormRuntime(s.q).After([]string{`id`}, s.values(row)))}
+	return Order{kScope(kRuntime(s.q).After([]string{`id`}, s.values(row)))}
 }
 
 // Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
 func (s Order) Before(row model.Order) Order {
-	return Order{ormScope(ormRuntime(s.q).Before([]string{`id`}, s.values(row)))}
+	return Order{kScope(kRuntime(s.q).Before([]string{`id`}, s.values(row)))}
 }
 
 // Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
 func (s Order) Cursor(row model.Order) (string, error) {
-	return ormRuntime(s.q).Cursor([]string{`id`}, s.values(row))
+	return kRuntime(s.q).Cursor([]string{`id`}, s.values(row))
 }
 
 // AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
@@ -794,7 +794,7 @@ func (s Order) AfterCursor(cursor string) (Order, error) {
 		return s, nil
 	}
 	var row model.Order
-	if err := ormRuntime(s.q).DecodeCursor(cursor, []string{`id`}, map[string]any{
+	if err := kRuntime(s.q).DecodeCursor(cursor, []string{`id`}, map[string]any{
 		`id`:          &row.ID,
 		`customer_id`: &row.CustomerID,
 		`status`:      &row.Status,
@@ -828,17 +828,17 @@ func (c CustomerChangeSet) SetNickname(v *string) CustomerChangeSet {
 
 // IDEq narrows to the rows whose id is v.
 func (s Customer) IDEq(v int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id = `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`id = `, v))}
 }
 
 // IDNe narrows to the rows whose id is not v.
 func (s Customer) IDNe(v int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id <> `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`id <> `, v))}
 }
 
 // IDIn narrows to the rows whose id is one of vs.
 func (s Customer) IDIn(vs ...int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id = ANY(`, vs, `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`id = ANY(`, vs, `)`))}
 }
 
 // IDNotIn narrows to the rows whose id is none of vs.
@@ -846,57 +846,57 @@ func (s Customer) IDNotIn(vs ...int64) Customer {
 	if len(vs) == 0 {
 		return s
 	}
-	return Customer{ormScope(ormRuntime(s.q).Where(`id <> ALL(`, vs, `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`id <> ALL(`, vs, `)`))}
 }
 
 // IDLt narrows to the rows whose id is less than v.
 func (s Customer) IDLt(v int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id < `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`id < `, v))}
 }
 
 // IDLte narrows to the rows whose id is at most v.
 func (s Customer) IDLte(v int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id <= `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`id <= `, v))}
 }
 
 // IDGt narrows to the rows whose id is greater than v.
 func (s Customer) IDGt(v int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id > `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`id > `, v))}
 }
 
 // IDGte narrows to the rows whose id is at least v.
 func (s Customer) IDGte(v int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id >= `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`id >= `, v))}
 }
 
 // IDBetween narrows to the rows whose id is between lo and hi, both included.
 func (s Customer) IDBetween(lo, hi int64) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`id BETWEEN `, lo, ` AND `, hi))}
+	return Customer{kScope(kRuntime(s.q).Where(`id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // IDAsc orders the rows by id, smallest first.
 func (s Customer) IDAsc() Customer {
-	return Customer{ormScope(ormRuntime(s.q).OrderBy(`id`, false))}
+	return Customer{kScope(kRuntime(s.q).OrderBy(`id`, false))}
 }
 
 // IDDesc orders the rows by id, largest first.
 func (s Customer) IDDesc() Customer {
-	return Customer{ormScope(ormRuntime(s.q).OrderBy(`id`, true))}
+	return Customer{kScope(kRuntime(s.q).OrderBy(`id`, true))}
 }
 
 // NameEq narrows to the rows whose name is v.
 func (s Customer) NameEq(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name = `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`name = `, v))}
 }
 
 // NameNe narrows to the rows whose name is not v.
 func (s Customer) NameNe(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name <> `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`name <> `, v))}
 }
 
 // NameIn narrows to the rows whose name is one of vs.
 func (s Customer) NameIn(vs ...string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name = ANY(`, vs, `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`name = ANY(`, vs, `)`))}
 }
 
 // NameNotIn narrows to the rows whose name is none of vs.
@@ -904,77 +904,77 @@ func (s Customer) NameNotIn(vs ...string) Customer {
 	if len(vs) == 0 {
 		return s
 	}
-	return Customer{ormScope(ormRuntime(s.q).Where(`name <> ALL(`, vs, `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`name <> ALL(`, vs, `)`))}
 }
 
 // NameLt narrows to the rows whose name is less than v.
 func (s Customer) NameLt(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name < `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`name < `, v))}
 }
 
 // NameLte narrows to the rows whose name is at most v.
 func (s Customer) NameLte(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name <= `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`name <= `, v))}
 }
 
 // NameGt narrows to the rows whose name is greater than v.
 func (s Customer) NameGt(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name > `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`name > `, v))}
 }
 
 // NameGte narrows to the rows whose name is at least v.
 func (s Customer) NameGte(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name >= `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`name >= `, v))}
 }
 
 // NameBetween narrows to the rows whose name is between lo and hi, both included.
 func (s Customer) NameBetween(lo, hi string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name BETWEEN `, lo, ` AND `, hi))}
+	return Customer{kScope(kRuntime(s.q).Where(`name BETWEEN `, lo, ` AND `, hi))}
 }
 
 // NameLike narrows to the rows whose name matches pattern, as LIKE does.
 func (s Customer) NameLike(pattern string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name LIKE `, pattern))}
+	return Customer{kScope(kRuntime(s.q).Where(`name LIKE `, pattern))}
 }
 
 // NameILike narrows to the rows whose name matches pattern, as ILIKE does, ignoring case.
 func (s Customer) NameILike(pattern string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name ILIKE `, pattern))}
+	return Customer{kScope(kRuntime(s.q).Where(`name ILIKE `, pattern))}
 }
 
 // NameHasPrefix narrows to the rows whose name starts with prefix.
 func (s Customer) NameHasPrefix(prefix string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return Customer{kScope(kRuntime(s.q).Where(`name LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // NameContains narrows to the rows whose name contains substr.
 func (s Customer) NameContains(substr string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`name LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return Customer{kScope(kRuntime(s.q).Where(`name LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // NameAsc orders the rows by name, in ascending order.
 func (s Customer) NameAsc() Customer {
-	return Customer{ormScope(ormRuntime(s.q).OrderBy(`name`, false))}
+	return Customer{kScope(kRuntime(s.q).OrderBy(`name`, false))}
 }
 
 // NameDesc orders the rows by name, in descending order.
 func (s Customer) NameDesc() Customer {
-	return Customer{ormScope(ormRuntime(s.q).OrderBy(`name`, true))}
+	return Customer{kScope(kRuntime(s.q).OrderBy(`name`, true))}
 }
 
 // NicknameEq narrows to the rows whose nickname is v.
 func (s Customer) NicknameEq(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname = `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname = `, v))}
 }
 
 // NicknameNe narrows to the rows whose nickname is not v.
 func (s Customer) NicknameNe(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname <> `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname <> `, v))}
 }
 
 // NicknameIn narrows to the rows whose nickname is one of vs.
 func (s Customer) NicknameIn(vs ...string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname = ANY(`, vs, `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname = ANY(`, vs, `)`))}
 }
 
 // NicknameNotIn narrows to the rows whose nickname is none of vs.
@@ -982,96 +982,96 @@ func (s Customer) NicknameNotIn(vs ...string) Customer {
 	if len(vs) == 0 {
 		return s
 	}
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname <> ALL(`, vs, `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname <> ALL(`, vs, `)`))}
 }
 
 // NicknameLt narrows to the rows whose nickname is less than v.
 func (s Customer) NicknameLt(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname < `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname < `, v))}
 }
 
 // NicknameLte narrows to the rows whose nickname is at most v.
 func (s Customer) NicknameLte(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname <= `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname <= `, v))}
 }
 
 // NicknameGt narrows to the rows whose nickname is greater than v.
 func (s Customer) NicknameGt(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname > `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname > `, v))}
 }
 
 // NicknameGte narrows to the rows whose nickname is at least v.
 func (s Customer) NicknameGte(v string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname >= `, v))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname >= `, v))}
 }
 
 // NicknameBetween narrows to the rows whose nickname is between lo and hi, both included.
 func (s Customer) NicknameBetween(lo, hi string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname BETWEEN `, lo, ` AND `, hi))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname BETWEEN `, lo, ` AND `, hi))}
 }
 
 // NicknameLike narrows to the rows whose nickname matches pattern, as LIKE does.
 func (s Customer) NicknameLike(pattern string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname LIKE `, pattern))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname LIKE `, pattern))}
 }
 
 // NicknameILike narrows to the rows whose nickname matches pattern, as ILIKE does, ignoring case.
 func (s Customer) NicknameILike(pattern string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname ILIKE `, pattern))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname ILIKE `, pattern))}
 }
 
 // NicknameHasPrefix narrows to the rows whose nickname starts with prefix.
 func (s Customer) NicknameHasPrefix(prefix string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // NicknameContains narrows to the rows whose nickname contains substr.
 func (s Customer) NicknameContains(substr string) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // NicknameIsNull narrows to the rows whose nickname is NULL.
 func (s Customer) NicknameIsNull() Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname IS NULL`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname IS NULL`))}
 }
 
 // NicknameIsNotNull narrows to the rows whose nickname is not NULL.
 func (s Customer) NicknameIsNotNull() Customer {
-	return Customer{ormScope(ormRuntime(s.q).Where(`nickname IS NOT NULL`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname IS NOT NULL`))}
 }
 
 // NicknameAsc orders the rows by nickname, in ascending order.
 func (s Customer) NicknameAsc() Customer {
-	return Customer{ormScope(ormRuntime(s.q).OrderBy(`nickname`, false))}
+	return Customer{kScope(kRuntime(s.q).OrderBy(`nickname`, false))}
 }
 
 // NicknameDesc orders the rows by nickname, in descending order.
 func (s Customer) NicknameDesc() Customer {
-	return Customer{ormScope(ormRuntime(s.q).OrderBy(`nickname`, true))}
+	return Customer{kScope(kRuntime(s.q).OrderBy(`nickname`, true))}
 }
 
 // Limit keeps the first n rows.
 func (s Customer) Limit(n int) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Limit(n))}
+	return Customer{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s Customer) Offset(n int) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Offset(n))}
+	return Customer{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Customer) Or(alternatives ...Customer) Customer {
 	qs := make([]impl.Of[model.Customer], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return Customer{ormScope(ormRuntime(s.q).Or(qs...))}
+	return Customer{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s Customer) Not(other Customer) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return Customer{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
@@ -1086,17 +1086,17 @@ func (Customer) values(row model.Customer) map[string]any {
 
 // After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
 func (s Customer) After(row model.Customer) Customer {
-	return Customer{ormScope(ormRuntime(s.q).After([]string{`id`}, s.values(row)))}
+	return Customer{kScope(kRuntime(s.q).After([]string{`id`}, s.values(row)))}
 }
 
 // Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
 func (s Customer) Before(row model.Customer) Customer {
-	return Customer{ormScope(ormRuntime(s.q).Before([]string{`id`}, s.values(row)))}
+	return Customer{kScope(kRuntime(s.q).Before([]string{`id`}, s.values(row)))}
 }
 
 // Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
 func (s Customer) Cursor(row model.Customer) (string, error) {
-	return ormRuntime(s.q).Cursor([]string{`id`}, s.values(row))
+	return kRuntime(s.q).Cursor([]string{`id`}, s.values(row))
 }
 
 // AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
@@ -1105,7 +1105,7 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 		return s, nil
 	}
 	var row model.Customer
-	if err := ormRuntime(s.q).DecodeCursor(cursor, []string{`id`}, map[string]any{
+	if err := kRuntime(s.q).DecodeCursor(cursor, []string{`id`}, map[string]any{
 		`id`:   &row.ID,
 		`name`: &row.Name,
 	}); err != nil {
@@ -1130,17 +1130,17 @@ func (c OrderLineChangeSet) SetSKU(v string) OrderLineChangeSet {
 
 // OrderIDEq narrows to the rows whose order_id is v.
 func (s OrderLine) OrderIDEq(v model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id = `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id = `, v))}
 }
 
 // OrderIDNe narrows to the rows whose order_id is not v.
 func (s OrderLine) OrderIDNe(v model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id <> `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id <> `, v))}
 }
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s OrderLine) OrderIDIn(vs ...model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -1148,57 +1148,57 @@ func (s OrderLine) OrderIDNotIn(vs ...model.OrderID) OrderLine {
 	if len(vs) == 0 {
 		return s
 	}
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
 func (s OrderLine) OrderIDLt(v model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id < `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id < `, v))}
 }
 
 // OrderIDLte narrows to the rows whose order_id is at most v.
 func (s OrderLine) OrderIDLte(v model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id <= `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id <= `, v))}
 }
 
 // OrderIDGt narrows to the rows whose order_id is greater than v.
 func (s OrderLine) OrderIDGt(v model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id > `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id > `, v))}
 }
 
 // OrderIDGte narrows to the rows whose order_id is at least v.
 func (s OrderLine) OrderIDGte(v model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id >= `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id >= `, v))}
 }
 
 // OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
 func (s OrderLine) OrderIDBetween(lo, hi model.OrderID) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // OrderIDAsc orders the rows by order_id, smallest first.
 func (s OrderLine) OrderIDAsc() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).OrderBy(`order_id`, false))}
+	return OrderLine{kScope(kRuntime(s.q).OrderBy(`order_id`, false))}
 }
 
 // OrderIDDesc orders the rows by order_id, largest first.
 func (s OrderLine) OrderIDDesc() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).OrderBy(`order_id`, true))}
+	return OrderLine{kScope(kRuntime(s.q).OrderBy(`order_id`, true))}
 }
 
 // LineNoEq narrows to the rows whose line_no is v.
 func (s OrderLine) LineNoEq(v int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no = `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no = `, v))}
 }
 
 // LineNoNe narrows to the rows whose line_no is not v.
 func (s OrderLine) LineNoNe(v int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no <> `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no <> `, v))}
 }
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s OrderLine) LineNoIn(vs ...int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
 }
 
 // LineNoNotIn narrows to the rows whose line_no is none of vs.
@@ -1206,57 +1206,57 @@ func (s OrderLine) LineNoNotIn(vs ...int) OrderLine {
 	if len(vs) == 0 {
 		return s
 	}
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
 }
 
 // LineNoLt narrows to the rows whose line_no is less than v.
 func (s OrderLine) LineNoLt(v int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no < `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no < `, v))}
 }
 
 // LineNoLte narrows to the rows whose line_no is at most v.
 func (s OrderLine) LineNoLte(v int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no <= `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no <= `, v))}
 }
 
 // LineNoGt narrows to the rows whose line_no is greater than v.
 func (s OrderLine) LineNoGt(v int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no > `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no > `, v))}
 }
 
 // LineNoGte narrows to the rows whose line_no is at least v.
 func (s OrderLine) LineNoGte(v int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no >= `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no >= `, v))}
 }
 
 // LineNoBetween narrows to the rows whose line_no is between lo and hi, both included.
 func (s OrderLine) LineNoBetween(lo, hi int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
 }
 
 // LineNoAsc orders the rows by line_no, smallest first.
 func (s OrderLine) LineNoAsc() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).OrderBy(`line_no`, false))}
+	return OrderLine{kScope(kRuntime(s.q).OrderBy(`line_no`, false))}
 }
 
 // LineNoDesc orders the rows by line_no, largest first.
 func (s OrderLine) LineNoDesc() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).OrderBy(`line_no`, true))}
+	return OrderLine{kScope(kRuntime(s.q).OrderBy(`line_no`, true))}
 }
 
 // SKUEq narrows to the rows whose sku is v.
 func (s OrderLine) SKUEq(v string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku = `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku = `, v))}
 }
 
 // SKUNe narrows to the rows whose sku is not v.
 func (s OrderLine) SKUNe(v string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku <> `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku <> `, v))}
 }
 
 // SKUIn narrows to the rows whose sku is one of vs.
 func (s OrderLine) SKUIn(vs ...string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku = ANY(`, vs, `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku = ANY(`, vs, `)`))}
 }
 
 // SKUNotIn narrows to the rows whose sku is none of vs.
@@ -1264,113 +1264,113 @@ func (s OrderLine) SKUNotIn(vs ...string) OrderLine {
 	if len(vs) == 0 {
 		return s
 	}
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku <> ALL(`, vs, `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku <> ALL(`, vs, `)`))}
 }
 
 // SKULt narrows to the rows whose sku is less than v.
 func (s OrderLine) SKULt(v string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku < `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku < `, v))}
 }
 
 // SKULte narrows to the rows whose sku is at most v.
 func (s OrderLine) SKULte(v string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku <= `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku <= `, v))}
 }
 
 // SKUGt narrows to the rows whose sku is greater than v.
 func (s OrderLine) SKUGt(v string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku > `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku > `, v))}
 }
 
 // SKUGte narrows to the rows whose sku is at least v.
 func (s OrderLine) SKUGte(v string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku >= `, v))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku >= `, v))}
 }
 
 // SKUBetween narrows to the rows whose sku is between lo and hi, both included.
 func (s OrderLine) SKUBetween(lo, hi string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku BETWEEN `, lo, ` AND `, hi))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku BETWEEN `, lo, ` AND `, hi))}
 }
 
 // SKULike narrows to the rows whose sku matches pattern, as LIKE does.
 func (s OrderLine) SKULike(pattern string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku LIKE `, pattern))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku LIKE `, pattern))}
 }
 
 // SKUILike narrows to the rows whose sku matches pattern, as ILIKE does, ignoring case.
 func (s OrderLine) SKUILike(pattern string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku ILIKE `, pattern))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku ILIKE `, pattern))}
 }
 
 // SKUHasPrefix narrows to the rows whose sku starts with prefix.
 func (s OrderLine) SKUHasPrefix(prefix string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // SKUContains narrows to the rows whose sku contains substr.
 func (s OrderLine) SKUContains(substr string) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Where(`sku LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // SKUAsc orders the rows by sku, in ascending order.
 func (s OrderLine) SKUAsc() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).OrderBy(`sku`, false))}
+	return OrderLine{kScope(kRuntime(s.q).OrderBy(`sku`, false))}
 }
 
 // SKUDesc orders the rows by sku, in descending order.
 func (s OrderLine) SKUDesc() OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).OrderBy(`sku`, true))}
+	return OrderLine{kScope(kRuntime(s.q).OrderBy(`sku`, true))}
 }
 
 // WithOrder loads Order, from orders by order_id.
 func (s OrderLine) WithOrder(sub ...Order) OrderLine {
 	qs := make([]impl.Of[model.Order], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return OrderLine{ormScope(impl.Preload(ormRuntime(s.q), "Order", impl.Combine(qs...)))}
+	return OrderLine{kScope(impl.Preload(kRuntime(s.q), "Order", impl.Combine(qs...)))}
 }
 
 // WithNotes loads Notes, from line_notes by order_id and line_no. A limit or an offset of the scopes keeps a page of the Notes of each row.
 func (s OrderLine) WithNotes(sub ...LineNote) OrderLine {
 	qs := make([]impl.Of[model.LineNote], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return OrderLine{ormScope(impl.PreloadEach(ormRuntime(s.q), "Notes", impl.Combine(qs...)))}
+	return OrderLine{kScope(impl.PreloadEach(kRuntime(s.q), "Notes", impl.Combine(qs...)))}
 }
 
 // WithTags loads Tags, from line_tags by order_id and line_no. A limit or an offset of the scopes keeps a page of the Tags of each row.
 func (s OrderLine) WithTags(sub ...LineTag) OrderLine {
 	qs := make([]impl.Of[model.LineTag], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return OrderLine{ormScope(impl.PreloadEach(ormRuntime(s.q), "Tags", impl.Combine(qs...)))}
+	return OrderLine{kScope(impl.PreloadEach(kRuntime(s.q), "Tags", impl.Combine(qs...)))}
 }
 
 // Limit keeps the first n rows.
 func (s OrderLine) Limit(n int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Limit(n))}
+	return OrderLine{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s OrderLine) Offset(n int) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Offset(n))}
+	return OrderLine{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
 	qs := make([]impl.Of[model.OrderLine], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return OrderLine{ormScope(ormRuntime(s.q).Or(qs...))}
+	return OrderLine{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s OrderLine) Not(other OrderLine) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return OrderLine{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
@@ -1385,17 +1385,17 @@ func (OrderLine) values(row model.OrderLine) map[string]any {
 
 // After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
 func (s OrderLine) After(row model.OrderLine) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).After([]string{`order_id`, `line_no`}, s.values(row)))}
+	return OrderLine{kScope(kRuntime(s.q).After([]string{`order_id`, `line_no`}, s.values(row)))}
 }
 
 // Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
 func (s OrderLine) Before(row model.OrderLine) OrderLine {
-	return OrderLine{ormScope(ormRuntime(s.q).Before([]string{`order_id`, `line_no`}, s.values(row)))}
+	return OrderLine{kScope(kRuntime(s.q).Before([]string{`order_id`, `line_no`}, s.values(row)))}
 }
 
 // Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
 func (s OrderLine) Cursor(row model.OrderLine) (string, error) {
-	return ormRuntime(s.q).Cursor([]string{`order_id`, `line_no`}, s.values(row))
+	return kRuntime(s.q).Cursor([]string{`order_id`, `line_no`}, s.values(row))
 }
 
 // AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
@@ -1404,7 +1404,7 @@ func (s OrderLine) AfterCursor(cursor string) (OrderLine, error) {
 		return s, nil
 	}
 	var row model.OrderLine
-	if err := ormRuntime(s.q).DecodeCursor(cursor, []string{`order_id`, `line_no`}, map[string]any{
+	if err := kRuntime(s.q).DecodeCursor(cursor, []string{`order_id`, `line_no`}, map[string]any{
 		`order_id`: &row.OrderID,
 		`line_no`:  &row.LineNo,
 		`sku`:      &row.SKU,
@@ -1433,17 +1433,17 @@ func (c TagChangeSet) SetName(v string) TagChangeSet {
 
 // NameEq narrows to the rows whose name is v.
 func (s Tag) NameEq(v string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name = `, v))}
+	return Tag{kScope(kRuntime(s.q).Where(`name = `, v))}
 }
 
 // NameNe narrows to the rows whose name is not v.
 func (s Tag) NameNe(v string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name <> `, v))}
+	return Tag{kScope(kRuntime(s.q).Where(`name <> `, v))}
 }
 
 // NameIn narrows to the rows whose name is one of vs.
 func (s Tag) NameIn(vs ...string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name = ANY(`, vs, `)`))}
+	return Tag{kScope(kRuntime(s.q).Where(`name = ANY(`, vs, `)`))}
 }
 
 // NameNotIn narrows to the rows whose name is none of vs.
@@ -1451,86 +1451,86 @@ func (s Tag) NameNotIn(vs ...string) Tag {
 	if len(vs) == 0 {
 		return s
 	}
-	return Tag{ormScope(ormRuntime(s.q).Where(`name <> ALL(`, vs, `)`))}
+	return Tag{kScope(kRuntime(s.q).Where(`name <> ALL(`, vs, `)`))}
 }
 
 // NameLt narrows to the rows whose name is less than v.
 func (s Tag) NameLt(v string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name < `, v))}
+	return Tag{kScope(kRuntime(s.q).Where(`name < `, v))}
 }
 
 // NameLte narrows to the rows whose name is at most v.
 func (s Tag) NameLte(v string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name <= `, v))}
+	return Tag{kScope(kRuntime(s.q).Where(`name <= `, v))}
 }
 
 // NameGt narrows to the rows whose name is greater than v.
 func (s Tag) NameGt(v string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name > `, v))}
+	return Tag{kScope(kRuntime(s.q).Where(`name > `, v))}
 }
 
 // NameGte narrows to the rows whose name is at least v.
 func (s Tag) NameGte(v string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name >= `, v))}
+	return Tag{kScope(kRuntime(s.q).Where(`name >= `, v))}
 }
 
 // NameBetween narrows to the rows whose name is between lo and hi, both included.
 func (s Tag) NameBetween(lo, hi string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name BETWEEN `, lo, ` AND `, hi))}
+	return Tag{kScope(kRuntime(s.q).Where(`name BETWEEN `, lo, ` AND `, hi))}
 }
 
 // NameLike narrows to the rows whose name matches pattern, as LIKE does.
 func (s Tag) NameLike(pattern string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name LIKE `, pattern))}
+	return Tag{kScope(kRuntime(s.q).Where(`name LIKE `, pattern))}
 }
 
 // NameILike narrows to the rows whose name matches pattern, as ILIKE does, ignoring case.
 func (s Tag) NameILike(pattern string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name ILIKE `, pattern))}
+	return Tag{kScope(kRuntime(s.q).Where(`name ILIKE `, pattern))}
 }
 
 // NameHasPrefix narrows to the rows whose name starts with prefix.
 func (s Tag) NameHasPrefix(prefix string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return Tag{kScope(kRuntime(s.q).Where(`name LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // NameContains narrows to the rows whose name contains substr.
 func (s Tag) NameContains(substr string) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Where(`name LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return Tag{kScope(kRuntime(s.q).Where(`name LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // NameAsc orders the rows by name, in ascending order.
 func (s Tag) NameAsc() Tag {
-	return Tag{ormScope(ormRuntime(s.q).OrderBy(`name`, false))}
+	return Tag{kScope(kRuntime(s.q).OrderBy(`name`, false))}
 }
 
 // NameDesc orders the rows by name, in descending order.
 func (s Tag) NameDesc() Tag {
-	return Tag{ormScope(ormRuntime(s.q).OrderBy(`name`, true))}
+	return Tag{kScope(kRuntime(s.q).OrderBy(`name`, true))}
 }
 
 // Limit keeps the first n rows.
 func (s Tag) Limit(n int) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Limit(n))}
+	return Tag{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s Tag) Offset(n int) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Offset(n))}
+	return Tag{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Tag) Or(alternatives ...Tag) Tag {
 	qs := make([]impl.Of[model.Tag], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return Tag{ormScope(ormRuntime(s.q).Or(qs...))}
+	return Tag{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s Tag) Not(other Tag) Tag {
-	return Tag{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return Tag{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // Of returns the scope as a repository reads it.
@@ -1560,17 +1560,17 @@ func (c LineNoteChangeSet) SetBody(v string) LineNoteChangeSet {
 
 // OrderIDEq narrows to the rows whose order_id is v.
 func (s LineNote) OrderIDEq(v model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id = `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id = `, v))}
 }
 
 // OrderIDNe narrows to the rows whose order_id is not v.
 func (s LineNote) OrderIDNe(v model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id <> `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id <> `, v))}
 }
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s LineNote) OrderIDIn(vs ...model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -1578,57 +1578,57 @@ func (s LineNote) OrderIDNotIn(vs ...model.OrderID) LineNote {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
 func (s LineNote) OrderIDLt(v model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id < `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id < `, v))}
 }
 
 // OrderIDLte narrows to the rows whose order_id is at most v.
 func (s LineNote) OrderIDLte(v model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id <= `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id <= `, v))}
 }
 
 // OrderIDGt narrows to the rows whose order_id is greater than v.
 func (s LineNote) OrderIDGt(v model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id > `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id > `, v))}
 }
 
 // OrderIDGte narrows to the rows whose order_id is at least v.
 func (s LineNote) OrderIDGte(v model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id >= `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id >= `, v))}
 }
 
 // OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
 func (s LineNote) OrderIDBetween(lo, hi model.OrderID) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // OrderIDAsc orders the rows by order_id, smallest first.
 func (s LineNote) OrderIDAsc() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).OrderBy(`order_id`, false))}
+	return LineNote{kScope(kRuntime(s.q).OrderBy(`order_id`, false))}
 }
 
 // OrderIDDesc orders the rows by order_id, largest first.
 func (s LineNote) OrderIDDesc() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).OrderBy(`order_id`, true))}
+	return LineNote{kScope(kRuntime(s.q).OrderBy(`order_id`, true))}
 }
 
 // LineNoEq narrows to the rows whose line_no is v.
 func (s LineNote) LineNoEq(v int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no = `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no = `, v))}
 }
 
 // LineNoNe narrows to the rows whose line_no is not v.
 func (s LineNote) LineNoNe(v int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no <> `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no <> `, v))}
 }
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s LineNote) LineNoIn(vs ...int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
 }
 
 // LineNoNotIn narrows to the rows whose line_no is none of vs.
@@ -1636,57 +1636,57 @@ func (s LineNote) LineNoNotIn(vs ...int) LineNote {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
 }
 
 // LineNoLt narrows to the rows whose line_no is less than v.
 func (s LineNote) LineNoLt(v int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no < `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no < `, v))}
 }
 
 // LineNoLte narrows to the rows whose line_no is at most v.
 func (s LineNote) LineNoLte(v int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no <= `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no <= `, v))}
 }
 
 // LineNoGt narrows to the rows whose line_no is greater than v.
 func (s LineNote) LineNoGt(v int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no > `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no > `, v))}
 }
 
 // LineNoGte narrows to the rows whose line_no is at least v.
 func (s LineNote) LineNoGte(v int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no >= `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no >= `, v))}
 }
 
 // LineNoBetween narrows to the rows whose line_no is between lo and hi, both included.
 func (s LineNote) LineNoBetween(lo, hi int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
 }
 
 // LineNoAsc orders the rows by line_no, smallest first.
 func (s LineNote) LineNoAsc() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).OrderBy(`line_no`, false))}
+	return LineNote{kScope(kRuntime(s.q).OrderBy(`line_no`, false))}
 }
 
 // LineNoDesc orders the rows by line_no, largest first.
 func (s LineNote) LineNoDesc() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).OrderBy(`line_no`, true))}
+	return LineNote{kScope(kRuntime(s.q).OrderBy(`line_no`, true))}
 }
 
 // BodyEq narrows to the rows whose body is v.
 func (s LineNote) BodyEq(v string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body = `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body = `, v))}
 }
 
 // BodyNe narrows to the rows whose body is not v.
 func (s LineNote) BodyNe(v string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body <> `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body <> `, v))}
 }
 
 // BodyIn narrows to the rows whose body is one of vs.
 func (s LineNote) BodyIn(vs ...string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body = ANY(`, vs, `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body = ANY(`, vs, `)`))}
 }
 
 // BodyNotIn narrows to the rows whose body is none of vs.
@@ -1694,95 +1694,95 @@ func (s LineNote) BodyNotIn(vs ...string) LineNote {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body <> ALL(`, vs, `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body <> ALL(`, vs, `)`))}
 }
 
 // BodyLt narrows to the rows whose body is less than v.
 func (s LineNote) BodyLt(v string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body < `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body < `, v))}
 }
 
 // BodyLte narrows to the rows whose body is at most v.
 func (s LineNote) BodyLte(v string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body <= `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body <= `, v))}
 }
 
 // BodyGt narrows to the rows whose body is greater than v.
 func (s LineNote) BodyGt(v string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body > `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body > `, v))}
 }
 
 // BodyGte narrows to the rows whose body is at least v.
 func (s LineNote) BodyGte(v string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body >= `, v))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body >= `, v))}
 }
 
 // BodyBetween narrows to the rows whose body is between lo and hi, both included.
 func (s LineNote) BodyBetween(lo, hi string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body BETWEEN `, lo, ` AND `, hi))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body BETWEEN `, lo, ` AND `, hi))}
 }
 
 // BodyLike narrows to the rows whose body matches pattern, as LIKE does.
 func (s LineNote) BodyLike(pattern string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body LIKE `, pattern))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body LIKE `, pattern))}
 }
 
 // BodyILike narrows to the rows whose body matches pattern, as ILIKE does, ignoring case.
 func (s LineNote) BodyILike(pattern string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body ILIKE `, pattern))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body ILIKE `, pattern))}
 }
 
 // BodyHasPrefix narrows to the rows whose body starts with prefix.
 func (s LineNote) BodyHasPrefix(prefix string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // BodyContains narrows to the rows whose body contains substr.
 func (s LineNote) BodyContains(substr string) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Where(`body LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // BodyAsc orders the rows by body, in ascending order.
 func (s LineNote) BodyAsc() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).OrderBy(`body`, false))}
+	return LineNote{kScope(kRuntime(s.q).OrderBy(`body`, false))}
 }
 
 // BodyDesc orders the rows by body, in descending order.
 func (s LineNote) BodyDesc() LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).OrderBy(`body`, true))}
+	return LineNote{kScope(kRuntime(s.q).OrderBy(`body`, true))}
 }
 
 // WithLine loads Line, from order_lines by order_id and line_no.
 func (s LineNote) WithLine(sub ...OrderLine) LineNote {
 	qs := make([]impl.Of[model.OrderLine], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return LineNote{ormScope(impl.Preload(ormRuntime(s.q), "Line", impl.Combine(qs...)))}
+	return LineNote{kScope(impl.Preload(kRuntime(s.q), "Line", impl.Combine(qs...)))}
 }
 
 // Limit keeps the first n rows.
 func (s LineNote) Limit(n int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Limit(n))}
+	return LineNote{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s LineNote) Offset(n int) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Offset(n))}
+	return LineNote{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s LineNote) Or(alternatives ...LineNote) LineNote {
 	qs := make([]impl.Of[model.LineNote], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return LineNote{ormScope(ormRuntime(s.q).Or(qs...))}
+	return LineNote{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s LineNote) Not(other LineNote) LineNote {
-	return LineNote{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return LineNote{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // Of returns the scope as a repository reads it.
@@ -1797,17 +1797,17 @@ func (c LineTagChangeSet) Of() change.Set[model.LineTag] { return c.changes }
 
 // OrderIDEq narrows to the rows whose order_id is v.
 func (s LineTag) OrderIDEq(v model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id = `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id = `, v))}
 }
 
 // OrderIDNe narrows to the rows whose order_id is not v.
 func (s LineTag) OrderIDNe(v model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id <> `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id <> `, v))}
 }
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s LineTag) OrderIDIn(vs ...model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -1815,57 +1815,57 @@ func (s LineTag) OrderIDNotIn(vs ...model.OrderID) LineTag {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
 func (s LineTag) OrderIDLt(v model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id < `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id < `, v))}
 }
 
 // OrderIDLte narrows to the rows whose order_id is at most v.
 func (s LineTag) OrderIDLte(v model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id <= `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id <= `, v))}
 }
 
 // OrderIDGt narrows to the rows whose order_id is greater than v.
 func (s LineTag) OrderIDGt(v model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id > `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id > `, v))}
 }
 
 // OrderIDGte narrows to the rows whose order_id is at least v.
 func (s LineTag) OrderIDGte(v model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id >= `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id >= `, v))}
 }
 
 // OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
 func (s LineTag) OrderIDBetween(lo, hi model.OrderID) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // OrderIDAsc orders the rows by order_id, smallest first.
 func (s LineTag) OrderIDAsc() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`order_id`, false))}
+	return LineTag{kScope(kRuntime(s.q).OrderBy(`order_id`, false))}
 }
 
 // OrderIDDesc orders the rows by order_id, largest first.
 func (s LineTag) OrderIDDesc() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`order_id`, true))}
+	return LineTag{kScope(kRuntime(s.q).OrderBy(`order_id`, true))}
 }
 
 // LineNoEq narrows to the rows whose line_no is v.
 func (s LineTag) LineNoEq(v int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no = `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no = `, v))}
 }
 
 // LineNoNe narrows to the rows whose line_no is not v.
 func (s LineTag) LineNoNe(v int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no <> `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no <> `, v))}
 }
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s LineTag) LineNoIn(vs ...int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
 }
 
 // LineNoNotIn narrows to the rows whose line_no is none of vs.
@@ -1873,57 +1873,57 @@ func (s LineTag) LineNoNotIn(vs ...int) LineTag {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no <> ALL(`, vs, `)`))}
 }
 
 // LineNoLt narrows to the rows whose line_no is less than v.
 func (s LineTag) LineNoLt(v int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no < `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no < `, v))}
 }
 
 // LineNoLte narrows to the rows whose line_no is at most v.
 func (s LineTag) LineNoLte(v int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no <= `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no <= `, v))}
 }
 
 // LineNoGt narrows to the rows whose line_no is greater than v.
 func (s LineTag) LineNoGt(v int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no > `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no > `, v))}
 }
 
 // LineNoGte narrows to the rows whose line_no is at least v.
 func (s LineTag) LineNoGte(v int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no >= `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no >= `, v))}
 }
 
 // LineNoBetween narrows to the rows whose line_no is between lo and hi, both included.
 func (s LineTag) LineNoBetween(lo, hi int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no BETWEEN `, lo, ` AND `, hi))}
 }
 
 // LineNoAsc orders the rows by line_no, smallest first.
 func (s LineTag) LineNoAsc() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`line_no`, false))}
+	return LineTag{kScope(kRuntime(s.q).OrderBy(`line_no`, false))}
 }
 
 // LineNoDesc orders the rows by line_no, largest first.
 func (s LineTag) LineNoDesc() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`line_no`, true))}
+	return LineTag{kScope(kRuntime(s.q).OrderBy(`line_no`, true))}
 }
 
 // TagIDEq narrows to the rows whose tag_id is v.
 func (s LineTag) TagIDEq(v string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id = `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id = `, v))}
 }
 
 // TagIDNe narrows to the rows whose tag_id is not v.
 func (s LineTag) TagIDNe(v string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id <> `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id <> `, v))}
 }
 
 // TagIDIn narrows to the rows whose tag_id is one of vs.
 func (s LineTag) TagIDIn(vs ...string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id = ANY(`, vs, `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id = ANY(`, vs, `)`))}
 }
 
 // TagIDNotIn narrows to the rows whose tag_id is none of vs.
@@ -1931,95 +1931,95 @@ func (s LineTag) TagIDNotIn(vs ...string) LineTag {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id <> ALL(`, vs, `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id <> ALL(`, vs, `)`))}
 }
 
 // TagIDLt narrows to the rows whose tag_id is less than v.
 func (s LineTag) TagIDLt(v string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id < `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id < `, v))}
 }
 
 // TagIDLte narrows to the rows whose tag_id is at most v.
 func (s LineTag) TagIDLte(v string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id <= `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id <= `, v))}
 }
 
 // TagIDGt narrows to the rows whose tag_id is greater than v.
 func (s LineTag) TagIDGt(v string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id > `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id > `, v))}
 }
 
 // TagIDGte narrows to the rows whose tag_id is at least v.
 func (s LineTag) TagIDGte(v string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id >= `, v))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id >= `, v))}
 }
 
 // TagIDBetween narrows to the rows whose tag_id is between lo and hi, both included.
 func (s LineTag) TagIDBetween(lo, hi string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id BETWEEN `, lo, ` AND `, hi))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // TagIDLike narrows to the rows whose tag_id matches pattern, as LIKE does.
 func (s LineTag) TagIDLike(pattern string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id LIKE `, pattern))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id LIKE `, pattern))}
 }
 
 // TagIDILike narrows to the rows whose tag_id matches pattern, as ILIKE does, ignoring case.
 func (s LineTag) TagIDILike(pattern string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id ILIKE `, pattern))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id ILIKE `, pattern))}
 }
 
 // TagIDHasPrefix narrows to the rows whose tag_id starts with prefix.
 func (s LineTag) TagIDHasPrefix(prefix string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id LIKE `, impl.EscapeLike(prefix)+"%", ` ESCAPE '!'`))}
 }
 
 // TagIDContains narrows to the rows whose tag_id contains substr.
 func (s LineTag) TagIDContains(substr string) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Where(`tag_id LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id LIKE `, "%"+impl.EscapeLike(substr)+"%", ` ESCAPE '!'`))}
 }
 
 // TagIDAsc orders the rows by tag_id, in ascending order.
 func (s LineTag) TagIDAsc() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`tag_id`, false))}
+	return LineTag{kScope(kRuntime(s.q).OrderBy(`tag_id`, false))}
 }
 
 // TagIDDesc orders the rows by tag_id, in descending order.
 func (s LineTag) TagIDDesc() LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).OrderBy(`tag_id`, true))}
+	return LineTag{kScope(kRuntime(s.q).OrderBy(`tag_id`, true))}
 }
 
 // WithTag loads Tag, from tags by tag_id.
 func (s LineTag) WithTag(sub ...Tag) LineTag {
 	qs := make([]impl.Of[model.Tag], len(sub))
 	for i, x := range sub {
-		qs[i] = ormRuntime(x.Of())
+		qs[i] = kRuntime(x.Of())
 	}
-	return LineTag{ormScope(impl.Preload(ormRuntime(s.q), "Tag", impl.Combine(qs...)))}
+	return LineTag{kScope(impl.Preload(kRuntime(s.q), "Tag", impl.Combine(qs...)))}
 }
 
 // Limit keeps the first n rows.
 func (s LineTag) Limit(n int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Limit(n))}
+	return LineTag{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s LineTag) Offset(n int) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Offset(n))}
+	return LineTag{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s LineTag) Or(alternatives ...LineTag) LineTag {
 	qs := make([]impl.Of[model.LineTag], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return LineTag{ormScope(ormRuntime(s.q).Or(qs...))}
+	return LineTag{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s LineTag) Not(other LineTag) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return LineTag{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
@@ -2034,17 +2034,17 @@ func (LineTag) values(row model.LineTag) map[string]any {
 
 // After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
 func (s LineTag) After(row model.LineTag) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).After([]string{`order_id`, `line_no`, `tag_id`}, s.values(row)))}
+	return LineTag{kScope(kRuntime(s.q).After([]string{`order_id`, `line_no`, `tag_id`}, s.values(row)))}
 }
 
 // Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
 func (s LineTag) Before(row model.LineTag) LineTag {
-	return LineTag{ormScope(ormRuntime(s.q).Before([]string{`order_id`, `line_no`, `tag_id`}, s.values(row)))}
+	return LineTag{kScope(kRuntime(s.q).Before([]string{`order_id`, `line_no`, `tag_id`}, s.values(row)))}
 }
 
 // Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
 func (s LineTag) Cursor(row model.LineTag) (string, error) {
-	return ormRuntime(s.q).Cursor([]string{`order_id`, `line_no`, `tag_id`}, s.values(row))
+	return kRuntime(s.q).Cursor([]string{`order_id`, `line_no`, `tag_id`}, s.values(row))
 }
 
 // AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
@@ -2053,7 +2053,7 @@ func (s LineTag) AfterCursor(cursor string) (LineTag, error) {
 		return s, nil
 	}
 	var row model.LineTag
-	if err := ormRuntime(s.q).DecodeCursor(cursor, []string{`order_id`, `line_no`, `tag_id`}, map[string]any{
+	if err := kRuntime(s.q).DecodeCursor(cursor, []string{`order_id`, `line_no`, `tag_id`}, map[string]any{
 		`order_id`: &row.OrderID,
 		`line_no`:  &row.LineNo,
 		`tag_id`:   &row.TagID,
@@ -2079,17 +2079,17 @@ func (c LabelChangeSet) SetNames(v []string) LabelChangeSet {
 
 // OrderIDEq narrows to the rows whose order_id is v.
 func (s Label) OrderIDEq(v model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id = `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id = `, v))}
 }
 
 // OrderIDNe narrows to the rows whose order_id is not v.
 func (s Label) OrderIDNe(v model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id <> `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id <> `, v))}
 }
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s Label) OrderIDIn(vs ...model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -2097,96 +2097,96 @@ func (s Label) OrderIDNotIn(vs ...model.OrderID) Label {
 	if len(vs) == 0 {
 		return s
 	}
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id <> ALL(`, vs, `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
 func (s Label) OrderIDLt(v model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id < `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id < `, v))}
 }
 
 // OrderIDLte narrows to the rows whose order_id is at most v.
 func (s Label) OrderIDLte(v model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id <= `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id <= `, v))}
 }
 
 // OrderIDGt narrows to the rows whose order_id is greater than v.
 func (s Label) OrderIDGt(v model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id > `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id > `, v))}
 }
 
 // OrderIDGte narrows to the rows whose order_id is at least v.
 func (s Label) OrderIDGte(v model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id >= `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id >= `, v))}
 }
 
 // OrderIDBetween narrows to the rows whose order_id is between lo and hi, both included.
 func (s Label) OrderIDBetween(lo, hi model.OrderID) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
+	return Label{kScope(kRuntime(s.q).Where(`order_id BETWEEN `, lo, ` AND `, hi))}
 }
 
 // OrderIDAsc orders the rows by order_id, smallest first.
 func (s Label) OrderIDAsc() Label {
-	return Label{ormScope(ormRuntime(s.q).OrderBy(`order_id`, false))}
+	return Label{kScope(kRuntime(s.q).OrderBy(`order_id`, false))}
 }
 
 // OrderIDDesc orders the rows by order_id, largest first.
 func (s Label) OrderIDDesc() Label {
-	return Label{ormScope(ormRuntime(s.q).OrderBy(`order_id`, true))}
+	return Label{kScope(kRuntime(s.q).OrderBy(`order_id`, true))}
 }
 
 // NamesEq narrows to the rows whose names is v.
 func (s Label) NamesEq(v []string) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`names = `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`names = `, v))}
 }
 
 // NamesNe narrows to the rows whose names is not v.
 func (s Label) NamesNe(v []string) Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`names <> `, v))}
+	return Label{kScope(kRuntime(s.q).Where(`names <> `, v))}
 }
 
 // NamesIsNull narrows to the rows whose names is NULL.
 func (s Label) NamesIsNull() Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`names IS NULL`))}
+	return Label{kScope(kRuntime(s.q).Where(`names IS NULL`))}
 }
 
 // NamesIsNotNull narrows to the rows whose names is not NULL.
 func (s Label) NamesIsNotNull() Label {
-	return Label{ormScope(ormRuntime(s.q).Where(`names IS NOT NULL`))}
+	return Label{kScope(kRuntime(s.q).Where(`names IS NOT NULL`))}
 }
 
 // NamesAsc orders the rows by names, in ascending order.
 func (s Label) NamesAsc() Label {
-	return Label{ormScope(ormRuntime(s.q).OrderBy(`names`, false))}
+	return Label{kScope(kRuntime(s.q).OrderBy(`names`, false))}
 }
 
 // NamesDesc orders the rows by names, in descending order.
 func (s Label) NamesDesc() Label {
-	return Label{ormScope(ormRuntime(s.q).OrderBy(`names`, true))}
+	return Label{kScope(kRuntime(s.q).OrderBy(`names`, true))}
 }
 
 // Limit keeps the first n rows.
 func (s Label) Limit(n int) Label {
-	return Label{ormScope(ormRuntime(s.q).Limit(n))}
+	return Label{kScope(kRuntime(s.q).Limit(n))}
 }
 
 // Offset skips the first n rows.
 func (s Label) Offset(n int) Label {
-	return Label{ormScope(ormRuntime(s.q).Offset(n))}
+	return Label{kScope(kRuntime(s.q).Offset(n))}
 }
 
 // Or narrows to the rows any of alternatives matches, each holding conditions alone.
 func (s Label) Or(alternatives ...Label) Label {
 	qs := make([]impl.Of[model.Label], len(alternatives))
 	for i, a := range alternatives {
-		qs[i] = ormRuntime(a.q)
+		qs[i] = kRuntime(a.q)
 	}
-	return Label{ormScope(ormRuntime(s.q).Or(qs...))}
+	return Label{kScope(kRuntime(s.q).Or(qs...))}
 }
 
 // Not narrows to the rows other, holding conditions alone, does not match.
 func (s Label) Not(other Label) Label {
-	return Label{ormScope(ormRuntime(s.q).Not(ormRuntime(other.q)))}
+	return Label{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
 
 // values holds the value of each column of row, for After, Before, and Cursor. One that may be NULL
@@ -2200,17 +2200,17 @@ func (Label) values(row model.Label) map[string]any {
 
 // After narrows to the rows after row in the scope's order, for the page after the one row is the last of.
 func (s Label) After(row model.Label) Label {
-	return Label{ormScope(ormRuntime(s.q).After([]string{`order_id`}, s.values(row)))}
+	return Label{kScope(kRuntime(s.q).After([]string{`order_id`}, s.values(row)))}
 }
 
 // Before narrows to the rows before row in the scope's order, for the page before the one row is the first of.
 func (s Label) Before(row model.Label) Label {
-	return Label{ormScope(ormRuntime(s.q).Before([]string{`order_id`}, s.values(row)))}
+	return Label{kScope(kRuntime(s.q).Before([]string{`order_id`}, s.values(row)))}
 }
 
 // Cursor encodes the position of row in the scope's order, for a client to hand back to AfterCursor.
 func (s Label) Cursor(row model.Label) (string, error) {
-	return ormRuntime(s.q).Cursor([]string{`order_id`}, s.values(row))
+	return kRuntime(s.q).Cursor([]string{`order_id`}, s.values(row))
 }
 
 // AfterCursor is After the row cursor holds, as Cursor made it in the same order. An empty cursor is the start.
@@ -2219,7 +2219,7 @@ func (s Label) AfterCursor(cursor string) (Label, error) {
 		return s, nil
 	}
 	var row model.Label
-	if err := ormRuntime(s.q).DecodeCursor(cursor, []string{`order_id`}, map[string]any{
+	if err := kRuntime(s.q).DecodeCursor(cursor, []string{`order_id`}, map[string]any{
 		`order_id`: &row.OrderID,
 	}); err != nil {
 		return Label{}, err
