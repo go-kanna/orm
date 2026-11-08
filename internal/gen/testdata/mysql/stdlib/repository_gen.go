@@ -450,6 +450,58 @@ func (r OrderRepository) Exists(ctx context.Context, s ...scopes.Order) (bool, e
 	return n, nil
 }
 
+func (r OrderRepository) SumTotal(ctx context.Context, s ...scopes.Order) (int64, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("SumTotal"); err != nil {
+		return 0, r.mapError(err)
+	}
+	rd, err := q.Render(impl.MySQL, 1, nil)
+	if err != nil {
+		return 0, r.mapError(err)
+	}
+	var sum int64
+	if err := r.db.queryRow(ctx, `SELECT coalesce(sum(total), 0) FROM orders`+rd.Where(), rd.Args()...).Scan(&sum); err != nil {
+		return 0, r.mapError(fmt.Errorf(`sum orders.total: %w`, err))
+	}
+	return sum, nil
+}
+
+func (r OrderRepository) MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("MaxPlacedAt"); err != nil {
+		return nil, r.mapError(err)
+	}
+	rd, err := q.Render(impl.MySQL, 1, nil)
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	var maximum *time.Time
+	if err := r.db.queryRow(ctx, `SELECT max(placed_at) FROM orders`+rd.Where(), rd.Args()...).Scan(&maximum); err != nil {
+		return nil, r.mapError(fmt.Errorf(`max orders.placed_at: %w`, err))
+	}
+	return maximum, nil
+}
+
+func (r OrderRepository) AvgTotal(ctx context.Context, customerID int64) (float64, error) {
+	const q = `SELECT CAST(avg(total) AS DOUBLE) FROM orders WHERE customer_id = ?`
+	var average *float64
+	if err := r.db.queryRow(ctx, q, customerID).Scan(&average); err != nil {
+		return 0, r.mapError(fmt.Errorf(`avg orders.total: %w`, err))
+	}
+	if average == nil {
+		return 0, r.mapError(fmt.Errorf("avg orders.total with customer_id %v: %w", customerID, orm.ErrNotFound))
+	}
+	return *average, nil
+}
+
 func (r OrderRepository) Delete(ctx context.Context, id model.OrderID) error {
 	const q = `DELETE FROM orders WHERE id = ?`
 	res, err := r.db.ExecContext(ctx, q, id)

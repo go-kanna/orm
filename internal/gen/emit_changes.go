@@ -51,9 +51,15 @@ func changeColumns(p scopePlan) []column {
 // additive reports whether a change set adds to c as well as setting it: c is a number in Go and in the database, and
 // never NULL, as NULL plus a number stays NULL.
 func additive(c column) bool {
-	b, ok := c.typ.Underlying().(*types.Basic)
-	return ok && c.col.NotNull && b.Info()&(types.IsInteger|types.IsFloat) != 0 &&
-		slices.Contains([]dbClass{classInteger, classTinyint1, classFloat, classNumeric}, classOf(c.col.Type))
+	return c.col.NotNull && numeric(c.typ, c.col.Type)
+}
+
+// numeric reports whether a column of dbType, held by a t, is a number in Go and in the database: t is an integer or a
+// floating-point number, or a type made of one, and dbType a type of numbers.
+func numeric(t types.Type, dbType string) bool {
+	b, ok := t.Underlying().(*types.Basic)
+	return ok && b.Info()&(types.IsInteger|types.IsFloat) != 0 &&
+		slices.Contains([]dbClass{classInteger, classTinyint1, classFloat, classNumeric}, classOf(dbType))
 }
 
 func changeMethods(p scopePlan) []generated {

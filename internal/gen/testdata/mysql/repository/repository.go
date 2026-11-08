@@ -23,6 +23,9 @@ type OrderRepository interface {
 	ListByCustomer(ctx context.Context, customerID int64, s ...scopes.Order) ([]model.Order, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Exists(ctx context.Context, s ...scopes.Order) (bool, error)
+	SumTotal(ctx context.Context, s ...scopes.Order) (int64, error)
+	MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error)
+	AvgTotal(ctx context.Context, customerID int64) (float64, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)
 	DeleteLines(ctx context.Context, s ...scopes.OrderLine) (int64, error)

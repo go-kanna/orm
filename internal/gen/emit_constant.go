@@ -15,7 +15,7 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 		return false
 	}
 	switch m.verb {
-	case verbGet, verbFind, verbFirst, verbList, verbCount, verbExists:
+	case verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbSum, verbMin, verbMax, verbAvg:
 	case verbDelete:
 		if m.returns != returnsNone && m.returns != returnsCount {
 			return false
@@ -50,6 +50,9 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 		e.printf("if %[1]s := %[2]s.db.%[3]s(%[4]s).Scan(&%[5]s); %[1]s != nil {\nreturn %[6]s, %[7]s\n}\n"+
 			"return %[5]s, nil\n", err, recv, e.queryRow, call, n, zero, sig.mapped(e.fmtPkg()+".Errorf("+
 			goString(strings.ToLower(string(m.verb))+" "+m.target.table+": %w")+", "+err+")"))
+	case verbSum, verbMin, verbMax, verbAvg:
+		e.printf("const %s = %s\n", q, goString("SELECT "+aggregateSQL(e.d, *m.aggregate)+" FROM "+table+where))
+		e.aggregateRow(m, sc, recv, sig, err, call, names, args)
 	case verbDelete:
 		res := e.execResult(sc)
 		wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " +

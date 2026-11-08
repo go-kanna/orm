@@ -29,6 +29,12 @@ func TestCommand_HandWrittenVerbs(t *testing.T) {
 			"ListRecord: a List returns every row, as ([]T, error)"},
 		{"a Count of another type", states, "CountStates(ctx context.Context) (model.State, error)",
 			"CountStates: a Count returns the one column of its result, as (int64, error)"},
+		{"a Max of one column", states, "MaxState(ctx context.Context) (model.State, error)", ""},
+		{"a Sum of rows", lookup, "SumRecords(ctx context.Context, id int64) ([]model.Record, error)",
+			"SumRecords: a Sum returns the one column of its result, as (T, error) or (*T, error)"},
+		{"an Avg of a string", states, "AvgState(ctx context.Context) (model.State, error)",
+			"AvgState: an Avg returns the one column of its result, as (float64, error), (float32, error), or a " +
+				"pointer to one"},
 		{"an Insert returning a column as a count", save,
 			"InsertRecord(ctx context.Context, record model.Record) (int64, error)",
 			"InsertRecord: an Insert returns error alone, (int64, error) for the number of rows it affects"},
