@@ -1556,8 +1556,11 @@ ORDER BY 1`
   so this is a matter for hand-written queries only.
 - A scope has no method declared for it, so its signature is written on its line, and the lines of comment right
   above that line are its method's doc. MySQL does not tell the types of a statement's parameters, and this way it
-  need not. A type of another package is named as the Go files of the scope type's package import it: one they do not
-  use is imported for this alone, as in `import _ "time"`.
+  need not. A type of another package is named as the Go files of the scope type's package import it, or, by a name
+  they do not import, as the file declaring the model of the scope type's table imports it, so that a package of scope
+  types `//kanna:scopes` declares needs no import of its own for the types its models use. The package's own imports
+  come first, as in Go, so one there wins over the model's file for its name. A package neither imports is imported in
+  a Go file of the scope type's package for this alone, as in `import _ "time"`.
 - A scope can also be written as a statement on its table, as
   `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at);` is the one above, so that a
   SQL linter, which cannot parse a condition alone, reads the file as it reads the queries. kanna-orm takes the

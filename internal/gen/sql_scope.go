@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -46,17 +47,17 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 		return nil, nil
 	}
 	names := make([]string, 0, len(plans))
-	tables := make(map[string]string, len(plans))
+	of := make(map[string]scope, len(plans))
 	for _, p := range plans {
 		names = append(names, p.name)
-		tables[p.name] = p.table
+		of[p.name] = p.scope
 	}
-	r := resolver{pkg: pkg}
 
 	var (
-		scopes = map[string][]sqlScope{}
-		ds     []diag.Diag
-		seen   = map[string]token.Position{}
+		scopes    = map[string][]sqlScope{}
+		ds        []diag.Diag
+		seen      = map[string]token.Position{}
+		resolvers = map[string]resolver{}
 	)
 	for _, st := range stmts {
 		if st.Kind != sqlfile.Scope || st.Name == "" || st.Text == "" {
@@ -83,7 +84,7 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 			continue
 		}
 
-		cond, d := st.Condition(tables[st.Type], s.Dialect)
+		cond, d := st.Condition(of[st.Type].table, s.Dialect)
 		if d != nil {
 			ds = append(ds, *d)
 			continue
@@ -101,6 +102,11 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 			continue
 		}
 
+		r, ok := resolvers[st.Type]
+		if !ok {
+			r = newResolver(pkg, of[st.Type].model)
+			resolvers[st.Type] = r
+		}
 		sc, sds := r.sqlScope(st, cond, s.Dialect, errorf)
 		ds = append(ds, sds...)
 		if !diag.HasErrors(sds) {
@@ -130,8 +136,9 @@ func (r resolver) sqlScope(st sqlfile.Statement, cond sqlfile.Condition, d snaps
 		t, err := r.typeOf(expr)
 		if err != nil {
 			d := errorf("%v", err)
-			if ni := (notImportedError{}); errors.As(err, &ni) && ni.path != "" {
-				d = d.WithHints(fmt.Sprintf("import it in a Go file of the package, as in import _ %q", ni.path))
+			if ni := (notImportedError{}); errors.As(err, &ni) {
+				path := cmp.Or(ni.path, "<the import path of "+ni.name+">")
+				d = d.WithHints(fmt.Sprintf("import it in a Go file of the package, as in import _ %q", path))
 			}
 			return sc, []diag.Diag{d}
 		}
@@ -176,9 +183,28 @@ func (r resolver) sqlScope(st sqlfile.Statement, cond sqlfile.Condition, d snaps
 
 // resolver reads the types of the parameters of a scope written by hand, as the Go files of pkg would: an identifier
 // by what pkg declares and the predeclared types, and a type of another package by the name the files of pkg import
-// it by.
+// it by or, for a name they import nothing by, the name the file declaring model, the model of the scope's table,
+// imports it by.
 type resolver struct {
-	pkg *packages.Package
+	pkg   *packages.Package
+	model *types.Named
+	// file is the file declaring model, read for its imports alone, or nil when it is one of pkg's.
+	file *ast.File
+	// byPath maps the import path of each package pkg and the package of model import, at any depth, to its types.
+	byPath map[string]*types.Package
+}
+
+func newResolver(pkg *packages.Package, model *types.Named) resolver {
+	r := resolver{pkg: pkg, model: model, byPath: map[string]*types.Package{}}
+	reach(r.byPath, pkg.Types)
+	if p := model.Obj().Pkg(); p != pkg.Types {
+		reach(r.byPath, p)
+		name := pkg.Fset.Position(model.Obj().Pos()).Filename
+		if f, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly); err == nil {
+			r.file = f
+		}
+	}
+	return r
 }
 
 func (r resolver) typeOf(e ast.Expr) (types.Type, error) {
@@ -236,71 +262,104 @@ func (r resolver) typeOf(e ast.Expr) (types.Type, error) {
 }
 
 // imported finds the package the Go files of r.pkg written by hand import as name, by that name or, for one imported
-// for its side effects alone, as in import _ "time", by the package's own. A package they do not import is not looked
-// for among those they import in turn, which would change as those change; it is only told of, as one to import.
+// for its side effects alone, as in import _ "time", by the package's own; or, when they import none as name, the one
+// the file declaring r.model imports as name, so that a package of scope types needs no import of its own for the
+// packages its models use. A package neither imports is not looked for among those they import in turn, which would
+// change as those change; it is only told of, as one to import.
 func (r resolver) imported(name string) (*types.Package, error) {
-	byPath := map[string]*types.Package{}
-	for _, p := range r.pkg.Types.Imports() {
-		byPath[p.Path()] = p
-	}
-	var found *types.Package
+	var files []*ast.File
 	for _, f := range r.pkg.Syntax {
-		if ast.IsGenerated(f) {
-			continue // What the files kanna-orm wrote import is no declaration of the package's.
+		if !ast.IsGenerated(f) { // What the files kanna-orm wrote import is no declaration of the package's.
+			files = append(files, f)
 		}
+	}
+	found, other, _ := r.lookup(files, name)
+	switch {
+	case other != nil:
+		return nil, fmt.Errorf("%s names both %s and %s, which files of package %s import", name, found.Path(),
+			other.Path(), r.pkg.Name)
+	case found != nil:
+		return found, nil
+	}
+
+	e := notImportedError{name: name, pkg: r.pkg.Name}
+	if r.file != nil {
+		e.file = filepath.Base(r.pkg.Fset.Position(r.model.Obj().Pos()).Filename)
+		e.model = types.TypeString(r.model, (*types.Package).Name)
+		found, other, e.path = r.lookup([]*ast.File{r.file}, name)
+		switch {
+		case other != nil:
+			return nil, fmt.Errorf("%s names both %s and %s, which %s imports", name, found.Path(), other.Path(), e.file)
+		case found != nil:
+			return found, nil
+		}
+	}
+	if e.unloaded = e.path != ""; !e.unloaded {
+		e.path, _ = r.deeper(name)
+	}
+	return nil, e
+}
+
+// lookup finds the package files import as name, and other, a second one, when they import two as name. path is the
+// import path of one they import as name that was not loaded, to tell of.
+func (r resolver) lookup(files []*ast.File, name string) (found, other *types.Package, path string) {
+	for _, f := range files {
 		for _, imp := range f.Imports {
-			path, err := strconv.Unquote(imp.Path.Value)
-			p := byPath[path]
-			if err != nil || p == nil {
+			ip, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
 				continue
 			}
-			local := p.Name()
-			if imp.Name != nil && imp.Name.Name != "_" {
+			p := r.byPath[ip]
+			local := assumedName(ip)
+			switch {
+			case imp.Name != nil && imp.Name.Name != "_":
 				local = imp.Name.Name
+			case p != nil:
+				local = p.Name()
 			}
 			switch {
-			case local != name, found == p:
+			case local != name:
+			case p == nil:
+				path = ip
+			case found == p:
 			case found != nil:
-				return nil, fmt.Errorf("%s names both %s and %s, which files of package %s import", name, found.Path(),
-					p.Path(), r.pkg.Name)
+				return found, p, ""
 			default:
 				found = p
 			}
 		}
 	}
-	if found != nil {
-		return found, nil
-	}
-	path, _ := r.deeper(name)
-	return nil, notImportedError{name: name, pkg: r.pkg.Name, path: path}
+	return found, nil, path
 }
 
-// notImportedError is the error of name, which no package the files of pkg import is named, with path, the one
-// package of the name among those they import in turn, if there is one, which they could import.
-type notImportedError struct{ name, pkg, path string }
+// notImportedError is the error of name, which no package the files of pkg import is named, nor one that file imports,
+// the file declaring model when it is none of theirs, with path, the import path of a package of the name, if one is
+// found, which they could import. unloaded tells that file imports path as name, but the run has not loaded it, as
+// happens to a package the file uses in the bodies of its functions alone.
+type notImportedError struct {
+	name, pkg, file, model, path string
+	unloaded                     bool
+}
 
 func (e notImportedError) Error() string {
-	return fmt.Sprintf("%s names no package that package %s imports", e.name, e.pkg)
+	switch {
+	case e.unloaded:
+		return fmt.Sprintf("%s names %s, which %s imports, but kanna-orm has not loaded it", e.name, e.path, e.file)
+	case e.file == "":
+		return fmt.Sprintf("%s names no package that package %s imports", e.name, e.pkg)
+	}
+	return fmt.Sprintf("%s names no package that package %s imports, nor %s, which declares %s", e.name, e.pkg, e.file,
+		e.model)
 }
 
-// deeper finds the import path of the one package named name among those the packages r.pkg imports import, at any
-// depth, to tell of.
+// deeper finds the import path of the one package named name among those r.pkg and the package of r.model import, at
+// any depth, to tell of.
 func (r resolver) deeper(name string) (string, bool) {
 	var found []string
-	seen := map[*types.Package]bool{}
-	for next := r.pkg.Types.Imports(); len(next) > 0; {
-		var deeper []*types.Package
-		for _, p := range next {
-			if seen[p] {
-				continue
-			}
-			seen[p] = true
-			if p.Name() == name {
-				found = append(found, p.Path())
-			}
-			deeper = append(deeper, p.Imports()...)
+	for path, p := range r.byPath {
+		if p != r.pkg.Types && p.Name() == name {
+			found = append(found, path)
 		}
-		next = deeper
 	}
 	if len(found) != 1 {
 		return "", false

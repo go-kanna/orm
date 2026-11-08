@@ -148,20 +148,21 @@ func resolveModels(idx []indexed, pkgs []*packages.Package) []string {
 // importedPackages maps the import path of each of pkgs, and of each package they import, to its types.
 func importedPackages(pkgs []*packages.Package) map[string]*types.Package {
 	byPath := map[string]*types.Package{}
-	var walk func(p *types.Package)
-	walk = func(p *types.Package) {
-		if p == nil || byPath[p.Path()] != nil {
-			return
-		}
-		byPath[p.Path()] = p
-		for _, imported := range p.Imports() {
-			walk(imported)
-		}
-	}
 	for _, pkg := range pkgs {
-		walk(pkg.Types)
+		reach(byPath, pkg.Types)
 	}
 	return byPath
+}
+
+// reach maps the import path of p, and of each package it imports, at any depth, to its types in byPath.
+func reach(byPath map[string]*types.Package, p *types.Package) {
+	if p == nil || byPath[p.Path()] != nil {
+		return
+	}
+	byPath[p.Path()] = p
+	for _, imported := range p.Imports() {
+		reach(byPath, imported)
+	}
 }
 
 // pendingScopeNames names declarations that another scope package generates: change sets and implied scopes.
