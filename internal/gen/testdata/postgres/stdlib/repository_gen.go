@@ -494,6 +494,40 @@ func (r OrderRepository) AvgTotal(ctx context.Context, customerID int64) (float6
 	return *average, nil
 }
 
+func (r OrderRepository) ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]repository.StatusCount, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("ListStatusCounts"); err != nil {
+		return nil, err
+	}
+	rd, err := q.Render(impl.Postgres, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.query(ctx, `SELECT status, count(*) FROM orders`+rd.Where()+` GROUP BY status`, rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf(`group orders: %w`, err)
+	}
+	defer rows.Close()
+	out := []repository.StatusCount{}
+	var row repository.StatusCount
+	dest := []any{&row.Status, &row.Count}
+	for rows.Next() {
+		row = repository.StatusCount{}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf(`group orders: %w`, err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(`group orders: %w`, err)
+	}
+	return out, nil
+}
+
 func (r OrderRepository) Delete(ctx context.Context, id model.OrderID) error {
 	const q = `DELETE FROM orders WHERE id = $1`
 	res, err := r.db.ExecContext(ctx, q, id)

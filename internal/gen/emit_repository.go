@@ -407,6 +407,10 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.pluckRead(m, sc, recv, sig, q, notFound)
 		return
 	}
+	if m.projection != nil && len(m.projection.aggregates) > 0 {
+		e.groupedRead(m, sc, recv, sig, q)
+		return
+	}
 	if m.projection != nil && m.verb != verbDelete {
 		e.projectedRead(m, sc, recv, sig, q, notFound)
 		return

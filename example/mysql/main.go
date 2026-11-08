@@ -311,13 +311,26 @@ func (ex *example) page(ctx context.Context) error {
 	}
 }
 
-// report counts by a scope written in SQL, and sums by a query written by hand.
+// report counts by a scope written in SQL, counts the orders of each status by a projection of aggregates, and sums
+// by a query written by hand.
 func (ex *example) report(ctx context.Context) error {
 	february, err := ex.orders.Count(ctx, scopes.Orders().PlacedInMonth(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)))
 	if err != nil {
 		return fmt.Errorf("the orders of February: %w", err)
 	}
 	fmt.Fprintf(ex.w, "placed in February: %d\n", february)
+	counts, err := ex.orders.ListStatusCounts(ctx)
+	if err != nil {
+		return fmt.Errorf("the orders of each status: %w", err)
+	}
+	byStatus := map[model.OrderStatus]int64{}
+	for _, c := range counts {
+		byStatus[c.Status] = c.Count
+	}
+	if len(counts) != 2 || byStatus[model.OrderOpen] != 3 || byStatus[model.OrderShipped] != 1 {
+		return fmt.Errorf("orders of each status: got %+v", counts)
+	}
+	fmt.Fprintf(ex.w, "open: %d, shipped: %d\n", byStatus[model.OrderOpen], byStatus[model.OrderShipped])
 	sales, err := ex.orders.MonthlySales(ctx, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		return fmt.Errorf("the sales: %w", err)

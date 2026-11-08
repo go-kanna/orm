@@ -1099,7 +1099,7 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールドは、同じ名前の元モデルのフィールドに結び付け、そのカラム名のタグと `nullzero` の扱いを引き継ぎます。別の名前のフィールドは、`orm:"note"` のようにカラム名のタグで指定します。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。集計・式は従来どおり手書き SQL と DTO で表現できます。
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールドは、同じ名前の元モデルのフィールドに結び付け、そのカラム名のタグと `nullzero` の扱いを引き継ぎます。別の名前のフィールドは、`orm:"note"` のようにカラム名のタグで指定します。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用で、絞り込み・並べ替え・ページング・ロック・不在時の契約は通常のメソッドと同じです。関連取得を指定した scope は無視せずエラーにします。projection には行のグループの[集計](#集計を読む)を持たせられます。そのほかの式は従来どおり手書き SQL と DTO で表現できます。
 
 
 ### JOIN する projection
@@ -1152,6 +1152,28 @@ SELECT coalesce(sum(total)::bigint, 0) FROM orders WHERE ...
 - マッチする行がないとき、またはマッチした行のカラムがすべて NULL のとき、値を返す形は、`Sum` なら 0 を、`Min`・`Max`・`Avg` なら `Get` と同じく `orm.ErrNotFound` を返します。ポインタを返す形は、`Find` と同じく nil を返します。
 - スコープは `Count` と同じく条件だけを使います。並べ替える、ページングする、リレーションを読み込むスコープを渡すと、エラーを返します。
 - PostgreSQL では、`bigint` の合計は `numeric` になるので、整数の合計を `bigint` に、平均を `double precision` にキャストします。MySQL では、整数の平均は小数 4 桁の `DECIMAL` になるので、平均を `DOUBLE` にキャストします。整数の合計は `DECIMAL` のままで、database/sql がフィールドの型に読みます。収まらなければエラーです。
+
+`List` で読む projection は、行のグループの集計を持てます。`Count` という名前の `int64` のフィールドはグループの行数を、`Sum`・`Min`・`Max`・`Avg` にモデルのフィールドの名前を続けた名前のフィールドはそのカラムの集計を、その動詞が返す型で保持します。行は残りのフィールドでグループ化します。残りのフィールドは、ほかの projection と同じく、モデルのカラムを指します:
+
+```go
+type StatusCount struct {
+	Status model.OrderStatus
+	Count  int64
+}
+
+ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]StatusCount, error)
+```
+
+```sql
+SELECT status, count(*) FROM orders WHERE ... GROUP BY status
+```
+
+- グループには必ず行がありますが、NULL になりうるカラムは、グループのすべての行で NULL のことがあります。そのカラムの `Min`・`Max`・`Avg` はポインタにします。そのようなグループでは nil です。`Sum` は 0、ポインタなら nil です。
+- グループの順序は、SQL と同じく決まっていません。スコープは `Count` と同じく条件だけを使います。
+- 集計の projection は `List` で読み、1 つ以上のフィールドでグループ化し、テーブルを結合せず、`//kanna:lock` を付けません。そうでなければ生成を止めます。集計のフィールドにはタグを付けません。集計のフィールドと同じ名前（`Count` など）のフィールドがモデルにもあれば、どちらを読むとも取れるので、生成を止めます。
+- HAVING、集計の値での並び替え、そのほかの形は、DTO を返す[手書きの SQL](#手書きの-sql) で書きます。
+
+両 DB の example は、この方法で注文をステータスごとに数えます。
 
 ## 手書きの SQL
 
@@ -1291,7 +1313,7 @@ usecase/orders.go:42:21: error: Count takes conditions alone, but its scope orde
 
 呼び出したメソッドの位置に、その呼び出しが返すエラーと同じ文で報告します。失敗の原因が別の場所（自分で書いた scope の中など）にあるときは、その場所も添えます。見つけるのは次のものです。
 
-- 条件だけを取るもの（`Count`、`Exists`、`Sum`、`Min`、`Max`、`Avg`、一意キーかモデル全体を取る `Update`、`Or` と `Not` の選択肢）に渡した scope の順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete`、change set を取る `Update` に渡した関連の読み込み
+- 条件だけを取るもの（`Count`、`Exists`、`Sum`、`Min`、`Max`、`Avg`、集計の projection の `List`、一意キーかモデル全体を取る `Update`、`Or` と `Not` の選択肢）に渡した scope の順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete`、change set を取る `Update` に渡した関連の読み込み
 - 条件のない scope での `Delete` と、change set を取る `Update`（すべての行に効いてしまう）。`Limit` も `Offset` もない、順序つきの `Delete` と、一意キーを取らない change set の `Update`。主キーも NULL のない一意キーもない表の、ページつきの `Delete` と、一意キーを取らない change set の `Update`
 - 関連を読む scope の `After` と `Before`。1 行の関連を読む scope の `Limit` と `Offset`
 - `Limit` と `Offset` に渡した負の定数。何も代入しない change set を渡した `Update`。メソッドが書けない列（upsert が行を突き合わせる列など）に代入する change set
@@ -1335,7 +1357,7 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 
 - 変更の追跡、アイデンティティマップの保持、遅延読み込み。メソッドは、呼ばれたときに、宣言が言う文を実行します。
 - ゼロ値をカラムのデフォルト値とみなすこと。ゼロ値は値として書き、データベースが値を割り当てることは `orm:",default"` で言います。
-- 任意の JOIN や、副問合せ・CTE・UNION のようなネストするクエリを scope から組み立てること。読み取り projection の外部キーまたは明示した列の等値条件による INNER JOIN に対応し、それ以外は[手書きの SQL](#手書きの-sql) を使います。
+- 任意の JOIN や、副問合せ・CTE・UNION のようなネストするクエリを scope から組み立てること。読み取り projection の外部キーまたは明示した列の等値条件による INNER JOIN と、集計の projection のフィールドによるグループ化に対応し、それ以外は[手書きの SQL](#手書きの-sql) を使います。
 - 1 つの生成パッケージを PostgreSQL と MySQL の両方で動かすこと。型は、1 つのデータベースが答えたものです。
 - マイグレーションの作成や適用。goose などのツールを使い、その結果を `describe` してください。
 
@@ -1343,7 +1365,7 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 
 次のものは、今の kanna-orm がしないだけで、しないと決めたものではありません。
 
-- 行のグループ化と、グループごとの集計。DTO を返す[手書きの SQL](#手書きの-sql) で書きます。
+- [集計の projection](#集計を読む) の HAVING と、集計の値での並び替え。DTO を返す[手書きの SQL](#手書きの-sql) で書きます。
 - リレーションの書き込み。行を参照先と一緒に保存するときの順序は、トランザクションの中で自分で組み立てます。
 - NULL になりうるカラムでのページング。
 - MariaDB や SQLite のサポート。

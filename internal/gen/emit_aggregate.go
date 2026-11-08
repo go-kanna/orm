@@ -61,6 +61,34 @@ func (e repoEmitter) aggregateRow(m repoMethod, sc gofile.Scope, recv string, si
 	e.printf("if %s == nil {\nreturn %s, %s\n}\nreturn *%s, nil\n", v, zero, sig.mapped(notFound), v)
 }
 
+// groupedRead writes the rest of the body of m, a List of a projection of aggregates, which groups the rows q matches
+// by the conditions alone by the columns of the other fields, and reads the aggregates of each group.
+func (e repoEmitter) groupedRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q string) {
+	p := m.projection
+	typ := types.TypeString(p.model, e.f.Qualifier)
+	err, rd, rows, out, row := sc.Name("err"), sc.Name("rd"), sc.Name("rows"), sc.Name("out"), sc.Name("row")
+	e.printf("if %[1]s := %[2]s.ConditionsOnly(%[3]q); %[1]s != nil {\nreturn nil, %[4]s\n}\n", err, q, m.name,
+		sig.mapped(err))
+	e.printf("%[1]s, %[2]s := %[3]s.Render(%[4]s, 1, nil)\nif %[2]s != nil {\nreturn nil, %[5]s\n}\n", rd, err, q,
+		e.dialect(), sig.mapped(err))
+	keys := make([]string, 0, len(p.columns))
+	for _, c := range p.columns {
+		keys = append(keys, sqlName(e.d, c.col.Name))
+	}
+	selected, scanned := slices.Clone(keys), slices.Clone(p.columns)
+	for _, a := range p.aggregates {
+		selected = append(selected, aggregateSQL(e.d, a))
+		scanned = append(scanned, column{path: []string{a.field}, typ: a.typ})
+	}
+	query := goString("SELECT "+strings.Join(selected, ", ")+" FROM "+sqlName(e.d, m.target.table)) + "+" + rd +
+		".Where()+" + goString(" GROUP BY "+strings.Join(keys, ", "))
+	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + goString("group "+m.target.table+": %w") + ", " + err + ")")
+	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s.Args()...)\nif %[2]s != nil {\nreturn nil, %[8]s\n}\n"+
+		"defer %[1]s.Close()\n", rows, err, recv, e.query, sig.ctx, query, rd, wrap)
+	e.scanRows(scanNames{rows: rows, out: out, row: row, err: err, wrap: wrap}, typ, scanned, sc)
+	e.printf("return %s, nil\n", out)
+}
+
 // zeroOf is the zero value of t, an aggregate's type, as the file writes it.
 func (e repoEmitter) zeroOf(t types.Type) string {
 	switch u := t.Underlying().(type) {

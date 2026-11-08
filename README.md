@@ -1393,7 +1393,7 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates and expressions can still use hand-written SQL returning a DTO.
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. A projection may hold [aggregates](#reading-aggregates) of groups of rows; other expressions can still use hand-written SQL returning a DTO.
 
 
 ### Joining a projection
@@ -1446,6 +1446,28 @@ SELECT coalesce(sum(total)::bigint, 0) FROM orders WHERE ...
 - When no row matches, or the column is NULL in every row matched, one returning a value returns 0 of a `Sum`, and `orm.ErrNotFound` of a `Min`, a `Max`, or an `Avg`, as a `Get` does; one returning a pointer returns nil, as a `Find` does.
 - Their scopes give their conditions alone, as those of `Count` do: a scope that orders, pages, or loads a relation makes them return an error.
 - On PostgreSQL, a sum of integers is cast to `bigint`, as the sum of `bigint`s is `numeric`, and an average to `double precision`. On MySQL, an average is cast to `DOUBLE`, as one of integers is otherwise a `DECIMAL` of four decimal places; a sum of integers stays a `DECIMAL`, which database/sql reads into the field's type, failing if it does not fit.
+
+A projection read by a `List` may hold aggregates of groups of rows. A field named `Count`, an `int64`, holds the number of the rows of a group, and one named `Sum`, `Min`, `Max`, or `Avg` followed by the name of a field of the model holds that aggregate of its column, of a type its verb returns. The rows are grouped by the other fields, which name the model's columns as those of any projection do:
+
+```go
+type StatusCount struct {
+	Status model.OrderStatus
+	Count  int64
+}
+
+ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]StatusCount, error)
+```
+
+```sql
+SELECT status, count(*) FROM orders WHERE ... GROUP BY status
+```
+
+- A group has rows, but a column that may be NULL may be NULL in every row of one: a `Min`, a `Max`, or an `Avg` of it is a pointer, nil for such a group, and a `Sum` of it is 0, or nil of a pointer.
+- The groups come in no order, as SQL returns them. The scopes give their conditions alone, as those of `Count` do.
+- A projection of aggregates is read by a `List`, groups by one field or more, joins no table, and takes no `//kanna:lock`; generation stops otherwise. A field of an aggregate takes no tag, and a model with a field named as one, as `Count`, stops generation, as the projection could read either.
+- HAVING, an order by an aggregate, and other shapes are written in [SQL](#hand-written-sql) returning a DTO.
+
+Both database examples count their orders by status this way.
 
 ## Hand-written SQL
 
@@ -1632,9 +1654,9 @@ It reports a call at the method it calls, in the words of the error the call wou
 fail is written elsewhere, such as in a scope of your own, where that is. It finds:
 
 - an order, paging, or a relation to load in a scope given to what takes conditions alone: `Count`, `Exists`, `Sum`,
-  `Min`, `Max`, `Avg`, an `Update` taking a unique key or a whole row, and the alternatives of `Or` and `Not`; paging
-  given to `Get` and `Find`; a
-  relation to load given to a projection, a read of one column, a `Delete`, or an `Update` with a change set;
+  `Min`, `Max`, `Avg`, a `List` of a projection of aggregates, an `Update` taking a unique key or a whole row, and the
+  alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a relation to load given to a projection, a read of
+  one column, a `Delete`, or an `Update` with a change set;
 - a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
   or an `Update` of a change set taking no unique key, ordered without `Limit` or `Offset`, or paged on a table with neither a
   primary key nor a non-null unique key;
@@ -1696,8 +1718,8 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 - Take a zero value for the column's default: a zero is written as a value, and `orm:",default"` says the database
   assigns one.
 - Generate arbitrary joins or nested query shapes, such as subqueries, CTEs, or UNION, from scopes. INNER JOINs through
-  foreign keys or explicit column equalities are supported for read projections; other query shapes can use
-  [hand-written SQL](#hand-written-sql).
+  foreign keys or explicit column equalities are supported for read projections, and so is grouping by the fields of a
+  projection of aggregates; other query shapes can use [hand-written SQL](#hand-written-sql).
 - Run one generated package on both databases: the types are those one database answers.
 - Create or apply migrations. Use goose or any other tool, and describe the result.
 
@@ -1705,7 +1727,8 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 
 These are out of what kanna-orm does so far, not ruled out:
 
-- Group rows, and read the aggregates of each group. Write them in [SQL](#hand-written-sql) returning a DTO.
+- HAVING, and an order by an aggregate, of a [projection of aggregates](#reading-aggregates). Write them in
+  [SQL](#hand-written-sql) returning a DTO.
 - Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
 - Page by a column that may be NULL.
 - Support MariaDB or SQLite.

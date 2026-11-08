@@ -41,6 +41,7 @@ type Order interface { //nolint:interfacebloat // demonstrates order read and wr
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	ListSummaries(ctx context.Context, s ...scopes.Order) ([]OrderSummary, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
+	ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]StatusCount, error)
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	CopyApprovals(ctx context.Context, approvals []model.Approval) (int64, error)
@@ -70,6 +71,12 @@ type Fulfillment interface {
 type OrderApprover struct {
 	OrderID  model.OrderID
 	Approver *string
+}
+
+// StatusCount is how many orders have a status.
+type StatusCount struct {
+	Status model.OrderStatus
+	Count  int64
 }
 
 // MonthSales is what the orders of a month sold.

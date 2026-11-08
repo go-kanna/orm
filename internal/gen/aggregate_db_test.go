@@ -1,13 +1,16 @@
 package gen_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kanna/orm"
+	mrepository "github.com/go-kanna/orm/internal/gen/testdata/mysql/repository"
 	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
 	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
 	prepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
@@ -19,11 +22,14 @@ import (
 const aggregateRuntime = `package impl
 
 import (
+	"cmp"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
+	"example.com/shop/repository"
 	"example.com/shop/scopes"
 	"github.com/go-kanna/orm"
 )
@@ -115,6 +121,52 @@ func TestAggregates(t *testing.T) {
 	least, err := regional.MinDiscount(ctx, "west")
 	if !errors.Is(err, orm.ErrNotFound) || err.Error() != "min sales.discount with region west: orm: not found" {
 		t.Errorf("MinDiscount of sales of no discount, by a key = %v, %v", least, err)
+	}
+
+	byStatus := func(counts []repository.StatusCount) []repository.StatusCount {
+		slices.SortFunc(counts, func(a, b repository.StatusCount) int { return cmp.Compare(a.Status, b.Status) })
+		return counts
+	}
+	counts, err := sales.ListStatusCounts(ctx)
+	check("ListStatusCounts", slices.Equal(byStatus(counts), []repository.StatusCount{{"closed", 1}, {"open", 3}}),
+		counts, err)
+	counts, err = sales.ListStatusCounts(ctx, west)
+	check("ListStatusCounts of the west", slices.Equal(counts, []repository.StatusCount{{"open", 2}}), counts, err)
+	counts, err = regional.ListStatusCounts(ctx, "east", scopes.Sale{}.StatusEq("open"))
+	check("ListStatusCounts by a key", slices.Equal(counts, []repository.StatusCount{{"open", 1}}), counts, err)
+	counts, err = sales.ListStatusCounts(ctx, north)
+	check("ListStatusCounts of no sale", counts != nil && len(counts) == 0, counts, err)
+	if _, err := sales.ListStatusCounts(ctx, all.StatusAsc()); err == nil ||
+		err.Error() != "orm: ListStatusCounts takes conditions alone, but its scope orders the rows" {
+		t.Errorf("ListStatusCounts in order = %v", err)
+	}
+
+	totals, err := sales.ListRegionTotals(ctx)
+	slices.SortFunc(totals, func(a, b repository.RegionTotal) int { return cmp.Compare(a.Region, b.Region) })
+	if err != nil || len(totals) != 2 {
+		t.Fatalf("ListRegionTotals = %+v, %v", totals, err)
+	}
+	east, westTotal := totals[0], totals[1]
+	if east.Region != "east" || east.Count != 2 || east.SumAmount != 300 || east.SumDiscount != 10 ||
+		!east.MinSoldAt.Equal(day(1)) || east.MaxDiscount == nil || *east.MaxDiscount != 10 || east.AvgRate != 2 {
+		t.Errorf("the totals of the east = %+v", east)
+	}
+	if westTotal.Region != "west" || westTotal.Count != 2 || westTotal.SumAmount != 350 || westTotal.SumDiscount != 0 ||
+		!westTotal.MinSoldAt.Equal(day(3)) || westTotal.MaxDiscount != nil || westTotal.AvgRate != 1.75 {
+		t.Errorf("the totals of the west, of no discount = %+v", westTotal)
+	}
+
+	notes, err := sales.ListNoteCounts(ctx)
+	described := map[string]int64{}
+	for _, n := range notes {
+		key := "NULL"
+		if n.Note != nil {
+			key = *n.Note
+		}
+		described[key] = n.Count
+	}
+	if err != nil || len(notes) != 3 || described["a"] != 1 || described["b"] != 1 || described["NULL"] != 2 {
+		t.Errorf("ListNoteCounts = %v, %v", described, err)
 	}
 
 	// A sum too large for the type it is read into is an error, not a value cut short.
@@ -289,6 +341,7 @@ func aggregatesOfOrders(t *testing.T, repo interface {
 	SumTotal(ctx context.Context, s ...pscopes.Order) (int64, error)
 	MaxPlacedAt(ctx context.Context, s ...pscopes.Order) (*time.Time, error)
 	AvgTotal(ctx context.Context, customerID int64) (float64, error)
+	ListStatusCounts(ctx context.Context, s ...pscopes.Order) ([]prepository.StatusCount, error)
 },
 ) {
 	t.Helper()
@@ -313,8 +366,14 @@ func aggregatesOfOrders(t *testing.T, repo interface {
 	if avg, err := repo.AvgTotal(ctx, 99); !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("AvgTotal of no order = %v, %v; want orm.ErrNotFound", avg, err)
 	}
-	if _, err := repo.SumTotal(ctx, pscopes.Order{}.WithLines()); err == nil {
-		t.Error("SumTotal loaded a relation")
+	counts, err := repo.ListStatusCounts(ctx)
+	slices.SortFunc(counts, func(a, b prepository.StatusCount) int { return cmp.Compare(a.Status, b.Status) })
+	if err != nil || !slices.Equal(counts, []prepository.StatusCount{{Status: "closed", Count: 1},
+		{Status: "open", Count: 2}}) {
+		t.Errorf("ListStatusCounts = %v, %v", counts, err)
+	}
+	if _, err := repo.ListStatusCounts(ctx, pscopes.Order{}.WithLines()); err == nil {
+		t.Error("ListStatusCounts loaded a relation")
 	}
 }
 
@@ -340,8 +399,14 @@ func TestAggregates_MySQL(t *testing.T) {
 	if avg, err := repo.AvgTotal(ctx, 99); !errors.Is(err, orm.ErrNotFound) {
 		t.Errorf("AvgTotal of no order = %v, %v; want orm.ErrNotFound", avg, err)
 	}
-	if _, err := repo.SumTotal(ctx, mscopes.Order{}.IDAsc()); err == nil {
-		t.Error("SumTotal took an order")
+	counts, err := repo.ListStatusCounts(ctx, mscopes.Order{}.CustomerIDEq(10))
+	slices.SortFunc(counts, func(a, b mrepository.StatusCount) int { return cmp.Compare(a.Status, b.Status) })
+	if err != nil || !slices.Equal(counts, []mrepository.StatusCount{{Status: "closed", Count: 1},
+		{Status: "open", Count: 1}}) {
+		t.Errorf("ListStatusCounts of customer 10 = %v, %v", counts, err)
+	}
+	if _, err := repo.ListStatusCounts(ctx, mscopes.Order{}.IDAsc()); err == nil {
+		t.Error("ListStatusCounts took an order")
 	}
 }
 

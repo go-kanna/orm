@@ -11,8 +11,9 @@ import (
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
-// aggregateShop declares sales, with columns of numbers, of strings, and of times, some of which may be NULL; and a
-// repository reading aggregates into values, one reading them into pointers, and one by a key and no scopes.
+// aggregateShop declares sales, with columns of numbers, of strings, and of times, some of which may be NULL; a
+// repository reading aggregates into values, one reading them into pointers, one by a key and no scopes; and
+// projections of aggregates, grouped by the other fields.
 const aggregateShop = `
 -- model/model.go --
 package model
@@ -69,6 +70,9 @@ type Sales interface {
 	AvgUnits(ctx context.Context, s ...scopes.Sale) (float64, error)
 	AvgAmount(ctx context.Context, s ...scopes.Sale) (float32, error)
 	AvgPrice(ctx context.Context, s ...scopes.Sale) (float64, error)
+	ListStatusCounts(ctx context.Context, s ...scopes.Sale) ([]StatusCount, error)
+	ListRegionTotals(ctx context.Context, s ...scopes.Sale) ([]RegionTotal, error)
+	ListNoteCounts(ctx context.Context, s ...scopes.Sale) ([]NoteCount, error)
 }
 
 //kanna:repository table=sales
@@ -84,6 +88,29 @@ type Optional interface {
 type Regional interface {
 	SumAmount(ctx context.Context, region string) (model.Cents, error)
 	MinDiscount(ctx context.Context, region string) (int64, error)
+	ListStatusCounts(ctx context.Context, region string, s ...scopes.Sale) ([]StatusCount, error)
+}
+
+type StatusCount struct {
+	Status model.Status
+	Count  int64
+}
+
+// RegionTotal is what the sales of a region amount to: of a column that may be NULL, a sum is zero and a maximum nil
+// for a region whose sales hold only NULLs there.
+type RegionTotal struct {
+	Region      string
+	Count       int64
+	SumAmount   model.Cents
+	SumDiscount int64
+	MinSoldAt   time.Time
+	MaxDiscount *int64
+	AvgRate     float64
+}
+
+type NoteCount struct {
+	Note  *string
+	Count int64
 }
 `
 
@@ -136,8 +163,8 @@ func generateAggregateShop(t *testing.T, archive string, d snapshot.Dialect, dri
 }
 
 // TestCommand_AggregateSQL checks the SQL each aggregate is read by on each database: a Sum into a value coalesced to
-// zero, the sum of integers a bigint and an average a double precision number on PostgreSQL, and an average a DOUBLE on
-// MySQL.
+// zero, the sum of integers a bigint and an average a double precision number on PostgreSQL, an average a DOUBLE on
+// MySQL, and a projection of aggregates grouped by its other fields.
 func TestCommand_AggregateSQL(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -152,12 +179,17 @@ func TestCommand_AggregateSQL(t *testing.T) {
 			"`SELECT sum(amount)::bigint FROM sales`+rd.Where()",
 			"const q = `SELECT coalesce(sum(amount)::bigint, 0) FROM sales WHERE region = $1`",
 			"const q = `SELECT min(discount) FROM sales WHERE region = $1`",
+			"`SELECT status, count(*) FROM sales`+rd.Where()+` GROUP BY status`",
+			"`SELECT region, count(*), sum(amount)::bigint, coalesce(sum(discount)::bigint, 0), min(sold_at), " +
+				"max(discount), avg(rate)::double precision FROM sales`+rd.Where()+` GROUP BY region`",
 		}},
 		{snapshot.MySQL, []string{
 			"`SELECT coalesce(sum(units), 0) FROM sales`+rd.Where()",
 			"`SELECT CAST(avg(units) AS DOUBLE) FROM sales`+rd.Where()",
 			"`SELECT sum(amount) FROM sales`+rd.Where()",
 			"const q = `SELECT coalesce(sum(amount), 0) FROM sales WHERE region = ?`",
+			"`SELECT region, count(*), sum(amount), coalesce(sum(discount), 0), min(sold_at), max(discount), " +
+				"CAST(avg(rate) AS DOUBLE) FROM sales`+rd.Where()+` GROUP BY region`",
 		}},
 	} {
 		t.Run(string(tt.d), func(t *testing.T) {
@@ -179,8 +211,9 @@ func TestCommand_AggregateSQL(t *testing.T) {
 	}
 }
 
-// aggregateMistakes adds to aggregateShop a number stored as text, a field of sales kanna-orm reads no aggregate of,
-// and others the test declares.
+// aggregateMistakes adds to aggregateShop fields of sales that kanna-orm reads no aggregate of: a number stored as
+// text, and others the test declares; customers, which a projection can join; and projections, to which the test adds
+// the method reading one.
 const aggregateMistakes = `
 -- model/more.go --
 package model
@@ -200,15 +233,75 @@ func (c *Code) Scan(src any) error {
 	*c = Code(n)
 	return err
 }
+
+type Customer struct {
+	ID   int64
+	Name string
+}
+-- scopes/customer.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scope table=customers
+type Customer struct{ q scope.Of[model.Customer] }
+-- repository/projections.go --
+package repository
+
+import "example.com/shop/model"
+
+type Totals struct {
+	Count     int64
+	SumAmount model.Cents
+}
+
+type Tagged struct {
+	Region    string
+	SumAmount model.Cents ` + "`orm:\"amount\"`" + `
+}
+
+type NarrowCount struct {
+	Region string
+	Count  int32
+}
+
+type FirstNotes struct {
+	Region  string
+	MinNote string
+}
+
+type NoteSums struct {
+	Region  string
+	SumNote string
+}
+
+type CustomerCount struct {
+	Customer struct{ Name string }
+	Count    int64
+}
+
+type RegionCount struct {
+	Region string
+	Count  int64
+}
 `
 
-// aggregateMistakeTables adds to the tables of aggregateShop the columns of the fields a test adds to sales.
+// aggregateMistakeTables adds to the tables of aggregateShop the columns of the fields a test adds to sales, and
+// customers, which sales refers to.
 func aggregateMistakeTables(tables map[string]snapshot.Table) {
 	sales := tables["sales"]
 	sales.Columns = append(sales.Columns, snapshot.Column{Name: "paid", Type: "bool", NotNull: true},
 		snapshot.Column{Name: "ref", Type: "uuid", NotNull: true},
-		snapshot.Column{Name: "code", Type: "text", NotNull: true})
+		snapshot.Column{Name: "code", Type: "text", NotNull: true},
+		snapshot.Column{Name: "customer_id", Type: "int8", NotNull: true},
+		snapshot.Column{Name: "count", Type: "int8", NotNull: true})
+	sales.ForeignKeys = []snapshot.ForeignKey{fk([]string{"customer_id"}, "customers", "id")}
 	tables["sales"] = sales
+	tables["customers"] = snapshot.Table{Columns: []snapshot.Column{{Name: "id", Type: "int8", NotNull: true},
+		{Name: "name", Type: "text", NotNull: true}}, PrimaryKey: []string{"id"}}
 }
 
 func TestCommand_AggregateMistakes(t *testing.T) {
@@ -216,7 +309,9 @@ func TestCommand_AggregateMistakes(t *testing.T) {
 	const scoped = "(ctx context.Context, s ...scopes.Sale) "
 	for _, tt := range []struct {
 		method string
-		want   string
+		// count gives sales a field Count, whose column a projection's Count could read too.
+		count bool
+		want  string
 	}{
 		{method: "SumAmountByStatus" + scoped + "(model.Cents, error)",
 			want: "SumAmountByStatus: it reads the sum of a column, but model.Sale has no field named AmountByStatus\n" +
@@ -240,13 +335,39 @@ func TestCommand_AggregateMistakes(t *testing.T) {
 		{method: "SumAmount" + scoped + "error", want: "SumAmount: kanna-orm cannot implement it as declared"},
 		{method: "//kanna:lock update\n\tMaxAmount" + scoped + "(model.Cents, error)",
 			want: "MaxAmount: //kanna:lock is for a Get, a Find, a First, a List, or an Update"},
+		{method: "ListRegionCounts" + scoped + "([]RegionCount, error)", count: true,
+			want: "ListRegionCounts: Count reads the number of the rows, and model.Sale has a field Count too, whose " +
+				"column count it could read"},
+		{method: "ListTagged" + scoped + "([]Tagged, error)",
+			want: `ListTagged: SumAmount reads the sum of Sale.Amount, which orm:"amount" tells nothing of`},
+		{method: "ListNarrowCounts" + scoped + "([]NarrowCount, error)",
+			want: "ListNarrowCounts: Count reads the number of the rows as an int64, not an int32"},
+		{method: "ListFirstNotes" + scoped + "([]FirstNotes, error)",
+			want: "ListFirstNotes: MinNote reads the minimum of Sale.Note, which may be NULL in every row of a group, " +
+				"as a string\n  declare it as *string, nil for such a group"},
+		{method: "ListNoteSums" + scoped + "([]NoteSums, error)",
+			want: "ListNoteSums: SumNote reads the sum of Sale.Note, a string, which is no number"},
+		{method: "FirstStatusCount" + scoped + "(StatusCount, error)",
+			want: "FirstStatusCount: a projection of aggregates is read by a List, which returns those of each group"},
+		{method: "ListTotals" + scoped + "([]Totals, error)",
+			want: "ListTotals: a projection of aggregates groups the rows by its other fields, and repository.Totals " +
+				"has none"},
+		{method: "ListCustomerCounts" + scoped + "([]CustomerCount, error)",
+			want: "ListCustomerCounts: Customer joins a table, and a projection of aggregates joins none"},
+		{method: "//kanna:lock update\n\tListStatusCounts" + scoped + "([]StatusCount, error)",
+			want: "ListStatusCounts: a projection of aggregates is read of groups of rows, which hold no lock"},
 	} {
 		t.Run(tt.method, func(t *testing.T) {
 			t.Parallel()
-			archive := strings.Replace(aggregateShop+aggregateMistakes, "type Sales interface {",
+			archive := strings.Replace(aggregateShop, "\tListStatusCounts(ctx context.Context, s ...scopes.Sale) "+
+				"([]StatusCount, error)\n", "", 1)
+			archive = strings.Replace(archive+aggregateMistakes, "type Sales interface {",
 				"type Sales interface {\n\t"+tt.method, 1)
-			archive = strings.Replace(archive, "\tSoldAt   time.Time\n",
-				"\tSoldAt   time.Time\n\tPaid     bool\n\tRef      string\n\tCode     Code\n", 1)
+			fields := "\tPaid       bool\n\tRef        string\n\tCode       Code\n\tCustomerID int64\n"
+			if tt.count {
+				fields += "\tCount      int64\n"
+			}
+			archive = strings.Replace(archive, "\tSoldAt   time.Time\n", "\tSoldAt   time.Time\n"+fields, 1)
 			_, code, errOut := generateAggregateShop(t, archive, snapshot.PostgreSQL, "pgx", aggregateMistakeTables)
 			if code != cli.ExitFailure || !strings.Contains(errOut, tt.want) {
 				t.Fatalf("generate = %d\n%s\nwant\n%s", code, errOut, tt.want)

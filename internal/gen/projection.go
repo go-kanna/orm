@@ -14,11 +14,13 @@ import (
 )
 
 // readProjection is what a method reading a projection selects: the columns its fields hold of the scope's table, and
-// the tables its nested structs join.
+// the tables its nested structs join, or, of a projection of aggregates, the columns it groups the rows by and the
+// aggregates of each group.
 type readProjection struct {
-	model   *types.Named
-	columns []column
-	joins   []projectionJoin
+	model      *types.Named
+	columns    []column
+	joins      []projectionJoin
+	aggregates []aggregate
 }
 
 // projectionJoin is a table a projection joins, by the foreign key of the scope's table that a nested struct follows:
@@ -57,6 +59,11 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 	selected := map[string]bool{}
 	for _, pf := range r.projectionStructFields(p.model, nil, errorf) {
 		f := pf.f
+		if a, ok, ads := projectionAggregate(m, pf); ok {
+			ds = append(ds, ads...)
+			p.aggregates = append(p.aggregates, a)
+			continue
+		}
 		if !isNested(f.Type()) {
 			c, ok := projectionColumn(pf, m.columns, m.target.table, selected, errorf)
 			if ok {
@@ -92,7 +99,16 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 			p.joins = append(p.joins, j)
 		}
 	}
-	if len(p.columns) == 0 && len(p.joins) == 0 {
+	switch {
+	case len(p.aggregates) > 0 && m.verb != verbList:
+		errorf(m.pos, "a projection of aggregates is read by a List, which returns those of each group")
+	case len(p.aggregates) > 0 && len(p.joins) > 0:
+		errorf(m.pos, "%s joins a table, and a projection of aggregates joins none", p.joins[0].field)
+	case len(p.aggregates) > 0 && len(p.columns) == 0:
+		ds = append(ds, diag.Errorf(m.pos, "%s: a projection of aggregates groups the rows by its other fields, and "+
+			"%s has none", m.name, typeName(p.model)).WithHints("give it a field to group the rows by",
+			"or read an aggregate of all the rows by its verb, as in "+shapes[verbSum]))
+	case len(p.columns) == 0 && len(p.joins) == 0 && len(p.aggregates) == 0:
 		errorf(m.pos, "a projection must select at least one model column")
 	}
 	return ds
