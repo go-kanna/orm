@@ -1,11 +1,15 @@
 package gen
 
-// hooks writes kDatabase, which the repositories run their statements on: DBTX between the hooks of their options.
+// hooks writes kDatabase, which the repositories run their statements on: DBTX between the hooks of their options,
+// with the time of their clock.
 func (e repoEmitter) hooks() {
 	ctx := e.f.Import("context", "context")
 	db := e.database
 	e.printf("// %s runs statements on dbtx between the hooks of options, as the methods of the repositories, and those\n"+
 		"// written by hand, run them.\ntype %s struct { dbtx DBTX; options %s }\n\n", db, db, e.ref("Options"))
+	e.printf("// Now is the time of the clock of options, which the repositories write the creation and update times of\n"+
+		"// rows by, and those written by hand can.\n"+
+		"func (d %s) Now(ctx %s.Context) %s.Time { return d.options.Now(ctx) }\n\n", db, ctx, e.f.Import("time", "time"))
 	var result string
 	if e.drv == driverSQL {
 		result = e.f.Import("database/sql", "sql") + ".Result"

@@ -71,8 +71,12 @@ func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) 
 		ds = append(ds, fds...)
 		prefix := sc.model.Obj().Name() + "."
 		for _, c := range f.columns {
-			got = append(got, prefix+strings.Join(c.path, ".")+" "+types.TypeString(c.typ, (*types.Package).Name)+" "+
-				c.col.Name)
+			line := prefix + strings.Join(c.path, ".") + " " + types.TypeString(c.typ, (*types.Package).Name) + " " +
+				c.col.Name
+			if c.audit != auditNone {
+				line += " " + c.audit.tag()
+			}
+			got = append(got, line)
 		}
 		for _, r := range f.relations {
 			line := prefix + strings.Join(r.path, ".") + " " + types.TypeString(r.typ, (*types.Package).Name) +

@@ -210,3 +210,37 @@ func TestChanges_UpsertValues(t *testing.T) {
 		}
 	}
 }
+
+func TestChanges_Touch(t *testing.T) {
+	t.Parallel()
+
+	q := impl.Of[int]{}.Where("id = ", 7)
+	allowed := []string{"name", "updated_at"}
+	base := impl.Changes[int]{}.Set("name", "Ann")
+	sql, args, err := base.Touch("updated_at", "now").RenderUpdate(impl.Postgres, "users", allowed, q)
+	if want := `UPDATE "users" SET "name" = $1, "updated_at" = $2 WHERE (id = $3)`; err != nil || sql != want ||
+		!reflect.DeepEqual(args, []any{"Ann", "now", 7}) {
+		t.Errorf("Touch of a change set = %s, %v, %v; want %s", sql, args, err, want)
+	}
+	if _, args, err := base.RenderUpdate(impl.Postgres, "users", allowed, q); err != nil ||
+		!reflect.DeepEqual(args, []any{"Ann", 7}) {
+		t.Errorf("Touch changed the change set it derives from: %v, %v", args, err)
+	}
+	if _, _, err := (impl.Changes[int]{}).Touch("updated_at", "now").RenderUpdate(impl.Postgres, "users", allowed,
+		q); err == nil || err.Error() != "orm: Update requires at least one assigned column" {
+		t.Errorf("Touch of no change error = %v", err)
+	}
+	for _, tt := range []struct {
+		name    string
+		changes impl.Changes[int]
+		want    []any
+	}{
+		{"no change", impl.Changes[int]{}, []any{false, nil, false, nil}},
+		{"a change", base, []any{true, "Ann", true, "now"}},
+	} {
+		got, err := tt.changes.Touch("updated_at", "now").UpsertValues("Upsert", allowed, nil, []string{"email"})
+		if err != nil || !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("UpsertValues of %s touched = %v, %v, want %v", tt.name, got, err, tt.want)
+		}
+	}
+}

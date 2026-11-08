@@ -947,13 +947,15 @@ func (m repoMethod) rowKey() []string {
 }
 
 // updated are the columns an update or an upsert of m writes over its row: those it inserts but its key, the primary
-// key, and those tagged insertonly. An upsert of a row keeps a column default leaves out of INSERT, too, rather than
-// reset it to its database default on a conflict; one of a change set writes it when the change set does.
+// key, those tagged insertonly, and the creation time. An upsert of a row keeps a column default leaves out of INSERT,
+// too, rather than reset it to its database default on a conflict; one of a change set writes it when the change set
+// does. The update time is among them, written by the clock, but for one default leaves to the database.
 func (m repoMethod) updated() []column {
 	skip := slices.Concat(m.rowKey(), m.table.PrimaryKey)
 	return slices.DeleteFunc(slices.Clone(m.columns), func(c column) bool {
 		return c.col.Assigned || c.insertOnly || slices.Contains(skip, c.col.Name) ||
-			m.verb == verbUpsert && m.changes == "" && c.insertDefault
+			m.verb == verbUpsert && m.changes == "" && c.insertDefault ||
+			c.audit == auditCreated || c.audit == auditUpdated && c.insertDefault
 	})
 }
 

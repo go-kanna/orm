@@ -106,7 +106,7 @@ func (e repoEmitter) insertGiven(m repoMethod, sc gofile.Scope, recv string, sig
 	q, args := sc.Name("q"), sc.Name("args")
 	values := make([]string, 0, len(cols))
 	for _, c := range cols {
-		values = append(values, e.storageValue(c, sig.row+"."+fieldPath(c)))
+		values = append(values, e.written(c, sig.row, sig.now))
 	}
 	e.printf("%s, %s := %s, []any{%s}\nif %s != 0 {\n%s, %s = %s, append(%s, %s)\n}\n", q, args, without,
 		strings.Join(values, ", "), value, q, args, with, args, value)
@@ -144,6 +144,7 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 	if m.many {
 		e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)))
 		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
+		e.readClock(recv, sig)
 		// The packages come first, so that they keep their names and the locals, one named after a field, yield.
 		chunks, repeat := e.f.Import("slices", "slices"), e.f.Import("strings", "strings")
 		for _, c := range withCols {
@@ -154,7 +155,7 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 			inner.Name(lowerFirst(given.path[len(given.path)-1]))
 		fields := make([]string, 0, len(withCols))
 		for _, c := range cols {
-			fields = append(fields, e.storageValue(c, row+"."+fieldPath(c)))
+			fields = append(fields, e.written(c, row, sig.now))
 		}
 		fields = append(fields, value)
 		query := with + "+" + repeat + ".Repeat(" +
@@ -177,7 +178,7 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 	q, args := sc.Name("q"), sc.Name("args")
 	values := make([]string, 0, len(cols))
 	for _, c := range cols {
-		values = append(values, e.storageValue(c, sig.row+"."+fieldPath(c)))
+		values = append(values, e.written(c, sig.row, sig.now))
 	}
 	e.printf("const %s = %s\n", without, goString(e.insertText(m, cols)+tail))
 	e.printf("const %s = %s\n", with, goString(e.insertText(m, withCols)+tail))

@@ -39,9 +39,12 @@ func (e emitter) changes() {
 	}
 }
 
+// changeColumns are the columns of p a change set writes: neither the primary key, those the database assigns, those
+// written by an insert alone, nor the audit columns, which the conventions write.
 func changeColumns(p scopePlan) []column {
 	return slices.DeleteFunc(slices.Clone(p.columns), func(c column) bool {
-		return c.col.Assigned || c.insertOnly || slices.Contains(p.definition.PrimaryKey, c.col.Name)
+		return c.col.Assigned || c.insertOnly || c.audit != auditNone ||
+			slices.Contains(p.definition.PrimaryKey, c.col.Name)
 	})
 }
 

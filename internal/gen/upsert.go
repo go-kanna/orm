@@ -56,9 +56,9 @@ func (e repoEmitter) changeValues(m repoMethod, sc gofile.Scope, sig signature, 
 	if cs := slices.DeleteFunc(slices.Clone(updated), func(c column) bool { return !additive(c) }); len(cs) > 0 {
 		added = columnNamesLiteral(cs)
 	}
-	e.printf("%[1]s, %[2]s := %[3]s.Of().UpsertValues(%[4]q, %[5]s, %[6]s, %[7]s)\n"+
-		"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", set, err, sig.params[m.changes], m.name, columnNamesLiteral(updated),
-		added, namesLiteral(m.rowKey()), zero, sig.mapped(err))
+	e.printf("%[1]s, %[2]s := %[3]s.UpsertValues(%[4]q, %[5]s, %[6]s, %[7]s)\n"+
+		"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", set, err, changesOf(m, sig.params[m.changes], sig.now), m.name,
+		columnNamesLiteral(updated), added, namesLiteral(m.rowKey()), zero, sig.mapped(err))
 	return set, err
 }
 

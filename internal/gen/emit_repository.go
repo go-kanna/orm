@@ -210,6 +210,8 @@ type signature struct {
 	// recv is the receiver, when the errors the method returns go through its mapError, and op the operation of the
 	// method, when mapError takes it.
 	recv, op string
+	// now names the time of the clock, when the method writes a column by it.
+	now string
 }
 
 // signature writes the parameters and the results of m, naming each parameter in sc.
@@ -321,6 +323,13 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		e.printf("// %s runs the query of its name in %s.\n", m.name, m.query.file)
 	}
 	e.printf("func (%s %s) %s%s {\n", recv, repo.implementation(), m.name, sig.text)
+	// A write of many rows reads the clock once it has rows to write.
+	if m.clocked() {
+		sig.now = sc.Name("now")
+		if !m.many {
+			e.readClock(recv, sig)
+		}
+	}
 	switch m.verb {
 	case "":
 		e.handWritten(m, sc, recv, sig)
@@ -627,6 +636,7 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 			none = "[]" + model + "{}, nil"
 		}
 		e.printf("if len(%s) == 0 {\nreturn %s\n}\n", sig.row, none)
+		e.readClock(recv, sig)
 		casts := make([]string, 0, len(inserted))
 		for _, c := range inserted {
 			// The type comes first, so that its package keeps its name and the local named after the field yields.
@@ -639,14 +649,14 @@ func (e repoEmitter) insert(m repoMethod, sc gofile.Scope, recv string, sig sign
 		i := sc.Name("i")
 		e.printf("for %s := range %s {\n", i, sig.row)
 		for j, c := range inserted {
-			e.printf("%s[%s] = %s\n", args[j], i, e.storageValue(c, sig.row+"["+i+"]."+fieldPath(c)))
+			e.printf("%s[%s] = %s\n", args[j], i, e.written(c, sig.row+"["+i+"]", sig.now))
 		}
 		e.printf("}\n")
 		query.WriteString(e.unnestRows(inserted, casts, given, gives))
 	default:
 		params := make([]string, 0, len(inserted))
 		for _, c := range inserted {
-			args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
+			args = append(args, e.written(c, sig.row, sig.now))
 			params = append(params, fmt.Sprintf("$%d", len(params)+1))
 		}
 		fmt.Fprintf(&query, "VALUES (%s)", strings.Join(params, ", "))
@@ -724,7 +734,7 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	sets, conds := make([]string, 0, len(updated)), make([]string, 0, len(key))
 	args, keyArgs := make([]string, 0, len(updated)+len(key)), make([]string, 0, len(key))
 	for _, c := range updated {
-		args = append(args, e.storageValue(c, sig.row+"."+fieldPath(c)))
+		args = append(args, e.written(c, sig.row, sig.now))
 		sets = append(sets, sqlName(e.d, c.col.Name)+" = "+e.placeholder(len(args)))
 	}
 	for _, name := range key {
@@ -800,7 +810,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 		chunk, args, i := sc.Name("chunk"), sc.Name("args"), sc.Name("i")
 		fields := make([]string, 0, len(inserted))
 		for _, c := range inserted {
-			fields = append(fields, e.storageValue(c, chunk+"["+i+"]."+fieldPath(c)))
+			fields = append(fields, e.written(c, chunk+"["+i+"]", sig.now))
 		}
 		capacity := "len(" + chunk + ")"
 		if len(inserted) > 1 {
@@ -812,6 +822,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 			query += "+" + goString(tail)
 		}
 		e.printf("if len(%s) == 0 {\nreturn nil\n}\n", sig.row)
+		e.readClock(recv, sig)
 		e.printf("// As many rows to a statement as its 65,535 placeholders take.\n")
 		e.printf("for %[1]s := range %[2]s.Chunk(%[3]s, %[4]d) {\n%[5]s := make([]any, 0, %[6]s)\n"+
 			"for %[7]s := range %[1]s {\n%[5]s = append(%[5]s, %[8]s)\n}\n", chunk, e.f.Import("slices", "slices"), sig.row,
@@ -824,7 +835,7 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	q := sc.Name("q")
 	rowArgs := make([]string, 0, len(inserted))
 	for _, c := range inserted {
-		rowArgs = append(rowArgs, e.storageValue(c, sig.row+"."+fieldPath(c)))
+		rowArgs = append(rowArgs, e.written(c, sig.row, sig.now))
 	}
 	if set != "" {
 		rowArgs = []string{"append([]any{" + strings.Join(rowArgs, ", ") + "}, " + set + "...)..."}
