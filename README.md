@@ -313,6 +313,8 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 | `orm:"note,nullzero"`           | a nullable string column: read NULL as the zero string and write the zero string as NULL |
 | `orm:",default"`                | omit this column from generated INSERT statements and use its database default |
 | `orm:",insertonly"`             | write this column by an insert alone: an update, and an upsert meeting its row, leave it as it was |
+| `orm:",created"`                | the time a row is created at, which kanna-orm writes: see [Creation and update times](#creation-and-update-times) |
+| `orm:",updated"`                | the time a row is last updated at, which kanna-orm writes: see [Creation and update times](#creation-and-update-times) |
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
 | `orm:"fk=order_id"`             | on a [relation](#relations), the columns of the foreign key it follows, when its names do not tell them |
 | `orm:"relation=device_topics"`  | a slice of the values of a column of the related rows: a [scalar relation](#scalar-relations) |
@@ -861,7 +863,8 @@ its row by such a key, inserting a row of no id and updating the one of its id. 
 sequence, so a later row the database assigns may take the same one: give values the sequence will not reach, or set
 it after. A column the database always assigns, as an identity `ALWAYS` or a generated one, is left out always, as is a
 field tagged `default`. Otherwise a zero value is written as a zero value: a `false` for a column defaulting to `true`
-stays `false`. Set `created_at` and `updated_at` in your domain, or explicitly use their database defaults.
+stays `false`. The times a row is created and updated at are written by a clock: see
+[Creation and update times](#creation-and-update-times).
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
 done. A row goes by one of two constant statements, with the column and without, as its value says. The rows of a
@@ -874,8 +877,9 @@ whether the row is there before returning `orm.ErrNotFound`.
 ### Database defaults
 
 Tag a field with `orm:",default"` to leave its column out of generated INSERT statements. A field with a different
-column name can use `orm:"created_at,default"`. The snapshot must record a database default or database assignment
-for that column; otherwise generation fails. `default` and `nullzero` can be combined.
+column name can use `orm:"currency_code,default"`. The snapshot must record a database default or database assignment
+for that column; otherwise generation fails, but for the [creation and update times](#creation-and-update-times),
+which a trigger may assign. `default` and `nullzero` can be combined.
 
 ```go
 type Product struct {
@@ -897,13 +901,88 @@ On PostgreSQL, a method returning the model reads database-generated values with
 A single row with every column omitted uses DEFAULT VALUES. Bulk writes still require at least one input column.
 
 UPDATE keeps writing the model's values for tagged non-key fields. An upsert keeps a tagged column's stored value on a
-conflict rather than reset it to its database default. It does not refresh a column such as `updated_at` on a conflict
-either: let a trigger assign one, or have the upsert take a [change set](#writing-a-change-set-over-the-row-met).
+conflict rather than reset it to its database default. The time a row is updated at is written on a conflict by the
+clock, unless `default` leaves it to the database too: see [Creation and update times](#creation-and-update-times).
 
 **On MySQL**, which has no RETURNING, a method returning the model reads its row back by AUTO_INCREMENT, by a primary
 key it writes, or by an upsert's conflict key. When `default` leaves out the key that read needs, generation stops at a
 method returning the model; one returning `error` alone reads nothing back and may leave it out. A bulk write returns
 no model on MySQL.
+
+### Creation and update times
+
+The field named `CreatedAt` holds the time its row is created at, and the one named `UpdatedAt` the time it is last
+updated at. kanna-orm writes both by a clock, so that the code above the repository sets neither. A model naming them
+otherwise tags its fields `created` and `updated`; in a model with a field tagged one, the name of that kind is not
+special:
+
+```go
+type Customer struct {
+	ID        CustomerID
+	Name      string
+	CreatedAt time.Time // created_at
+	UpdatedAt time.Time // updated_at
+}
+
+type Event struct {
+	ID         int64
+	Kind       string
+	InsertedAt time.Time `orm:",created"`
+	ModifiedAt time.Time `orm:",updated"`
+}
+```
+
+| Write                                                          | Creation time    | Update time      |
+|----------------------------------------------------------------|------------------|------------------|
+| `Insert`, of one row or many, and an `Upsert` inserting a row  | the clock's time | the clock's time |
+| `Update` of a row, or of a change set, by keys or by scopes    | kept             | the clock's time |
+| `Upsert` meeting its row, of the row or of a change set        | kept             | the clock's time, but of an empty change set, which leaves the row as it was |
+| [`Copy`](#copying-many-rows)                                   | the row's value  | the row's value  |
+
+- Each is a `time.Time`. Another type, a pointer included, stops generation, and so do two fields of one kind in one
+  model.
+- The clock's time is written over whatever the model holds: a zero is not taken for one to fill in, and a value is
+  not kept. A method reads the clock once, so the rows of one write get the same time.
+- A change set has no setter of either, as `SetUpdatedAt`. An `Update` of a change set writes the update time with the
+  columns it sets, and one of an empty change set is still an error.
+- A `Copy` loads rows as they are, as an import keeping their original times does, so it writes the times the rows
+  hold and reads no clock. Give new rows their times, or write them by an `Insert` of many rows.
+- `insertonly` on either stops generation: an insert alone writes the creation time already, and every write of the
+  row writes the update time. Remove the tag.
+- `default` on either has the database assign it, by a DEFAULT or by a trigger: kanna-orm writes the column in no
+  statement, an insert, an update, an upsert, or a copy, and a method returning the row reads it back, by RETURNING on
+  PostgreSQL. As the snapshot records no triggers, it needs no default recorded there, as another `default` does; a
+  column NOT NULL with neither a DEFAULT nor a trigger fails when a row is inserted.
+- [Hand-written SQL](#hand-written-sql) writes what it says, these columns included.
+
+The clock is `time.Now` unless the constructor is given an `orm.Clocker` by `option.WithClock`, as it is given hooks by
+`option.WithHook`, and `Bind` keeps it. `Now` takes the context of the method writing, so that an application carrying
+its clock in the context adapts it in one method:
+
+```go
+type clock struct{ now time.Time }
+
+func (c clock) Now(context.Context) time.Time { return c.now }
+
+repo := postgres.NewCustomer(db, option.WithClock(clock{now: time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)}))
+```
+
+A method you write on the implementation reads the same clock by `r.db.Now(ctx)`, as it runs statements through the
+hooks on `r.db`, so that SQL of your own writing these columns gets the time a test gives:
+
+```go
+func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
+	_, err := r.db.Exec(ctx, "UPDATE customers SET updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
+	return err
+}
+```
+
+A database may keep less of a time than Go does: PostgreSQL keeps microseconds, and MySQL the fractional digits of
+its column, as `datetime(6)` keeps six and `datetime` none. A model a method returns holds the time as stored, read by
+RETURNING on PostgreSQL and read back on MySQL, so it may differ from the time the clock gave. Compare them at the
+precision the column keeps, or have a test's clock give times it keeps whole.
+
+Both database examples write the times their customers sign up and change at by a clock they set.
 
 ### Upserting
 
@@ -917,7 +996,7 @@ type User struct {
 	TenantID  int64
 	Email     string
 	Name      string
-	CreatedAt time.Time `orm:",insertonly"`
+	CreatedAt time.Time
 }
 
 // package repository
@@ -944,18 +1023,19 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 ```
 
 The columns must be the primary key or a unique key of the table, exactly, and none the database always assigns, as an
-insert never gives those to meet a row by. The row met gets every column but those of the key, the primary key, and those
-tagged `insertonly`; with none left, the key is set to itself, so that the row is still read back. MySQL updates on a
-conflict over any unique key, so a table with unique keys besides the one named gets a warning:
+insert never gives those to meet a row by. The row met gets every column but those of the key, the primary key, those
+tagged `insertonly`, and the [creation time](#creation-and-update-times); with none left, the key is set to itself, so
+that the row is still read back. MySQL updates on a conflict over any unique key, so a table with unique keys besides
+the one named gets a warning:
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
 ```
 
-A field tagged `orm:",insertonly"` is written by an insert alone, as when a user joined: an `Update`, and an upsert
-meeting its row, leave its column as it was, and a change set has no setter for it. With `default`, which leaves it out
-of an insert, it would never be written, so the two together stop generation.
+A field tagged `orm:",insertonly"` is written by an insert alone, as the channel a user signed up through: an `Update`,
+and an upsert meeting its row, leave its column as it was, and a change set has no setter for it. With `default`, which
+leaves it out of an insert, it would never be written, so the two together stop generation.
 
 #### Writing a change set over the row met
 
@@ -983,7 +1063,8 @@ an upsert of one row takes a change set; generation stops at a bulk upsert takin
 row it meets.
 
 The statement is the same whatever the change set holds: a column it can write takes the change set's value when it
-gives one, and keeps the stored value otherwise.
+gives one, and keeps the stored value otherwise. The [update time](#creation-and-update-times) takes the clock's time
+when the change set gives any value, and so is kept by an empty one.
 
 ```sql
 -- PostgreSQL
@@ -1049,7 +1130,8 @@ COPY has no `RETURNING` and no `ON CONFLICT`, and a table with row-level securit
 own, which an `Insert` of many rows never turns into.
 
 - It writes the columns an `Insert` of many rows writes, leaving out those tagged `default` and those the database
-  always assigns. One COPY writes a column of every row or of none, so a column the database assigns unless given, as
+  always assigns. It writes the [creation and update times](#creation-and-update-times) as the rows hold them, and
+  reads no clock. One COPY writes a column of every row or of none, so a column the database assigns unless given, as
   a serial, is written when every row gives it a value and left to the database when none does, and rows of both
   kinds return an error and write nothing: copy them apart.
 - An array, which `unnest` cannot write, is copied as any other value.
@@ -1101,7 +1183,7 @@ UPDATE `order_lines` SET `quantity` = `quantity` + ? WHERE ...
 
 A nullable column has no `Add`, as NULL plus a number stays NULL, and neither has a number a `Valuer` stores as text.
 
-Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add` of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, columns tagged `insertonly`, and relations have no setters. An `Update` of an empty change set is an error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add` of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, columns tagged `insertonly`, the [creation and update times](#creation-and-update-times), and relations have no setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty change set is an error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 
@@ -1277,7 +1359,7 @@ repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 
 A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A [Copy](#copying-many-rows) is seen as its COPY statement, as `COPY "events" ("kind", "tags", "note") FROM STDIN`, with no `Args`. A condition or validation error that prevents SQL from running calls no hook.
 
-Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` on pgx, with `r.db.CopyFrom` in a package where kanna-orm writes a Copy, and `r.db.ExecContext`, `r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns, before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their rows through the hooks, on either driver. Both database examples give an After that prints each statement.
+Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, no time is measured. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` on pgx, with `r.db.CopyFrom` in a package where kanna-orm writes a Copy, and `r.db.ExecContext`, `r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns, before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their rows through the hooks, on either driver. Both database examples give an After that prints each statement.
 
 ### Reading the values of a column
 
@@ -1598,7 +1680,6 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 These are out of what kanna-orm does so far, not ruled out:
 
 - Aggregates other than `Count`, such as sums and grouping. Write them in [SQL](#hand-written-sql) returning a DTO.
-- Set `created_at` and `updated_at`.
 - Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
 - Page by a column that may be NULL.
 - Support MariaDB or SQLite.

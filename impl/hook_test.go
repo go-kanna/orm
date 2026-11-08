@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kanna/orm/hook"
 	"github.com/go-kanna/orm/impl"
@@ -138,6 +139,28 @@ func TestOptions_Option(t *testing.T) {
 	more := impl.NewOptions(o.Option(), impl.WithHook(noop))
 	if len(o.Hooks) != 1 || len(more.Hooks) != 2 {
 		t.Fatalf("Option gave %d hooks and kept %d of its own, want 2 and 1", len(more.Hooks), len(o.Hooks))
+	}
+}
+
+type fixedClock time.Time
+
+func (c fixedClock) Now(context.Context) time.Time { return time.Time(c) }
+
+func TestOptions_Now(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for _, o := range []impl.Options{impl.NewOptions(), impl.NewOptions(impl.WithClock(nil))} {
+		if now := o.Now(ctx); time.Since(now).Abs() > time.Minute {
+			t.Errorf("Now with no clock = %v, want time.Now", now)
+		}
+	}
+	first, last := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	o := impl.NewOptions(impl.WithClock(fixedClock(first)), impl.WithClock(fixedClock(last)))
+	if now := o.Now(ctx); !now.Equal(last) {
+		t.Errorf("Now = %v, want %v of the clock given last", now, last)
+	}
+	if now := impl.NewOptions(o.Option()).Now(ctx); !now.Equal(last) {
+		t.Errorf("Now of the options Option gives = %v, want %v, as Bind keeps the clock", now, last)
 	}
 }
 

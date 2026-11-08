@@ -23,6 +23,8 @@ type fieldTag struct {
 	// insertOnly says the column is written by an insert alone, and left as it was by an update and by an upsert
 	// meeting its row.
 	insertOnly bool
+	// audit says the column is the time its row was created, or last updated, whatever the field is named.
+	audit audit
 }
 
 // parseTag reads the orm key of a struct tag. A tag that reflect cannot read is an error rather than no tag, since
@@ -49,6 +51,13 @@ func parseTag(tag string) (fieldTag, error) {
 				tag.insertDefault = true
 			case option == "insertonly" && !tag.insertOnly:
 				tag.insertOnly = true
+			case option == "created" && tag.audit == auditNone:
+				tag.audit = auditCreated
+			case option == "updated" && tag.audit == auditNone:
+				tag.audit = auditUpdated
+			case option == "created" && tag.audit == auditUpdated, option == "updated" && tag.audit == auditCreated:
+				return fieldTag{}, errors.New("a column is the time its row was created or the time it was " +
+					"updated, not both")
 			default:
 				return fieldTag{}, fmt.Errorf("unknown or duplicate orm option %q", option)
 			}

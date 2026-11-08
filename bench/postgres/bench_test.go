@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kanna/orm/option"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
@@ -397,10 +398,10 @@ var connect = sync.OnceValues(func() (env, error) {
 	subjects := []subject{
 		newSubject("pgx", pgx.New(pool), pgxOrder, pgxOrder),
 		newSubject("sqlc", sqlc.New(pool), sqlcOrder, sqlcOrderWithLines),
-		newSubject("kanna(pgx)",
-			kanna.New(kpgx.NewCustomerRepository(pool), kpgx.NewOrderRepository(pool)), kannaOrder, kannaOrder),
-		newSubject("kanna(sql.DB)",
-			kanna.New(kstdlib.NewCustomerRepository(db), kstdlib.NewOrderRepository(db)), kannaOrder, kannaOrder),
+		newSubject("kanna(pgx)", kanna.New(kpgx.NewCustomerRepository(pool, option.WithClock(kanna.Clock{})),
+			kpgx.NewOrderRepository(pool)), kannaOrder, kannaOrder),
+		newSubject("kanna(sql.DB)", kanna.New(kstdlib.NewCustomerRepository(db, option.WithClock(kanna.Clock{})),
+			kstdlib.NewOrderRepository(db)), kannaOrder, kannaOrder),
 		newSubject("gorm", g, gormOrder, gormOrder),
 		newSubject("bun", bun.New(config), bunOrder, bunOrder),
 		newSubject("ent", ent.New(db), entOrder, entOrder),

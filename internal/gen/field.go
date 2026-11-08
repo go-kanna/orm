@@ -25,6 +25,7 @@ type column struct {
 	nullzero      bool
 	insertDefault bool
 	insertOnly    bool
+	audit         audit
 	relationValue bool
 }
 
@@ -50,10 +51,13 @@ type matched struct {
 // fields matches the fields of the model of sc to the columns of t, its table. It reports a field that is neither a
 // column nor a relation, one naming a column t does not have, a column held by two fields, and a column that may be
 // NULL held by a field that cannot be nil. A field whose type does not type-check is neither, but unchecked: it
-// reports packages.NotTypeChecked of it, as the type error behind it says more.
+// reports packages.NotTypeChecked of it, as the type error behind it says more. It settles which columns are the
+// times a row is created and updated at, as audits does, and then reports a default the database has none for.
 func fields(fset *token.FileSet, sc scope, t snapshot.Table) (matched, []diag.Diag) {
 	m := matcher{fset: fset, sc: sc, table: t, held: map[string]string{}}
 	m.match(sc.model.Underlying().(*types.Struct), nil) //nolint:forcetypeassert // findScopes takes structs alone
+	m.audits()
+	m.defaults()
 	return m.matched, m.ds
 }
 
@@ -135,7 +139,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 					label, written, f.Name()).WithHints(`name the foreign key it follows with orm:"fk=<column>"`))
 				continue
 			}
-			if tag.nullzero || tag.insertDefault || tag.insertOnly {
+			if tag.nullzero || tag.insertDefault || tag.insertOnly || tag.audit != auditNone {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is for a column, and %s is a relation`,
 					label, written, f.Name()))
 				continue
@@ -168,11 +172,6 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		return
 	}
 	col := m.table.Columns[i]
-	if insertDefault && !col.Default && !col.Assigned {
-		m.ds = append(m.ds, diag.Errorf(pos, "%s: default requires %s.%s to have a database default",
-			label, m.sc.table, name))
-		return
-	}
 	if insertDefault && tag.insertOnly {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: default leaves %s.%s out of an insert, and insertonly out of every "+
 			"other write, so it would never be written", label, m.sc.table, name))
@@ -206,7 +205,18 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		return
 	}
 	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos,
-		nullzero: nullzero, insertDefault: insertDefault, insertOnly: tag.insertOnly})
+		nullzero: nullzero, insertDefault: insertDefault, insertOnly: tag.insertOnly, audit: tag.audit})
+}
+
+// defaults reports each column tagged default of which the snapshot records no database default, but for the times a
+// row is created and updated at, which a trigger may assign, as the snapshot records no triggers.
+func (m *matcher) defaults() {
+	for _, c := range m.columns {
+		if c.insertDefault && c.audit == auditNone && !c.col.Default && !c.col.Assigned {
+			m.ds = append(m.ds, diag.Errorf(c.pos, "%s.%s: default requires %s.%s to have a database default",
+				m.sc.model.Obj().Name(), strings.Join(c.path, "."), m.sc.table, c.col.Name))
+		}
+	}
 }
 
 // holdsColumn reports whether a field of type t holds a column: t is a type a driver reads a column into, a pointer

@@ -30,6 +30,7 @@ make bench-gen                                # regenerate the code of sqlc and 
 - GORM は `SkipDefaultTransaction` を付けて書き込みます。付けないと、書き込みのたびにトランザクションを開始してコミットするので、ほかの対象にはない往復が 2 回増えます。
 - bun は、[bun のドキュメント](https://bun.uptrace.dev/postgres/)どおり、pgx を simple protocol で使います。bun は引数をクエリ自体に埋め込むので、prepare するものがありません。
 - sqlc は、ほかの対象と同じく、`timestamptz` を `time.Time` に、NULL になりうるカラムをポインタに読み込みます（pgtype の型にはしません）。sqlc のカタログは複数の配列の `unnest` を知らないので、複数行の Insert は配列ごとの `unnest` で書いています。
+- kanna-orm は、行を作成した時刻と同じく、`created_at` を repository の時計で書きます。ベンチマークが渡す時計は、書き込みに与えられた時刻を返し、kanna-orm の store はその時刻を context で渡すので、ほかの対象と同じ値を書きます。
 - それ以外は、それぞれの既定のままです。特に pgx は、bun 以外のすべての対象で、文を接続ごとに 1 回 prepare します。
 
 ## 操作

@@ -67,9 +67,10 @@ func (c opCall) scope(i int) *scopeVal {
 	return unknownScope()
 }
 
-func (c opCall) change(i int) *changeVal {
-	if i < len(c.args) {
-		if s, ok := c.args[i].(*changeVal); ok {
+// change is the change set of argument 0, the receiver of a method of Changes.
+func (c opCall) change() *changeVal {
+	if len(c.args) > 0 {
+		if s, ok := c.args[0].(*changeVal); ok {
 			return s
 		}
 	}
@@ -159,6 +160,7 @@ var ops = map[string]op{
 	"impl.Of.RenderDelete":              renders(3, renderDelete),
 	"impl.Changes.Set":                  opSet,
 	"impl.Changes.Add":                  opSet,
+	"impl.Changes.Touch":                opTouch,
 	"impl.Changes.RenderUpdate":         renders(3, renderUpdate),
 	"impl.Changes.RenderUpdateSelected": renders(3, renderUpdateSelected),
 	"impl.Changes.UpsertValues":         renders(2, upsertValues),
@@ -349,7 +351,7 @@ func (c opCall) preload(each bool) *scopeVal {
 
 // opSet is Set or Add, either of which assigns the column of argument 1.
 func opSet(c opCall) (value, *failed) {
-	ch := c.change(0)
+	ch := c.change()
 	column, ok := c.str(1)
 	if !ok {
 		r := *ch
@@ -358,6 +360,10 @@ func opSet(c opCall) (value, *failed) {
 	}
 	return ch.assign(column, c.at), nil
 }
+
+// opTouch is Touch of the change set of argument 0, as vet sees it: the change set itself. The update time it assigns,
+// when the change set assigns any column, is one the method may write and none of the key it meets its row by.
+func opTouch(c opCall) (value, *failed) { return c.change(), nil }
 
 func fail(msg string, at cause, hint string) *failed {
 	return &failed{msg: msg, at: at, hint: hint}
@@ -433,7 +439,7 @@ func renderUpdateSelected(c opCall) *failed {
 // updateSelected is the check of an Update of the change set of argument 0, which may assign the columns of argument 3,
 // to the rows s selects by key, which vet knows if known says so.
 func updateSelected(c opCall, s *scopeVal, key []string, known bool) *failed {
-	ch := c.change(0)
+	ch := c.change()
 	if ch.empty() == every {
 		return fail("Update requires at least one assigned column", cause{}, "")
 	}
@@ -468,7 +474,7 @@ func targets(c opCall, s *scopeVal, what string, key []string, known bool) *fail
 
 // upsertValues is UpsertValues(method, allowed, added, key) of the change set of argument 0.
 func upsertValues(c opCall) *failed {
-	ch := c.change(0)
+	ch := c.change()
 	method, _ := c.str(1)
 	allowed, okAllowed := c.strs(2)
 	key, okKey := c.strs(4)

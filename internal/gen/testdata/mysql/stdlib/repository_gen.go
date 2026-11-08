@@ -30,6 +30,10 @@ type kDatabase struct {
 	options impl.Options
 }
 
+// Now is the time of the clock of options, which the repositories write the creation and update times of
+// rows by, and those written by hand can.
+func (d kDatabase) Now(ctx context.Context) time.Time { return d.options.Now(ctx) }
+
 func (d kDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	result, err := d.dbtx.ExecContext(ctx, query, args...)

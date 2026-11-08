@@ -38,6 +38,9 @@ choice:
 - sqlc reads `timestamptz` into `time.Time`, and a column that may be NULL into a pointer, as the others do, rather than
   into pgtype's types. Its catalog does not know `unnest` of several arrays, so it inserts many rows by an `unnest` of
   each.
+- kanna-orm writes `created_at` by the clock of its repositories, as it writes the time any row is created at. The clock
+  the benchmarks give it tells the time a write is given, which the store of kanna-orm passes in the context, so that it
+  writes what the others do.
 - The rest is as each comes. In particular, pgx prepares each statement once a connection, for every subject but bun.
 
 ## Operations

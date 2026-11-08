@@ -31,6 +31,15 @@ func (c Changes[M]) Add(column string, n any) Changes[M] {
 	return c.with(assignment{column: column, value: n, add: true})
 }
 
+// Touch returns a new change set assigning value to column, the update time of a row, when c assigns any column, and c
+// itself when it assigns none, so that a write of nothing still writes nothing.
+func (c Changes[M]) Touch(column string, value any) Changes[M] {
+	if len(c.values) == 0 {
+		return c
+	}
+	return c.Set(column, value)
+}
+
 func (c Changes[M]) with(a assignment) Changes[M] {
 	c.values = slices.Clone(c.values)
 	if i := slices.IndexFunc(c.values, func(b assignment) bool { return b.column == a.column }); i >= 0 {

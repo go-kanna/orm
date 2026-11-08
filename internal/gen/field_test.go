@@ -64,7 +64,7 @@ func (e *Email) Scan(any) error { return nil }
 
 type Audit struct {
 	CreatedAt time.Time
-	UpdatedAt *time.Time
+	UpdatedAt time.Time
 }
 
 type (
@@ -86,7 +86,7 @@ type (
 			{Name: "contact", Type: "text"},
 			{Name: "scores", Type: "_float8"},
 			{Name: "created_at", Type: "timestamptz", NotNull: true, Default: true},
-			{Name: "updated_at", Type: "timestamptz"},
+			{Name: "updated_at", Type: "timestamptz", NotNull: true},
 			{Name: "legacy", Type: "text"},
 		}},
 	}}
@@ -104,8 +104,8 @@ type (
 		"Order.Receipt []byte receipt",
 		"Order.Contact *model.Email contact",
 		"Order.Scores []*float64 scores",
-		"Order.Audit.CreatedAt time.Time created_at",
-		"Order.Audit.UpdatedAt *time.Time updated_at",
+		"Order.Audit.CreatedAt time.Time created_at created",
+		"Order.Audit.UpdatedAt time.Time updated_at updated",
 		"Order.Lines []model.OrderLine relation",
 		"Order.Customer *model.Customer relation fk=customer_id",
 		"Order.Coupon *model.Coupon relation",

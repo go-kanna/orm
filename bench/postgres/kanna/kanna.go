@@ -21,6 +21,17 @@ func New(customers repository.CustomerRepository, orders repository.OrderReposit
 	return Store{customers: customers, orders: orders}
 }
 
+// Clock is the clock of the repositories, which write created_at by it: the time a write of the benchmarks gives, as
+// they give the other subjects, which the Store passes on in the context.
+type Clock struct{}
+
+func (Clock) Now(ctx context.Context) time.Time {
+	now, _ := ctx.Value(nowKey{}).(time.Time)
+	return now
+}
+
+type nowKey struct{}
+
 func (s Store) Get(ctx context.Context, id int64) (model.Order, error) {
 	o, err := s.orders.Get(ctx, id)
 	if err != nil {
@@ -42,7 +53,7 @@ func (s Store) Page(ctx context.Context, placedAt time.Time, id int64) ([]model.
 }
 
 func (s Store) Insert(ctx context.Context, email, name string, createdAt time.Time) (int64, error) {
-	c, err := s.customers.Insert(ctx, model.Customer{Email: email, Name: name, CreatedAt: createdAt})
+	c, err := s.customers.Insert(context.WithValue(ctx, nowKey{}, createdAt), model.Customer{Email: email, Name: name})
 	if err != nil {
 		return 0, fmt.Errorf("insert customer: %w", err)
 	}
@@ -62,7 +73,8 @@ func (s Store) InsertLines(ctx context.Context, orderID int64, n int) (int, erro
 }
 
 func (s Store) Upsert(ctx context.Context, email, name string, createdAt time.Time) (int64, error) {
-	c, err := s.customers.UpsertByEmail(ctx, model.Customer{Email: email, Name: name, CreatedAt: createdAt})
+	c, err := s.customers.UpsertByEmail(context.WithValue(ctx, nowKey{}, createdAt),
+		model.Customer{Email: email, Name: name})
 	if err != nil {
 		return 0, fmt.Errorf("upsert customer: %w", err)
 	}
