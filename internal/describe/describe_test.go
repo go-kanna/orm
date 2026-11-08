@@ -178,6 +178,30 @@ CREATE TABLE orders (id bigint PRIMARY KEY);
 	}
 }
 
+func TestDescribe_ScopeWrittenAsAStatement(t *testing.T) {
+	t.Parallel()
+
+	const text = "SELECT 1\nFROM orders\nWHERE placed_at >= :at;"
+	pkgs := module(t, shop+`
+-- scopes/order_scopes.sql --
+-- scope: Order.PlacedSince(at time.Time)
+`+text+`
+`)
+	db := &fake{}
+	s, ds := describe.Describe(t.Context(), db, pkgs, nil)
+	if len(ds) > 0 {
+		t.Fatalf("Describe:\n%s", report(ds))
+	}
+	want := snapshot.Statement{Digest: snapshot.Digest(text), Params: []snapshot.Param{{Name: "at"}}}
+	if got := s.Statements["example.com/shop/scopes.Order.PlacedSince"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("Order.PlacedSince = %+v, want %+v", got, want)
+	}
+	// Its condition alone is asked about, as that of a scope written as one.
+	if !slices.Equal(db.asked, []string{"SELECT 1 FROM \"orders\" WHERE (\nplaced_at >= :at\n)"}) {
+		t.Errorf("asked:\n%s", strings.Join(db.asked, "\n---\n"))
+	}
+}
+
 func TestDescribe_ImpliedScopes(t *testing.T) {
 	t.Parallel()
 
@@ -268,6 +292,17 @@ FROM orders WHERE status = $1
 status <> 'closed'
   AND kind = $2
 `, "order_scopes.sql:3:14: error: $2 is a placeholder of PostgreSQL's own: write the parameter as :name"},
+		{"a placeholder of the database's own in a scope written as a statement", `
+-- scopes/order_scopes.sql --
+-- scope: Order.Open()
+SELECT 1 FROM orders WHERE kind = $2
+`, "order_scopes.sql:2:35: error: $2 is a placeholder of PostgreSQL's own: write the parameter as :name"},
+		{"a scope written as a statement of another table", `
+-- scopes/order_scopes.sql --
+-- scope: Order.Open()
+SELECT 1 FROM order_lines WHERE status <> 'closed'
+`, "order_scopes.sql:1:1: error: -- scope: Order.Open: the statement selects from order_lines, not from its " +
+			"table orders\n  write it as SELECT 1 FROM orders WHERE <condition>, or as the condition alone"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -317,6 +352,9 @@ func TestDescribe_Databases(t *testing.T) {
 -- scopes/order_scopes.sql --
 -- scope: Order.PlacedSince(at time.Time)
 placed_at >= :at
+
+-- scope: Order.Open()
+SELECT 1 FROM orders WHERE status <> 'closed';
 -- store/order_queries.sql --
 -- query: CountOpen
 SELECT count(*) AS n FROM orders WHERE status = :status
@@ -375,6 +413,9 @@ SELECT count(*) AS n FROM orders WHERE status = :status
 			got.Digest = ""
 			if !reflect.DeepEqual(got, tt.open) {
 				t.Errorf("CountOpen = %+v, want %+v", got, tt.open)
+			}
+			if _, ok := s.Statements["example.com/shop/scopes.Order.Open"]; !ok {
+				t.Errorf("statements = %+v, want Order.Open among them", s.Statements)
 			}
 		})
 	}

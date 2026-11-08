@@ -46,8 +46,10 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 		return nil, nil
 	}
 	names := make([]string, 0, len(plans))
+	tables := make(map[string]string, len(plans))
 	for _, p := range plans {
 		names = append(names, p.name)
+		tables[p.name] = p.table
 	}
 	r := resolver{pkg: pkg}
 
@@ -81,6 +83,12 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 			continue
 		}
 
+		cond, d := st.Condition(tables[st.Type], s.Dialect)
+		if d != nil {
+			ds = append(ds, *d)
+			continue
+		}
+
 		described, ok := s.Statements[pkg.PkgPath+"."+st.Type+"."+st.Name]
 		switch {
 		case !ok:
@@ -93,7 +101,7 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 			continue
 		}
 
-		sc, sds := r.sqlScope(st, s.Dialect, errorf)
+		sc, sds := r.sqlScope(st, cond, s.Dialect, errorf)
 		ds = append(ds, sds...)
 		if !diag.HasErrors(sds) {
 			sc.file = filepath.Base(st.Header.Filename)
@@ -103,8 +111,8 @@ func sqlScopes(pkg *packages.Package, s snapshot.Snapshot, plans []scopePlan, st
 	return scopes, ds
 }
 
-// sqlScope reads st as a scope of a database of dialect d. errorf reports a problem with it.
-func (r resolver) sqlScope(st sqlfile.Statement, d snapshot.Dialect,
+// sqlScope reads st, of condition cond, as a scope of a database of dialect d. errorf reports a problem with it.
+func (r resolver) sqlScope(st sqlfile.Statement, cond sqlfile.Condition, d snapshot.Dialect,
 	errorf func(format string, args ...any) diag.Diag,
 ) (sqlScope, []diag.Diag) {
 	sc := sqlScope{name: st.Name, doc: st.Doc, pos: st.Header}
@@ -141,10 +149,9 @@ func (r resolver) sqlScope(st sqlfile.Statement, d snapshot.Dialect,
 		}
 	}
 
-	pieces, args, err := placeholder.Split(st.Text, d)
+	pieces, args, err := placeholder.Split(cond.Text, d)
 	if e, ok := errors.AsType[*placeholder.Error](err); ok {
-		pos := token.Position{Filename: st.Header.Filename, Line: st.Line + e.Line - 1, Column: e.Column}
-		return sc, []diag.Diag{diag.Errorf(pos, "%s", e.Message)}
+		return sc, []diag.Diag{diag.Errorf(cond.At(e.Line, e.Column), "%s", e.Message)}
 	}
 	if err != nil {
 		return sc, []diag.Diag{errorf("%v", err)}

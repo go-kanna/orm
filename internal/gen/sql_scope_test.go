@@ -56,6 +56,21 @@ func TestEmit_SQLScopeMistakes(t *testing.T) {
 			want: "order_scopes.sql:1:1: warning: -- scope: Order.Since: the statement does not use at"},
 		{name: "a placeholder of the database's own", sql: "-- scope: Order.Since()\n\nplaced_at >= $1\n",
 			want: "order_scopes.sql:3:14: error: $1 is a placeholder of PostgreSQL's own: write the parameter as :name"},
+		{name: "a placeholder of the database's own in a statement",
+			sql:  "-- scope: Order.Since()\nSELECT 1 FROM orders WHERE placed_at >= $1;\n",
+			want: "order_scopes.sql:2:41: error: $1 is a placeholder of PostgreSQL's own: write the parameter as :name"},
+		{name: "a statement of another table", sql: "-- scope: Order.Open()\nSELECT 1 FROM order_lines WHERE true\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.Open: the statement selects from order_lines, not from " +
+				"its table orders\n  write it as SELECT 1 FROM orders WHERE <condition>, or as the condition alone"},
+		{name: "a statement naming its table by an alias",
+			sql: "-- scope: Order.Open()\nSELECT 1 FROM orders o WHERE o.status <> 'closed'\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.Open: the statement gives orders an alias, which means " +
+				"nothing where kanna-orm puts its condition\n" +
+				"  write it as SELECT 1 FROM orders WHERE <condition>, or as the condition alone"},
+		{name: "a statement with more than a condition",
+			sql: "-- scope: Order.Recent()\nSELECT 1 FROM orders WHERE true ORDER BY placed_at DESC LIMIT 10\n",
+			want: "order_scopes.sql:1:1: error: -- scope: Order.Recent: the statement holds more than a condition " +
+				"after WHERE\n  write it as SELECT 1 FROM orders WHERE <condition>, or as the condition alone"},
 		{name: "a scope written twice", sql: "-- scope: Order.Open()\nstatus <> 'closed'\n\n" +
 			"-- scope: Order.Open()\nstatus = 'open'\n",
 			want: "order_scopes.sql:4:1: error: -- scope: Order.Open is written a second time"},
@@ -172,5 +187,51 @@ var _ other.Kind
 		"f time.Duration) Order {"
 	if !strings.Contains(string(src), want) {
 		t.Errorf("Emit wrote no %q:\n%s", want, src)
+	}
+}
+
+func TestEmit_SQLScopeStatement(t *testing.T) {
+	t.Parallel()
+
+	emit := func(t *testing.T, body string) string {
+		t.Helper()
+
+		sql := "-- Since narrows to the orders placed at since or later.\n-- scope: Order.Since(since time.Time)\n" + body
+		pkg := module(t, orderScope+`
+-- scopes/imports.go --
+package scopes
+
+import _ "time"
+-- model/model.go --
+package model
+
+import "time"
+
+type Order struct {
+	ID       int64
+	PlacedAt time.Time
+}
+-- scopes/order_scopes.sql --
+`+sql)
+		stmts, _ := sqlfile.Parse("order_scopes.sql", []byte(sql))
+		s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL,
+			Statements: map[string]snapshot.Statement{
+				"example.com/shop/scopes.Order.Since": {Digest: snapshot.Digest(stmts[0].Text)},
+			},
+			Tables: map[string]snapshot.Table{"orders": {Columns: columns("id", "placed_at"), PrimaryKey: []string{"id"}}},
+		}
+		src, ds, err := gen.Emit(pkg, s)
+		if err != nil || len(ds) > 0 {
+			t.Fatalf("Emit: %v\n%s", err, report(ds))
+		}
+		return string(src)
+	}
+
+	bare := emit(t, "placed_at >= :since\n")
+	if !strings.Contains(bare, "func (s Order) Since(since time.Time) Order {") {
+		t.Fatalf("Emit wrote no Since:\n%s", bare)
+	}
+	if got := emit(t, "select 1\nfrom orders\nwhere placed_at >= :since;\n"); got != bare {
+		t.Errorf("Emit of the statement wrote\n%s\nwant what it writes of the condition\n%s", got, bare)
 	}
 }
