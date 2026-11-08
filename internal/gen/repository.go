@@ -1121,9 +1121,12 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 		m.pluck = &c
 		return nil
 	}
-	field := "named " + rest
-	if m.verb == verbList {
-		field = rest + " is the plural of"
+	missing := fmt.Sprintf("%s has no field named %s", typeName(m.model), rest)
+	switch {
+	case rest == "":
+		missing = "names no field after " + string(m.verb)
+	case m.verb == verbList:
+		missing = fmt.Sprintf("%s has no field whose plural is %s", typeName(m.model), rest)
 	}
 	hint := "name it after a field, as in " + pluckShape + ", which reads ID"
 	if misspelled != "" {
@@ -1134,8 +1137,8 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 		hint = fmt.Sprintf("name it List%s: the plural of %s is made as that of a table's name", plural.String(),
 			misspelled)
 	}
-	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s has no field %s", m.name,
-		typeName(m.model), field).WithHints(hint)}
+	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s", m.name, missing).
+		WithHints(hint)}
 }
 
 // pluralOf reports whether name, what follows List in the name of a method reading the values of a column, is the

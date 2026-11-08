@@ -67,9 +67,9 @@ func TestCommand_PluckMistakes(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct{ method, want string }{
 		{"ListMissings(ctx context.Context, s ...scopes.Record) ([]int64, error)",
-			"ListMissings: it returns the values of a column, but model.Record has no field Missings is the plural of"},
+			"ListMissings: it returns the values of a column, but model.Record has no field whose plural is Missings"},
 		{"ListIDsByState(ctx context.Context, s ...scopes.Record) ([]int64, error)",
-			"model.Record has no field IDsByState is the plural of"},
+			"model.Record has no field whose plural is IDsByState"},
 		{"ListIDs(ctx context.Context, s ...scopes.Record) ([]bool, error)", "it reads Record.ID, an int64, as a bool"},
 		{"GetNames(ctx context.Context, id int64, s ...scopes.Record) (string, error)",
 			"model.Record has no field named Names"},
@@ -103,8 +103,33 @@ func TestRepositories_PluckPlurals(t *testing.T) {
 		"\tListStatuses(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "",
 		"\tListCustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)\n":          "",
 		"\tListStatuss(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "repository.go:24:2: " +
-			"error: ListStatuss: it returns the values of a column, but model.Order has no field Statuss is the plural " +
-			"of\n  name it ListStatuses: the plural of Status is made as that of a table's name",
+			"error: ListStatuss: it returns the values of a column, but model.Order has no field whose plural is " +
+			"Statuss\n  name it ListStatuses: the plural of Status is made as that of a table's name",
+	} {
+		if _, ds := repositories(t, snapshot.PostgreSQL, method, "", nil); ds != want {
+			t.Errorf("Repositories of %q reports\n%s\nwant\n%s", method, ds, want)
+		}
+	}
+}
+
+// A name that says no field of the model is told what it says instead.
+func TestRepositories_PluckOfNoField(t *testing.T) {
+	t.Parallel()
+	const (
+		at   = "repository.go:24:2: error: "
+		hint = "\n  name it after a field, as in ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, " +
+			"error), which reads ID"
+	)
+	for method, want := range map[string]string{
+		"\tGetNumbers(ctx context.Context, id model.OrderID) (string, error)\n": at +
+			"GetNumbers: it returns the values of a column, but model.Order has no field named Numbers" + hint,
+		"\tListNumbersByStatus(ctx context.Context, s ...scopes.Order) ([]string, error)\n": at +
+			"ListNumbersByStatus: it returns the values of a column, but model.Order has no field whose plural is " +
+			"NumbersByStatus" + hint,
+		"\tGet(ctx context.Context, id model.OrderID) (string, error)\n": at +
+			"Get: it returns the values of a column, but names no field after Get" + hint,
+		"\tList(ctx context.Context, s ...scopes.Order) ([]string, error)\n": at +
+			"List: it returns the values of a column, but names no field after List" + hint,
 	} {
 		if _, ds := repositories(t, snapshot.PostgreSQL, method, "", nil); ds != want {
 			t.Errorf("Repositories of %q reports\n%s\nwant\n%s", method, ds, want)
