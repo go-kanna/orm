@@ -298,6 +298,7 @@ const (
 	orderOperationInsert          orderOperation = "Insert"
 	orderOperationInsertLines     orderOperation = "InsertLines"
 	orderOperationCopyApprovals   orderOperation = "CopyApprovals"
+	orderOperationUpdate          orderOperation = "Update"
 	orderOperationDelete          orderOperation = "Delete"
 	orderOperationDeleteSummaries orderOperation = "DeleteSummaries"
 	orderOperationTag             orderOperation = "Tag"
@@ -491,6 +492,24 @@ func (r Order) CopyApprovals(ctx context.Context, approvals []model.Approval) (i
 		return 0, r.mapError(orderOperationCopyApprovals, fmt.Errorf("copy into approvals: %w", err))
 	}
 	return n, nil
+}
+
+func (r Order) Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = impl.Of[model.Order](s.Of())
+	}
+	q := impl.Combine(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note"}, []string{"id"}, "", q)
+	if err != nil {
+		return 0, r.mapError(orderOperationUpdate, err)
+	}
+	tag, err := r.db.Exec(ctx, text, args...)
+	if err != nil {
+		return 0, r.mapError(orderOperationUpdate, fmt.Errorf(`update orders: %w`, err))
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r Order) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {

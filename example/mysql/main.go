@@ -66,6 +66,7 @@ func run(ctx context.Context, dsn string, w io.Writer) error {
 		{"page through the orders", ex.page},
 		{"report", ex.report},
 		{"cancel an order", ex.cancel},
+		{"note the oldest open orders", ex.noteOldest},
 		{"delete the stale orders", ex.deleteStale},
 		{"ship the next order", ex.shipNext},
 	} {
@@ -376,6 +377,17 @@ func (ex *example) shipNext(ctx context.Context) error {
 	if err := first.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
+	return nil
+}
+
+// noteOldest writes a memo on a page of the rows a scope matches: the two open orders placed first.
+func (ex *example) noteOldest(ctx context.Context) error {
+	noted, err := ex.orders.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"),
+		scopes.Orders().Open().PlacedAtAsc().IDAsc().Limit(2))
+	if err != nil {
+		return fmt.Errorf("the two oldest open orders: %w", err)
+	}
+	fmt.Fprintf(ex.w, "noted the two oldest open orders: %d\n", noted)
 	return nil
 }
 

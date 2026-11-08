@@ -44,6 +44,7 @@ type Order interface { //nolint:interfacebloat // demonstrates order read and wr
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	CopyApprovals(ctx context.Context, approvals []model.Approval) (int64, error)
+	Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
 	Delete(ctx context.Context, s ...scopes.Order) (int64, error)
 	DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
 
