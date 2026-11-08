@@ -443,7 +443,7 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 ### 同じパッケージに実装する
 
-`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) category` コンストラクタ、値レシーバーのメソッドを生成します。`NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。自分で宣言する `NewCategory` からは `newCategory` を呼べます。スコープ型も同じパッケージに置けます（[1 つのパッケージにまとめる](#1-つのパッケージにまとめる)を参照）。
+`-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) category` コンストラクタ、値レシーバーのメソッドを生成します。関数 `NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。自分で宣言する `NewCategory` からは `newCategory` を呼べます。スコープ型も同じパッケージに置けます（[1 つのパッケージにまとめる](#1-つのパッケージにまとめる)を参照）。
 
 `Bind(db DBTX) Category` を宣言すると、どちらのパッケージに実装するときも、トランザクションへの接続を生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
 
@@ -552,7 +552,7 @@ type OrderRepository interface {
 - `//kanna:scopes` が同じパッケージのモデルについて宣言するスコープ型は、モデルの名前に `Scope` を付けた名前（`OrderScope`）になります。スコープを返す関数は今までどおりテーブルの名前（`Orders()`）で、変更セットはスコープ型の名前から `Scope` を除いた名前（`OrderChangeSet` と `OrderChanges()`）です。
 - 1 回の実行で `scopes_gen.go` と `repository_gen.go` の両方を書き、どちらももう一方が宣言する名前を避けます。
 - 1 つの `.sql` ファイルに、パッケージの `-- scope:` と `-- query:` の両方を書けます。
-- `DBTX`、`newOrderRepository`、`Orders`、`OrderChangeSet` のように、手書きのコードから見える名前をパッケージがすでに宣言していれば、生成を止めます。ただし、自分で宣言する `NewOrderRepository` は生成するものを置き換えます。kanna-orm が自分のために書く helper は `k` で始まり、空いている最初の名前を使います。
+- `DBTX`、`newOrderRepository`、`Orders`、`OrderChangeSet` のように、手書きのコードから見える名前をパッケージがすでに宣言していれば、生成を止めます。ただし、自分で宣言する関数 `NewOrderRepository` は生成するものを置き換えます。kanna-orm が自分のために書く helper は `k` で始まり、空いている最初の名前を使います。
 
 ### メソッド
 
