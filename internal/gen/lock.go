@@ -49,6 +49,21 @@ var namedStrengths = map[string]string{
 	"Update": "update", "NoKeyUpdate": "no-key-update", "Share": "share", "KeyShare": "key-share",
 }
 
+// unlockedProjection reports why p is read without a lock, by errorf, if it is: it holds aggregates of groups of rows,
+// or joins a table, whose rows a lock on those of p's table would leave as they are.
+func unlockedProjection(p readProjection, errorf func(string, ...any) diag.Diag) (diag.Diag, bool) {
+	switch {
+	case len(p.aggregates) > 0:
+		return errorf("a projection of aggregates is read of groups of rows, which hold no lock").
+			WithHints("lock the rows by reading the model"), false
+	case len(p.joins) > 0:
+		return errorf("%s joins a table, and a projection joining one is read without a lock", p.joins[0].field).
+			WithHints("lock the rows by reading the model, and read the values joined apart",
+				"or write the query by hand, locking the rows of the tables meant, as FOR UPDATE OF does"), false
+	}
+	return diag.Diag{}, true
+}
+
 // lock reads the //kanna:lock of m into its locking clause. A method that reads rows and whose name ends in the
 // strength of a lock but has none is warned about, as it would be generated without one; one whose //kanna:lock is of
 // another strength than its name ends in stops generation, as one of the two is wrong. An Update of a change set that
@@ -81,10 +96,10 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 		return []diag.Diag{errorf("%s has no primary key or non-null unique key to select the rows to lock by",
 			m.target.table)}
 	}
-	if m.projection != nil && len(m.projection.joins) > 0 {
-		return []diag.Diag{errorf("%s joins a table, and a projection joining one is read without a lock",
-			m.projection.joins[0].field).WithHints("lock the rows by reading the model, and read the values joined apart",
-			"or write the query by hand, locking the rows of the tables meant, as FOR UPDATE OF does")}
+	if m.projection != nil {
+		if d, ok := unlockedProjection(*m.projection, errorf); !ok {
+			return []diag.Diag{d}
+		}
 	}
 	args, ds := d.Parse(directive.Spec{Words: lockWords, Needed: true})
 	if len(ds) > 0 {

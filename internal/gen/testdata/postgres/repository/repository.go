@@ -24,6 +24,10 @@ type OrderRepository interface {
 	ListByCustomer(ctx context.Context, customerID int64, s ...scopes.Order) ([]model.Order, error)
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Exists(ctx context.Context, s ...scopes.Order) (bool, error)
+	SumTotal(ctx context.Context, s ...scopes.Order) (int64, error)
+	MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error)
+	AvgTotal(ctx context.Context, customerID int64) (float64, error)
+	ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]StatusCount, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)
 	DeleteReturning(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
@@ -105,4 +109,10 @@ type MonthCount struct {
 type CustomerTotal struct {
 	Name  string `orm:"customer"`
 	Total int64
+}
+
+// StatusCount is the number of the orders of a status, which a projection of aggregates groups them by.
+type StatusCount struct {
+	Status model.OrderStatus
+	Count  int64
 }

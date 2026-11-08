@@ -418,6 +418,14 @@ func verbContract(m *repoMethod, q query) []diag.Diag {
 		if m.returns != returnsCount {
 			contract = "the number of rows it writes, as (int64, error)"
 		}
+	case verbSum, verbMin, verbMax:
+		if m.returns != returnsScalar {
+			contract = "the one column of its result, as (T, error) or (*T, error)"
+		}
+	case verbAvg:
+		if m.returns != returnsScalar || !isBasic(elemOf(q.row), types.Float64) && !isBasic(elemOf(q.row), types.Float32) {
+			contract = "the one column of its result, as (float64, error), (float32, error), or a pointer to one"
+		}
 	}
 	if contract == "" {
 		return nil

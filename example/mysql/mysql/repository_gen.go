@@ -327,19 +327,20 @@ var _ repository.Order = Order{}
 type orderOperation string
 
 const (
-	orderOperationFind            orderOperation = "Find"
-	orderOperationGet             orderOperation = "Get"
-	orderOperationListApprovers   orderOperation = "ListApprovers"
-	orderOperationList            orderOperation = "List"
-	orderOperationListSummaries   orderOperation = "ListSummaries"
-	orderOperationCount           orderOperation = "Count"
-	orderOperationInsert          orderOperation = "Insert"
-	orderOperationInsertLines     orderOperation = "InsertLines"
-	orderOperationInsertApprovals orderOperation = "InsertApprovals"
-	orderOperationUpdate          orderOperation = "Update"
-	orderOperationDelete          orderOperation = "Delete"
-	orderOperationTag             orderOperation = "Tag"
-	orderOperationMonthlySales    orderOperation = "MonthlySales"
+	orderOperationFind             orderOperation = "Find"
+	orderOperationGet              orderOperation = "Get"
+	orderOperationListApprovers    orderOperation = "ListApprovers"
+	orderOperationList             orderOperation = "List"
+	orderOperationListSummaries    orderOperation = "ListSummaries"
+	orderOperationCount            orderOperation = "Count"
+	orderOperationListStatusCounts orderOperation = "ListStatusCounts"
+	orderOperationInsert           orderOperation = "Insert"
+	orderOperationInsertLines      orderOperation = "InsertLines"
+	orderOperationInsertApprovals  orderOperation = "InsertApprovals"
+	orderOperationUpdate           orderOperation = "Update"
+	orderOperationDelete           orderOperation = "Delete"
+	orderOperationTag              orderOperation = "Tag"
+	orderOperationMonthlySales     orderOperation = "MonthlySales"
 )
 
 func (r Order) Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error) {
@@ -478,6 +479,40 @@ func (r Order) Count(ctx context.Context, s ...scopes.Order) (int64, error) {
 		return 0, r.mapError(orderOperationCount, fmt.Errorf("count orders: %w", err))
 	}
 	return n, nil
+}
+
+func (r Order) ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]repository.StatusCount, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("ListStatusCounts"); err != nil {
+		return nil, r.mapError(orderOperationListStatusCounts, err)
+	}
+	rd, err := q.Render(impl.MySQL, 1, nil)
+	if err != nil {
+		return nil, r.mapError(orderOperationListStatusCounts, err)
+	}
+	rows, err := r.db.query(ctx, `SELECT status, count(*) FROM orders`+rd.Where()+` GROUP BY status`, rd.Args()...)
+	if err != nil {
+		return nil, r.mapError(orderOperationListStatusCounts, fmt.Errorf(`group orders: %w`, err))
+	}
+	defer rows.Close()
+	out := []repository.StatusCount{}
+	var row repository.StatusCount
+	dest := []any{&row.Status, &row.Count}
+	for rows.Next() {
+		row = repository.StatusCount{}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, r.mapError(orderOperationListStatusCounts, fmt.Errorf(`group orders: %w`, err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(orderOperationListStatusCounts, fmt.Errorf(`group orders: %w`, err))
+	}
+	return out, nil
 }
 
 func (r Order) Insert(ctx context.Context, o model.Order) (model.Order, error) {

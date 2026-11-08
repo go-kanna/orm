@@ -442,6 +442,92 @@ func (r OrderRepository) Exists(ctx context.Context, s ...scopes.Order) (bool, e
 	return n, nil
 }
 
+func (r OrderRepository) SumTotal(ctx context.Context, s ...scopes.Order) (int64, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("SumTotal"); err != nil {
+		return 0, err
+	}
+	rd, err := q.Render(impl.Postgres, 1, nil)
+	if err != nil {
+		return 0, err
+	}
+	var sum int64
+	if err := r.db.queryRow(ctx, `SELECT coalesce(sum(total)::bigint, 0) FROM orders`+rd.Where(), rd.Args()...).Scan(&sum); err != nil {
+		return 0, fmt.Errorf(`sum orders.total: %w`, err)
+	}
+	return sum, nil
+}
+
+func (r OrderRepository) MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("MaxPlacedAt"); err != nil {
+		return nil, err
+	}
+	rd, err := q.Render(impl.Postgres, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	var maximum *time.Time
+	if err := r.db.queryRow(ctx, `SELECT max(placed_at) FROM orders`+rd.Where(), rd.Args()...).Scan(&maximum); err != nil {
+		return nil, fmt.Errorf(`max orders.placed_at: %w`, err)
+	}
+	return maximum, nil
+}
+
+func (r OrderRepository) AvgTotal(ctx context.Context, customerID int64) (float64, error) {
+	const q = `SELECT avg(total)::double precision FROM orders WHERE customer_id = $1`
+	var average *float64
+	if err := r.db.queryRow(ctx, q, customerID).Scan(&average); err != nil {
+		return 0, fmt.Errorf(`avg orders.total: %w`, err)
+	}
+	if average == nil {
+		return 0, fmt.Errorf("avg orders.total with customer_id %v: %w", customerID, orm.ErrNotFound)
+	}
+	return *average, nil
+}
+
+func (r OrderRepository) ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]repository.StatusCount, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if err := q.ConditionsOnly("ListStatusCounts"); err != nil {
+		return nil, err
+	}
+	rd, err := q.Render(impl.Postgres, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.query(ctx, `SELECT status, count(*) FROM orders`+rd.Where()+` GROUP BY status`, rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf(`group orders: %w`, err)
+	}
+	defer rows.Close()
+	out := []repository.StatusCount{}
+	var row repository.StatusCount
+	dest := []any{&row.Status, &row.Count}
+	for rows.Next() {
+		row = repository.StatusCount{}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf(`group orders: %w`, err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(`group orders: %w`, err)
+	}
+	return out, nil
+}
+
 func (r OrderRepository) Delete(ctx context.Context, id model.OrderID) error {
 	const q = `DELETE FROM orders WHERE id = $1`
 	res, err := r.db.ExecContext(ctx, q, id)

@@ -341,7 +341,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		} else {
 			e.update(m, sc, recv, sig)
 		}
-	case verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbDelete:
+	case verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbDelete, verbSum, verbMin, verbMax, verbAvg:
 		e.read(m, sc, recv, sig)
 	case verbCopy:
 		e.copyRows(m, sc, recv, sig)
@@ -399,8 +399,16 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
 	}
 	notFound := func() string { return sig.mapped(e.notFound(m.target.table, names, args)) }
+	if m.aggregate != nil {
+		e.aggregateRead(m, sc, recv, sig, q, names, args)
+		return
+	}
 	if m.pluck != nil {
 		e.pluckRead(m, sc, recv, sig, q, notFound)
+		return
+	}
+	if m.projection != nil && len(m.projection.aggregates) > 0 {
+		e.groupedRead(m, sc, recv, sig, q)
 		return
 	}
 	if m.projection != nil && m.verb != verbDelete {
@@ -480,6 +488,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		affected := e.rowsAffected(sc, res, err, "", wrap)
 		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound())
 	case verbInsert, verbUpdate, verbUpsert, verbCopy: // method writes them
+	case verbSum, verbMin, verbMax, verbAvg: // aggregateRead reads them
 	}
 }
 

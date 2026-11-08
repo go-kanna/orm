@@ -228,6 +228,12 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 }
 
 func replace(ss []scopes.Order) { ss[0] = scopes.Orders().IDEq(1) }
+
+func (u UseCase) Aggregates(ctx context.Context) {
+	_, _ = u.orders.ListStatusCounts(ctx, scopes.Orders().Latest())
+	_, _ = u.orders.ListStatusCounts(ctx, scopes.Orders().WithLines())
+	_, _ = u.orders.ListStatusCounts(ctx, scopes.Orders().Open())
+}
 `
 
 const postgresUseCaseTest = `package usecase
@@ -280,7 +286,10 @@ usecase.go:45:18: error: Count takes conditions alone, but its scope orders the 
 usecase.go:56:22: error: Count takes conditions alone, but its scope orders the rows
   usecase/usecase.go:49:23: IDAsc orders them
 usecase.go:63:17: error: Delete would delete every row of orders: give it a condition
-usecase.go:72:16: error: Count takes conditions alone, but its scope orders the rows`
+usecase.go:72:16: error: Count takes conditions alone, but its scope orders the rows
+usecase.go:115:18: error: ListStatusCounts takes conditions alone, but its scope orders the rows
+  scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
+usecase.go:116:18: error: ListStatusCounts takes conditions alone, but its scope loads Lines`
 	if got != want {
 		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
 	}
@@ -307,6 +316,7 @@ func Misuses(ctx context.Context, orders repository.Order, customers repository.
 	_, _ = customers.UpsertByEmail(ctx, model.Customer{}, scopes.CustomerChanges().SetEmail("a@example.com"))
 	_, _ = orders.Count(ctx, scopes.Orders().Open())
 	_, _ = orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc().Limit(10))
+	_, _ = orders.ListStatusCounts(ctx, scopes.Orders().Limit(10))
 }
 `
 
@@ -324,7 +334,8 @@ usecase.go:15:16: error: Delete ordering requires Limit or Offset
 usecase.go:16:16: error: an offset of -1 rows
 usecase.go:17:16: error: Update requires at least one assigned column
 usecase.go:18:16: error: Update ordering requires Limit or Offset
-usecase.go:19:19: error: UpsertByEmail meets its row by email, which its change set cannot write`
+usecase.go:19:19: error: UpsertByEmail meets its row by email, which its change set cannot write
+usecase.go:22:16: error: ListStatusCounts takes conditions alone, but its scope keeps only some of the rows`
 	if got != want {
 		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
 	}

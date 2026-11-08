@@ -37,11 +37,15 @@ const (
 	verbUpsert verb = "Upsert"
 	verbDelete verb = "Delete"
 	verbCopy   verb = "Copy"
+	verbSum    verb = "Sum"
+	verbMin    verb = "Min"
+	verbMax    verb = "Max"
+	verbAvg    verb = "Avg"
 )
 
 var verbs = []verb{
 	verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete,
-	verbCopy,
+	verbCopy, verbSum, verbMin, verbMax, verbAvg,
 }
 
 // shapes are the forms a method of each verb is declared in, for a hint.
@@ -59,6 +63,10 @@ var shapes = map[verb]string{
 	verbDelete: "Delete(ctx context.Context, id model.OrderID) error, or DeleteStale(ctx context.Context, " +
 		"s ...scopes.Order) (int64, error) or ([]model.Order, error)",
 	verbCopy: "Copy(ctx context.Context, rows []model.Order) (int64, error)",
+	verbSum:  "SumTotal(ctx context.Context, s ...scopes.Order) (int64, error)",
+	verbMin:  "MinPlacedAt(ctx context.Context, s ...scopes.Order) (time.Time, error)",
+	verbMax:  "MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error)",
+	verbAvg:  "AvgTotal(ctx context.Context, s ...scopes.Order) (float64, error)",
 }
 
 // verbOf tells the verb name starts with: a verb, followed by nothing or by a word of its own, as in GetByNumber, but
@@ -148,6 +156,7 @@ type repoMethod struct {
 	table      snapshot.Table
 	columns    []column
 	pluck      *column
+	aggregate  *aggregate
 	projection *readProjection
 	// keys are the parameters naming the columns the rows must equal, in their order.
 	keys []key
@@ -489,16 +498,10 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		return m, parameterDiags
 	}
 
-	plucked := results.Len() == 2 && plucks(v, results.At(0).Type())
-	if plucked {
-		m.returns, m.optional = returnsRow, v == verbFind
-		if v == verbList {
-			m.returns = returnsRows
-		}
-	} else if results.Len() == 2 {
+	ofColumn := false
+	if results.Len() == 2 {
 		var ok bool
-		models, ok = r.resultModels(&m, results.At(0).Type(), models)
-		if !ok {
+		if models, ofColumn, ok = r.result(&m, results.At(0).Type(), models); !ok {
 			row := results.At(0).Type()
 			if p, isPointer := row.(*types.Pointer); isPointer && v == verbFind {
 				row = p.Elem()
@@ -519,8 +522,8 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	if !m.shaped() {
 		return m, shapeError()
 	}
-	if plucked {
-		if ds := r.pluckColumn(&m, results.At(0).Type()); ds != nil {
+	if ofColumn {
+		if ds := r.resultColumn(&m, results.At(0).Type()); ds != nil {
 			return m, ds
 		}
 	}
@@ -684,7 +687,7 @@ func (m repoMethod) shaped() bool {
 	switch m.verb {
 	case verbFind:
 		ok = m.returns == returnsRow && m.optional
-	case verbGet, verbFirst:
+	case verbGet, verbFirst, verbSum, verbMin, verbMax, verbAvg:
 		ok = m.returns == returnsRow && !m.optional
 	case verbList:
 		ok = m.returns == returnsRows
@@ -1071,7 +1074,8 @@ func plucks(v verb, t types.Type) bool {
 		}
 		t = slice.Elem()
 	case verbGet, verbFirst:
-	case verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete, verbCopy:
+	case verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete, verbCopy, verbSum, verbMin, verbMax,
+		verbAvg:
 		return false
 	}
 	_, row := elemOf(t).Underlying().(*types.Struct)
@@ -1145,6 +1149,32 @@ func pluralOf(name, field string) bool {
 func endsInAcronym(name string) bool {
 	r := []rune(name)
 	return len(r) >= 2 && unicode.IsUpper(r[len(r)-1]) && unicode.IsUpper(r[len(r)-2])
+}
+
+// result reads t, what m returns besides its error: an aggregate or the values of a column, which ofColumn reports and
+// resultColumn finds once the model of m is known, or rows, whose model it adds to models.
+func (r repoReader) result(m *repoMethod, t types.Type, models []*types.Named) (_ []*types.Named, ofColumn, ok bool) {
+	switch {
+	case aggregates(m.verb):
+		m.returns = returnsRow
+		return models, true, true
+	case plucks(m.verb, t):
+		m.returns, m.optional = returnsRow, m.verb == verbFind
+		if m.verb == verbList {
+			m.returns = returnsRows
+		}
+		return models, true, true
+	}
+	models, ok = r.resultModels(m, t, models)
+	return models, false, ok
+}
+
+// resultColumn finds the column whose aggregate or values m reads as t, its result.
+func (r repoReader) resultColumn(m *repoMethod, t types.Type) []diag.Diag {
+	if aggregates(m.verb) {
+		return r.aggregateColumn(m, t)
+	}
+	return r.pluckColumn(m, t)
 }
 
 func (r repoReader) resultModels(m *repoMethod, t types.Type, models []*types.Named) ([]*types.Named, bool) {

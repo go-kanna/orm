@@ -738,6 +738,10 @@ The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not nam
 | `Upsert` | `Upsert(ctx, o model.Order) error`, or with a [change set](#writing-a-change-set-over-the-row-met) | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
 | `Delete` | `Delete(ctx, id model.OrderID) error`, or [with scopes](#selecting-rows-to-delete)     | deletes the row with the key, or the rows the scopes match                            |
 | `Copy`   | `Copy(ctx, rows []model.Order) (int64, error)`                                         | writes the rows by [COPY](#copying-many-rows) through pgx, and returns how many       |
+| `Sum`    | `SumTotal(ctx, s ...scopes.Order) (int64, error)`                                      | adds up a column of the rows the scopes match: see [aggregates](#reading-aggregates)  |
+| `Min`    | `MinPlacedAt(ctx, s ...scopes.Order) (time.Time, error)`                               | reads the least value of a column of the rows the scopes match                        |
+| `Max`    | `MaxPlacedAt(ctx, s ...scopes.Order) (time.Time, error)`                               | reads the greatest value of a column of the rows the scopes match                     |
+| `Avg`    | `AvgTotal(ctx, s ...scopes.Order) (float64, error)`                                    | reads the average of a column of the rows the scopes match                            |
 
 `Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, with the same absence contract; a scalar one reads a column that is never NULL, as its nil means no row.
 
@@ -756,8 +760,8 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
   an aggregate.
 - Several scopes hold together, as if chained.
 - `Get` stops generation unless its parameters give the primary key or a unique key, every column of it.
-- `Count` and `Exists` use their conditions only; a scope with an order, a limit, or a
-  relation to load makes them return an error rather than ignore it.
+- `Count`, `Exists`, and the [aggregates](#reading-aggregates) use their conditions only; a scope with an order, a
+  limit, or a relation to load makes them return an error rather than ignore it.
 - A `Delete` given scopes but no condition returns an error rather than delete every row.
 - A `Delete` returning `error` alone returns `orm.ErrNotFound` when it deletes no row, as `Update` does; one returning
   `(int64, error)` returns the number of rows it deleted, none among them.
@@ -1389,7 +1393,7 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. Aggregates and expressions can still use hand-written SQL returning a DTO.
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. A projection may hold [aggregates](#reading-aggregates) of groups of rows; other expressions can still use hand-written SQL returning a DTO.
 
 
 ### Joining a projection
@@ -1423,13 +1427,56 @@ LEFT JOIN users AS inviter ON inviter.id = memberships.inviter_id
 
 Both database examples read the name of an order's customer into an order summary this way.
 
+### Reading aggregates
+
+A `Sum`, a `Min`, a `Max`, or an `Avg` reads the sum, the least value, the greatest value, or the average of the column of the field its name says after the verb, as `SumTotal` reads the sum of `Total`. As for [the values of a column](#reading-the-values-of-a-column), the name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `SumTotalByStatus` stops generation.
+
+```go
+SumTotal(ctx context.Context, s ...scopes.Order) (int64, error)
+MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error)
+AvgTotal(ctx context.Context, customerID model.CustomerID) (float64, error)
+```
+
+```sql
+SELECT coalesce(sum(total)::bigint, 0) FROM orders WHERE ...
+```
+
+- `Sum` and `Avg` read a column of numbers, held by a field of an integer or a floating-point type, or of a type made of one; `Min` and `Max` read a column of numbers, strings, or times. A column of another kind stops generation. MySQL compares the values of an `ENUM` column as strings, not in the order the type declares them.
+- `Sum`, `Min`, and `Max` return a value of the field's type, or a pointer to one: of a field `*int64`, as a column that may be NULL has, an `int64` or an `*int64`. `Avg` returns a `float64` or a `float32`, or a pointer to one, as the average of integers is seldom one. Any other type stops generation. A sum too large for its type is an error when the method runs, not a value cut short.
+- When no row matches, or the column is NULL in every row matched, one returning a value returns 0 of a `Sum`, and `orm.ErrNotFound` of a `Min`, a `Max`, or an `Avg`, as a `Get` does; one returning a pointer returns nil, as a `Find` does.
+- Their scopes give their conditions alone, as those of `Count` do: a scope that orders, pages, or loads a relation makes them return an error.
+- On PostgreSQL, a sum of integers is cast to `bigint`, as the sum of `bigint`s is `numeric`, and an average to `double precision`. On MySQL, an average is cast to `DOUBLE`, as one of integers is otherwise a `DECIMAL` of four decimal places; a sum of integers stays a `DECIMAL`, which database/sql reads into the field's type, failing if it does not fit.
+
+A projection read by a `List` may hold aggregates of groups of rows. A field named `Count`, an `int64`, holds the number of the rows of a group, and one named `Sum`, `Min`, `Max`, or `Avg` followed by the name of a field of the model holds that aggregate of its column, of a type its verb returns. The rows are grouped by the other fields, which name the model's columns as those of any projection do:
+
+```go
+type StatusCount struct {
+	Status model.OrderStatus
+	Count  int64
+}
+
+ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]StatusCount, error)
+```
+
+```sql
+SELECT status, count(*) FROM orders WHERE ... GROUP BY status
+```
+
+- A group has rows, but a column that may be NULL may be NULL in every row of one: a `Min`, a `Max`, or an `Avg` of it is a pointer, nil for such a group, and a `Sum` of it is 0, or nil of a pointer.
+- The groups come in no order, as SQL returns them. The scopes give their conditions alone, as those of `Count` do.
+- A projection of aggregates is read by a `List`, groups by one field or more, joins no table, and takes no `//kanna:lock`; generation stops otherwise. A field of an aggregate takes no tag, and a model with a field named as one, as `Count`, stops generation, as the projection could read either.
+- HAVING, an order by an aggregate, and other shapes are written in [SQL](#hand-written-sql) returning a DTO.
+
+Both database examples count their orders by status this way.
+
 ## Hand-written SQL
 
 What the methods cannot say goes into a `.sql` file. A query becomes the repository method of its name, and is written
 where that method is implemented, in the package `-destination` names. A method whose name starts with a verb returns
 what a generated one of the verb does, so that the verb says the same wherever it is read: a `Get` or a `First` one row
-and `orm.ErrNotFound` for none, a `Find` a pointer and nil for none, a `List` a slice, a `Count` an `int64` and an
-`Exists` a `bool` of the one column of its result, and an `Insert`, an `Update`, an `Upsert`, or a `Delete` error
+and `orm.ErrNotFound` for none, a `Find` a pointer and nil for none, a `List` a slice, a `Count` an `int64`, an
+`Exists` a `bool`, a `Sum`, a `Min`, or a `Max` a value or a pointer, and an `Avg` a `float64` or a `float32`, or a
+pointer to one, of the one column of its result, and an `Insert`, an `Update`, an `Upsert`, or a `Delete` error
 alone, `(int64, error)` for the rows it affects, or the rows its `RETURNING` gives. Another stops generation; a name
 that starts with no verb, as `MonthCounts`, returns what it likes. With `-destination .`, queries sit next to the
 repository interface. A scope becomes a method of the scope type it names, and is written next to it. A `.sql` file with
@@ -1606,9 +1653,10 @@ usecase/orders.go:42:21: error: Count takes conditions alone, but its scope orde
 It reports a call at the method it calls, in the words of the error the call would return, and, when what makes it
 fail is written elsewhere, such as in a scope of your own, where that is. It finds:
 
-- an order, paging, or a relation to load in a scope given to what takes conditions alone: `Count`, `Exists`, an
-  `Update` taking a unique key or a whole row, and the alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a
-  relation to load given to a projection, a read of one column, a `Delete`, or an `Update` with a change set;
+- an order, paging, or a relation to load in a scope given to what takes conditions alone: `Count`, `Exists`, `Sum`,
+  `Min`, `Max`, `Avg`, a `List` of a projection of aggregates, an `Update` taking a unique key or a whole row, and the
+  alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a relation to load given to a projection, a read of
+  one column, a `Delete`, or an `Update` with a change set;
 - a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
   or an `Update` of a change set taking no unique key, ordered without `Limit` or `Offset`, or paged on a table with neither a
   primary key nor a non-null unique key;
@@ -1670,8 +1718,8 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 - Take a zero value for the column's default: a zero is written as a value, and `orm:",default"` says the database
   assigns one.
 - Generate arbitrary joins or nested query shapes, such as subqueries, CTEs, or UNION, from scopes. INNER JOINs through
-  foreign keys or explicit column equalities are supported for read projections; other query shapes can use
-  [hand-written SQL](#hand-written-sql).
+  foreign keys or explicit column equalities are supported for read projections, and so is grouping by the fields of a
+  projection of aggregates; other query shapes can use [hand-written SQL](#hand-written-sql).
 - Run one generated package on both databases: the types are those one database answers.
 - Create or apply migrations. Use goose or any other tool, and describe the result.
 
@@ -1679,7 +1727,8 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 
 These are out of what kanna-orm does so far, not ruled out:
 
-- Aggregates other than `Count`, such as sums and grouping. Write them in [SQL](#hand-written-sql) returning a DTO.
+- HAVING, and an order by an aggregate, of a [projection of aggregates](#reading-aggregates). Write them in
+  [SQL](#hand-written-sql) returning a DTO.
 - Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
 - Page by a column that may be NULL.
 - Support MariaDB or SQLite.
