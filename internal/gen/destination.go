@@ -104,6 +104,28 @@ func (d destination) receiverCalls() map[string]map[string]bool {
 	return calls
 }
 
+// functions names the functions the files of d other than the output and tests declare at their top level.
+func (d destination) functions() map[string]bool {
+	names, _ := filepath.Glob(filepath.Join(d.dir, "*.go"))
+	funcs := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, name := range names {
+		if filepath.Base(name) == repositoryOutputName || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil || f.Name.Name != d.name {
+			continue
+		}
+		for _, decl := range f.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil {
+				funcs[fn.Name.Name] = true
+			}
+		}
+	}
+	return funcs
+}
+
 // handMethod is a method declared by hand: where it is, and its parameters and results.
 type handMethod struct {
 	pos token.Position
@@ -159,6 +181,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 		driver:   drv,
 		calls:    dest.receiverCalls(),
 		declared: output.DeclaredNames(dest.dir, repositoryOutputName, dest.name),
+		funcs:    dest.functions(),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
 			loaded: loadedScopes(others, s, idx),

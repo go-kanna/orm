@@ -564,7 +564,7 @@ interface when generated into a separate package, its constructor, and the `DBTX
 Use `-destination .` to keep the interface and its implementation in the same package. The interface must be exported;
 `Category` generates an unexported `category`, a `newCategory(db DBTX, opts ...option.Option) category` constructor,
 and value receiver methods. It also generates `NewCategory(db DBTX, opts ...option.Option) Category` unless you
-already declare `NewCategory` yourself, which can call `newCategory`.
+already declare a function `NewCategory` yourself, which can call `newCategory`.
 The scope types may be in the package too: see [One package](#one-package).
 
 Declare `Bind(db DBTX) Category` to generate transaction binding, in either package. The argument may instead be a concrete database or
@@ -710,8 +710,9 @@ type OrderRepository interface {
 - One run writes both `scopes_gen.go` and `repository_gen.go`, each avoiding what the other declares.
 - One `.sql` file may hold the package's `-- scope:` and `-- query:` statements both.
 - A name kanna-orm writes that code written by hand sees, as `DBTX`, `newOrderRepository`, `Orders`, or
-  `OrderChangeSet`, stops generation when the package declares it already, but for a `NewOrderRepository` of your own,
-  which replaces the generated one. The helpers it writes for itself start with `k` and take the first name free.
+  `OrderChangeSet`, stops generation when the package declares it already, but for a function `NewOrderRepository` of
+  your own, which replaces the generated one. The helpers it writes for itself start with `k` and take the first name
+  free.
 
 ### Methods
 

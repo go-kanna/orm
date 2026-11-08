@@ -207,6 +207,12 @@ func TestCommand_FlatNames(t *testing.T) {
 		}},
 		{name: "a constructor written by hand", archive: flatShopWithout() + "-- store/new.go --\npackage store\n\n" +
 			"func NewOrderRepository(db DBTX) OrderRepository { return newOrderRepository(db) }\n"},
+		{name: "a type of the constructor's name", archive: flatShopWithout() + "-- store/new.go --\npackage store\n\n" +
+			"type NewOrderRepository struct{}\n",
+			want: "NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
+		{name: "a constructor written in a test", archive: flatShopWithout() + "-- store/new_test.go --\npackage store\n\n" +
+			"func NewOrderRepository(db DBTX) OrderRepository { return newOrderRepository(db) }\n",
+			want: "NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
 		{name: "DBTX written by hand", archive: flatShopWithout() + "-- store/db.go --\npackage store\n\n" +
 			"type DBTX interface{}\n", want: "DBTX is declared already"},
 		{name: "the implementation's constructor written by hand", archive: flatShopWithout() +
