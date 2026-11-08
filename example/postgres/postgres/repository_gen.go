@@ -21,8 +21,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
-type DBTX = kpgx.DBTX
+// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx, whose CopyFrom a Copy writes its rows by.
+type DBTX = kpgx.CopyDBTX
 
 // kDatabase runs statements on dbtx between the hooks of options, as the methods of the repositories, and those
 // written by hand, run them.
@@ -64,6 +64,14 @@ func (r kPgxRows) Close()                 { r.traced.Close() }
 func (d kDatabase) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	return trace.Row(d.dbtx.QueryRow(ctx, query, args...))
+}
+
+// CopyFrom copies the rows of rowSrc, which the hooks see as the statement it runs, with no arguments.
+func (d kDatabase) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
+	ctx, trace := d.options.StartQuery(ctx, kpgx.CopyFromSQL(tableName, columnNames), nil)
+	n, err := d.dbtx.CopyFrom(ctx, tableName, columnNames, rowSrc)
+	trace.End(err)
+	return n, err
 }
 
 // Customer implements repository.Customer on PostgreSQL through pgx.
@@ -289,7 +297,7 @@ const (
 	orderOperationCount           orderOperation = "Count"
 	orderOperationInsert          orderOperation = "Insert"
 	orderOperationInsertLines     orderOperation = "InsertLines"
-	orderOperationInsertApprovals orderOperation = "InsertApprovals"
+	orderOperationCopyApprovals   orderOperation = "CopyApprovals"
 	orderOperationDelete          orderOperation = "Delete"
 	orderOperationDeleteSummaries orderOperation = "DeleteSummaries"
 	orderOperationTag             orderOperation = "Tag"
@@ -471,28 +479,18 @@ SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::int4[])`
 	return nil
 }
 
-func (r Order) InsertApprovals(ctx context.Context, approvals []model.Approval) error {
+func (r Order) CopyApprovals(ctx context.Context, approvals []model.Approval) (int64, error) {
 	if len(approvals) == 0 {
-		return nil
+		return 0, nil
 	}
-	orderID := make([]model.OrderID, len(approvals))
-	revision := make([]int32, len(approvals))
-	approver := make([]string, len(approvals))
-	approvedAt := make([]time.Time, len(approvals))
-	revokedAt := make([]*time.Time, len(approvals))
-	for i := range approvals {
-		orderID[i] = approvals[i].OrderID
-		revision[i] = approvals[i].Revision
-		approver[i] = approvals[i].Approver
-		approvedAt[i] = approvals[i].ApprovedAt
-		revokedAt[i] = approvals[i].RevokedAt
+	n, err := r.db.CopyFrom(ctx, pgx.Identifier{"approvals"}, []string{"order_id", "revision", "approver", "approved_at", "revoked_at"},
+		pgx.CopyFromSlice(len(approvals), func(i int) ([]any, error) {
+			return []any{approvals[i].OrderID, approvals[i].Revision, approvals[i].Approver, approvals[i].ApprovedAt, approvals[i].RevokedAt}, nil
+		}))
+	if err != nil {
+		return 0, r.mapError(orderOperationCopyApprovals, fmt.Errorf("copy into approvals: %w", err))
 	}
-	const q = `INSERT INTO approvals (order_id, revision, approver, approved_at, revoked_at)
-SELECT * FROM unnest($1::int8[], $2::int4[], $3::text[], $4::timestamptz[], $5::timestamptz[])`
-	if _, err := r.db.Exec(ctx, q, orderID, revision, approver, approvedAt, revokedAt); err != nil {
-		return r.mapError(orderOperationInsertApprovals, fmt.Errorf("insert into approvals: %w", err))
-	}
-	return nil
+	return n, nil
 }
 
 func (r Order) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {

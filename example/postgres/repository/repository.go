@@ -43,7 +43,7 @@ type Order interface { //nolint:interfacebloat // demonstrates order read and wr
 	Count(ctx context.Context, s ...scopes.Order) (int64, error)
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
-	InsertApprovals(ctx context.Context, approvals []model.Approval) error
+	CopyApprovals(ctx context.Context, approvals []model.Approval) (int64, error)
 	Delete(ctx context.Context, s ...scopes.Order) (int64, error)
 	DeleteSummaries(ctx context.Context, s ...scopes.Order) ([]DeletedOrder, error)
 

@@ -807,6 +807,8 @@ kanna-orm が `Copy` か、手で書いた `Copy` が呼ぶヘルパーを書く
 func provideCopyDBTX(pool *pgxpool.Pool) pgx.CopyDBTX { return pool }
 ```
 
+[PostgreSQL](example/postgres) の example は、この形で注文の承認を COPY し、After がその COPY を出力します。
+
 ### 指定したカラムだけを更新する
 
 各 scope に型付きの変更セットを生成します。名前はスコープ型の名前から末尾の `Scope` を除いたもので、`OrderScope` の変更セットも `OrderChangeSet` です。同じパッケージの 2 つのスコープ型の変更セットが同じ名前になるときは、生成を止めます。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。

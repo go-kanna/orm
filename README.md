@@ -1060,6 +1060,8 @@ provides `CopyDBTX` besides `DBTX`:
 func provideCopyDBTX(pool *pgxpool.Pool) pgx.CopyDBTX { return pool }
 ```
 
+The [PostgreSQL](example/postgres) example copies the approvals of its orders this way, and its After prints the COPY.
+
 ### Updating selected columns
 
 Each scope generates a typed change set, named after the scope type but for a `Scope` it ends in, so that `OrderScope` has `OrderChangeSet` too; two scope types of a package whose change sets would share the name stop generation. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
