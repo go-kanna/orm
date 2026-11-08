@@ -36,10 +36,12 @@ const (
 	verbUpdate verb = "Update"
 	verbUpsert verb = "Upsert"
 	verbDelete verb = "Delete"
+	verbCopy   verb = "Copy"
 )
 
 var verbs = []verb{
 	verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete,
+	verbCopy,
 }
 
 // shapes are the forms a method of each verb is declared in, for a hint.
@@ -56,6 +58,7 @@ var shapes = map[verb]string{
 	verbUpsert: "Upsert(ctx context.Context, o model.Order) error",
 	verbDelete: "Delete(ctx context.Context, id model.OrderID) error, or DeleteStale(ctx context.Context, " +
 		"s ...scopes.Order) (int64, error) or ([]model.Order, error)",
+	verbCopy: "Copy(ctx context.Context, rows []model.Order) (int64, error)",
 }
 
 // verbOf tells the verb name starts with: a verb, followed by nothing or by a word of its own, as in GetByNumber, but
@@ -97,6 +100,9 @@ type repository struct {
 	// operations are the methods of the interface but Bind, when mapError takes the operation an error comes from,
 	// for which the implementation declares the operations, and none when it does not.
 	operations []string
+	// copies reports whether a method kanna-orm writes for the interface copies rows, a Copy or the helper of one,
+	// for which DBTX copies them.
+	copies bool
 }
 
 // operation names the type of the operations of r, as mapError takes them: orderOperation for Order.
@@ -279,6 +285,7 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 		}
 		ds = append(ds, strayDirectives(r.pkg.Fset, file, decls.Repositories)...)
 	}
+	ds = append(ds, r.copyBinds(repos)...)
 	ds = append(ds, generatedTwice(repos)...)
 	return repos, append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
 }
@@ -397,6 +404,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 		ds = append(ds, mds...)
 		repo.methods = append(repo.methods, m)
 	}
+	repo.copies = slices.ContainsFunc(repo.methods, func(m repoMethod) bool { return m.verb == verbCopy })
 	if m, ok := r.skip[implementation][mapErrorName]; ok {
 		repo.mapError = true
 		takesOperation, mds := mapErrorSignature(repo, implementation, m)
@@ -458,6 +466,11 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		return m, errorf("its name starts with no verb kanna-orm knows, and no -- query: %s is written for it", m.name)
 	}
 	m.verb = v
+	if v == verbCopy {
+		if ds := r.copyDriver(m); ds != nil {
+			return m, ds
+		}
+	}
 	shapeError := func() []diag.Diag {
 		return []diag.Diag{diag.Errorf(m.pos, "%s: kanna-orm cannot implement it as declared", m.name).
 			WithHints(fmt.Sprintf("declare it in a form of %s, as in %s", v, shapes[v]))}
@@ -666,7 +679,7 @@ func elemOf(t types.Type) types.Type {
 
 // shaped reports whether the parameters and the result of m are those its verb takes.
 func (m repoMethod) shaped() bool {
-	writes := m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert
+	writes := m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert || m.verb == verbCopy
 	var ok bool
 	switch m.verb {
 	case verbFind:
@@ -686,6 +699,8 @@ func (m repoMethod) shaped() bool {
 	case verbDelete:
 		ok = m.returns == returnsNone && !m.scoped ||
 			(m.returns == returnsCount || m.returns == returnsRows) && (m.scoped || len(m.keys) > 0)
+	case verbCopy:
+		ok = m.returns == returnsCount && m.many
 	}
 	if writes {
 		return ok && m.row != "" && len(m.keys) == 0 && !m.scoped
@@ -834,7 +849,7 @@ func sameColumns(a, b []string) bool {
 
 // writeRules reports what keeps a write from writing its rows as the model holds them.
 func (r repoReader) writeRules(m repoMethod) []diag.Diag {
-	if m.verb != verbInsert && m.verb != verbUpdate && m.verb != verbUpsert {
+	if m.verb != verbInsert && m.verb != verbUpdate && m.verb != verbUpsert && m.verb != verbCopy {
 		return nil
 	}
 	errorf := func(format string, args ...any) diag.Diag {
@@ -857,10 +872,7 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 		}
 	}
 	ds = append(ds, m.writeKeyRules()...)
-	if given, ok := m.given(); ok && m.many && r.s.Dialect == snapshot.PostgreSQL && given.col.AssignedBy == "" {
-		ds = append(ds, errorf("the snapshot does not tell how the database assigns %s.%s, which the rows giving "+
-			"none get", m.target.table, given.col.Name).WithHints("describe the database again with go tool kanna-orm describe"))
-	}
+	ds = append(ds, r.unnestRules(m)...)
 	if m.verb == verbUpdate && len(m.updated()) == 0 {
 		ds = append(ds, errorf("%s holds no column of %s to update but its key", model, m.target.table))
 	}
@@ -877,15 +889,33 @@ func (r repoReader) writeRules(m repoMethod) []diag.Diag {
 			}
 		}
 	}
-	if m.many && r.s.Dialect == snapshot.PostgreSQL {
-		for _, c := range m.inserted() {
-			if strings.HasSuffix(c.col.Type, "[]") {
-				ds = append(ds, errorf("unnest, which writes the rows in one statement, cannot write %s, an array",
-					c.col.Name).WithHints("write the rows one by one"))
+	return append(ds, m.defaultConstraints(r.s.Dialect)...)
+}
+
+// unnestRules reports what keeps m, a write of many rows on PostgreSQL but a Copy, from writing them in one statement
+// of the arrays unnest takes. A Copy leaves the column the database assigns out when its rows give it none, rather
+// than write what the database assigns it by, and copies an array as any other value.
+func (r repoReader) unnestRules(m repoMethod) []diag.Diag {
+	if !m.many || m.verb == verbCopy || r.s.Dialect != snapshot.PostgreSQL {
+		return nil
+	}
+	var ds []diag.Diag
+	if given, ok := m.given(); ok && given.col.AssignedBy == "" {
+		ds = append(ds, diag.Errorf(m.pos, "%s: the snapshot does not tell how the database assigns %s.%s, which the "+
+			"rows giving none get", m.name, m.target.table, given.col.Name).
+			WithHints("describe the database again with go tool kanna-orm describe"))
+	}
+	for _, c := range m.inserted() {
+		if strings.HasSuffix(c.col.Type, "[]") {
+			d := diag.Errorf(m.pos, "%s: unnest, which writes the rows in one statement, cannot write %s, an array",
+				m.name, c.col.Name).WithHints("write the rows one by one")
+			if m.verb == verbInsert && r.driver == driverPgx {
+				d = d.WithHints("or copy them: Copy(ctx context.Context, rows []" + typeName(m.model) + ") (int64, error)")
 			}
+			ds = append(ds, d)
 		}
 	}
-	return append(ds, m.defaultConstraints(r.s.Dialect)...)
+	return ds
 }
 
 // inserted are the columns a write of m inserts: those not supplied by the database.
@@ -1042,7 +1072,7 @@ func plucks(v verb, t types.Type) bool {
 		}
 		t = slice.Elem()
 	case verbGet, verbFirst:
-	case verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete:
+	case verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete, verbCopy:
 		return false
 	}
 	_, row := elemOf(t).Underlying().(*types.Struct)
@@ -1228,7 +1258,7 @@ func (m repoMethod) writeKeyRules() []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
-	if m.verb != verbInsert && (m.changes == "" || m.verb == verbUpsert) {
+	if m.verb == verbUpsert || m.verb == verbUpdate && m.changes == "" {
 		for _, name := range m.rowKey() {
 			i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
 			switch {

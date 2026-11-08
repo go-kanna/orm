@@ -37,6 +37,8 @@ type repoEmitter struct {
 	helpers map[string]tableHelpers
 	// eachNames name the impl.Each of each relation the helpers load, by eachKey.
 	eachNames map[string]string
+	// copies reports whether a repository copies rows, for which DBTX copies them.
+	copies bool
 }
 
 // tableHelpers name the functions of the implementations reading the whole rows of a table that a scope matches,
@@ -59,7 +61,8 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 		f.Reserve(repo.generates()...)
 	}
 	e := repoEmitter{f: f, d: d, drv: drv, exec: "Exec", query: "Query", queryRow: "QueryRow", models: models,
-		helpers: map[string]tableHelpers{}, eachNames: map[string]string{}}
+		helpers: map[string]tableHelpers{}, eachNames: map[string]string{},
+		copies: drv == driverPgx && slices.ContainsFunc(repos, func(r repository) bool { return r.copies })}
 	if drv == driverSQL {
 		e.exec, e.query, e.queryRow = "ExecContext", "query", "queryRow"
 	}
@@ -115,7 +118,8 @@ func (e repoEmitter) printf(format string, args ...any) {
 }
 
 // db writes DBTX, what the repositories run on, named as sqlc names it: the one of the runtime, which the packages of
-// repositories all declare theirs as, so that one value serves them all.
+// repositories all declare theirs as, so that one value serves them all, or the runtime's CopyDBTX when they copy
+// rows, so that a connection that cannot copy them does not compile.
 func (e repoEmitter) db() {
 	if e.drv == driverSQL {
 		e.printf("// DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.\ntype DBTX = %s.DBTX\n\n",
@@ -123,8 +127,14 @@ func (e repoEmitter) db() {
 		return
 	}
 	e.f.Import("github.com/jackc/pgx/v5", "pgx") // the pgx the code reads, and the runtime's under another name
+	kpgx := e.f.Import(pgxPath, "kpgx")
+	if e.copies {
+		e.printf("// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx, whose CopyFrom a Copy "+
+			"writes its rows by.\ntype DBTX = %s.CopyDBTX\n\n", kpgx)
+		return
+	}
 	e.printf("// DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.\ntype DBTX = %s.DBTX\n\n",
-		e.f.Import(pgxPath, "kpgx"))
+		kpgx)
 }
 
 // repository writes the implementation of repo: its struct, constructor, and methods.
@@ -324,6 +334,8 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 		}
 	case verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbDelete:
 		e.read(m, sc, recv, sig)
+	case verbCopy:
+		e.copyRows(m, sc, recv, sig)
 	}
 	e.printf("}\n\n")
 }
@@ -458,7 +470,7 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, "", wrap)
 		affected := e.rowsAffected(sc, res, err, "", wrap)
 		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound())
-	case verbInsert, verbUpdate, verbUpsert: // method writes them
+	case verbInsert, verbUpdate, verbUpsert, verbCopy: // method writes them
 	}
 }
 

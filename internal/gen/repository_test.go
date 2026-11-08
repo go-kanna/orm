@@ -225,6 +225,7 @@ func TestRepositories(t *testing.T) {
 	UpsertUser(ctx context.Context, u model.User) (model.User, error)
 	Delete(ctx context.Context, id model.OrderID) error
 	DeleteStale(ctx context.Context, s ...scopes.Order) (int64, error)
+	CopyNotes(ctx context.Context, notes []model.Note) (int64, error)
 	MonthCounts(ctx context.Context, since time.Time) ([]MonthCount, error)
 	CloseOld(ctx context.Context, before time.Time) (int64, error)
 `, monthCounts+`
@@ -253,6 +254,7 @@ UPDATE orders SET status = 'closed' WHERE placed_at < :before
 		"OrderRepository.UpsertUser Upsert users row=u row conflict=tenant_id,email",
 		"OrderRepository.Delete Delete orders keys=id=id error",
 		"OrderRepository.DeleteStale Delete orders scoped count",
+		"OrderRepository.CopyNotes Copy notes row=notes many count",
 		"OrderRepository.MonthCounts query \"SELECT date_trunc('month', placed_at) AS month, count(*) AS count\\nFROM " +
 			"orders\\nWHERE placed_at >= $1\\nGROUP BY 1\\nORDER BY 1\" args=since rows repository.MonthCount{Month, Count}",
 		"OrderRepository.CloseOld query \"UPDATE orders SET status = 'closed' WHERE placed_at < $1\" args=before count",
@@ -344,7 +346,22 @@ func TestRepositories_Mistakes(t *testing.T) {
 		{"many rows of an array on PostgreSQL", snapshot.PostgreSQL,
 			"\tInsertNotes(ctx context.Context, ns []model.Note) error\n",
 			at + "error: InsertNotes: unnest, which writes the rows in one statement, cannot write tags, an array\n" +
-				"  write the rows one by one"},
+				"  write the rows one by one\n" +
+				"  or copy them: Copy(ctx context.Context, rows []model.Note) (int64, error)"},
+		{"a Copy of one row", snapshot.PostgreSQL, "\tCopy(ctx context.Context, o model.Order) (int64, error)\n",
+			at + "error: Copy: kanna-orm cannot implement it as declared\n" +
+				"  declare it in a form of Copy, as in Copy(ctx context.Context, rows []model.Order) (int64, error)"},
+		{"a Copy returning error alone", snapshot.PostgreSQL,
+			"\tCopy(ctx context.Context, orders []model.Order) error\n",
+			at + "error: Copy: kanna-orm cannot implement it as declared\n" +
+				"  declare it in a form of Copy, as in Copy(ctx context.Context, rows []model.Order) (int64, error)"},
+		{"a Copy of a column the table requires and the model has no field for", snapshot.PostgreSQL,
+			"\tCopyLogs(ctx context.Context, logs []model.Log) (int64, error)\n",
+			at + "error: CopyLogs: logs requires a value for level, which model.Log has no field for\n" +
+				"  give model.Log a field for it, or the column a default"},
+		{"a Copy on MySQL", snapshot.MySQL, "\tCopy(ctx context.Context, orders []model.Order) (int64, error)\n",
+			at + "error: Copy: MySQL has no COPY, which a Copy writes its rows by\n" +
+				"  write the rows by an Insert of many rows: Insert(ctx context.Context, rows []model.Order) error"},
 		{"a conflict on no unique key", snapshot.PostgreSQL,
 			"\t//kanna:conflict email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:24:2: error: UpsertUser: (email) is neither the primary key of users nor one of its unique " +

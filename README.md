@@ -574,8 +574,9 @@ The input must match the selected driver's statement methods, and the result mus
 An existing hand-written `Bind` is preserved.
 
 The `DBTX` of every package of repositories is the one of the runtime, `type DBTX = kpgx.DBTX` of
-`github.com/go-kanna/orm/pgx`, or `stdlib.DBTX` of `github.com/go-kanna/orm/stdlib` on `database/sql`. So one value
-serves them all, and a dependency injector provides it once, as kanna-di does by a provider in the container's package:
+`github.com/go-kanna/orm/pgx`, or `kpgx.CopyDBTX` where kanna-orm writes a [Copy](#copying-many-rows), or
+`stdlib.DBTX` of `github.com/go-kanna/orm/stdlib` on `database/sql`. So one value serves them all, and a dependency
+injector provides it once, as kanna-di does by a provider in the container's package:
 
 ```go
 import "github.com/go-kanna/orm/pgx"
@@ -668,7 +669,8 @@ With a separate destination such as `-destination ../postgres`, kanna-orm genera
 interface's name, `newOrder` and `NewOrder` constructors, and value receiver methods. All else goes as in the same
 package: `Bind`, the helper of a method written by hand, and a `NewOrder` of your own.
 As the interface's package cannot name the destination's `DBTX`, `Bind` takes a transaction exposing `DBTX()`, as
-`Bind(tx tx.Tx) Order`, or the runtime's `DBTX` itself, of `orm/pgx` or `orm/stdlib`.
+`Bind(tx tx.Tx) Order`, or the runtime's `DBTX` itself, of `orm/pgx` or `orm/stdlib`, or `CopyDBTX` of `orm/pgx` where
+kanna-orm writes a [Copy](#copying-many-rows).
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
@@ -733,6 +735,7 @@ The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not nam
 | `Update` | `Update(ctx, o model.Order) error`, or with a [change set](#updating-selected-columns) | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
 | `Upsert` | `Upsert(ctx, o model.Order) error`, or with a [change set](#writing-a-change-set-over-the-row-met) | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
 | `Delete` | `Delete(ctx, id model.OrderID) error`, or [with scopes](#selecting-rows-to-delete)     | deletes the row with the key, or the rows the scopes match                            |
+| `Copy`   | `Copy(ctx, rows []model.Order) (int64, error)`                                         | writes the rows by [COPY](#copying-many-rows) through pgx, and returns how many       |
 
 `Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, with the same absence contract; a scalar one reads a column that is never NULL, as its nil means no row.
 
@@ -886,7 +889,8 @@ type Product struct {
 The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples define `products.currency` with `DEFAULT 'JPY'`.
 Even when the model supplies `Currency: "USD"`, INSERT omits it and the stored value is `JPY`. The example reads it
 back and checks this. The option is explicit and unconditional: an untagged zero value is still written as a zero
-value. It affects generated INSERT statements, including bulk inserts and upserts, but not handwritten SQL.
+value. It affects generated INSERT statements, including bulk inserts and upserts, and the columns a
+[Copy](#copying-many-rows) writes, but not handwritten SQL.
 
 On PostgreSQL, a method returning the model reads database-generated values with RETURNING. For example,
 `ID uuid.UUID` tagged `orm:",default"` can use a `DEFAULT uuidv7()` primary key without assigning the ID in Go.
@@ -1013,7 +1017,50 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
 - PostgreSQL rejects an upsert in which two rows have the same key.
 - `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
-  one by one.
+  one by one, or [copy them](#copying-many-rows).
+
+### Copying many rows
+
+A `Copy` writes the rows of a slice by COPY of PostgreSQL, through `CopyFrom` of pgx, and returns how many it wrote:
+
+```go
+CopyEvents(ctx context.Context, events []model.Event) (int64, error)
+```
+
+```sql
+-- what the hooks see
+COPY "events" ("kind", "tags", "note") FROM STDIN
+```
+
+COPY has no `RETURNING` and no `ON CONFLICT`, and a table with row-level security refuses it, so it is a verb of its
+own, which an `Insert` of many rows never turns into.
+
+- It writes the columns an `Insert` of many rows writes, leaving out those tagged `default` and those the database
+  always assigns. One COPY writes a column of every row or of none, so a column the database assigns unless given, as
+  a serial, is written when every row gives it a value and left to the database when none does, and rows of both
+  kinds return an error and write nothing: copy them apart.
+- An array, which `unnest` cannot write, is copied as any other value.
+- Of no rows, it runs nothing and returns 0.
+- Its error goes through [`mapError`](#mapping-errors), with the method's operation, and the hooks see the COPY
+  statement with no `Args`.
+- pgx writes each value in the binary format, so a column of a type pgx does not know, as an enum type of PostgreSQL,
+  needs the type registered on the connection first, by `Conn.LoadType` and `pgtype.Map.RegisterType`.
+- It needs pgx: on MySQL, or with `-driver database/sql`, generation stops at it. Write the rows by an `Insert` of many
+  rows there.
+
+A package where kanna-orm writes a `Copy`, or the helper a `Copy` written by hand calls, declares its `DBTX` as
+`kpgx.CopyDBTX`, the runtime's `DBTX` with `CopyFrom`, which `*pgxpool.Pool`, `*pgx.Conn`, and `pgx.Tx` have, so that a
+connection that cannot copy does not compile. A method named `Copy...` that you write and that calls no helper, as a
+`CopyOrder` duplicating an order, leaves `DBTX` as it is; to call `r.db.CopyFrom` yourself, declare a `Copy` kanna-orm
+writes. The `Bind` of each repository in such a package takes a `CopyDBTX`, as `Bind(db kpgx.CopyDBTX) Order`, or a
+transaction whose `DBTX()` returns one, and generation stops at a `Bind` taking what cannot copy. A dependency injector
+provides `CopyDBTX` besides `DBTX`:
+
+```go
+func provideCopyDBTX(pool *pgxpool.Pool) pgx.CopyDBTX { return pool }
+```
+
+The [PostgreSQL](example/postgres) example copies the approvals of its orders this way, and its After prints the COPY.
 
 ### Updating selected columns
 
@@ -1163,9 +1210,9 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A condition or validation error that prevents SQL from running calls no hook.
+A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A [Copy](#copying-many-rows) is seen as its COPY statement, as `COPY "events" ("kind", "tags", "note") FROM STDIN`, with no `Args`. A condition or validation error that prevents SQL from running calls no hook.
 
-Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` on pgx, and `r.db.ExecContext`, `r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns, before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their rows through the hooks, on either driver. Both database examples give an After that prints each statement.
+Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, the clock is not read. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` on pgx, with `r.db.CopyFrom` in a package where kanna-orm writes a Copy, and `r.db.ExecContext`, `r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns, before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their rows through the hooks, on either driver. Both database examples give an After that prints each statement.
 
 ### Reading the values of a column
 
@@ -1451,6 +1498,7 @@ the difference is settled when the code is generated.
 | Reading a write back | `RETURNING`                                         | `LAST_INSERT_ID()` and a `SELECT` by the key |
 | Upsert               | `ON CONFLICT (...)` on the key named                | `ON DUPLICATE KEY UPDATE` on any unique key  |
 | Many rows            | `unnest`, in one statement                          | `VALUES`, split when long                    |
+| Copying many rows    | `COPY`, through `CopyFrom` of pgx alone             | none                                         |
 | Paging by key        | a row comparison, unless the order mixes directions | spelled out                                  |
 
 A value type goes to and from the database through its `Value` and `Scan` methods; any other type, as the driver
@@ -1486,7 +1534,6 @@ These are out of what kanna-orm does so far, not ruled out:
 
 - Aggregates other than `Count`, such as sums and grouping. Write them in [SQL](#hand-written-sql) returning a DTO.
 - Set `created_at` and `updated_at`.
-- COPY many rows through pgx.
 - Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
 - Page by a column that may be NULL.
 - Support MariaDB or SQLite.

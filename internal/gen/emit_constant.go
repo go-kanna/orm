@@ -20,7 +20,7 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 		if m.returns != returnsNone && m.returns != returnsCount {
 			return false
 		}
-	case verbInsert, verbUpdate, verbUpsert:
+	case verbInsert, verbUpdate, verbUpsert, verbCopy:
 		return false
 	}
 	table := sqlName(e.d, m.target.table)

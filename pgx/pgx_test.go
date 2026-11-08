@@ -4,8 +4,34 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	kpgx "github.com/go-kanna/orm/pgx"
 )
+
+// What pgx connects by copies rows.
+var (
+	_ kpgx.CopyDBTX = (*pgxpool.Pool)(nil)
+	_ kpgx.CopyDBTX = (*pgx.Conn)(nil)
+	_ kpgx.CopyDBTX = pgx.Tx(nil)
+)
+
+func TestCopyFromSQL(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		table   pgx.Identifier
+		columns []string
+		want    string
+	}{
+		{pgx.Identifier{"orders"}, []string{"customer_id", "status"}, `COPY "orders" ("customer_id", "status") FROM STDIN`},
+		{pgx.Identifier{"shop", "order"}, []string{`say "hi"`}, `COPY "shop"."order" ("say ""hi""") FROM STDIN`},
+	} {
+		if got := kpgx.CopyFromSQL(tt.table, tt.columns); got != tt.want {
+			t.Errorf("CopyFromSQL(%v, %v) = %s, want %s", tt.table, tt.columns, got, tt.want)
+		}
+	}
+}
 
 type conn struct{ kpgx.DBTX }
 

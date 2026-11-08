@@ -411,8 +411,12 @@ func (ex *example) readApprovals(ctx context.Context) error {
 			})
 		}
 	}
-	if err := ex.orders.InsertApprovals(ctx, approvals); err != nil {
+	copied, err := ex.orders.CopyApprovals(ctx, approvals)
+	if err != nil {
 		return fmt.Errorf("read approvals: %w", err)
+	}
+	if copied != int64(len(approvals)) {
+		return fmt.Errorf("copied approvals: got %d, want %d", copied, len(approvals))
 	}
 	loaded, err := ex.orders.List(ctx, scopes.Orders().IDAsc().Limit(2).WithRecentApprovals())
 	if err != nil {
