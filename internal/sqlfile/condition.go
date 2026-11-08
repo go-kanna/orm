@@ -81,20 +81,20 @@ func (l *lexer) head(table string) string {
 	t := l.next()
 	from := t.start
 	var (
-		parts []string
+		parts []sqlToken
 		to    int
 	)
 	for {
 		if t.kind != word && t.kind != quoted {
 			return notShaped
 		}
-		parts, to = append(parts, t.text), t.end
+		parts, to = append(parts, t), t.end
 		if t = l.next(); !t.isPunct(".") {
 			break
 		}
 		t = l.next()
 	}
-	if !slices.Equal(parts, strings.Split(table, ".")) {
+	if !slices.EqualFunc(parts, strings.Split(table, "."), l.names) {
 		return fmt.Sprintf("selects from %s, not from its table %s", l.src[from:to], table)
 	}
 
@@ -107,6 +107,24 @@ func (l *lexer) head(table string) string {
 		return "has no WHERE condition"
 	}
 	return notShaped
+}
+
+// names reports whether t, a part of the name of a table, names part as the database reads it: a quoted name as it
+// is written, and one unquoted as PostgreSQL folds it, to lower case, or on MySQL, whose rule depends on how its
+// server is set up, whatever its case.
+func (l *lexer) names(t sqlToken, part string) bool {
+	switch {
+	case t.kind == quoted:
+		return t.text == part
+	case l.mysql:
+		return strings.EqualFold(t.text, part)
+	}
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, t.text) == part
 }
 
 // condition reads the condition after the WHERE of a statement, and returns where it starts and stops, or what is

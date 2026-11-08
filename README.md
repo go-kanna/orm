@@ -1565,9 +1565,11 @@ ORDER BY 1`
   `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at);` is the one above, so that a
   SQL linter, which cannot parse a condition alone, reads the file as it reads the queries. kanna-orm takes the
   condition alone into statements of its own, so the statement has that shape and no other: it selects `1` from the
-  scope type's table, named as kanna-orm names it, quoted or not, gives the table no alias, which would mean nothing
-  where the condition goes, and holds nothing after the condition but a `;`. Another statement starting with `SELECT`
-  stops generation; a condition such as `id IN (SELECT ...)` is a condition as before.
+  scope type's table, gives the table no alias, which would mean nothing where the condition goes, and holds nothing
+  after the condition but a `;`. The table's name is read as the database reads it: quoted, as it is written, and
+  unquoted, in lower case on PostgreSQL, which folds it so, and in any case on MySQL, whose rule depends on how its
+  server is set up. Another statement starting with `SELECT` stops generation; a condition such as
+  `id IN (SELECT ...)` is a condition as before.
 - A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
   ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.

@@ -81,6 +81,42 @@ func TestStatement_Condition(t *testing.T) {
 	}
 }
 
+func TestStatement_ConditionTableName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, table, written string
+		dialect              snapshot.Dialect
+		same                 bool
+	}{
+		{"unquoted, folded to lower case on PostgreSQL", "orders", "Orders", snapshot.PostgreSQL, true},
+		{"unquoted, of a table of upper case on PostgreSQL", "Orders", "Orders", snapshot.PostgreSQL, false},
+		{"quoted, as written on PostgreSQL", "Orders", `"Orders"`, snapshot.PostgreSQL, true},
+		{"quoted, in other case on PostgreSQL", "orders", `"Orders"`, snapshot.PostgreSQL, false},
+		{"of a schema, unquoted on PostgreSQL", "audit.events", "Audit.EVENTS", snapshot.PostgreSQL, true},
+		{"unquoted, in any case on MySQL", "Orders", "ORDERS", snapshot.MySQL, true},
+		{"quoted, as written on MySQL", "Orders", "`Orders`", snapshot.MySQL, true},
+		{"quoted, in other case on MySQL", "orders", "`ORDERS`", snapshot.MySQL, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			st := scope(t, "-- scope: Order.Open()\nSELECT 1 FROM "+tt.written+" WHERE true\n")
+			c, d := st.Condition(tt.table, tt.dialect)
+			want := "order_repository.sql:1:1: error: -- scope: Order.Open: the statement selects from " + tt.written +
+				", not from its table " + tt.table + "\n  write it as SELECT 1 FROM " + tt.table +
+				" WHERE <condition>, or as the condition alone"
+			switch {
+			case tt.same && (d != nil || c.Text != "true"):
+				t.Errorf("Condition = %q, %v; want true", c.Text, d)
+			case !tt.same && (d == nil || d.String() != want):
+				t.Errorf("Condition reports\n%v\nwant\n%s", d, want)
+			}
+		})
+	}
+}
+
 func TestStatement_ConditionMistakes(t *testing.T) {
 	t.Parallel()
 
@@ -102,8 +138,6 @@ func TestStatement_ConditionMistakes(t *testing.T) {
 		{"an alias without AS", "SELECT 1 FROM orders o WHERE o.status <> 'closed'", pg, alias},
 		{"another table", "SELECT 1 FROM order_lines WHERE true", pg,
 			"the statement selects from order_lines, not from its table orders"},
-		{"the table in other case", "SELECT 1 FROM Orders WHERE true", pg,
-			"the statement selects from Orders, not from its table orders"},
 		{"the table quoted as MySQL quotes it, on PostgreSQL", "SELECT 1 FROM `orders` WHERE true", pg, shape},
 		{"a column", "SELECT id FROM orders WHERE true", pg, list},
 		{"everything", "SELECT * FROM orders WHERE true", pg, list},
