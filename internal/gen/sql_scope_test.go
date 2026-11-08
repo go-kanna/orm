@@ -337,3 +337,68 @@ import _ "example.com/shop/b/kind"
 		}
 	}
 }
+
+func TestEmit_SQLScopeTypesOfTheModelsPackage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		// more is a Go file of the scope package more, and want the parameter the scope's method is written with.
+		name, more, want string
+	}{
+		{"by the name of the model's package", "", "st model.Status"},
+		{"by an import of the scope package of the same name", "import _ \"example.com/shop/other/model\"\n",
+			"st model2.Status"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The scope package imports the model's package by another name than its own.
+			const sql = "-- scope: Order.In(st model.Status)\nstatus = :st\n"
+			pkg := module(t, `
+-- model/model.go --
+package model
+
+type Order struct {
+	ID     int64
+	Status Status
+}
+
+type Status string
+-- other/model/model.go --
+package model
+
+type Status int
+-- scopes/scopes.go --
+package scopes
+
+import (
+	m "example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scope table=orders
+type Order struct{ q scope.Of[m.Order] }
+-- scopes/more.go --
+package scopes
+
+`+tt.more+`
+-- scopes/order_scopes.sql --
+`+sql)
+			stmts, _ := sqlfile.Parse("order_scopes.sql", []byte(sql))
+			s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL,
+				Statements: map[string]snapshot.Statement{
+					"example.com/shop/scopes.Order.In": {Digest: snapshot.Digest(stmts[0].Text)},
+				},
+				Tables: map[string]snapshot.Table{"orders": {Columns: columns("id", "status"), PrimaryKey: []string{"id"}}},
+			}
+			src, ds, err := gen.Emit(pkg, s)
+			if err != nil || len(ds) > 0 {
+				t.Fatalf("Emit: %v\n%s", err, report(ds))
+			}
+			if want := "func (s Order) In(" + tt.want + ") Order {"; !strings.Contains(string(src), want) {
+				t.Errorf("Emit wrote no %q:\n%s", want, src)
+			}
+		})
+	}
+}

@@ -163,12 +163,13 @@ func TestCommand_ImpliedScopesMistakes(t *testing.T) {
 }
 
 // TestCommand_ImpliedScopesWrittenByHand generates a package of scope types that //kanna:scopes declares, whose only
-// Go file imports nothing, with a scope whose signature names a type of a package the model's file imports: before
-// the package has scopes_gen.go, which imports the model's package, and after.
+// Go file imports nothing, with scopes whose signatures name a type of a package the model's file imports and one of
+// the model's own package: before the package has scopes_gen.go, which imports the model's package, and after.
 func TestCommand_ImpliedScopesWrittenByHand(t *testing.T) {
 	t.Parallel()
 
-	const sql = "-- scope: Order.PlacedSince(at time.Time)\nSELECT 1 FROM orders WHERE placed_at >= :at;\n"
+	const sql = "-- scope: Order.PlacedSince(at time.Time)\nSELECT 1 FROM orders WHERE placed_at >= :at;\n\n" +
+		"-- scope: Order.In(st model.Status)\nstatus = :st\n"
 	dir := writeModule(t, `
 -- model/model.go --
 package model
@@ -177,8 +178,11 @@ import "time"
 
 type Order struct {
 	ID       int64
+	Status   Status
 	PlacedAt time.Time
 }
+
+type Status string
 -- scopes/scopes.go --
 package scopes
 
@@ -191,12 +195,14 @@ package scopes
 		Tables: map[string]snapshot.Table{"orders": {
 			Columns: []snapshot.Column{
 				{Name: "id", Type: "int8", NotNull: true, Assigned: true},
+				{Name: "status", Type: "text", NotNull: true},
 				{Name: "placed_at", Type: "timestamptz", NotNull: true},
 			},
 			PrimaryKey: []string{"id"},
 		}},
 		Statements: map[string]snapshot.Statement{
 			"example.com/shop/scopes.Order.PlacedSince": {Digest: snapshot.Digest(stmts[0].Text)},
+			"example.com/shop/scopes.Order.In":          {Digest: snapshot.Digest(stmts[1].Text)},
 		},
 	}
 	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
@@ -218,8 +224,13 @@ package scopes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "func (s Order) PlacedSince(at time.Time) Order {"; !strings.Contains(string(src), want) {
-		t.Errorf("scopes_gen.go lacks %q:\n%s", want, src)
+	for _, want := range []string{
+		"func (s Order) PlacedSince(at time.Time) Order {",
+		"func (s Order) In(st model.Status) Order {",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("scopes_gen.go lacks %q:\n%s", want, src)
+		}
 	}
 	if code, _, errOut := run(t, scopes, "-check"); code != cli.ExitOK {
 		t.Errorf("kanna-orm -check = %d\n%s", code, errOut)

@@ -184,11 +184,11 @@ func (r resolver) sqlScope(st sqlfile.Statement, cond sqlfile.Condition, d snaps
 // resolver reads the types of the parameters of a scope written by hand, as the Go files of pkg would: an identifier
 // by what pkg declares and the predeclared types, and a type of another package by the name the files of pkg import
 // it by or, for a name they import nothing by, the name the file declaring model, the model of the scope's table,
-// imports it by.
+// imports it by, or that of the package of model.
 type resolver struct {
 	pkg   *packages.Package
 	model *types.Named
-	// file is the file declaring model, read for its imports alone, or nil when it is one of pkg's.
+	// file is the file declaring model, read for its imports alone, or nil when it is one of pkg's or cannot be read.
 	file *ast.File
 	// byPath maps the import path of each package pkg and the package of model import, at any depth, to its types.
 	byPath map[string]*types.Package
@@ -263,9 +263,9 @@ func (r resolver) typeOf(e ast.Expr) (types.Type, error) {
 
 // imported finds the package the Go files of r.pkg written by hand import as name, by that name or, for one imported
 // for its side effects alone, as in import _ "time", by the package's own; or, when they import none as name, the one
-// the file declaring r.model imports as name, so that a package of scope types needs no import of its own for the
-// packages its models use. A package neither imports is not looked for among those they import in turn, which would
-// change as those change; it is only told of, as one to import.
+// the file declaring r.model imports as name, or the package of r.model, by its own name, so that a package of scope
+// types needs no import of its own for its models and the packages they use. Another package is not looked for among
+// those they import in turn, which would change as those change; it is only told of, as one to import.
 func (r resolver) imported(name string) (*types.Package, error) {
 	var files []*ast.File
 	for _, f := range r.pkg.Syntax {
@@ -283,15 +283,19 @@ func (r resolver) imported(name string) (*types.Package, error) {
 	}
 
 	e := notImportedError{name: name, pkg: r.pkg.Name}
-	if r.file != nil {
+	if p := r.model.Obj().Pkg(); p != r.pkg.Types {
 		e.file = filepath.Base(r.pkg.Fset.Position(r.model.Obj().Pos()).Filename)
 		e.model = types.TypeString(r.model, (*types.Package).Name)
-		found, other, e.path = r.lookup([]*ast.File{r.file}, name)
+		if r.file != nil {
+			found, other, e.path = r.lookup([]*ast.File{r.file}, name)
+		}
 		switch {
 		case other != nil:
 			return nil, fmt.Errorf("%s names both %s and %s, which %s imports", name, found.Path(), other.Path(), e.file)
 		case found != nil:
 			return found, nil
+		case p.Name() == name:
+			return p, nil
 		}
 	}
 	if e.unloaded = e.path != ""; !e.unloaded {
@@ -333,9 +337,9 @@ func (r resolver) lookup(files []*ast.File, name string) (found, other *types.Pa
 }
 
 // notImportedError is the error of name, which no package the files of pkg import is named, nor one that file imports,
-// the file declaring model when it is none of theirs, with path, the import path of a package of the name, if one is
-// found, which they could import. unloaded tells that file imports path as name, but the run has not loaded it, as
-// happens to a package the file uses in the bodies of its functions alone.
+// the file declaring model when it is none of theirs, nor the package of model, with path, the import path of a package
+// of the name, if one is found, which they could import. unloaded tells that file imports path as name, but the run has
+// not loaded it, as happens to a package the file uses in the bodies of its functions alone.
 type notImportedError struct {
 	name, pkg, file, model, path string
 	unloaded                     bool
