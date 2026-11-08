@@ -1441,7 +1441,7 @@ AvgTotal(ctx context.Context, customerID model.CustomerID) (float64, error)
 SELECT coalesce(sum(total)::bigint, 0) FROM orders WHERE ...
 ```
 
-- `Sum` and `Avg` read a column of numbers, held by a field of an integer or a floating-point type, or of a type made of one; `Min` and `Max` read a column of numbers, strings, or times. A column of another kind stops generation.
+- `Sum` and `Avg` read a column of numbers, held by a field of an integer or a floating-point type, or of a type made of one; `Min` and `Max` read a column of numbers, strings, or times. A column of another kind stops generation. MySQL compares the values of an `ENUM` column as strings, not in the order the type declares them.
 - `Sum`, `Min`, and `Max` return a value of the field's type, or a pointer to one: of a field `*int64`, as a column that may be NULL has, an `int64` or an `*int64`. `Avg` returns a `float64` or a `float32`, or a pointer to one, as the average of integers is seldom one. Any other type stops generation. A sum too large for its type is an error when the method runs, not a value cut short.
 - When no row matches, or the column is NULL in every row matched, one returning a value returns 0 of a `Sum`, and `orm.ErrNotFound` of a `Min`, a `Max`, or an `Avg`, as a `Get` does; one returning a pointer returns nil, as a `Find` does.
 - Their scopes give their conditions alone, as those of `Count` do: a scope that orders, pages, or loads a relation makes them return an error.
