@@ -1092,7 +1092,8 @@ func findOfNull(pos token.Position, name, column string, t types.Type) diag.Diag
 
 // pluckColumn finds the column m reads the values of, as t, its result: that of the field its name says after the
 // verb, as GetName reads that of Name, or the plural of after List, as ListNames and ListCustomerIDs read those of
-// Name and CustomerID. The value is of the field's type.
+// Name and CustomerID, before the lock it may end in, as ListIDsForKeyShare reads that of ID. The value is of the
+// field's type.
 func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 	switch {
 	case m.verb == verbList:
@@ -1101,6 +1102,8 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 		t = t.(*types.Pointer).Elem() //nolint:forcetypeassert // plucks saw a pointer
 	}
 	rest := strings.TrimPrefix(m.name, string(m.verb))
+	lock := lockedName.FindString(rest)
+	rest = strings.TrimSuffix(rest, lock)
 	misspelled := ""
 	for _, c := range m.columns {
 		field := c.path[len(c.path)-1]
@@ -1121,21 +1124,29 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 		m.pluck = &c
 		return nil
 	}
-	field := "named " + rest
-	if m.verb == verbList {
-		field = rest + " is the plural of"
+	missing := fmt.Sprintf("%s has no field named %s", typeName(m.model), rest)
+	switch {
+	case rest == "" && lock == "":
+		missing = "names no field after " + string(m.verb)
+	case rest == "":
+		missing = fmt.Sprintf("names no field between %s and %s", m.verb, lock)
+	case m.verb == verbList:
+		missing = fmt.Sprintf("%s has no field whose plural is %s", typeName(m.model), rest)
 	}
 	hint := "name it after a field, as in " + pluckShape + ", which reads ID"
+	if lock != "" {
+		hint = "name it after a field, then its lock, as ListIDs" + lock + " reads ID"
+	}
 	if misspelled != "" {
 		var plural strings.Builder
 		for word := range strings.SplitSeq(decl.Plural(misspelled), "_") {
 			plural.WriteString(strings.ToUpper(word[:1]) + word[1:])
 		}
-		hint = fmt.Sprintf("name it List%s: the plural of %s is made as that of a table's name", plural.String(),
-			misspelled)
+		hint = fmt.Sprintf("name it List%s%s: the plural of %s is made as that of a table's name", plural.String(),
+			lock, misspelled)
 	}
-	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s has no field %s", m.name,
-		typeName(m.model), field).WithHints(hint)}
+	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s", m.name, missing).
+		WithHints(hint)}
 }
 
 // pluralOf reports whether name, what follows List in the name of a method reading the values of a column, is the

@@ -43,6 +43,10 @@ type OrderRepository interface {
 	FirstUnlocked(ctx context.Context, s ...scopes.Order) (model.Order, error)
 	//kanna:lock update skip-locked
 	ListUnlocked(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+	//kanna:lock share
+	ListIDsForShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)
+	//kanna:lock update
+	GetStatusForUpdate(ctx context.Context, id model.OrderID) (model.OrderStatus, error)
 
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertOrders(ctx context.Context, orders []model.Order) error

@@ -26,6 +26,14 @@ func TestRepositories_Lock(t *testing.T) {
 	//kanna:lock key-share
 	ListHeld(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+	//kanna:lock key-share
+	ListIDsForKeyShare(ctx context.Context, id model.OrderID) ([]model.OrderID, error)
+	//kanna:lock update nowait
+	GetNumberForUpdate(ctx context.Context, id model.OrderID) (string, error)
+	//kanna:lock share
+	FindNumberForShare(ctx context.Context, id model.OrderID) (*string, error)
+	//kanna:lock no-key-update skip-locked
+	FirstStatusForNoKeyUpdate(ctx context.Context, s ...scopes.Order) (model.OrderStatus, error)
 `, "", nil)
 	if ds != "" {
 		t.Fatalf("Repositories:\n%s", ds)
@@ -36,6 +44,11 @@ func TestRepositories_Lock(t *testing.T) {
 		`OrderRepository.FirstClaimable First orders scoped row lock="FOR SHARE SKIP LOCKED"`,
 		`OrderRepository.ListHeld List orders scoped rows lock="FOR KEY SHARE"`,
 		`OrderRepository.List List orders scoped rows`,
+		`OrderRepository.ListIDsForKeyShare List orders keys=id=id rows pluck=id lock="FOR KEY SHARE"`,
+		`OrderRepository.GetNumberForUpdate Get orders keys=id=id row pluck=number lock="FOR UPDATE NOWAIT"`,
+		`OrderRepository.FindNumberForShare Find orders keys=id=id row pluck=number lock="FOR SHARE"`,
+		`OrderRepository.FirstStatusForNoKeyUpdate First orders scoped row pluck=status ` +
+			`lock="FOR NO KEY UPDATE SKIP LOCKED"`,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Repositories =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -50,6 +63,10 @@ func TestRepositories_LockOnMySQL(t *testing.T) {
 	GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error)
 	//kanna:lock share
 	ListShared(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
+	//kanna:lock share
+	ListIDsForShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)
+	//kanna:lock update
+	GetNumberForUpdate(ctx context.Context, id model.OrderID) (string, error)
 `, "", nil)
 	if ds != "" {
 		t.Fatalf("Repositories:\n%s", ds)
@@ -57,6 +74,8 @@ func TestRepositories_LockOnMySQL(t *testing.T) {
 	want := []string{
 		`OrderRepository.GetForUpdate Get orders keys=id=id row lock="FOR UPDATE NOWAIT"`,
 		`OrderRepository.ListShared List orders scoped rows lock="FOR SHARE"`,
+		`OrderRepository.ListIDsForShare List orders scoped rows pluck=id lock="FOR SHARE"`,
+		`OrderRepository.GetNumberForUpdate Get orders keys=id=id row pluck=number lock="FOR UPDATE"`,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Repositories =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -143,6 +162,17 @@ func TestRepositories_LockMistakes(t *testing.T) {
 			"\t//kanna:lock update\n\tListForShare(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
 			at + "error: ListForShare: its name ends in a lock of share, but //kanna:lock is of update\n" +
 				"  make the two one"},
+		{"a column read telling of a lock it has not", snapshot.PostgreSQL,
+			"\tListIDsForUpdate(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)\n",
+			at + "warning: ListIDsForUpdate: its name tells of a lock, but it has no //kanna:lock\n" +
+				"  declare the lock, or name it otherwise"},
+		{"a column read ending in another lock than its directive", snapshot.PostgreSQL,
+			"\t//kanna:lock update\n\tListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)\n",
+			at + "error: ListIDsForKeyShare: its name ends in a lock of key-share, but //kanna:lock is of update\n" +
+				"  make the two one"},
+		{"a column read of key-share on MySQL", snapshot.MySQL,
+			"\t//kanna:lock key-share\n\tListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)\n",
+			at + "error: ListIDsForKeyShare: MySQL has no FOR KEY SHARE\n  lock with update or share"},
 		{"a name ending in the lock of its directive", snapshot.PostgreSQL,
 			"\t//kanna:lock key-share\n\tListForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n",
 			""},

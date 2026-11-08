@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -91,6 +92,45 @@ func TestGeneratedRepository_PostgresLockStrengths(t *testing.T) {
 				if got, want := pgLocked(t, other, "orders WHERE id = 1", clause), slices.Contains(tt.blocks, clause); got != want {
 					t.Errorf("%s blocked = %v, want %v", clause, got, want)
 				}
+			}
+		})
+	}
+}
+
+// A read of the values of a column whose name ends in its lock locks the rows it reads them of, and those alone.
+func TestGeneratedRepository_PostgresLockedColumn(t *testing.T) {
+	t.Parallel()
+
+	all := []string{"FOR KEY SHARE", "FOR SHARE", "FOR NO KEY UPDATE", "FOR UPDATE"}
+	for _, tt := range []struct {
+		name   string
+		read   func(prepository.OrderRepository, context.Context) (any, error)
+		want   any
+		blocks []string
+	}{
+		{"ListIDsForKeyShare", func(r prepository.OrderRepository, ctx context.Context) (any, error) {
+			return r.ListIDsForKeyShare(ctx, pscopes.Order{}.IDEq(1))
+		}, []model.OrderID{1}, []string{"FOR UPDATE"}},
+		{"GetStatusForUpdate", func(r prepository.OrderRepository, ctx context.Context) (any, error) {
+			return r.GetStatusForUpdate(ctx, 1)
+		}, model.OrderStatus("open"), all},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			url := postgresSchema(t)
+			other := pgxConn(t, url)
+			if got, err := tt.read(ppgx.NewOrderRepository(pgxTx(t, url)), t.Context()); err != nil ||
+				!reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("%s = %v, %v; want %v", tt.name, got, err, tt.want)
+			}
+			for _, clause := range all {
+				if got, want := pgLocked(t, other, "orders WHERE id = 1", clause), slices.Contains(tt.blocks, clause); got != want {
+					t.Errorf("%s blocked = %v, want %v", clause, got, want)
+				}
+			}
+			if pgLocked(t, other, "orders WHERE id = 2", "FOR UPDATE") {
+				t.Error("a row it did not read is locked")
 			}
 		})
 	}
@@ -326,6 +366,44 @@ func TestGeneratedRepository_MySQLLockStrengths(t *testing.T) {
 				if got, want := mysqlLocked(t, db, "orders WHERE id = 1", clause), slices.Contains(tt.blocks, clause); got != want {
 					t.Errorf("%s blocked = %v, want %v", clause, got, want)
 				}
+			}
+		})
+	}
+}
+
+// A read of the values of a column whose name ends in its lock locks the rows it reads them of, and those alone.
+func TestGeneratedRepository_MySQLLockedColumn(t *testing.T) {
+	t.Parallel()
+
+	all := []string{"FOR SHARE", "FOR UPDATE"}
+	for _, tt := range []struct {
+		name   string
+		read   func(mrepository.OrderRepository, context.Context) (any, error)
+		want   any
+		blocks []string
+	}{
+		{"ListIDsForShare", func(r mrepository.OrderRepository, ctx context.Context) (any, error) {
+			return r.ListIDsForShare(ctx, mscopes.Order{}.IDEq(1))
+		}, []model.OrderID{1}, []string{"FOR UPDATE"}},
+		{"GetStatusForUpdate", func(r mrepository.OrderRepository, ctx context.Context) (any, error) {
+			return r.GetStatusForUpdate(ctx, 1)
+		}, model.OrderStatus("open"), all},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := mysqlDB(t)
+			if got, err := tt.read(mstdlib.NewOrderRepository(mysqlTx(t, db)), t.Context()); err != nil ||
+				!reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("%s = %v, %v; want %v", tt.name, got, err, tt.want)
+			}
+			for _, clause := range all {
+				if got, want := mysqlLocked(t, db, "orders WHERE id = 1", clause), slices.Contains(tt.blocks, clause); got != want {
+					t.Errorf("%s blocked = %v, want %v", clause, got, want)
+				}
+			}
+			if mysqlLocked(t, db, "orders WHERE id = 2", "FOR UPDATE") {
+				t.Error("a row it did not read is locked")
 			}
 		})
 	}

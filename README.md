@@ -1379,6 +1379,13 @@ names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc()
 
 Both database examples read the affordable product names this way.
 
+A name may also end in its lock, which is taken off before the field is read, so `ListIDsForKeyShare` with `//kanna:lock key-share` reads `ID` and locks its rows `FOR KEY SHARE`:
+
+```go
+//kanna:lock key-share
+ListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)
+```
+
 ### Reading a projection
 
 A `Get...`, `Find...`, `First...`, or `List...` method may return a different named struct while taking the original model's scopes. The result type selects the columns; it needs no scope of its own:
