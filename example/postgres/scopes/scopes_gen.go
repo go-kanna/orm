@@ -498,6 +498,10 @@ func (c ProductChangeSet) SetPrice(v int64) ProductChangeSet {
 	return ProductChangeSet{c.changes.Set("price", v)}
 }
 
+func (c ProductChangeSet) AddPrice(n int64) ProductChangeSet {
+	return ProductChangeSet{c.changes.Add("price", n)}
+}
+
 func (c ProductChangeSet) SetCurrency(v string) ProductChangeSet {
 	return ProductChangeSet{c.changes.Set("currency", v)}
 }
@@ -879,6 +883,10 @@ func (c OrderChangeSet) Of() change.Set[model.Order] { return c.changes }
 
 func (c OrderChangeSet) SetCustomerID(v model.CustomerID) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
+}
+
+func (c OrderChangeSet) AddCustomerID(n model.CustomerID) OrderChangeSet {
+	return OrderChangeSet{c.changes.Add("customer_id", n)}
 }
 
 func (c OrderChangeSet) SetStatus(v model.OrderStatus) OrderChangeSet {
@@ -1373,6 +1381,10 @@ func (c OrderLineChangeSet) SetSKU(v model.SKU) OrderLineChangeSet {
 
 func (c OrderLineChangeSet) SetQuantity(v int) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("quantity", v)}
+}
+
+func (c OrderLineChangeSet) AddQuantity(n int) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Add("quantity", n)}
 }
 
 // OrderIDEq narrows to the rows whose order_id is v.
@@ -2181,8 +2193,16 @@ func (c ApprovalChangeSet) SetOrderID(v model.OrderID) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Set("order_id", v)}
 }
 
+func (c ApprovalChangeSet) AddOrderID(n model.OrderID) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Add("order_id", n)}
+}
+
 func (c ApprovalChangeSet) SetRevision(v int32) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Set("revision", v)}
+}
+
+func (c ApprovalChangeSet) AddRevision(n int32) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Add("revision", n)}
 }
 
 func (c ApprovalChangeSet) SetApprover(v string) ApprovalChangeSet {

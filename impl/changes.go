@@ -15,19 +15,29 @@ type Changes[M any] struct {
 type assignment struct {
 	column string
 	value  any
+	// add tells that value is added to the stored value of column, rather than written over it.
+	add bool
 }
 
-// Set returns a new change set with column assigned to value, including nil and zero values.
-// Generated setters supply the column name and enforce its Go type.
+// Set returns a new change set with column assigned to value, including nil and zero values, in place of what it
+// assigned column before. Generated setters supply the column name and enforce its Go type.
 func (c Changes[M]) Set(column string, value any) Changes[M] {
+	return c.with(assignment{column: column, value: value})
+}
+
+// Add returns a new change set adding n to the stored value of column, in place of what it assigned column before.
+// Generated setters supply the column name, of a column of numbers that is never NULL, and enforce its Go type.
+func (c Changes[M]) Add(column string, n any) Changes[M] {
+	return c.with(assignment{column: column, value: n, add: true})
+}
+
+func (c Changes[M]) with(a assignment) Changes[M] {
 	c.values = slices.Clone(c.values)
-	for i, a := range c.values {
-		if a.column == column {
-			c.values[i].value = value
-			return c
-		}
+	if i := slices.IndexFunc(c.values, func(b assignment) bool { return b.column == a.column }); i >= 0 {
+		c.values[i] = a
+		return c
 	}
-	c.values = append(c.values, assignment{column, value})
+	c.values = append(c.values, a)
 	return c
 }
 
@@ -57,11 +67,14 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 			return "", nil, fmt.Errorf("orm: Update cannot assign column %s", a.column)
 		}
 		args = append(args, a.value)
-		placeholder := "?"
+		value := "?"
 		if d == Postgres {
-			placeholder = fmt.Sprintf("$%d", len(args))
+			value = fmt.Sprintf("$%d", len(args))
 		}
-		sets = append(sets, quoted(d, a.column)+" = "+placeholder)
+		if a.add {
+			value = quoted(d, a.column) + " + " + value
+		}
+		sets = append(sets, quoted(d, a.column)+" = "+value)
 	}
 	where, rest, err := q.targets(d, "Update", table, key, lock, len(args)+1)
 	if err != nil {
@@ -71,26 +84,35 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 }
 
 // UpsertValues is what method, an upsert taking c, writes over the row it meets: for each of allowed, in its order, a
-// flag telling whether c assigns the column, and the value it assigns, for a statement that writes each column the
-// flag of which is true and keeps the others. A column of key, which the row is met by, or one not allowed, is an
-// error.
-func (c Changes[M]) UpsertValues(method string, allowed, key []string) ([]any, error) {
+// flag telling whether c sets the column, and the value it sets, and then, for a column of added, a flag telling
+// whether c adds to the column, and the value it adds; for a statement that writes each column the flag of which is
+// true and keeps the others. A column of key, which the row is met by, one not allowed, or one not of added that c
+// adds to, is an error.
+func (c Changes[M]) UpsertValues(method string, allowed, added, key []string) ([]any, error) {
 	for _, a := range c.values {
 		switch {
 		case slices.Contains(key, a.column):
 			return nil, fmt.Errorf("orm: %s meets its row by %s, which its change set cannot write", method, a.column)
 		case !slices.Contains(allowed, a.column):
 			return nil, fmt.Errorf("orm: %s cannot assign column %s", method, a.column)
+		case a.add && !slices.Contains(added, a.column):
+			return nil, fmt.Errorf("orm: %s cannot add to column %s", method, a.column)
 		}
 	}
-	values := make([]any, 0, 2*len(allowed))
+	values := make([]any, 0, 2*(len(allowed)+len(added)))
 	for _, column := range allowed {
-		i := slices.IndexFunc(c.values, func(a assignment) bool { return a.column == column })
-		if i < 0 {
-			values = append(values, false, nil)
-			continue
+		set, add := []any{false, nil}, []any{false, nil}
+		if i := slices.IndexFunc(c.values, func(a assignment) bool { return a.column == column }); i >= 0 {
+			if c.values[i].add {
+				add = []any{true, c.values[i].value}
+			} else {
+				set = []any{true, c.values[i].value}
+			}
 		}
-		values = append(values, true, c.values[i].value)
+		values = append(values, set...)
+		if slices.Contains(added, column) {
+			values = append(values, add...)
+		}
 	}
 	return values, nil
 }

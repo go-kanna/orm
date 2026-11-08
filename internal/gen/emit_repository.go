@@ -701,10 +701,11 @@ func (e repoEmitter) insertTail(m repoMethod, first int) string {
 		sets := []string{key[0] + " = EXCLUDED." + key[0]}
 		if updated := m.updated(); len(updated) > 0 {
 			sets = sets[:0]
-			for i, c := range updated {
+			for _, c := range updated {
 				name := sqlName(e.d, c.col.Name)
 				sets = append(sets, e.upsertAssignment(m, c, "EXCLUDED."+name, sqlName(e.d, m.target.table)+"."+name,
-					first+2*i))
+					first))
+				first += upsertParams(m, c)
 			}
 		}
 		fmt.Fprintf(&tail, "\nON CONFLICT (%s) DO UPDATE SET %s", strings.Join(key, ", "), strings.Join(sets, ", "))

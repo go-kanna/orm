@@ -32,6 +32,10 @@ func (e emitter) changes() {
 		}
 		e.printf("func (c %s) Set%s(v %s) %s {\n", name, field, typ, name)
 		e.printf("return %s{c.changes.Set(%s, %s)}\n}\n\n", name, strconv.Quote(col.col.Name), value)
+		if additive(col) {
+			e.printf("func (c %s) Add%s(n %s) %s {\n", name, field, typ, name)
+			e.printf("return %s{c.changes.Add(%s, n)}\n}\n\n", name, strconv.Quote(col.col.Name))
+		}
 	}
 }
 
@@ -41,11 +45,23 @@ func changeColumns(p scopePlan) []column {
 	})
 }
 
+// additive reports whether a change set adds to c as well as setting it: c is a number in Go and in the database, and
+// never NULL, as NULL plus a number stays NULL.
+func additive(c column) bool {
+	b, ok := c.typ.Underlying().(*types.Basic)
+	return ok && c.col.NotNull && b.Info()&(types.IsInteger|types.IsFloat) != 0 &&
+		slices.Contains([]dbClass{classInteger, classTinyint1, classFloat, classNumeric}, classOf(c.col.Type))
+}
+
 func changeMethods(p scopePlan) []generated {
-	methods := make([]generated, 0, len(p.columns)+1)
+	methods := make([]generated, 0, 2*len(p.columns)+1)
 	methods = append(methods, generated{"Of", "for generated change sets"})
 	for _, c := range changeColumns(p) {
-		methods = append(methods, generated{"Set" + c.path[len(c.path)-1], "to assign column " + c.col.Name})
+		field := c.path[len(c.path)-1]
+		methods = append(methods, generated{"Set" + field, "to assign column " + c.col.Name})
+		if additive(c) {
+			methods = append(methods, generated{"Add" + field, "to add to column " + c.col.Name})
+		}
 	}
 	return methods
 }

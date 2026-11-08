@@ -213,6 +213,7 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	_, _ = u.orders.Delete(ctx, ss...)
 	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
 	_, _ = u.orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc().Limit(10))
+	_, _ = u.orders.Update(ctx, scopes.OrderChanges().AddCustomerID(1), scopes.Orders().Open())
 
 	c := scopes.CustomerChanges()
 	if page > 0 {

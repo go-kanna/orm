@@ -33,6 +33,10 @@ func TestEmit_NamesTakenAlready(t *testing.T) {
 			want: "scopes.go:8:1: error: Order: its field values is named as a method kanna-orm writes, to continue " +
 				"a page from a row\n  name the field otherwise"},
 		{name: "a method kanna-orm wrote before", old: "func (s Order) IDEq(id int64) Order { return s }\n"},
+		{name: "a method of the change set named as one adding to a column",
+			scopes: "func (c OrderChangeSet) AddVisits(n int64) OrderChangeSet { return c }\n",
+			old:    "type OrderChangeSet struct{}\n",
+			want:   "scopes.go:11:25: error: OrderChangeSet.AddVisits: kanna-orm writes a method of this name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -46,7 +50,10 @@ func TestEmit_NamesTakenAlready(t *testing.T) {
 -- model/model.go --
 package model
 
-type Order struct{ ID int64 }
+type Order struct {
+	ID     int64
+	Visits int64
+}
 -- scopes/scopes.go --
 package scopes
 
@@ -73,7 +80,9 @@ type Order struct{ ` + field + ` scope.Of[model.Order] }
 				}
 			}
 			s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Statements: described, Tables: map[string]snapshot.Table{
-				"orders": {Columns: columns("id"), PrimaryKey: []string{"id"}},
+				"orders": {Columns: []snapshot.Column{
+					{Name: "id", Type: "int8", NotNull: true}, {Name: "visits", Type: "int8", NotNull: true},
+				}, PrimaryKey: []string{"id"}},
 			}}
 			_, ds, err := gen.Emit(pkg, s)
 			if err != nil {

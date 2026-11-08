@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
@@ -241,4 +242,103 @@ func TestUpdateChanges_MySQL(t *testing.T) {
 	if _, err := repo.UpdateMany(ctx, changes); err == nil {
 		t.Fatal("unbounded update accepted")
 	}
+}
+
+func TestUpdateAdd_Postgres(t *testing.T) {
+	t.Parallel()
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		ctx := t.Context()
+		totals := func() []int64 {
+			t.Helper()
+			rows, err := repo.List(ctx, pscopes.Order{}.IDAsc())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return orderTotals(rows)
+		}
+		o, err := repo.UpdateFields(ctx, 1, pscopes.OrderChanges().AddTotal(5).SetStatus("held"))
+		if err != nil || o.Total != 105 || o.Status != "held" {
+			t.Fatalf("Add by key = %+v, %v; want a total of 105", o, err)
+		}
+		n, err := repo.UpdateMany(ctx, pscopes.OrderChanges().AddTotal(-10), pscopes.Order{}.CustomerIDEq(10))
+		if err != nil || n != 2 || !slices.Equal(totals(), []int64{95, 190, 300}) {
+			t.Fatalf("Add by scopes = %d, %v; totals %v", n, err, totals())
+		}
+		rows, err := repo.UpdateManyReturning(ctx, pscopes.OrderChanges().AddTotal(1),
+			pscopes.Order{}.TotalGt(0).TotalDesc().Limit(1))
+		if err != nil || len(rows) != 1 || rows[0].ID != 3 || rows[0].Total != 301 {
+			t.Fatalf("Add to a page = %+v, %v", rows, err)
+		}
+		if _, err := repo.UpdateFields(ctx, 2, pscopes.OrderChanges().AddTotal(1).SetTotal(7)); err != nil ||
+			!slices.Equal(totals(), []int64{95, 7, 301}) {
+			t.Fatalf("Add then Set: %v; totals %v", err, totals())
+		}
+
+		placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+		met, err := repo.UpsertByPosition(ctx, model.Order{
+			CustomerID: 30, Status: "given", PlacedAt: placed, Total: 900, Position: 1,
+		}, pscopes.OrderChanges().AddCustomerID(1).SetStatus("met").AddTotal(50))
+		if err != nil || met.ID != 1 || met.Total != 145 || met.CustomerID != 11 || met.Status != "met" {
+			t.Fatalf("Add over the row met = %+v, %v; want order 1 with 50 added to its total", met, err)
+		}
+		added, err := repo.UpsertByPosition(ctx, model.Order{
+			CustomerID: 30, Status: "given", PlacedAt: placed, Total: 900, Position: 7,
+		}, pscopes.OrderChanges().AddTotal(50))
+		if err != nil || added.Position != 7 || added.Total != 900 {
+			t.Fatalf("Add of no row met = %+v, %v; want the row as given", added, err)
+		}
+	})
+}
+
+func TestUpdateAdd_MySQL(t *testing.T) {
+	t.Parallel()
+	repo := mstdlib.NewOrderRepository(mysqlDB(t))
+	ctx := t.Context()
+	totals := func() []int64 {
+		t.Helper()
+		rows, err := repo.List(ctx, mscopes.Order{}.IDAsc())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return orderTotals(rows)
+	}
+	if err := repo.UpdateFieldsOnly(ctx, 1, mscopes.OrderChanges().SetStatus("held").AddTotal(5)); err != nil ||
+		!slices.Equal(totals(), []int64{105, 200, 300}) {
+		t.Fatalf("Add by key: %v; totals %v", err, totals())
+	}
+	n, err := repo.UpdateMany(ctx, mscopes.OrderChanges().AddTotal(-10), mscopes.Order{}.CustomerIDEq(10))
+	if err != nil || n != 2 || !slices.Equal(totals(), []int64{95, 190, 300}) {
+		t.Fatalf("Add by scopes = %d, %v; totals %v", n, err, totals())
+	}
+	n, err = repo.UpdateMany(ctx, mscopes.OrderChanges().AddTotal(1), mscopes.Order{}.TotalGt(0).TotalDesc().Limit(1))
+	if err != nil || n != 1 || !slices.Equal(totals(), []int64{95, 190, 301}) {
+		t.Fatalf("Add to a page = %d, %v; totals %v", n, err, totals())
+	}
+	if err := repo.UpdateFieldsOnly(ctx, 2, mscopes.OrderChanges().AddTotal(1).SetTotal(7)); err != nil ||
+		!slices.Equal(totals(), []int64{95, 7, 301}) {
+		t.Fatalf("Add then Set: %v; totals %v", err, totals())
+	}
+
+	// MySQL assigns from left to right, each assignment seeing those before it, but an Add reads its own column alone.
+	placed := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	met, err := repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 30, Status: "given", PlacedAt: placed, Total: 900, Position: 1,
+	}, mscopes.OrderChanges().AddCustomerID(1).SetStatus("met").AddTotal(50))
+	if err != nil || met.ID != 1 || met.Total != 145 || met.CustomerID != 11 || met.Status != "met" {
+		t.Fatalf("Add over the row met = %+v, %v; want order 1 with 50 added to its total", met, err)
+	}
+	added, err := repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 30, Status: "given", PlacedAt: placed, Total: 900, Position: 7,
+	}, mscopes.OrderChanges().AddTotal(50))
+	if err != nil || added.Position != 7 || added.Total != 900 {
+		t.Fatalf("Add of no row met = %+v, %v; want the row as given", added, err)
+	}
+}
+
+func orderTotals(orders []model.Order) []int64 {
+	out := make([]int64, 0, len(orders))
+	for _, o := range orders {
+		out = append(out, o.Total)
+	}
+	return out
 }

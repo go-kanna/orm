@@ -106,25 +106,107 @@ func TestChanges_RenderUpdateSelected(t *testing.T) {
 	}
 }
 
+func TestChanges_Add(t *testing.T) {
+	t.Parallel()
+
+	q := impl.Of[int]{}.Where("id = ", 7)
+	page := impl.Of[int]{}.Where("status = ", "new").OrderBy("queued_at", false).Limit(2)
+	for _, tt := range []struct {
+		name    string
+		d       impl.Dialect
+		changes impl.Changes[int]
+		render  func(c impl.Changes[int], d impl.Dialect) (string, []any, error)
+		want    string
+		args    []any
+	}{
+		{"by key", impl.Postgres, impl.Changes[int]{}.Add("attempts", 1).Set("status", "taken"),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdate(d, "jobs", []string{"attempts", "status"}, q)
+			}, `UPDATE "jobs" SET "attempts" = "attempts" + $1, "status" = $2 WHERE (id = $3)`, []any{1, "taken", 7}},
+		{"by key on MySQL", impl.MySQL, impl.Changes[int]{}.Add("attempts", 1).Set("status", "taken"),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdate(d, "jobs", []string{"attempts", "status"}, q)
+			}, "UPDATE `jobs` SET `attempts` = `attempts` + ?, `status` = ? WHERE (id = ?)", []any{1, "taken", 7}},
+		{"a page", impl.Postgres, impl.Changes[int]{}.Add("attempts", -1),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdateSelected(d, "jobs", []string{"attempts"}, []string{"id"}, "", page)
+			}, `UPDATE "jobs" SET "attempts" = "attempts" + $1 WHERE "id" IN ` +
+				`(SELECT "id" FROM "jobs" WHERE (status = $2) ORDER BY queued_at, id LIMIT 2)`, []any{-1, "new"}},
+		{"a page on MySQL", impl.MySQL, impl.Changes[int]{}.Add("attempts", -1),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdateSelected(d, "jobs", []string{"attempts"}, []string{"id"}, "", page)
+			}, "UPDATE `jobs` SET `attempts` = `attempts` + ? WHERE `id` IN (SELECT `id` FROM " +
+				"(SELECT `id` FROM `jobs` WHERE (status = ?) ORDER BY queued_at, id LIMIT 2) AS `orm_update_targets`)",
+			[]any{-1, "new"}},
+		{"Set then Add", impl.Postgres, impl.Changes[int]{}.Set("attempts", 5).Add("attempts", 1),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdate(d, "jobs", []string{"attempts"}, q)
+			}, `UPDATE "jobs" SET "attempts" = "attempts" + $1 WHERE (id = $2)`, []any{1, 7}},
+		{"Add then Set", impl.MySQL, impl.Changes[int]{}.Add("attempts", 1).Set("attempts", 5),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdate(d, "jobs", []string{"attempts"}, q)
+			}, "UPDATE `jobs` SET `attempts` = ? WHERE (id = ?)", []any{5, 7}},
+		{"Add then Add", impl.Postgres, impl.Changes[int]{}.Add("attempts", 1).Add("attempts", 2),
+			func(c impl.Changes[int], d impl.Dialect) (string, []any, error) {
+				return c.RenderUpdate(d, "jobs", []string{"attempts"}, q)
+			}, `UPDATE "jobs" SET "attempts" = "attempts" + $1 WHERE (id = $2)`, []any{2, 7}},
+	} {
+		got, args, err := tt.render(tt.changes, tt.d)
+		if err != nil || got != tt.want || !reflect.DeepEqual(args, tt.args) {
+			t.Errorf("Update of %s = %s, %v, %v; want %s, %v", tt.name, got, args, err, tt.want, tt.args)
+		}
+	}
+
+	base := impl.Changes[int]{}.Set("attempts", 5)
+	_ = base.Add("attempts", 1)
+	if sql, args, err := base.RenderUpdate(impl.Postgres, "jobs", []string{"attempts"}, q); err != nil ||
+		strings.Contains(sql, "+") || !reflect.DeepEqual(args, []any{5, 7}) {
+		t.Errorf("Add changed the change set it derives from: %s, %v, %v", sql, args, err)
+	}
+	if _, _, err := (impl.Changes[int]{}).Add("name", 1).RenderUpdate(impl.Postgres, "jobs", []string{"attempts"},
+		q); err == nil || err.Error() != "orm: Update cannot assign column name" {
+		t.Errorf("Add of a column not allowed error = %v", err)
+	}
+}
+
 func TestChanges_UpsertValues(t *testing.T) {
 	t.Parallel()
 
-	allowed, key := []string{"name", "phone"}, []string{"email"}
-	got, err := impl.Changes[int]{}.Set("phone", nil).UpsertValues("Upsert", allowed, key)
-	if want := []any{false, nil, true, nil}; err != nil || !reflect.DeepEqual(got, want) {
-		t.Errorf("UpsertValues = %v, %v, want %v", got, err, want)
-	}
-	if got, err := (impl.Changes[int]{}).UpsertValues("Upsert", allowed, key); err != nil ||
-		!reflect.DeepEqual(got, []any{false, nil, false, nil}) {
-		t.Errorf("UpsertValues of no change = %v, %v", got, err)
-	}
-	for column, want := range map[string]string{
-		"email":      "orm: Upsert meets its row by email, which its change set cannot write",
-		"created_at": "orm: Upsert cannot assign column created_at",
+	allowed, added, key := []string{"name", "visits", "phone"}, []string{"visits"}, []string{"email"}
+	for _, tt := range []struct {
+		name    string
+		changes impl.Changes[int]
+		want    []any
+	}{
+		{"no change", impl.Changes[int]{}, []any{false, nil, false, nil, false, nil, false, nil}},
+		{"Set", impl.Changes[int]{}.Set("phone", nil).Set("visits", 3),
+			[]any{false, nil, true, 3, false, nil, true, nil}},
+		{"Add", impl.Changes[int]{}.Add("visits", 1), []any{false, nil, false, nil, true, 1, false, nil}},
+		{"Set then Add", impl.Changes[int]{}.Set("visits", 3).Add("visits", 1),
+			[]any{false, nil, false, nil, true, 1, false, nil}},
+		{"Add then Set", impl.Changes[int]{}.Add("visits", 1).Set("visits", 3),
+			[]any{false, nil, true, 3, false, nil, false, nil}},
 	} {
-		if _, err := (impl.Changes[int]{}).Set(column, 1).UpsertValues("Upsert", allowed, key); err == nil ||
-			err.Error() != want {
-			t.Errorf("UpsertValues of %s error = %v, want %q", column, err, want)
+		got, err := tt.changes.UpsertValues("Upsert", allowed, added, key)
+		if err != nil || !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("UpsertValues of %s = %v, %v, want %v", tt.name, got, err, tt.want)
+		}
+	}
+	for _, tt := range []struct {
+		name    string
+		changes impl.Changes[int]
+		want    string
+	}{
+		{"the key", impl.Changes[int]{}.Set("email", 1),
+			"orm: Upsert meets its row by email, which its change set cannot write"},
+		{"the key added to", impl.Changes[int]{}.Add("email", 1),
+			"orm: Upsert meets its row by email, which its change set cannot write"},
+		{"a column not allowed", impl.Changes[int]{}.Set("created_at", 1),
+			"orm: Upsert cannot assign column created_at"},
+		{"a column not added to", impl.Changes[int]{}.Add("name", 1), "orm: Upsert cannot add to column name"},
+	} {
+		if _, err := tt.changes.UpsertValues("Upsert", allowed, added, key); err == nil || err.Error() != tt.want {
+			t.Errorf("UpsertValues of %s error = %v, want %q", tt.name, err, tt.want)
 		}
 	}
 }

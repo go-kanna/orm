@@ -880,12 +880,12 @@ ON DUPLICATE KEY UPDATE name = new.name, nickname = new.nickname`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error) {
-	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"order"})
+	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
 	if err != nil {
 		return model.Order{}, r.mapError(err)
 	}
-	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = IF(?, ?, orders.customer_id), status = IF(?, ?, orders.status), placed_at = IF(?, ?, orders.placed_at), note = IF(?, ?, orders.note), total = IF(?, ?, orders.total), paid = IF(?, ?, orders.paid), contact = IF(?, ?, orders.contact), receipt = IF(?, ?, orders.receipt)"
-	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = IF(?, ?, orders.customer_id), status = IF(?, ?, orders.status), placed_at = IF(?, ?, orders.placed_at), note = IF(?, ?, orders.note), total = IF(?, ?, orders.total), paid = IF(?, ?, orders.paid), contact = IF(?, ?, orders.contact), receipt = IF(?, ?, orders.receipt)"
+	const withoutID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = IF(?, ?, IF(?, orders.customer_id + ?, orders.customer_id)), status = IF(?, ?, orders.status), placed_at = IF(?, ?, orders.placed_at), note = IF(?, ?, orders.note), total = IF(?, ?, IF(?, orders.total + ?, orders.total)), paid = IF(?, ?, orders.paid), contact = IF(?, ?, orders.contact), receipt = IF(?, ?, orders.receipt)"
+	const withID = "INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, `order`, id)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new\nON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(orders.id), customer_id = IF(?, ?, IF(?, orders.customer_id + ?, orders.customer_id)), status = IF(?, ?, orders.status), placed_at = IF(?, ?, orders.placed_at), note = IF(?, ?, orders.note), total = IF(?, ?, IF(?, orders.total + ?, orders.total)), paid = IF(?, ?, orders.paid), contact = IF(?, ?, orders.contact), receipt = IF(?, ?, orders.receipt)"
 	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
 	if o.ID != 0 {
 		q, args = withID, append(args, o.ID)

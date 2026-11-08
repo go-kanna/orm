@@ -757,7 +757,17 @@ ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.nam
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)
 ```
 
-`visits = visits + 1` のように突き合わせた行から計算する値は、[手書きの SQL](#手書きの-sql) で書きます。
+[`Add`](#指定したカラムだけを更新する) のあるカラムには、変更セットが値を足すとき、その値を保存済みの値に足す 2 つ目の分岐があります。顧客に `Visits int32` のフィールドがあれば、`AddVisits(1)` は突き合わせた顧客の来店を 1 回数え、突き合わせる行がなく insert する行には、その行自身の値が入ります:
+
+```sql
+-- PostgreSQL
+visits = CASE WHEN $9 THEN $10 WHEN $11 THEN customers.visits + $12 ELSE customers.visits END
+
+-- MySQL
+visits = IF(?, ?, IF(?, customers.visits + ?, customers.visits))
+```
+
+`visits = visits + 1` のように保存済みの値に数を足すのは `Add` で書けます。突き合わせた行から計算するそのほかの値は、[手書きの SQL](#手書きの-sql) で書きます。
 
 ### 複数行の書き込み
 
@@ -819,7 +829,23 @@ changes := scopes.CustomerChanges().
     SetPhone(nil)
 ```
 
-setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込み、同じカラムを再指定した場合は最後の値を使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・`insertonly` を指定したカラム・関連フィールドには setter を生成しません。空の変更セットの `Update` はエラーになります。[Upsert](#突き合わせた行に変更セットを書く) ではエラーになりません。
+Go でもデータベースでも数で、NULL にならないカラムには、`Set` のほかに `Add` があります。フィールドが整数か浮動小数点数の型（それを基にした型を含む）で、カラムが整数、decimal、浮動小数点数の型のものです。`Add` は保存済みの値に文の中で足すので、読んでから書くまでの間に行われた更新を失いません:
+
+```go
+changes := scopes.OrderLineChanges().AddQuantity(1)
+```
+
+```sql
+-- PostgreSQL
+UPDATE "order_lines" SET "quantity" = "quantity" + $1 WHERE ...
+
+-- MySQL
+UPDATE `order_lines` SET `quantity` = `quantity` + ? WHERE ...
+```
+
+NULL を許すカラムには `Add` はありません。NULL に数を足しても NULL のままだからです。`Valuer` で文字列として保存する数にもありません。
+
+setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込みます。同じカラムに `Set` か `Add` をもう一度呼ぶと、後に呼んだほうを使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・`insertonly` を指定したカラム・関連フィールドには setter を生成しません。空の変更セットの `Update` はエラーになります。[Upsert](#突き合わせた行に変更セットを書く) ではエラーになりません。
 
 対象の一意キーを更新値と分けて宣言し、通常の条件スコープを追加します。
 

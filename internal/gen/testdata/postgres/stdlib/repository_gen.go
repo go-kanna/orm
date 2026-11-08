@@ -1166,17 +1166,17 @@ RETURNING id, name, nickname`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error) {
-	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"order"})
+	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
 	if err != nil {
 		return model.Order{}, err
 	}
 	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $10 THEN $11 ELSE orders.customer_id END, status = CASE WHEN $12 THEN $13 ELSE orders.status END, placed_at = CASE WHEN $14 THEN $15 ELSE orders.placed_at END, note = CASE WHEN $16 THEN $17 ELSE orders.note END, total = CASE WHEN $18 THEN $19 ELSE orders.total END, paid = CASE WHEN $20 THEN $21 ELSE orders.paid END, contact = CASE WHEN $22 THEN $23 ELSE orders.contact END, receipt = CASE WHEN $24 THEN $25 ELSE orders.receipt END
+ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $10 THEN $11 WHEN $12 THEN orders.customer_id + $13 ELSE orders.customer_id END, status = CASE WHEN $14 THEN $15 ELSE orders.status END, placed_at = CASE WHEN $16 THEN $17 ELSE orders.placed_at END, note = CASE WHEN $18 THEN $19 ELSE orders.note END, total = CASE WHEN $20 THEN $21 WHEN $22 THEN orders.total + $23 ELSE orders.total END, paid = CASE WHEN $24 THEN $25 ELSE orders.paid END, contact = CASE WHEN $26 THEN $27 ELSE orders.contact END, receipt = CASE WHEN $28 THEN $29 ELSE orders.receipt END
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $11 THEN $12 ELSE orders.customer_id END, status = CASE WHEN $13 THEN $14 ELSE orders.status END, placed_at = CASE WHEN $15 THEN $16 ELSE orders.placed_at END, note = CASE WHEN $17 THEN $18 ELSE orders.note END, total = CASE WHEN $19 THEN $20 ELSE orders.total END, paid = CASE WHEN $21 THEN $22 ELSE orders.paid END, contact = CASE WHEN $23 THEN $24 ELSE orders.contact END, receipt = CASE WHEN $25 THEN $26 ELSE orders.receipt END
+ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $11 THEN $12 WHEN $13 THEN orders.customer_id + $14 ELSE orders.customer_id END, status = CASE WHEN $15 THEN $16 ELSE orders.status END, placed_at = CASE WHEN $17 THEN $18 ELSE orders.placed_at END, note = CASE WHEN $19 THEN $20 ELSE orders.note END, total = CASE WHEN $21 THEN $22 WHEN $23 THEN orders.total + $24 ELSE orders.total END, paid = CASE WHEN $25 THEN $26 ELSE orders.paid END, contact = CASE WHEN $27 THEN $28 ELSE orders.contact END, receipt = CASE WHEN $29 THEN $30 ELSE orders.receipt END
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
 	if o.ID != 0 {
