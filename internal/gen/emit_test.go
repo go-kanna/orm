@@ -203,6 +203,96 @@ type Audit struct {
 	}
 }
 
+func TestEmit_ChangeSetAdd(t *testing.T) {
+	t.Parallel()
+
+	pkg := module(t, orderScope+`
+-- model/model.go --
+package model
+
+import (
+	"database/sql/driver"
+	"strconv"
+)
+
+type Cents int64
+
+// Code is a number stored as text.
+type Code int
+
+func (c Code) Value() (driver.Value, error) { return strconv.Itoa(int(c)), nil }
+
+func (c *Code) Scan(src any) error {
+	n, err := strconv.Atoi(src.(string))
+	*c = Code(n)
+	return err
+}
+
+type Order struct {
+	ID       int64
+	Attempts int32
+	Total    Cents
+	Rate     float64
+	Amount   float64
+	Quota    *int
+	Code     Code
+	Status   string
+	Paid     bool
+	Serial   int64
+	Joined   int64 `+"`orm:\",insertonly\"`"+`
+}
+`)
+	for _, tt := range []struct {
+		d     snapshot.Dialect
+		types map[string]string
+	}{
+		{snapshot.PostgreSQL, map[string]string{"int": "int4", "bigint": "int8", "float": "float8", "decimal": "numeric",
+			"text": "text", "bool": "bool"}},
+		{snapshot.MySQL, map[string]string{"int": "int", "bigint": "bigint", "float": "double",
+			"decimal": "decimal(10,2)", "text": "varchar(255)", "bool": "tinyint(1)"}},
+	} {
+		s := snapshot.Snapshot{Dialect: tt.d, Tables: map[string]snapshot.Table{
+			"orders": {Columns: []snapshot.Column{
+				{Name: "id", Type: tt.types["bigint"], NotNull: true},
+				{Name: "attempts", Type: tt.types["int"], NotNull: true},
+				{Name: "total", Type: tt.types["bigint"], NotNull: true},
+				{Name: "rate", Type: tt.types["float"], NotNull: true},
+				{Name: "amount", Type: tt.types["decimal"], NotNull: true},
+				{Name: "quota", Type: tt.types["int"]},
+				{Name: "code", Type: tt.types["text"], NotNull: true},
+				{Name: "status", Type: tt.types["text"], NotNull: true},
+				{Name: "paid", Type: tt.types["bool"], NotNull: true},
+				{Name: "serial", Type: tt.types["bigint"], NotNull: true, Assigned: true},
+				{Name: "joined", Type: tt.types["bigint"], NotNull: true},
+			}, PrimaryKey: []string{"id"}},
+		}}
+		src, ds, err := gen.Emit(pkg, s)
+		if err != nil || len(ds) > 0 {
+			t.Fatalf("Emit on %s: %v\n%s", tt.d, err, report(ds))
+		}
+		for _, want := range []string{
+			"func (c OrderChangeSet) AddAttempts(n int32) OrderChangeSet {\n" +
+				"\treturn OrderChangeSet{c.changes.Add(\"attempts\", n)}\n}",
+			"func (c OrderChangeSet) AddTotal(n model.Cents) OrderChangeSet {",
+			"func (c OrderChangeSet) AddRate(n float64) OrderChangeSet {",
+			"func (c OrderChangeSet) AddAmount(n float64) OrderChangeSet {",
+			"func (c OrderChangeSet) SetQuota(v *int) OrderChangeSet {",
+			"func (c OrderChangeSet) SetCode(v model.Code) OrderChangeSet {",
+		} {
+			if !strings.Contains(string(src), want) {
+				t.Errorf("Emit on %s wrote no %q:\n%s", tt.d, want, src)
+			}
+		}
+		// NULL plus a number stays NULL; a number in Go is text in the database; a key, a column the database assigns,
+		// and one written by an insert alone have no setter at all.
+		for _, field := range []string{"Quota", "Code", "Status", "Paid", "ID", "Serial", "Joined"} {
+			if strings.Contains(string(src), ") Add"+field+"(") {
+				t.Errorf("Emit on %s wrote Add%s:\n%s", tt.d, field, src)
+			}
+		}
+	}
+}
+
 func TestEmit_RelatedScopeTypeElsewhere(t *testing.T) {
 	t.Parallel()
 

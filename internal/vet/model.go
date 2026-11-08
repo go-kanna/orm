@@ -158,6 +158,7 @@ var ops = map[string]op{
 	"impl.Of.RenderJoinedProjection":    renders(4, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
 	"impl.Of.RenderDelete":              renders(3, renderDelete),
 	"impl.Changes.Set":                  opSet,
+	"impl.Changes.Add":                  opSet,
 	"impl.Changes.RenderUpdate":         renders(3, renderUpdate),
 	"impl.Changes.RenderUpdateSelected": renders(3, renderUpdateSelected),
 	"impl.Changes.UpsertValues":         renders(2, upsertValues),
@@ -346,6 +347,7 @@ func (c opCall) preload(each bool) *scopeVal {
 	return s.then(&scopeVal{preloads: []preload{{relation: relation, each: each, p: set(c.at), sub: sub}}})
 }
 
+// opSet is Set or Add, either of which assigns the column of argument 1.
 func opSet(c opCall) (value, *failed) {
 	ch := c.change(0)
 	column, ok := c.str(1)
@@ -464,12 +466,12 @@ func targets(c opCall, s *scopeVal, what string, key []string, known bool) *fail
 	return nil
 }
 
-// upsertValues is UpsertValues(method, allowed, key) of the change set of argument 0.
+// upsertValues is UpsertValues(method, allowed, added, key) of the change set of argument 0.
 func upsertValues(c opCall) *failed {
 	ch := c.change(0)
 	method, _ := c.str(1)
 	allowed, okAllowed := c.strs(2)
-	key, okKey := c.strs(3)
+	key, okKey := c.strs(4)
 	if !okAllowed || !okKey {
 		return nil
 	}

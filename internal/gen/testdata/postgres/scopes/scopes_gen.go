@@ -31,6 +31,10 @@ func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
 }
 
+func (c OrderChangeSet) AddCustomerID(n int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Add("customer_id", n)}
+}
+
 func (c OrderChangeSet) SetStatus(v model.OrderStatus) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("status", v)}
 }
@@ -47,6 +51,10 @@ func (c OrderChangeSet) SetTotal(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("total", v)}
 }
 
+func (c OrderChangeSet) AddTotal(n int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Add("total", n)}
+}
+
 func (c OrderChangeSet) SetPaid(v bool) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("paid", v)}
 }
@@ -61,6 +69,10 @@ func (c OrderChangeSet) SetReceipt(v []byte) OrderChangeSet {
 
 func (c OrderChangeSet) SetPosition(v int) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("order", v)}
+}
+
+func (c OrderChangeSet) AddPosition(n int) OrderChangeSet {
+	return OrderChangeSet{c.changes.Add("order", n)}
 }
 
 // IDEq narrows to the rows whose id is v.
@@ -1550,8 +1562,16 @@ func (c LineNoteChangeSet) SetOrderID(v model.OrderID) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Set("order_id", v)}
 }
 
+func (c LineNoteChangeSet) AddOrderID(n model.OrderID) LineNoteChangeSet {
+	return LineNoteChangeSet{c.changes.Add("order_id", n)}
+}
+
 func (c LineNoteChangeSet) SetLineNo(v int) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Set("line_no", v)}
+}
+
+func (c LineNoteChangeSet) AddLineNo(n int) LineNoteChangeSet {
+	return LineNoteChangeSet{c.changes.Add("line_no", n)}
 }
 
 func (c LineNoteChangeSet) SetBody(v string) LineNoteChangeSet {

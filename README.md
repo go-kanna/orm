@@ -993,7 +993,20 @@ ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.nam
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)
 ```
 
-A value computed from the row met, as `visits = visits + 1`, is [SQL written by hand](#hand-written-sql).
+A column that has [`Add`](#updating-selected-columns) takes a second branch, which adds the change set's value to the
+stored one when the change set adds it. Were customers to have a `Visits int32` field, `AddVisits(1)` would count a
+visit of the customer met, and the row inserted when none is met would get its own value:
+
+```sql
+-- PostgreSQL
+visits = CASE WHEN $9 THEN $10 WHEN $11 THEN customers.visits + $12 ELSE customers.visits END
+
+-- MySQL
+visits = IF(?, ?, IF(?, customers.visits + ?, customers.visits))
+```
+
+A number added to the stored value, as `visits = visits + 1`, is thus written by `Add`; any other value computed from
+the row met is [SQL written by hand](#hand-written-sql).
 
 ### Writing many rows
 
@@ -1072,7 +1085,23 @@ changes := scopes.CustomerChanges().
     SetPhone(nil)
 ```
 
-Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. Setting the same column again replaces its earlier value. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, columns tagged `insertonly`, and relations have no setters. An `Update` of an empty change set is an error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
+A column that is a number in Go and in the database, and never NULL, has `Add` besides `Set`: its field is of an integer or floating-point type, or a type based on one, and its column of an integer, decimal, or floating-point type. `Add` adds to the stored value within the statement, so that no update made between a read and the write is lost:
+
+```go
+changes := scopes.OrderLineChanges().AddQuantity(1)
+```
+
+```sql
+-- PostgreSQL
+UPDATE "order_lines" SET "quantity" = "quantity" + $1 WHERE ...
+
+-- MySQL
+UPDATE `order_lines` SET `quantity` = `quantity` + ? WHERE ...
+```
+
+A nullable column has no `Add`, as NULL plus a number stays NULL, and neither has a number a `Valuer` stores as text.
+
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add` of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, columns tagged `insertonly`, and relations have no setters. An `Update` of an empty change set is an error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 

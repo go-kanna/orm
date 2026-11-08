@@ -25,6 +25,8 @@ func TestChecks(t *testing.T) {
 	ordered := emptyScope().then(&scopeVal{conds: set(at), orders: set(at)})
 	assigns := (&changeVal{}).assign("created_at", cause{pos: 2, in: "Touch", method: "SetCreatedAt"})
 	names := (&changeVal{}).assign("name", cause{pos: 2, in: "Rename", method: "SetName"})
+	adds, _ := ops["impl.Changes.Add"](opCall{args: []value{&changeVal{}, strVal("visits")},
+		at: cause{pos: 2, in: "Visit", method: "AddVisits"}})
 	for _, tt := range []struct {
 		name  string
 		check func(opCall) *failed
@@ -54,10 +56,18 @@ func TestChecks(t *testing.T) {
 			[]value{assigns, unknown{}, strVal("logs"), strList("name"), strList("id"), strVal(""), paged},
 			"Update cannot assign column created_at"},
 		{"Upsert of a column it cannot write", upsertValues,
-			[]value{assigns, strVal("UpsertByName"), strList("name"), strList("id")},
+			[]value{assigns, strVal("UpsertByName"), strList("name"), strList(), strList("id")},
 			"UpsertByName cannot assign column created_at"},
 		{"Upsert of a column it can write", upsertValues,
-			[]value{assigns, strVal("UpsertByName"), strList("created_at"), strList("id")}, ""},
+			[]value{assigns, strVal("UpsertByName"), strList("created_at"), strList(), strList("id")}, ""},
+		{"Upsert of its key", upsertValues,
+			[]value{names, strVal("UpsertByName"), strList("created_at"), strList(), strList("name")},
+			"UpsertByName meets its row by name, which its change set cannot write"},
+		{"Update adding to a column it cannot write", renderUpdate,
+			[]value{adds, unknown{}, strVal("logs"), strList("name"), named}, "Update cannot assign column visits"},
+		{"Upsert adding to its key", upsertValues,
+			[]value{adds, strVal("UpsertByVisits"), strList("name"), strList(), strList("visits")},
+			"UpsertByVisits meets its row by visits, which its change set cannot write"},
 	} {
 		got := ""
 		if f := tt.check(opCall{args: tt.args}); f != nil {

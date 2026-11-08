@@ -87,7 +87,7 @@ func NewCustomer(db DBTX, opts ...option.Option) Customer { return newCustomer(d
 var _ repository.Customer = Customer{}
 
 func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
-	set, err := changes.Of().UpsertValues("UpsertByEmail", []string{"name", "phone"}, []string{"email"})
+	set, err := changes.Of().UpsertValues("UpsertByEmail", []string{"name", "phone"}, nil, []string{"email"})
 	if err != nil {
 		return model.Customer{}, err
 	}

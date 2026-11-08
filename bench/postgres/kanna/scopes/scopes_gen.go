@@ -400,6 +400,10 @@ func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
 }
 
+func (c OrderChangeSet) AddCustomerID(n int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Add("customer_id", n)}
+}
+
 func (c OrderChangeSet) SetStatus(v string) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("status", v)}
 }
@@ -849,12 +853,20 @@ func (c OrderLineChangeSet) SetOrderID(v int64) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("order_id", v)}
 }
 
+func (c OrderLineChangeSet) AddOrderID(n int64) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Add("order_id", n)}
+}
+
 func (c OrderLineChangeSet) SetSKU(v string) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("sku", v)}
 }
 
 func (c OrderLineChangeSet) SetQuantity(v int32) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("quantity", v)}
+}
+
+func (c OrderLineChangeSet) AddQuantity(n int32) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Add("quantity", n)}
 }
 
 // IDEq narrows to the rows whose id is v.

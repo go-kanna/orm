@@ -1,8 +1,8 @@
 package gen
 
 import (
+	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/go-kanna/internal/gofile"
 
@@ -10,18 +10,36 @@ import (
 )
 
 // upsertAssignment is the assignment an upsert makes of c over the row it meets: incoming, the value of the row given;
-// or, of an upsert taking a change set, the value the change set gives when it gives one, and else existing, the value
-// kept. The flag and the value of the change set are at placeholders first and first+1, numbered on PostgreSQL.
+// or, of an upsert taking a change set, the value the change set sets when it sets one, existing plus the value it
+// adds when it adds one to an additive column, and else existing, the value kept. The flag and the value of a set are
+// at placeholders first and first+1, and those of an add at first+2 and first+3, numbered on PostgreSQL.
 func (e repoEmitter) upsertAssignment(m repoMethod, c column, incoming, existing string, first int) string {
 	name := sqlName(e.d, c.col.Name)
 	switch {
 	case m.changes == "":
 		return name + " = " + incoming
+	case e.d == snapshot.MySQL && additive(c):
+		return name + " = IF(?, ?, IF(?, " + existing + " + ?, " + existing + "))"
 	case e.d == snapshot.MySQL:
 		return name + " = IF(?, ?, " + existing + ")"
 	}
-	return name + " = CASE WHEN $" + strconv.Itoa(first) + " THEN $" + strconv.Itoa(first+1) + " ELSE " + existing +
-		" END"
+	p := func(i int) string { return "$" + strconv.Itoa(first+i) }
+	added := ""
+	if additive(c) {
+		added = " WHEN " + p(2) + " THEN " + existing + " + " + p(3)
+	}
+	return name + " = CASE WHEN " + p(0) + " THEN " + p(1) + added + " ELSE " + existing + " END"
+}
+
+// upsertParams is the number of placeholders upsertAssignment gives c of m.
+func upsertParams(m repoMethod, c column) int {
+	switch {
+	case m.changes == "":
+		return 0
+	case additive(c):
+		return 4
+	}
+	return 2
 }
 
 // changeValues writes, for m, an upsert taking a change set, the values of upsertAssignment that the change set gives,
@@ -33,17 +51,14 @@ func (e repoEmitter) changeValues(m repoMethod, sc gofile.Scope, sig signature, 
 		return "", sc.Name("err")
 	}
 	set, err := sc.Name("set"), sc.Name("err")
-	allowed := make([]string, 0, len(m.updated()))
-	for _, c := range m.updated() {
-		allowed = append(allowed, strconv.Quote(c.col.Name))
+	updated := m.updated()
+	added := "nil"
+	if cs := slices.DeleteFunc(slices.Clone(updated), func(c column) bool { return !additive(c) }); len(cs) > 0 {
+		added = columnNamesLiteral(cs)
 	}
-	key := make([]string, 0, len(m.rowKey()))
-	for _, name := range m.rowKey() {
-		key = append(key, strconv.Quote(name))
-	}
-	e.printf("%[1]s, %[2]s := %[3]s.Of().UpsertValues(%[4]q, []string{%[5]s}, []string{%[6]s})\n"+
-		"if %[2]s != nil {\nreturn %[7]s%[8]s\n}\n", set, err, sig.params[m.changes], m.name, strings.Join(allowed, ", "),
-		strings.Join(key, ", "), zero, sig.mapped(err))
+	e.printf("%[1]s, %[2]s := %[3]s.Of().UpsertValues(%[4]q, %[5]s, %[6]s, %[7]s)\n"+
+		"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", set, err, sig.params[m.changes], m.name, columnNamesLiteral(updated),
+		added, namesLiteral(m.rowKey()), zero, sig.mapped(err))
 	return set, err
 }
 
