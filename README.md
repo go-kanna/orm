@@ -1470,14 +1470,26 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
 
 ## What kanna-orm does not do
 
-- Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
-- Track changes, keep an identity map, or load lazily.
+- Track changes, keep an identity map, or load lazily: a method runs the statements its declaration says, when it is
+  called.
+- Take a zero value for the column's default: a zero is written as a value, and `orm:",default"` says the database
+  assigns one.
+- Generate arbitrary joins or nested query shapes, such as subqueries, CTEs, or UNION, from scopes. INNER JOINs through
+  foreign keys or explicit column equalities are supported for read projections; other query shapes can use
+  [hand-written SQL](#hand-written-sql).
+- Run one generated package on both databases: the types are those one database answers.
 - Create or apply migrations. Use goose or any other tool, and describe the result.
-- Generate arbitrary joins, grouping, or nested query shapes from scopes. INNER JOINs through foreign keys or explicit column equalities are supported for read projections; other query shapes can use hand-written SQL.
-- Set `created_at` and `updated_at`, or take a zero value for the column's default.
-- Page by a column that may be NULL.
+
+## Not yet
+
+These are out of what kanna-orm does so far, not ruled out:
+
+- Aggregates other than `Count`, such as sums and grouping. Write them in [SQL](#hand-written-sql) returning a DTO.
+- Set `created_at` and `updated_at`.
 - COPY many rows through pgx.
-- Support MariaDB or SQLite, or run one generated package on both databases.
+- Write relations. Saving a row along with what it refers to is yours to sequence, in a transaction.
+- Page by a column that may be NULL.
+- Support MariaDB or SQLite.
 
 ## Flags
 
