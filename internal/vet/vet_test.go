@@ -150,6 +150,9 @@ func (u UseCase) Misuses(ctx context.Context, id model.OrderID) {
 	_, _ = u.customers.UpdatePhone(ctx, 1, scopes.CustomerChanges().SetPhone(nil), scopes.Customers().NameAsc())
 	_, _ = u.customers.UpsertByEmail(ctx, model.Customer{}, scopes.CustomerChanges().SetEmail("a@example.com"))
 	_, _ = u.orders.List(ctx, scopes.Orders().Not(scopes.Orders().Limit(1)))
+	_, _ = u.orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc())
+	_, _ = u.orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Limit(1))
+	_, _ = u.customers.UpdatePhone(ctx, 1, scopes.CustomerChanges().SetPhone(nil), scopes.Customers().Limit(1))
 }
 
 func (u UseCase) Branches(ctx context.Context, open bool) {
@@ -209,6 +212,7 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	replace(ss)
 	_, _ = u.orders.Delete(ctx, ss...)
 	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
+	_, _ = u.orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc().Limit(10))
 
 	c := scopes.CustomerChanges()
 	if page > 0 {
@@ -267,12 +271,15 @@ usecase.go:31:21: error: Update requires at least one assigned column
 usecase.go:32:21: error: Update takes conditions alone, but its scope orders the rows
 usecase.go:33:21: error: UpsertByEmail meets its row by email, which its change set cannot write
 usecase.go:34:18: error: Not takes conditions alone, but its scope keeps only some of the rows
-usecase.go:42:18: error: Count takes conditions alone, but its scope orders the rows
-  usecase/usecase.go:38:23: IDAsc orders them
-usecase.go:53:22: error: Count takes conditions alone, but its scope orders the rows
-  usecase/usecase.go:46:23: IDAsc orders them
-usecase.go:60:17: error: Delete would delete every row of orders: give it a condition
-usecase.go:69:16: error: Count takes conditions alone, but its scope orders the rows`
+usecase.go:35:18: error: Update ordering requires Limit or Offset
+usecase.go:36:18: error: Update would update every row of orders: give it a condition
+usecase.go:37:21: error: Update takes conditions alone, but its scope keeps only some of the rows
+usecase.go:45:18: error: Count takes conditions alone, but its scope orders the rows
+  usecase/usecase.go:41:23: IDAsc orders them
+usecase.go:56:22: error: Count takes conditions alone, but its scope orders the rows
+  usecase/usecase.go:49:23: IDAsc orders them
+usecase.go:63:17: error: Delete would delete every row of orders: give it a condition
+usecase.go:72:16: error: Count takes conditions alone, but its scope orders the rows`
 	if got != want {
 		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
 	}
@@ -295,8 +302,10 @@ func Misuses(ctx context.Context, orders repository.Order, customers repository.
 	_, _ = orders.Delete(ctx, scopes.Orders().Open().IDAsc())
 	_, _ = orders.List(ctx, scopes.Orders().Offset(-1))
 	_ = customers.UpdatePhone(ctx, 1, scopes.CustomerChanges())
+	_, _ = orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc())
 	_, _ = customers.UpsertByEmail(ctx, model.Customer{}, scopes.CustomerChanges().SetEmail("a@example.com"))
 	_, _ = orders.Count(ctx, scopes.Orders().Open())
+	_, _ = orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc().Limit(10))
 }
 `
 
@@ -313,7 +322,8 @@ usecase.go:14:16: error: ListSummaries is a projection, but its scope loads rela
 usecase.go:15:16: error: Delete ordering requires Limit or Offset
 usecase.go:16:16: error: an offset of -1 rows
 usecase.go:17:16: error: Update requires at least one assigned column
-usecase.go:18:19: error: UpsertByEmail meets its row by email, which its change set cannot write`
+usecase.go:18:16: error: Update ordering requires Limit or Offset
+usecase.go:19:19: error: UpsertByEmail meets its row by email, which its change set cannot write`
 	if got != want {
 		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
 	}

@@ -161,7 +161,7 @@ type repoMethod struct {
 	returns  returns
 	// conflict names the columns an upsert meets an existing row by.
 	conflict []string
-	// lock is the locking clause //kanna:lock gives a read, if any.
+	// lock is the locking clause //kanna:lock gives a read, or the subquery of an Update that selects its rows, if any.
 	lock string
 	// query is the query written by hand that implements the method, if one does.
 	query *query
@@ -747,10 +747,7 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
-	names := make([]string, 0, len(m.keys))
-	for _, k := range m.keys {
-		names = append(names, k.col.col.Name)
-	}
+	names := m.keyColumns()
 	if m.verb == verbGet || m.verb == verbFind {
 		if d, ok := m.oneRowKey(names); !ok {
 			return []diag.Diag{d}
@@ -1238,6 +1235,22 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			`row: take no change set, and tag the columns an upsert leaves as they were orm:",insertonly"`)}
 	}
 	return models, keyParams, nil
+}
+
+// keyColumns are the columns the key parameters of m name, in their order.
+func (m repoMethod) keyColumns() []string {
+	names := make([]string, 0, len(m.keys))
+	for _, k := range m.keys {
+		names = append(names, k.col.col.Name)
+	}
+	return names
+}
+
+// selects reports whether m, an Update of a change set, writes the rows it selects as a Delete taking scopes deletes
+// them, a page of them too, selected by key in a subquery that a lock can hold: its key parameters, if any, are
+// conditions, as a Delete's are, and not a unique key, which names the one row it writes, as that of a Get does.
+func (m repoMethod) selects() bool {
+	return m.verb == verbUpdate && m.changes != "" && !containsKey(m.table, m.keyColumns())
 }
 
 func (m repoMethod) updateShaped() bool {

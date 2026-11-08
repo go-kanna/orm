@@ -825,7 +825,30 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c scopes.OrderChangeSet
 	}
 	q := impl.Combine(qs...)
 	changes := c.Of()
-	text, args, err := changes.RenderUpdate(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
+	if err != nil {
+		return 0, r.mapError(err)
+	}
+	res, err := r.db.ExecContext(ctx, text, args...)
+	if err != nil {
+		return 0, r.mapError(fmt.Errorf(`update orders: %w`, err))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, r.mapError(fmt.Errorf(`update orders: %w`, err))
+	}
+	return n, nil
+}
+
+func (r OrderRepository) UpdateByCustomer(ctx context.Context, customerID int64, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = impl.Of[model.Order](s.Of())
+	}
+	q := impl.Combine(qs...)
+	changes := c.Of()
+	q = q.Where(`customer_id = `, customerID)
+	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return 0, r.mapError(err)
 	}

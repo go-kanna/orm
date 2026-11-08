@@ -2,15 +2,168 @@ package gen_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
 	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
+	ppgx "github.com/go-kanna/orm/internal/gen/testdata/postgres/pgx"
 	prepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
 	pscopes "github.com/go-kanna/orm/internal/gen/testdata/postgres/scopes"
 )
+
+func TestUpdatePage_Postgres(t *testing.T) {
+	t.Parallel()
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		ctx := t.Context()
+		every := pscopes.Order{}.TotalGt(0)
+		held := func() []model.OrderID {
+			t.Helper()
+			rows, err := repo.List(ctx, pscopes.Order{}.StatusEq("held").IDAsc())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ids(rows)
+		}
+		hold := pscopes.OrderChanges().SetStatus("held")
+		if n, err := repo.UpdateMany(ctx, hold, every.TotalDesc().Limit(0)); err != nil || n != 0 {
+			t.Fatalf("zero limit: %d, %v", n, err)
+		}
+		if n, err := repo.UpdateMany(ctx, hold, every.TotalDesc().Limit(2)); err != nil || n != 2 ||
+			!slices.Equal(held(), []model.OrderID{2, 3}) {
+			t.Fatalf("first page by total, descending: %d, %v; held %v", n, err, held())
+		}
+		rows, err := repo.UpdateManyReturning(ctx, pscopes.OrderChanges().SetStatus("open"),
+			every.TotalAsc().Offset(1).Limit(1))
+		if err != nil || !slices.Equal(ids(rows), []model.OrderID{2}) || !slices.Equal(held(), []model.OrderID{3}) {
+			t.Fatalf("offset page: %v, %v; held %v", ids(rows), err, held())
+		}
+		rows, err = repo.UpdateManyReturning(ctx, hold, every.TotalAsc().After(model.Order{ID: 1, Total: 100}).Limit(1))
+		if err != nil || !slices.Equal(ids(rows), []model.OrderID{2}) {
+			t.Fatalf("page continued: %v, %v", ids(rows), err)
+		}
+		if n, err := repo.UpdateMany(ctx, pscopes.OrderChanges().SetPaid(true), every.Limit(1)); err != nil || n != 1 {
+			t.Fatalf("page of no order: %d, %v", n, err)
+		}
+		for _, tt := range []struct {
+			name string
+			s    pscopes.Order
+			want string
+		}{
+			{"an order alone", every.TotalAsc(), "orm: Update ordering requires Limit or Offset"},
+			{"a page of every row", pscopes.Order{}.Limit(1),
+				"orm: Update would update every row of orders: give it a condition"},
+			{"a relation", every.Limit(1).WithTags(), "orm: Update cannot load relations"},
+		} {
+			if _, err := repo.UpdateMany(ctx, hold, tt.s); err == nil || err.Error() != tt.want {
+				t.Errorf("UpdateMany of %s error = %v, want %q", tt.name, err, tt.want)
+			}
+		}
+		// A key parameter that is no unique key is a condition, as of a Delete; a unique key names the one row.
+		note := "batch"
+		n, err := repo.UpdateByCustomer(ctx, 10, pscopes.OrderChanges().SetMemo(&note), pscopes.Order{}.TotalDesc().Limit(1))
+		if noted, _ := repo.List(ctx, pscopes.Order{}.MemoEq(note)); err != nil || n != 1 ||
+			!slices.Equal(ids(noted), []model.OrderID{2}) {
+			t.Errorf("page of a customer's orders: %d, %v; noted %v", n, err, ids(noted))
+		}
+		_, err = repo.UpdateFields(ctx, 1, hold, every.Limit(1))
+		if want := "orm: Update takes conditions alone, but its scope keeps only some of the rows"; err == nil ||
+			err.Error() != want {
+			t.Errorf("UpdateFields with a limit error = %v, want %q", err, want)
+		}
+	})
+}
+
+func TestUpdatePage_MySQL(t *testing.T) {
+	t.Parallel()
+	repo := mstdlib.NewOrderRepository(mysqlDB(t))
+	ctx := t.Context()
+	every := mscopes.Order{}.TotalGt(0)
+	held := func() []model.OrderID {
+		t.Helper()
+		rows, err := repo.List(ctx, mscopes.Order{}.StatusEq("held").IDAsc())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ids(rows)
+	}
+	hold := mscopes.OrderChanges().SetStatus("held")
+	if n, err := repo.UpdateMany(ctx, hold, every.TotalDesc().Limit(0)); err != nil || n != 0 {
+		t.Fatalf("zero limit: %d, %v", n, err)
+	}
+	if n, err := repo.UpdateMany(ctx, hold, every.TotalDesc().Limit(2)); err != nil || n != 2 ||
+		!slices.Equal(held(), []model.OrderID{2, 3}) {
+		t.Fatalf("first page by total, descending: %d, %v; held %v", n, err, held())
+	}
+	n, err := repo.UpdateMany(ctx, mscopes.OrderChanges().SetStatus("open"), every.TotalAsc().Offset(1).Limit(1))
+	if err != nil || n != 1 || !slices.Equal(held(), []model.OrderID{3}) {
+		t.Fatalf("offset page: %d, %v; held %v", n, err, held())
+	}
+	n, err = repo.UpdateMany(ctx, hold, every.TotalAsc().After(model.Order{ID: 1, Total: 100}).Limit(1))
+	if err != nil || n != 1 || !slices.Equal(held(), []model.OrderID{2, 3}) {
+		t.Fatalf("page continued: %d, %v; held %v", n, err, held())
+	}
+	if _, err := repo.UpdateMany(ctx, hold, every.TotalAsc()); err == nil ||
+		err.Error() != "orm: Update ordering requires Limit or Offset" {
+		t.Errorf("UpdateMany of an order alone error = %v", err)
+	}
+	note := "batch"
+	n, err = repo.UpdateByCustomer(ctx, 10, mscopes.OrderChanges().SetMemo(&note), mscopes.Order{}.TotalDesc().Limit(1))
+	if noted, _ := repo.List(ctx, mscopes.Order{}.MemoEq(note)); err != nil || n != 1 ||
+		!slices.Equal(ids(noted), []model.OrderID{2}) {
+		t.Errorf("page of a customer's orders: %d, %v; noted %v", n, err, ids(noted))
+	}
+	err = repo.UpdateFieldsOnly(ctx, 1, hold, every.Limit(1))
+	if want := "orm: Update takes conditions alone, but its scope keeps only some of the rows"; err == nil ||
+		err.Error() != want {
+		t.Errorf("UpdateFieldsOnly with a limit error = %v, want %q", err, want)
+	}
+}
+
+func TestUpdateLocked_Postgres(t *testing.T) {
+	t.Parallel()
+
+	url := postgresSchema(t)
+	ctx := t.Context()
+	holder := ppgx.NewOrderRepository(pgxTx(t, url))
+	if _, err := holder.GetForUpdate(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	// The lock lasts as long as the one statement, so the repository needs no transaction. Were the update to wait
+	// for the row held, it would fail by the timeout rather than hang.
+	conn := pgxConn(t, url)
+	if _, err := conn.Exec(ctx, "SET lock_timeout = '5s'"); err != nil {
+		t.Fatal(err)
+	}
+	repo := ppgx.NewOrderRepository(conn)
+	rows, err := repo.UpdateUnlocked(ctx, pscopes.OrderChanges().SetStatus("held"),
+		pscopes.Order{}.StatusEq("open").IDAsc().Limit(1))
+	if err != nil || !slices.Equal(ids(rows), []model.OrderID{3}) {
+		t.Fatalf("first free open order = %v, %v; want 3", ids(rows), err)
+	}
+	rows, err = repo.UpdateUnlocked(ctx, pscopes.OrderChanges().SetPaid(true), pscopes.Order{}.TotalGt(0))
+	paid := ids(rows)
+	slices.Sort(paid)
+	if err != nil || !slices.Equal(paid, []model.OrderID{2, 3}) {
+		t.Fatalf("free orders of no page = %v, %v; want 2 and 3", paid, err)
+	}
+
+	_, err = repo.UpdateNoWait(ctx, pscopes.OrderChanges().SetStatus("held"), pscopes.Order{}.TotalGt(0).IDAsc().Limit(1))
+	if !lockNotAvailable(err) || errors.Is(err, orm.ErrNotFound) {
+		t.Errorf("UpdateNoWait of a page holding the row held error = %v, want %s", err, pgLockNotAvailable)
+	}
+	if n, err := repo.UpdateNoWait(ctx, pscopes.OrderChanges().SetStatus("held"), pscopes.Order{}.IDEq(2)); err != nil ||
+		n != 1 {
+		t.Errorf("UpdateNoWait of a free row = %d, %v", n, err)
+	}
+	o, err := repo.Get(ctx, 1)
+	if err != nil || o.Status != "open" || o.Paid {
+		t.Errorf("the row held = %+v, %v; want it as it was", o, err)
+	}
+}
 
 func TestUpdateChanges_Postgres(t *testing.T) {
 	t.Parallel()

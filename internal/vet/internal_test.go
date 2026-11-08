@@ -22,7 +22,9 @@ func TestChecks(t *testing.T) {
 	at := cause{pos: 1, in: "Purge", method: "Limit"}
 	paged := emptyScope().then(&scopeVal{conds: set(at), limit: set(at)})
 	named := emptyScope().then(&scopeVal{conds: set(at)})
+	ordered := emptyScope().then(&scopeVal{conds: set(at), orders: set(at)})
 	assigns := (&changeVal{}).assign("created_at", cause{pos: 2, in: "Touch", method: "SetCreatedAt"})
+	names := (&changeVal{}).assign("name", cause{pos: 2, in: "Rename", method: "SetName"})
 	for _, tt := range []struct {
 		name  string
 		check func(opCall) *failed
@@ -36,6 +38,20 @@ func TestChecks(t *testing.T) {
 			[]value{paged, unknown{}, strVal("logs"), strList("id")}, ""},
 		{"Update of a column it cannot write", renderUpdate,
 			[]value{assigns, unknown{}, strVal("logs"), strList("name"), named},
+			"Update cannot assign column created_at"},
+		{"Update by key of a page", renderUpdate,
+			[]value{names, unknown{}, strVal("logs"), strList("name"), paged},
+			"Update takes conditions alone, but its scope keeps only some of the rows"},
+		{"Update of a page selected by a key", renderUpdateSelected,
+			[]value{names, unknown{}, strVal("logs"), strList("name"), strList("id"), strVal(""), paged}, ""},
+		{"Update of a page with no key to select it by", renderUpdateSelected,
+			[]value{names, unknown{}, strVal("logs"), strList("name"), strList(), strVal(""), paged},
+			"paged Update requires a primary or non-null unique key"},
+		{"Update ordered without a page", renderUpdateSelected,
+			[]value{names, unknown{}, strVal("logs"), strList("name"), strList("id"), strVal(""), ordered},
+			"Update ordering requires Limit or Offset"},
+		{"Update selected of a column it cannot write", renderUpdateSelected,
+			[]value{assigns, unknown{}, strVal("logs"), strList("name"), strList("id"), strVal(""), paged},
 			"Update cannot assign column created_at"},
 		{"Upsert of a column it cannot write", upsertValues,
 			[]value{assigns, strVal("UpsertByName"), strList("name"), strList("id")},

@@ -45,6 +45,67 @@ func TestChanges(t *testing.T) {
 	}
 }
 
+func TestChanges_RenderUpdateSelected(t *testing.T) {
+	t.Parallel()
+
+	const lock = " FOR UPDATE SKIP LOCKED"
+	changes := impl.Changes[int]{}.Set("status", "taken")
+	base := impl.Of[int]{}.Where("status = ", "new")
+	page := base.OrderBy("queued_at", false).Limit(2).Offset(1)
+	key := []string{"id"}
+	for _, tt := range []struct {
+		name string
+		d    impl.Dialect
+		q    impl.Of[int]
+		key  []string
+		lock string
+		want string
+	}{
+		{"no page", impl.Postgres, base, key, "", `UPDATE "jobs" SET "status" = $1 WHERE (status = $2)`},
+		{"a page", impl.Postgres, page, key, "", `UPDATE "jobs" SET "status" = $1 WHERE "id" IN ` +
+			`(SELECT "id" FROM "jobs" WHERE (status = $2) ORDER BY queued_at, id LIMIT 2 OFFSET 1)`},
+		{"a page on MySQL", impl.MySQL, page, key, "", "UPDATE `jobs` SET `status` = ? WHERE `id` IN " +
+			"(SELECT `id` FROM (SELECT `id` FROM `jobs` WHERE (status = ?) ORDER BY queued_at, id LIMIT 2 OFFSET 1) " +
+			"AS `orm_update_targets`)"},
+		{"a page of no order", impl.Postgres, base.Limit(1), []string{"tenant_id", "id"}, "",
+			`UPDATE "jobs" SET "status" = $1 WHERE ("tenant_id", "id") IN ` +
+				`(SELECT "tenant_id", "id" FROM "jobs" WHERE (status = $2) LIMIT 1)`},
+		{"a page continued", impl.Postgres, base.OrderBy("id", false).After(key, map[string]any{"id": 7}).Limit(1),
+			key, "", `UPDATE "jobs" SET "status" = $1 WHERE "id" IN ` +
+				`(SELECT "id" FROM "jobs" WHERE (status = $2) AND ((id) > ($3)) ORDER BY id LIMIT 1)`},
+		{"a lock", impl.Postgres, base, key, lock, `UPDATE "jobs" SET "status" = $1 WHERE "id" IN ` +
+			`(SELECT "id" FROM "jobs" WHERE (status = $2) FOR UPDATE SKIP LOCKED)`},
+		{"a page under a lock", impl.Postgres, page, key, lock, `UPDATE "jobs" SET "status" = $1 WHERE "id" IN ` +
+			`(SELECT "id" FROM "jobs" WHERE (status = $2) ORDER BY queued_at, id LIMIT 2 OFFSET 1 FOR UPDATE SKIP LOCKED)`},
+	} {
+		got, args, err := changes.RenderUpdateSelected(tt.d, "jobs", []string{"status"}, tt.key, tt.lock, tt.q)
+		if err != nil || got != tt.want || len(args) < 2 || args[0] != "taken" || args[1] != "new" {
+			t.Errorf("RenderUpdateSelected of %s = %s, %v, %v; want %s", tt.name, got, args, err, tt.want)
+		}
+	}
+	for _, tt := range []struct {
+		name string
+		q    impl.Of[int]
+		key  []string
+		lock string
+		want string
+	}{
+		{"a page of every row", impl.Of[int]{}.Limit(1), key, "",
+			"orm: Update would update every row of jobs: give it a condition"},
+		{"an order alone", base.OrderBy("id", false), key, "", "orm: Update ordering requires Limit or Offset"},
+		{"an order alone under a lock", base.OrderBy("id", false), key, lock,
+			"orm: Update ordering requires Limit or Offset"},
+		{"a page with no key", page, nil, "", "orm: paged Update requires a primary or non-null unique key"},
+		{"a lock with no key", base, nil, lock, "orm: locked Update requires a primary or non-null unique key"},
+		{"a relation", impl.Preload(page, "Lines", impl.Of[int]{}), key, "", "orm: Update cannot load relations"},
+	} {
+		_, _, err := changes.RenderUpdateSelected(impl.Postgres, "jobs", []string{"status"}, tt.key, tt.lock, tt.q)
+		if err == nil || err.Error() != tt.want {
+			t.Errorf("RenderUpdateSelected of %s error = %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}
+
 func TestChanges_UpsertValues(t *testing.T) {
 	t.Parallel()
 

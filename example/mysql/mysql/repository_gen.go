@@ -330,6 +330,7 @@ const (
 	orderOperationInsert          orderOperation = "Insert"
 	orderOperationInsertLines     orderOperation = "InsertLines"
 	orderOperationInsertApprovals orderOperation = "InsertApprovals"
+	orderOperationUpdate          orderOperation = "Update"
 	orderOperationDelete          orderOperation = "Delete"
 	orderOperationTag             orderOperation = "Tag"
 	orderOperationMonthlySales    orderOperation = "MonthlySales"
@@ -542,6 +543,28 @@ VALUES (?, ?, ?, ?, ?)`+strings.Repeat(`, (?, ?, ?, ?, ?)`, len(chunk)-1), args.
 		}
 	}
 	return nil
+}
+
+func (r Order) Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = impl.Of[model.Order](s.Of())
+	}
+	q := impl.Combine(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note"}, []string{"id"}, "", q)
+	if err != nil {
+		return 0, r.mapError(orderOperationUpdate, err)
+	}
+	res, err := r.db.ExecContext(ctx, text, args...)
+	if err != nil {
+		return 0, r.mapError(orderOperationUpdate, fmt.Errorf(`update orders: %w`, err))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, r.mapError(orderOperationUpdate, fmt.Errorf(`update orders: %w`, err))
+	}
+	return n, nil
 }
 
 func (r Order) Delete(ctx context.Context, s ...scopes.Order) (int64, error) {

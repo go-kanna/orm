@@ -17,7 +17,7 @@ func (e repoEmitter) deleteReturning(m repoMethod, sc gofile.Scope, recv string,
 	typ := types.TypeString(model, e.f.Qualifier)
 	text, args, err := sc.Name("text"), sc.Name("args"), sc.Name("err")
 	e.printf("%s, %s, %s := %s.RenderDelete(%s, %q, %s)\n",
-		text, args, err, q, e.dialect(), m.target.table, namesLiteral(deleteKey(m.table)))
+		text, args, err, q, e.dialect(), m.target.table, namesLiteral(targetKey(m.table)))
 	e.printf("if %s != nil { return nil, %s }\n", err, sig.mapped(err))
 	rows, out, row := sc.Name("rows"), sc.Name("out"), sc.Name("row")
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + goString("delete from "+m.target.table+": %w") + ", " + err + ")")
@@ -31,7 +31,7 @@ func (e repoEmitter) deleteReturning(m repoMethod, sc gofile.Scope, recv string,
 func (e repoEmitter) deleteSelected(m repoMethod, sc gofile.Scope, recv string, sig signature, q string) {
 	text, args, err := sc.Name("text"), sc.Name("args"), sc.Name("err")
 	e.printf("%s, %s, %s := %s.RenderDelete(%s, %q, %s)\n",
-		text, args, err, q, e.dialect(), m.target.table, namesLiteral(deleteKey(m.table)))
+		text, args, err, q, e.dialect(), m.target.table, namesLiteral(targetKey(m.table)))
 	e.printf("if %s != nil { return 0, %s }\n", err, sig.mapped(err))
 	res := e.execResult(sc)
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + goString("delete from "+m.target.table+": %w") + ", " + err + ")")
@@ -40,7 +40,9 @@ func (e repoEmitter) deleteSelected(m repoMethod, sc gofile.Scope, recv string, 
 	e.printf("return %s, nil\n", e.rowsAffected(sc, res, err, "0, ", wrap))
 }
 
-func deleteKey(table snapshot.Table) []string {
+// targetKey is the key a Delete or an Update selects the rows of table it writes by, in a subquery, when its scope
+// pages them or a lock holds them: the primary key, or else a unique key of columns that are never NULL.
+func targetKey(table snapshot.Table) []string {
 	if len(table.PrimaryKey) > 0 {
 		return table.PrimaryKey
 	}

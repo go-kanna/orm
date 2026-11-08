@@ -50,8 +50,13 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 		}
 	}
 	text, args, err := sc.Name("text"), sc.Name("args"), sc.Name("err")
-	e.printf("%s, %s, %s := %s.RenderUpdate(%s, %q, %s, %s)\n",
-		text, args, err, changes, e.dialect(), m.target.table, columnNamesLiteral(m.updated()), q)
+	if m.selects() {
+		e.printf("%s, %s, %s := %s.RenderUpdateSelected(%s, %q, %s, %s, %s, %s)\n", text, args, err, changes,
+			e.dialect(), m.target.table, columnNamesLiteral(m.updated()), namesLiteral(targetKey(m.table)), lockClause(m), q)
+	} else {
+		e.printf("%s, %s, %s := %s.RenderUpdate(%s, %q, %s, %s)\n",
+			text, args, err, changes, e.dialect(), m.target.table, columnNamesLiteral(m.updated()), q)
+	}
 	e.printf("if %s != nil { return %s%s }\n", err, zero, sig.mapped(err))
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + goString("update "+m.target.table+": %w") + ", " + err + ")")
 	notFound := func() string { return sig.mapped(e.notFound(m.target.table, nil, nil)) }

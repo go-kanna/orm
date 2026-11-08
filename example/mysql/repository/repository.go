@@ -42,6 +42,7 @@ type Order interface { //nolint:interfacebloat // demonstrates order reads and w
 	Insert(ctx context.Context, o model.Order) (model.Order, error)
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
 	InsertApprovals(ctx context.Context, approvals []model.Approval) error
+	Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
 	Delete(ctx context.Context, s ...scopes.Order) (int64, error)
 
 	Tag(ctx context.Context, orderID model.OrderID, tag string) error
