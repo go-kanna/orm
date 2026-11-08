@@ -833,6 +833,90 @@ func (r OrderRepository) ListUnlocked(ctx context.Context, s ...scopes.Order) ([
 	return kSelectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 }
 
+func (r OrderRepository) ListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return nil, fmt.Errorf("orm: ListIDsForKeyShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
+	}
+	if err := q.ProjectionOnly("ListIDsForKeyShare"); err != nil {
+		return nil, err
+	}
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.query(ctx, `SELECT id FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+` FOR KEY SHARE`, rd.Args()...)
+	if err != nil {
+		return nil, fmt.Errorf("read orders.id: %w", err)
+	}
+	defer rows.Close()
+	out := []model.OrderID{}
+	var row, none model.OrderID
+	dest := []any{&row}
+	for rows.Next() {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf("read orders.id: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read orders.id: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	return out, nil
+}
+
+func (r OrderRepository) GetStatusForUpdate(ctx context.Context, id model.OrderID) (model.OrderStatus, error) {
+	var q impl.Of[model.Order]
+	q = q.Where(`id = `, id)
+	var zero model.OrderStatus
+	if !stdlib.InTransaction(r.db.dbtx) {
+		return zero, fmt.Errorf("orm: GetStatusForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
+	}
+	if err := q.ProjectionOnly("GetStatusForUpdate"); err != nil {
+		return zero, err
+	}
+	if err := q.Unpaged("GetStatusForUpdate"); err != nil {
+		return zero, err
+	}
+	rd, err := q.Render(impl.Postgres, 1, []string{`id`})
+	if err != nil {
+		return zero, err
+	}
+	rows, err := r.db.query(ctx, `SELECT status FROM orders`+rd.Where()+rd.OrderBy()+rd.Limit()+` FOR UPDATE`, rd.Args()...)
+	if err != nil {
+		return zero, fmt.Errorf("read orders.status: %w", err)
+	}
+	defer rows.Close()
+	out := []model.OrderStatus{}
+	var row, none model.OrderStatus
+	dest := []any{&row}
+	for rows.Next() {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
+			return zero, fmt.Errorf("read orders.status: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return zero, fmt.Errorf("read orders.status: %w", err)
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if len(out) == 0 {
+		return zero, fmt.Errorf("orders with id %v: %w", id, orm.ErrNotFound)
+	}
+	return out[0], nil
+}
+
 func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order, error) {
 	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)

@@ -96,15 +96,22 @@ func TestCommand_PluckMistakes(t *testing.T) {
 	}
 }
 
-// The plural after List is made as that of a table's name, and with an s only of a field ending in an acronym.
+// The plural after List is made as that of a table's name, and with an s only of a field ending in an acronym, before
+// the lock the name may end in.
 func TestRepositories_PluckPlurals(t *testing.T) {
 	t.Parallel()
+	const share = "\t//kanna:lock share\n"
 	for method, want := range map[string]string{
-		"\tListStatuses(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "",
-		"\tListCustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)\n":          "",
+		"\tListStatuses(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n":                 "",
+		"\tListCustomerIDs(ctx context.Context, s ...scopes.Order) ([]int64, error)\n":                          "",
+		share + "\tListStatusesForShare(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "",
 		"\tListStatuss(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "repository.go:24:2: " +
 			"error: ListStatuss: it returns the values of a column, but model.Order has no field whose plural is " +
 			"Statuss\n  name it ListStatuses: the plural of Status is made as that of a table's name",
+		share + "\tListStatussForShare(ctx context.Context, s ...scopes.Order) ([]model.OrderStatus, error)\n": "" +
+			"repository.go:25:2: error: ListStatussForShare: it returns the values of a column, but model.Order has no " +
+			"field whose plural is Statuss\n  name it ListStatusesForShare: the plural of Status is made as that of a " +
+			"table's name",
 	} {
 		if _, ds := repositories(t, snapshot.PostgreSQL, method, "", nil); ds != want {
 			t.Errorf("Repositories of %q reports\n%s\nwant\n%s", method, ds, want)
@@ -119,6 +126,7 @@ func TestRepositories_PluckOfNoField(t *testing.T) {
 		at   = "repository.go:24:2: error: "
 		hint = "\n  name it after a field, as in ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, " +
 			"error), which reads ID"
+		locked = "repository.go:25:2: error: "
 	)
 	for method, want := range map[string]string{
 		"\tGetNumbers(ctx context.Context, id model.OrderID) (string, error)\n": at +
@@ -130,6 +138,12 @@ func TestRepositories_PluckOfNoField(t *testing.T) {
 			"Get: it returns the values of a column, but names no field after Get" + hint,
 		"\tList(ctx context.Context, s ...scopes.Order) ([]string, error)\n": at +
 			"List: it returns the values of a column, but names no field after List" + hint,
+		"\t//kanna:lock update\n\tListForUpdate(ctx context.Context, s ...scopes.Order) ([]string, error)\n": locked +
+			"ListForUpdate: it returns the values of a column, but names no field between List and ForUpdate\n" +
+			"  name it after a field, then its lock, as ListIDsForUpdate reads ID",
+		"\t//kanna:lock share\n\tListNumbersByStatusForShare(ctx context.Context) ([]string, error)\n": locked +
+			"ListNumbersByStatusForShare: it returns the values of a column, but model.Order has no field whose plural " +
+			"is NumbersByStatus\n  name it after a field, then its lock, as ListIDsForShare reads ID",
 	} {
 		if _, ds := repositories(t, snapshot.PostgreSQL, method, "", nil); ds != want {
 			t.Errorf("Repositories of %q reports\n%s\nwant\n%s", method, ds, want)

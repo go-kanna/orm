@@ -1085,6 +1085,13 @@ names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc()
 
 両 DB の example は、この方法で手ごろな価格の商品名を読みます。
 
+名前はロックで終わってもよく、終わりのロックを外した残りでフィールドを決めます。`//kanna:lock key-share` の `ListIDsForKeyShare` は、`ID` を読み、その行を `FOR KEY SHARE` でロックします。
+
+```go
+//kanna:lock key-share
+ListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)
+```
+
 ### 専用の型へ読み込む projection
 
 `Get...`・`Find...`・`First...`・`List...` は、元モデルの scope を受け取りながら別の名前付き構造体を返せます。戻り値型のフィールドから取得列を決めるため、専用型に scope は不要です。

@@ -267,6 +267,9 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 				line += " many"
 			}
 			line += " " + []string{"error", "row", "rows", "count", "bool"}[m.returns]
+			if m.pluck != nil {
+				line += " pluck=" + m.pluck.col.Name
+			}
 			if len(m.conflict) > 0 {
 				line += " conflict=" + strings.Join(m.conflict, ",")
 			}
