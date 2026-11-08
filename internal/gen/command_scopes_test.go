@@ -10,6 +10,7 @@ import (
 	"github.com/go-kanna/internal/packages"
 
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 // impliedShop declares the scope types of its models with //kanna:scopes alone, a method of one by hand, and a
@@ -158,5 +159,80 @@ func TestCommand_ImpliedScopesMistakes(t *testing.T) {
 				t.Errorf("kanna-orm = %d\n%s\nwant\n%s", code, errOut, tt.want)
 			}
 		})
+	}
+}
+
+// TestCommand_ImpliedScopesWrittenByHand generates a package of scope types that //kanna:scopes declares, whose only
+// Go file imports nothing, with scopes whose signatures name a type of a package the model's file imports and one of
+// the model's own package: before the package has scopes_gen.go, which imports the model's package, and after.
+func TestCommand_ImpliedScopesWrittenByHand(t *testing.T) {
+	t.Parallel()
+
+	const sql = "-- scope: Order.PlacedSince(at time.Time)\nSELECT 1 FROM orders WHERE placed_at >= :at;\n\n" +
+		"-- scope: Order.In(st model.Status)\nstatus = :st\n"
+	dir := writeModule(t, `
+-- model/model.go --
+package model
+
+import "time"
+
+type Order struct {
+	ID       int64
+	Status   Status
+	PlacedAt time.Time
+}
+
+type Status string
+-- scopes/scopes.go --
+package scopes
+
+//kanna:scopes model-package=../model
+-- scopes/order_scopes.sql --
+`+sql)
+	stmts, _ := sqlfile.Parse("order_scopes.sql", []byte(sql))
+	s := snapshot.Snapshot{
+		Dialect: snapshot.PostgreSQL,
+		Tables: map[string]snapshot.Table{"orders": {
+			Columns: []snapshot.Column{
+				{Name: "id", Type: "int8", NotNull: true, Assigned: true},
+				{Name: "status", Type: "text", NotNull: true},
+				{Name: "placed_at", Type: "timestamptz", NotNull: true},
+			},
+			PrimaryKey: []string{"id"},
+		}},
+		Statements: map[string]snapshot.Statement{
+			"example.com/shop/scopes.Order.PlacedSince": {Digest: snapshot.Digest(stmts[0].Text)},
+			"example.com/shop/scopes.Order.In":          {Digest: snapshot.Digest(stmts[1].Text)},
+		},
+	}
+	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scopes := filepath.Join(dir, "scopes")
+
+	if code, out, errOut := run(t, scopes, "-v"); code != cli.ExitOK || out != "wrote ./scopes_gen.go\n" {
+		t.Fatalf("kanna-orm -v = %d\n%s%s", code, out, errOut)
+	}
+	set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Diags) > 0 {
+		t.Fatalf("the module does not compile once generated: %v", set.Diags)
+	}
+	src, err := os.ReadFile(filepath.Join(scopes, "scopes_gen.go")) //nolint:gosec // the file written above
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"func (s Order) PlacedSince(at time.Time) Order {",
+		"func (s Order) In(st model.Status) Order {",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("scopes_gen.go lacks %q:\n%s", want, src)
+		}
+	}
+	if code, _, errOut := run(t, scopes, "-check"); code != cli.ExitOK {
+		t.Errorf("kanna-orm -check = %d\n%s", code, errOut)
 	}
 }

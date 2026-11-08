@@ -98,15 +98,22 @@ type found struct {
 }
 
 func describe(ctx context.Context, db Database, f found) (snapshot.Statement, *diag.Diag) {
-	text, offset := f.stmt.Text, 0
+	text := f.stmt.Text
+	at := func(line, column int) token.Position {
+		return token.Position{Filename: f.stmt.Header.Filename, Line: f.stmt.Line + line - 1, Column: column}
+	}
 	if f.stmt.Kind == sqlfile.Scope {
-		text, offset = "SELECT 1 FROM "+quoteTable(db.Dialect(), f.table)+" WHERE (\n"+text+"\n)", 1
+		cond, d := f.stmt.Condition(f.table, db.Dialect())
+		if d != nil {
+			return snapshot.Statement{}, d
+		}
+		text = "SELECT 1 FROM " + quoteTable(db.Dialect(), f.table) + " WHERE (\n" + cond.Text + "\n)"
+		at = func(line, column int) token.Position { return cond.At(line-1, column) }
 	}
 
 	st, err := db.Statement(ctx, text)
 	if e, ok := errors.AsType[*placeholder.Error](err); ok {
-		pos := token.Position{Filename: f.stmt.Header.Filename, Line: f.stmt.Line + e.Line - 1 - offset, Column: e.Column}
-		d := diag.Errorf(pos, "%s", e.Message)
+		d := diag.Errorf(at(e.Line, e.Column), "%s", e.Message)
 		return st, &d
 	}
 	if err != nil {

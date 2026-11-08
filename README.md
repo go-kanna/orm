@@ -1563,8 +1563,21 @@ ORDER BY 1`
   so this is a matter for hand-written queries only.
 - A scope has no method declared for it, so its signature is written on its line, and the lines of comment right
   above that line are its method's doc. MySQL does not tell the types of a statement's parameters, and this way it
-  need not. A type of another package is named as the Go files of the scope type's package import it: one they do not
-  use is imported for this alone, as in `import _ "time"`.
+  need not. A type of another package is named as the Go files of the scope type's package import it, or, by a name
+  they do not import, as the file declaring the model of the scope type's table imports it, or by the name of the
+  model's own package, as in `model.Status`, so that a package of scope types `//kanna:scopes` declares needs no import
+  of its own for its models and the types they use. The package's own imports come first, as in Go, so one there wins
+  over the model's file and package for its name. A package none of these names is imported in a Go file of the scope
+  type's package for this alone, as in `import _ "time"`.
+- A scope can also be written as a statement on its table, as
+  `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at);` is the one above, so that a
+  SQL linter, which cannot parse a condition alone, reads the file as it reads the queries. kanna-orm takes the
+  condition alone into statements of its own, so the statement has that shape and no other: it selects `1` from the
+  scope type's table, gives the table no alias, which would mean nothing where the condition goes, and holds nothing
+  after the condition but a `;`. The table's name is read as the database reads it: quoted, as it is written, and
+  unquoted, in lower case on PostgreSQL, which folds it so, and in any case on MySQL, whose rule depends on how its
+  server is set up. Another statement starting with `SELECT` stops generation; a condition such as
+  `id IN (SELECT ...)` is a condition as before.
 - A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
   ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
