@@ -391,6 +391,64 @@ func (s Customer) CreatedAtDesc() Customer {
 	return Customer{kScope(kRuntime(s.q).OrderBy(`created_at`, true))}
 }
 
+// UpdatedAtEq narrows to the rows whose updated_at is v.
+func (s Customer) UpdatedAtEq(v time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at = `, v))}
+}
+
+// UpdatedAtNe narrows to the rows whose updated_at is not v.
+func (s Customer) UpdatedAtNe(v time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at <> `, v))}
+}
+
+// UpdatedAtIn narrows to the rows whose updated_at is one of vs.
+func (s Customer) UpdatedAtIn(vs ...time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at IN (`, impl.List(vs), `)`))}
+}
+
+// UpdatedAtNotIn narrows to the rows whose updated_at is none of vs.
+func (s Customer) UpdatedAtNotIn(vs ...time.Time) Customer {
+	if len(vs) == 0 {
+		return s
+	}
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at NOT IN (`, impl.List(vs), `)`))}
+}
+
+// UpdatedAtLt narrows to the rows whose updated_at is less than v.
+func (s Customer) UpdatedAtLt(v time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at < `, v))}
+}
+
+// UpdatedAtLte narrows to the rows whose updated_at is at most v.
+func (s Customer) UpdatedAtLte(v time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at <= `, v))}
+}
+
+// UpdatedAtGt narrows to the rows whose updated_at is greater than v.
+func (s Customer) UpdatedAtGt(v time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at > `, v))}
+}
+
+// UpdatedAtGte narrows to the rows whose updated_at is at least v.
+func (s Customer) UpdatedAtGte(v time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at >= `, v))}
+}
+
+// UpdatedAtBetween narrows to the rows whose updated_at is between lo and hi, both included.
+func (s Customer) UpdatedAtBetween(lo, hi time.Time) Customer {
+	return Customer{kScope(kRuntime(s.q).Where(`updated_at BETWEEN `, lo, ` AND `, hi))}
+}
+
+// UpdatedAtAsc orders the rows by updated_at, earliest first.
+func (s Customer) UpdatedAtAsc() Customer {
+	return Customer{kScope(kRuntime(s.q).OrderBy(`updated_at`, false))}
+}
+
+// UpdatedAtDesc orders the rows by updated_at, latest first.
+func (s Customer) UpdatedAtDesc() Customer {
+	return Customer{kScope(kRuntime(s.q).OrderBy(`updated_at`, true))}
+}
+
 // Limit keeps the first n rows.
 func (s Customer) Limit(n int) Customer {
 	return Customer{kScope(kRuntime(s.q).Limit(n))}
@@ -424,6 +482,7 @@ func (Customer) values(row model.Customer) map[string]any {
 		`name`:       row.Name,
 		`phone`:      impl.MayBeNull,
 		`created_at`: row.CreatedAt,
+		`updated_at`: row.UpdatedAt,
 	}
 }
 
@@ -453,6 +512,7 @@ func (s Customer) AfterCursor(cursor string) (Customer, error) {
 		`email`:      &row.Email,
 		`name`:       &row.Name,
 		`created_at`: &row.CreatedAt,
+		`updated_at`: &row.UpdatedAt,
 	}); err != nil {
 		return Customer{}, err
 	}

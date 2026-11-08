@@ -5,7 +5,8 @@ CREATE TABLE customers (
     email      text NOT NULL UNIQUE,
     name       text NOT NULL,
     phone      text,
-    created_at timestamptz NOT NULL
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL
 );
 
 CREATE TABLE products (

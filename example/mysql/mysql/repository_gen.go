@@ -30,6 +30,10 @@ type kDatabase struct {
 	options impl.Options
 }
 
+// Now is the time of the clock of options, which the repositories write the creation and update times of
+// rows by, and those written by hand can.
+func (d kDatabase) Now(ctx context.Context) time.Time { return d.options.Now(ctx) }
+
 func (d kDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	result, err := d.dbtx.ExecContext(ctx, query, args...)
@@ -87,17 +91,18 @@ func NewCustomer(db DBTX, opts ...option.Option) Customer { return newCustomer(d
 var _ repository.Customer = Customer{}
 
 func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
-	set, err := changes.Of().UpsertValues("UpsertByEmail", []string{"name", "phone"}, nil, []string{"email"})
+	now := r.db.Now(ctx)
+	set, err := changes.Of().Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"email"})
 	if err != nil {
 		return model.Customer{}, err
 	}
-	const withoutID = `INSERT INTO customers (email, name, phone, created_at)
-VALUES (?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)`
-	const withID = `INSERT INTO customers (email, name, phone, created_at, id)
+	const withoutID = `INSERT INTO customers (email, name, phone, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)`
-	q, args := withoutID, []any{c.Email, c.Name, c.Phone, c.CreatedAt}
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone), updated_at = IF(?, ?, customers.updated_at)`
+	const withID = `INSERT INTO customers (email, name, phone, created_at, updated_at, id)
+VALUES (?, ?, ?, ?, ?, ?) AS new
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone), updated_at = IF(?, ?, customers.updated_at)`
+	q, args := withoutID, []any{c.Email, c.Name, c.Phone, now, now}
 	if c.ID != 0 {
 		q, args = withID, append(args, c.ID)
 	}
@@ -112,22 +117,22 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, custo
 			return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 		}
 		var row model.Customer
-		if err := r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
+		if err := r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE id = ?`, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt); err != nil {
 			return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 		}
 		return row, nil
 	}
 	var row model.Customer
-	if err := r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at FROM customers WHERE email = ?`, c.Email).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt); err != nil {
+	if err := r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE email = ?`, c.Email).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt); err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
 	return row, nil
 }
 
 func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
-	const q = `SELECT id, email, name, phone, created_at FROM customers WHERE id = ?`
+	const q = `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE id = ?`
 	var row model.Customer
-	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
+	err := r.db.queryRow(ctx, q, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Customer{}, fmt.Errorf("customers with id %v: %w", id, orm.ErrNotFound)
 	}
@@ -138,14 +143,15 @@ func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer,
 }
 
 func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) error {
+	now := r.db.Now(ctx)
 	qs := make([]impl.Of[model.Customer], len(s))
 	for i, s := range s {
 		qs[i] = impl.Of[model.Customer](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := c.Of().Touch("updated_at", now)
 	q = q.Where(`id = `, id)
-	text, args, err := changes.RenderUpdate(impl.MySQL, "customers", []string{"email", "name", "phone"}, q)
+	text, args, err := changes.RenderUpdate(impl.MySQL, "customers", []string{"email", "name", "phone", "updated_at"}, q)
 	if err != nil {
 		return err
 	}
@@ -758,7 +764,7 @@ func kSelectCustomers(ctx context.Context, db kDatabase, q impl.Of[model.Custome
 	if err != nil {
 		return nil, err
 	}
-	out, err := kQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at, updated_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -777,7 +783,7 @@ func kQueryCustomers(ctx context.Context, db kDatabase, query string, args ...an
 	defer rows.Close()
 	out := []model.Customer{}
 	var row model.Customer
-	dest := []any{&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt}
+	dest := []any{&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt}
 	for rows.Next() {
 		row = model.Customer{}
 		if err := rows.Scan(dest...); err != nil {
@@ -945,7 +951,7 @@ func kQueryOrders(ctx context.Context, db kDatabase, query string, args ...any) 
 var kEachOrdersApprovals = impl.NewEach(impl.MySQL, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"})
 
 // kEachOrdersCustomer reads the rows of customers for the keys of rows, as Customer loads them.
-var kEachOrdersCustomer = impl.NewEach(impl.MySQL, impl.Batch{Table: "customers", ChildKeys: []string{"id"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at"})
+var kEachOrdersCustomer = impl.NewEach(impl.MySQL, impl.Batch{Table: "customers", ChildKeys: []string{"id"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at", "updated_at"})
 
 // kEachOrdersLines reads the rows of order_lines for the keys of rows, as Lines loads them.
 var kEachOrdersLines = impl.NewEach(impl.MySQL, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"})
@@ -1044,7 +1050,7 @@ func kPreloadOrders(ctx context.Context, db kDatabase, rows []model.Order, q imp
 			}
 			var number int
 			var row model.Customer
-			dest := []any{&number, &row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt}
+			dest := []any{&number, &row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt}
 			for related.Next() {
 				row = model.Customer{}
 				if err := related.Scan(dest...); err != nil {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/bench/postgres/kanna/model"
@@ -27,6 +28,10 @@ type kDatabase struct {
 	dbtx    DBTX
 	options impl.Options
 }
+
+// Now is the time of the clock of options, which the repositories write the creation and update times of
+// rows by, and those written by hand can.
+func (d kDatabase) Now(ctx context.Context) time.Time { return d.options.Now(ctx) }
 
 func (d kDatabase) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
@@ -87,11 +92,12 @@ func NewCustomerRepository(db DBTX, opts ...option.Option) CustomerRepository {
 var _ repository.CustomerRepository = CustomerRepository{}
 
 func (r CustomerRepository) Insert(ctx context.Context, c model.Customer) (model.Customer, error) {
+	now := r.db.Now(ctx)
 	const q = `INSERT INTO customers (email, name, created_at)
 VALUES ($1, $2, $3)
 RETURNING id, email, name, created_at`
 	var row model.Customer
-	err := r.db.queryRow(ctx, q, c.Email, c.Name, c.CreatedAt).
+	err := r.db.queryRow(ctx, q, c.Email, c.Name, now).
 		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("insert into customers: %w", err)
@@ -100,12 +106,13 @@ RETURNING id, email, name, created_at`
 }
 
 func (r CustomerRepository) UpsertByEmail(ctx context.Context, c model.Customer) (model.Customer, error) {
+	now := r.db.Now(ctx)
 	const q = `INSERT INTO customers (email, name, created_at)
 VALUES ($1, $2, $3)
 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
 RETURNING id, email, name, created_at`
 	var row model.Customer
-	err := r.db.queryRow(ctx, q, c.Email, c.Name, c.CreatedAt).
+	err := r.db.queryRow(ctx, q, c.Email, c.Name, now).
 		Scan(&row.ID, &row.Email, &row.Name, &row.CreatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)

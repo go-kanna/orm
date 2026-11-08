@@ -26,7 +26,8 @@ type Customer struct {
 	Email     string
 	Name      string
 	Phone     *string
-	CreatedAt time.Time `orm:",insertonly"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Product struct {

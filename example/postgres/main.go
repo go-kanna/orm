@@ -43,9 +43,11 @@ func run(ctx context.Context, url string, w io.Writer) error {
 	queryLog := option.WithHook(hook.Hook{After: func(_ context.Context, e hook.Execution) {
 		fmt.Fprintf(w, "SQL (%s): %s; error=%v\n", e.Duration, e.SQL, e.Err)
 	}})
+	signUps := &clock{now: time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)}
 	ex := example{
 		db:          pool,
-		customers:   postgres.NewCustomer(pool),
+		clock:       signUps,
+		customers:   postgres.NewCustomer(pool, option.WithClock(signUps)),
 		products:    postgres.NewProduct(pool),
 		orders:      postgres.NewOrder(pool, queryLog),
 		fulfillment: postgres.NewFulfillment(pool),
@@ -86,7 +88,14 @@ type example struct {
 	fulfillment postgres.Fulfillment
 	w           io.Writer
 	ann, bob    model.Customer
+	// clock is the time the customers sign up and change at, which the example sets, as a test would.
+	clock *clock
 }
+
+// clock tells the time it is set to.
+type clock struct{ now time.Time }
+
+func (c *clock) Now(context.Context) time.Time { return c.now }
 
 // catalog writes many rows at once, in one statement: the products, then a price changed.
 func (ex *example) catalog(ctx context.Context) error {
@@ -133,16 +142,16 @@ func (ex *example) catalog(ctx context.Context) error {
 	return nil
 }
 
-// signUp upserts by a natural key, the email address: a customer signing up anew as given, and one signed up
-// already with their new name, and their phone when they give one. CreatedAt, written by an insert alone, keeps when
-// they joined.
+// signUp upserts by a natural key, the email address, a day after another: a customer signing up anew as given, and
+// one signed up already with their new name, and their phone when they give one. CreatedAt keeps when they joined, and
+// UpdatedAt tells when they last changed.
 func (ex *example) signUp(ctx context.Context) error {
-	joined := time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)
+	joined := ex.clock.now
 	for _, c := range []model.Customer{
-		{Email: "ann@example.com", Name: "Ann", Phone: new("03-1234-5678"), CreatedAt: joined},
-		{Email: "ann@example.com", Name: "Ann Lee", Phone: new("090-1234-5678"), CreatedAt: time.Now()},
-		{Email: "ann@example.com", Name: "Ann Lee", CreatedAt: time.Now()},
-		{Email: "bob@example.com", Name: "Bob", CreatedAt: joined},
+		{Email: "ann@example.com", Name: "Ann", Phone: new("03-1234-5678")},
+		{Email: "ann@example.com", Name: "Ann Lee", Phone: new("090-1234-5678")},
+		{Email: "ann@example.com", Name: "Ann Lee"},
+		{Email: "bob@example.com", Name: "Bob"},
 	} {
 		changes := scopes.CustomerChanges().SetName(c.Name)
 		if c.Phone != nil {
@@ -157,13 +166,14 @@ func (ex *example) signUp(ctx context.Context) error {
 		} else {
 			ex.bob = stored
 		}
+		ex.clock.now = ex.clock.now.AddDate(0, 0, 1)
 	}
 	if ex.ann.Name != "Ann Lee" || ex.ann.Phone == nil || *ex.ann.Phone != "090-1234-5678" ||
-		!ex.ann.CreatedAt.Equal(joined) {
+		!ex.ann.CreatedAt.Equal(joined) || !ex.ann.UpdatedAt.Equal(joined.AddDate(0, 0, 2)) {
 		return errors.New("customer was not updated with the changes alone")
 	}
-	fmt.Fprintf(ex.w, "customer %d: %s, joined %s\n", ex.ann.ID, ex.ann.Name,
-		ex.ann.CreatedAt.UTC().Format(time.DateOnly))
+	fmt.Fprintf(ex.w, "customer %d: %s, joined %s, updated %s\n", ex.ann.ID, ex.ann.Name,
+		ex.ann.CreatedAt.UTC().Format(time.DateOnly), ex.ann.UpdatedAt.UTC().Format(time.DateOnly))
 	return nil
 }
 
@@ -482,7 +492,8 @@ func (ex *example) updateSelectedColumns(ctx context.Context) error {
 		return fmt.Errorf("update customer phone: %w", err)
 	}
 	if updated.Phone == nil || *updated.Phone != "050-1234-5678" || updated.Name != ex.ann.Name ||
-		updated.Email != ex.ann.Email || !updated.CreatedAt.Equal(ex.ann.CreatedAt) {
+		updated.Email != ex.ann.Email || !updated.CreatedAt.Equal(ex.ann.CreatedAt) ||
+		!updated.UpdatedAt.Equal(ex.clock.now) {
 		return fmt.Errorf("partial update changed unexpected columns: %+v", updated)
 	}
 	cleared, err := ex.customers.UpdatePhone(ctx, ex.ann.ID, scopes.CustomerChanges().SetPhone(nil))

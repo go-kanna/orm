@@ -31,6 +31,10 @@ type kDatabase struct {
 	options impl.Options
 }
 
+// Now is the time of the clock of options, which the repositories write the creation and update times of
+// rows by, and those written by hand can.
+func (d kDatabase) Now(ctx context.Context) time.Time { return d.options.Now(ctx) }
+
 func (d kDatabase) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
 	result, err := d.dbtx.Exec(ctx, query, args...)
@@ -87,17 +91,18 @@ func NewCustomer(db DBTX, opts ...option.Option) Customer { return newCustomer(d
 var _ repository.Customer = Customer{}
 
 func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
-	set, err := changes.Of().UpsertValues("UpsertByEmail", []string{"name", "phone"}, nil, []string{"email"})
+	now := r.db.Now(ctx)
+	set, err := changes.Of().Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"email"})
 	if err != nil {
 		return model.Customer{}, err
 	}
-	const q = `INSERT INTO customers (email, name, phone, created_at)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.name END, phone = CASE WHEN $7 THEN $8 ELSE customers.phone END
-RETURNING id, email, name, phone, created_at`
+	const q = `INSERT INTO customers (email, name, phone, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $6 THEN $7 ELSE customers.name END, phone = CASE WHEN $8 THEN $9 ELSE customers.phone END, updated_at = CASE WHEN $10 THEN $11 ELSE customers.updated_at END
+RETURNING id, email, name, phone, created_at, updated_at`
 	var row model.Customer
-	err = r.db.QueryRow(ctx, q, append([]any{c.Email, c.Name, c.Phone, c.CreatedAt}, set...)...).
-		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
+	err = r.db.QueryRow(ctx, q, append([]any{c.Email, c.Name, c.Phone, now, now}, set...)...).
+		Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt)
 	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
@@ -105,9 +110,9 @@ RETURNING id, email, name, phone, created_at`
 }
 
 func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer, error) {
-	const q = `SELECT id, email, name, phone, created_at FROM customers WHERE id = $1`
+	const q = `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE id = $1`
 	var row model.Customer
-	err := r.db.QueryRow(ctx, q, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
+	err := r.db.QueryRow(ctx, q, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Customer{}, fmt.Errorf("customers with id %v: %w", id, orm.ErrNotFound)
 	}
@@ -118,20 +123,21 @@ func (r Customer) Get(ctx context.Context, id model.CustomerID) (model.Customer,
 }
 
 func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes.CustomerChangeSet, s ...scopes.Customer) (model.Customer, error) {
+	now := r.db.Now(ctx)
 	qs := make([]impl.Of[model.Customer], len(s))
 	for i, s := range s {
 		qs[i] = impl.Of[model.Customer](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := c.Of().Touch("updated_at", now)
 	q = q.Where(`id = `, id)
-	text, args, err := changes.RenderUpdate(impl.Postgres, "customers", []string{"email", "name", "phone"}, q)
+	text, args, err := changes.RenderUpdate(impl.Postgres, "customers", []string{"email", "name", "phone", "updated_at"}, q)
 	if err != nil {
 		return model.Customer{}, err
 	}
-	text += ` RETURNING id, email, name, phone, created_at`
+	text += ` RETURNING id, email, name, phone, created_at, updated_at`
 	var row model.Customer
-	err = r.db.QueryRow(ctx, text, args...).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt)
+	err = r.db.QueryRow(ctx, text, args...).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Customer{}, fmt.Errorf("no row of customers matches: %w", orm.ErrNotFound)
 	}
@@ -720,7 +726,7 @@ func kSelectCustomers(ctx context.Context, db kDatabase, q impl.Of[model.Custome
 	if err != nil {
 		return nil, err
 	}
-	out, err := kQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
+	out, err := kQueryCustomers(ctx, db, `SELECT id, email, name, phone, created_at, updated_at FROM customers`+rd.Where()+rd.OrderBy()+rd.Limit()+lock, rd.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -739,7 +745,7 @@ func kQueryCustomers(ctx context.Context, db kDatabase, query string, args ...an
 	defer rows.Close()
 	out := []model.Customer{}
 	var row model.Customer
-	dest := []any{&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt}
+	dest := []any{&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt}
 	for rows.Next() {
 		row = model.Customer{}
 		if err := rows.Scan(dest...); err != nil {
@@ -906,7 +912,7 @@ func kQueryOrders(ctx context.Context, db kDatabase, query string, args ...any) 
 var kEachOrdersApprovals = impl.NewEach(impl.Postgres, impl.Batch{Table: "approvals", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "order_id", "revision", "approver", "approved_at", "revoked_at"})
 
 // kEachOrdersCustomer reads the rows of customers for the keys of rows, as Customer loads them.
-var kEachOrdersCustomer = impl.NewEach(impl.Postgres, impl.Batch{Table: "customers", ChildKeys: []string{"id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at"})
+var kEachOrdersCustomer = impl.NewEach(impl.Postgres, impl.Batch{Table: "customers", ChildKeys: []string{"id"}, KeyTypes: []string{"int8"}}, []string{`id`}, []string{"id", "email", "name", "phone", "created_at", "updated_at"})
 
 // kEachOrdersLines reads the rows of order_lines for the keys of rows, as Lines loads them.
 var kEachOrdersLines = impl.NewEach(impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"order_id"}, KeyTypes: []string{"int8"}}, []string{`order_id`, `line_no`}, []string{"order_id", "line_no", "sku", "quantity"})
@@ -1003,7 +1009,7 @@ func kPreloadOrders(ctx context.Context, db kDatabase, rows []model.Order, q imp
 			}
 			var number int
 			var row model.Customer
-			dest := []any{&number, &row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt}
+			dest := []any{&number, &row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt}
 			for related.Next() {
 				row = model.Customer{}
 				if err := related.Scan(dest...); err != nil {
