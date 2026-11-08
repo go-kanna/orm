@@ -1,6 +1,7 @@
 package gen_test
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -65,6 +66,10 @@ func TestRepositories_LockOnMySQL(t *testing.T) {
 // lockWords are what //kanna:lock takes, as its diagnostics name them.
 const lockWords = "update, no-key-update, share, key-share, nowait, or skip-locked"
 
+// lockedVerbs is what is said of //kanna:lock on a method that cannot take one.
+const lockedVerbs = "//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set taking scopes " +
+	"and no key"
+
 func TestRepositories_LockMistakes(t *testing.T) {
 	t.Parallel()
 
@@ -100,10 +105,10 @@ func TestRepositories_LockMistakes(t *testing.T) {
 			"repository.go:25:2: error: duplicate //kanna:lock directive\n  the first is on line 24"},
 		{"a verb that reads no whole rows", snapshot.PostgreSQL,
 			"\t//kanna:lock update\n\tCount(ctx context.Context, s ...scopes.Order) (int64, error)\n",
-			at + "error: Count: //kanna:lock is for a Get, a Find, a First, or a List"},
+			at + "error: Count: " + lockedVerbs},
 		{"a write", snapshot.PostgreSQL,
 			"\t//kanna:lock update\n\tDelete(ctx context.Context, id model.OrderID) error\n",
-			at + "error: Delete: //kanna:lock is for a Get, a Find, a First, or a List"},
+			at + "error: Delete: " + lockedVerbs},
 		{"no-key-update on MySQL", snapshot.MySQL, "\t//kanna:lock no-key-update\n" + get,
 			at + "error: Get: MySQL has no FOR NO KEY UPDATE\n  lock with update or share"},
 		{"key-share on MySQL", snapshot.MySQL, "\t//kanna:lock key-share\n" + get,
@@ -210,5 +215,127 @@ func TestCommand_LockOnAMethodWrittenByHand(t *testing.T) {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("kanna-orm reports\n%s\nwant %q", errOut, want)
 		}
+	}
+}
+
+// lockedUpdateShop declares jobs, a table of a primary key, and logs, one of no key, with a repository of the methods
+// a test puts in place of METHODS.
+const lockedUpdateShop = `-- model/model.go --
+package model
+type Job struct {
+	ID    int64
+	State string
+}
+type Log struct{ Message string }
+-- scopes/scopes.go --
+package scopes
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+//kanna:scope table=jobs
+type Job struct{ q scope.Of[model.Job] }
+//kanna:scope table=logs
+type Log struct{ q scope.Of[model.Log] }
+-- repository/repository.go --
+package repository
+import (
+	"context"
+	"example.com/shop/model"
+	"example.com/shop/scopes"
+)
+var (
+	_ context.Context
+	_ model.Job
+	_ scopes.Job
+)
+//kanna:repository
+type Jobs interface {
+METHODS}
+`
+
+// generateLockedUpdate generates the scopes and the repository of lockedUpdateShop with methods, on dialect, and
+// returns what kanna-orm returns and reports of the repository, and the code it generates for it if it does.
+func generateLockedUpdate(t *testing.T, dialect snapshot.Dialect, methods string) (int, string, string) {
+	t.Helper()
+
+	dir := writeModule(t, strings.Replace(lockedUpdateShop, "METHODS", methods, 1))
+	s := snapshot.Snapshot{Dialect: dialect, Tables: map[string]snapshot.Table{
+		"jobs": {Columns: []snapshot.Column{
+			{Name: "id", Type: "bigint", NotNull: true}, {Name: "state", Type: "text", NotNull: true},
+		}, PrimaryKey: []string{"id"}},
+		"logs": {Columns: []snapshot.Column{{Name: "message", Type: "text", NotNull: true}}},
+	}}
+	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+		t.Fatalf("generate scopes = %d\n%s", code, errOut)
+	}
+	code, _, errOut := run(t, filepath.Join(dir, "repository"), "-destination", "../impl", "-driver", "database/sql")
+	generated, _ := os.ReadFile(filepath.Join(dir, "impl", "repository_gen.go")) //nolint:gosec // the test's own file
+	return code, errOut, string(generated)
+}
+
+func TestCommand_LockedUpdate(t *testing.T) {
+	t.Parallel()
+
+	code, errOut, generated := generateLockedUpdate(t, snapshot.PostgreSQL, `
+	//kanna:lock update skip-locked
+	UpdateClaimed(ctx context.Context, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)
+	//kanna:lock no-key-update nowait
+	UpdateHeld(ctx context.Context, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)
+`)
+	if code != cli.ExitOK {
+		t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+	}
+	for _, want := range []string{
+		`[]string{"id"}, ` + "` FOR UPDATE SKIP LOCKED`, q)",
+		`[]string{"id"}, ` + "` FOR NO KEY UPDATE NOWAIT`, q)",
+	} {
+		if !strings.Contains(generated, want) {
+			t.Errorf("repository_gen.go has no %s\n%s", want, generated)
+		}
+	}
+	if strings.Contains(generated, "InTransaction") {
+		t.Errorf("a locked Update asks for a transaction, though its one statement holds the lock\n%s", generated)
+	}
+}
+
+func TestCommand_LockedUpdateMistakes(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		dialect snapshot.Dialect
+		methods string
+		want    string
+	}{
+		{"on MySQL", snapshot.MySQL, "\t//kanna:lock update skip-locked\n" +
+			"\tUpdateClaimed(ctx context.Context, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)\n",
+			"error: UpdateClaimed: MySQL may still wait for the rows a locked subquery passes over, as its UPDATE can " +
+				"read more of the table than the rows it writes\n" +
+				"  lock the rows with a List in a transaction, then update them by their keys\n"},
+		{"of a table of no key", snapshot.PostgreSQL, "\t//kanna:lock update\n" +
+			"\tUpdateLogs(ctx context.Context, c scopes.LogChangeSet, s ...scopes.Log) (int64, error)\n",
+			"error: UpdateLogs: logs has no primary key or non-null unique key to select the rows to lock by\n"},
+		{"an Update by a key", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
+			"\tUpdateCount(ctx context.Context, state string, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)\n",
+			"error: UpdateCount: " + lockedVerbs + "\n"},
+		{"an Update taking no scopes", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
+			"\tUpdateState(ctx context.Context, id int64, c scopes.JobChangeSet) error\n",
+			"error: UpdateState: " + lockedVerbs + "\n"},
+		{"an Update of a whole row", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
+			"\tUpdate(ctx context.Context, j model.Job, s ...scopes.Job) error\n",
+			"error: Update: " + lockedVerbs + "\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			code, errOut, _ := generateLockedUpdate(t, tt.dialect, tt.methods)
+			if code == cli.ExitOK || !strings.HasSuffix(errOut, tt.want) {
+				t.Errorf("kanna-orm = %d, reports\n%s\nwant it to end in\n%s", code, errOut, tt.want)
+			}
+		})
 	}
 }

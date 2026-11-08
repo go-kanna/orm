@@ -138,31 +138,32 @@ type op func(c opCall) (value, *failed)
 
 // ops are the functions and methods of the runtime vet knows: what they make of a scope, and the checks they make.
 var ops = map[string]op{
-	"impl.Of.Where":                  adds(func(s *scopeVal) *prop { return &s.conds }),
-	"impl.Of.OrderBy":                adds(func(s *scopeVal) *prop { return &s.orders }),
-	"impl.Of.Limit":                  pages(func(s *scopeVal) *prop { return &s.limit }, "a limit of %d rows"),
-	"impl.Of.Offset":                 pages(func(s *scopeVal) *prop { return &s.offset }, "an offset of %d rows"),
-	"impl.Of.After":                  adds(func(s *scopeVal) *prop { return &s.seek }),
-	"impl.Of.Before":                 adds(func(s *scopeVal) *prop { return &s.seek }),
-	"impl.Of.DefaultOrder":           opDefaultOrder,
-	"impl.Of.Or":                     opOr,
-	"impl.Of.Not":                    opNot,
-	"impl.Combine":                   opCombine,
-	"impl.Preload":                   func(c opCall) (value, *failed) { return c.preload(false), nil },
-	"impl.PreloadEach":               func(c opCall) (value, *failed) { return c.preload(true), nil },
-	"impl.Of.ConditionsOnly":         checks(conditionsOnly),
-	"impl.Of.Unpaged":                checks(unpaged),
-	"impl.Of.ProjectionOnly":         checks(projectionOnly),
-	"impl.Of.Render":                 renders(2, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
-	"impl.Of.RenderProjection":       renders(4, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
-	"impl.Of.RenderJoinedProjection": renders(4, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
-	"impl.Of.RenderDelete":           renders(3, renderDelete),
-	"impl.Changes.Set":               opSet,
-	"impl.Changes.RenderUpdate":      renders(3, renderUpdate),
-	"impl.Changes.UpsertValues":      renders(2, upsertValues),
-	"scope.Of.Raw":                   func(c opCall) (value, *failed) { return c.scope(0), nil },
-	"scope.Raw.Where":                adds(func(s *scopeVal) *prop { return &s.conds }),
-	"scope.Raw.OrderBy":              adds(func(s *scopeVal) *prop { return &s.orders }),
+	"impl.Of.Where":                     adds(func(s *scopeVal) *prop { return &s.conds }),
+	"impl.Of.OrderBy":                   adds(func(s *scopeVal) *prop { return &s.orders }),
+	"impl.Of.Limit":                     pages(func(s *scopeVal) *prop { return &s.limit }, "a limit of %d rows"),
+	"impl.Of.Offset":                    pages(func(s *scopeVal) *prop { return &s.offset }, "an offset of %d rows"),
+	"impl.Of.After":                     adds(func(s *scopeVal) *prop { return &s.seek }),
+	"impl.Of.Before":                    adds(func(s *scopeVal) *prop { return &s.seek }),
+	"impl.Of.DefaultOrder":              opDefaultOrder,
+	"impl.Of.Or":                        opOr,
+	"impl.Of.Not":                       opNot,
+	"impl.Combine":                      opCombine,
+	"impl.Preload":                      func(c opCall) (value, *failed) { return c.preload(false), nil },
+	"impl.PreloadEach":                  func(c opCall) (value, *failed) { return c.preload(true), nil },
+	"impl.Of.ConditionsOnly":            checks(conditionsOnly),
+	"impl.Of.Unpaged":                   checks(unpaged),
+	"impl.Of.ProjectionOnly":            checks(projectionOnly),
+	"impl.Of.Render":                    renders(2, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
+	"impl.Of.RenderProjection":          renders(4, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
+	"impl.Of.RenderJoinedProjection":    renders(4, func(c opCall) *failed { return scopeErr(c.scope(0)) }),
+	"impl.Of.RenderDelete":              renders(3, renderDelete),
+	"impl.Changes.Set":                  opSet,
+	"impl.Changes.RenderUpdate":         renders(3, renderUpdate),
+	"impl.Changes.RenderUpdateSelected": renders(3, renderUpdateSelected),
+	"impl.Changes.UpsertValues":         renders(2, upsertValues),
+	"scope.Of.Raw":                      func(c opCall) (value, *failed) { return c.scope(0), nil },
+	"scope.Raw.Where":                   adds(func(s *scopeVal) *prop { return &s.conds }),
+	"scope.Raw.OrderBy":                 adds(func(s *scopeVal) *prop { return &s.orders }),
 }
 
 // opOf is what vet knows of fn, a function or method of the runtime, if anything.
@@ -405,46 +406,60 @@ func projectionOnly(s *scopeVal, what string) *failed {
 	return nil
 }
 
-// renderDelete is RenderDelete(d, table, key) of the scope of argument 0. A row to continue from is a condition, as
-// Render writes one of it.
+// renderDelete is RenderDelete(d, table, key) of the scope of argument 0.
 func renderDelete(c opCall) *failed {
-	s := c.scope(0)
-	if t, p := s.loads(); t == every {
-		return fail("Delete cannot load relations", p.p.at, "loads "+p.relation)
-	}
-	if f := scopeErr(s); f != nil {
-		return f
-	}
-	if table, ok := c.str(2); ok && s.conds.t == never && s.seek.t == never {
-		return fail("Delete would delete every row of "+table+": give it a condition", cause{}, "")
-	}
-	if s.limit.t == never && s.offset.t == never && s.orders.t == every && s.seek.t == never {
-		return fail("Delete ordering requires Limit or Offset", s.orders.at, "orders them")
-	}
-	if p := s.limit.or(s.offset); p.t == every {
-		if key, ok := c.strs(3); ok && len(key) == 0 {
-			return fail("paged Delete requires a primary or non-null unique key", p.at, "keeps only some of them")
-		}
-	}
-	return nil
+	key, ok := c.strs(3)
+	return targets(c, c.scope(0), "Delete", key, ok)
 }
 
-// renderUpdate is RenderUpdate(d, table, allowed, q) of the change set of argument 0.
+// renderUpdate is RenderUpdate(d, table, allowed, q) of the change set of argument 0: RenderUpdateSelected of no key,
+// of a scope holding conditions alone.
 func renderUpdate(c opCall) *failed {
-	ch, s := c.change(0), c.scope(4)
-	if ch.empty() == every {
-		return fail("Update requires at least one assigned column", cause{}, "")
-	}
+	s := c.scope(4)
 	if f := conditionsOnly(s, "Update"); f != nil {
 		return f
+	}
+	return updateSelected(c, s, nil, true)
+}
+
+// renderUpdateSelected is RenderUpdateSelected(d, table, allowed, key, lock, q) of the change set of argument 0.
+func renderUpdateSelected(c opCall) *failed {
+	key, ok := c.strs(4)
+	return updateSelected(c, c.scope(6), key, ok)
+}
+
+// updateSelected is the check of an Update of the change set of argument 0, which may assign the columns of argument 3,
+// to the rows s selects by key, which vet knows if known says so.
+func updateSelected(c opCall, s *scopeVal, key []string, known bool) *failed {
+	ch := c.change(0)
+	if ch.empty() == every {
+		return fail("Update requires at least one assigned column", cause{}, "")
 	}
 	if allowed, ok := c.strs(3); ok {
 		if a := firstAssigned(ch, func(column string) bool { return !slices.Contains(allowed, column) }); a != nil {
 			return fail("Update cannot assign column "+a.column, a.p.at, "assigns "+a.column)
 		}
 	}
+	return targets(c, s, "Update", key, known)
+}
+
+// targets is the check of s, the scope selecting the rows what, a Delete or an Update, writes of the table of argument
+// 2, by key, which vet knows if known says so. A row to continue from is a condition, as Render writes one of it.
+func targets(c opCall, s *scopeVal, what string, key []string, known bool) *failed {
+	if t, p := s.loads(); t == every {
+		return fail(what+" cannot load relations", p.p.at, "loads "+p.relation)
+	}
+	if f := scopeErr(s); f != nil {
+		return f
+	}
 	if table, ok := c.str(2); ok && s.conds.t == never && s.seek.t == never {
-		return fail("Update would update every row of "+table+": give it a condition", cause{}, "")
+		return fail(what+" would "+strings.ToLower(what)+" every row of "+table+": give it a condition", cause{}, "")
+	}
+	if s.limit.t == never && s.offset.t == never && s.orders.t == every && s.seek.t == never {
+		return fail(what+" ordering requires Limit or Offset", s.orders.at, "orders them")
+	}
+	if p := s.limit.or(s.offset); p.t == every && known && len(key) == 0 {
+		return fail("paged "+what+" requires a primary or non-null unique key", p.at, "keeps only some of them")
 	}
 	return nil
 }

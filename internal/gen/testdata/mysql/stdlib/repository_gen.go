@@ -825,7 +825,7 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c scopes.OrderChangeSet
 	}
 	q := impl.Combine(qs...)
 	changes := c.Of()
-	text, args, err := changes.RenderUpdate(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return 0, r.mapError(err)
 	}

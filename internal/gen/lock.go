@@ -51,9 +51,12 @@ var namedStrengths = map[string]string{
 
 // lock reads the //kanna:lock of m into its locking clause. A method that reads rows and whose name ends in the
 // strength of a lock but has none is warned about, as it would be generated without one; one whose //kanna:lock is of
-// another strength than its name ends in stops generation, as one of the two is wrong.
+// another strength than its name ends in stops generation, as one of the two is wrong. An Update of a change set taking
+// no key locks the rows its scopes select in the subquery that selects them by key, whether a scope pages them or not,
+// which is not known before it runs.
 func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList
+	updates := m.selects()
 	if !d.Found {
 		if reads && lockedName.MatchString(m.name) {
 			return []diag.Diag{diag.Warningf(m.pos, "%s: its name tells of a lock, but it has no //kanna:lock", m.name).
@@ -65,8 +68,18 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(d.Pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
-	if !reads {
-		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, or a List")}
+	if !reads && !updates {
+		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set " +
+			"taking scopes and no key")}
+	}
+	if updates && r.s.Dialect == snapshot.MySQL {
+		return []diag.Diag{errorf("MySQL may still wait for the rows a locked subquery passes over, as its UPDATE can " +
+			"read more of the table than the rows it writes").WithHints(
+			"lock the rows with a List in a transaction, then update them by their keys")}
+	}
+	if updates && len(targetKey(m.table)) == 0 {
+		return []diag.Diag{errorf("%s has no primary key or non-null unique key to select the rows to lock by",
+			m.target.table)}
 	}
 	if m.projection != nil && len(m.projection.joins) > 0 {
 		return []diag.Diag{errorf("%s joins a table, and a projection joining one is read without a lock",

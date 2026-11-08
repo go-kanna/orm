@@ -1087,9 +1087,27 @@ updated, err := repo.UpdatePhone(ctx, customerID,
 
 An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes too, and may return the updated model. Returned models contain mapped table columns; related values and preloads are not loaded by an update.
 
-For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. The generated method requires at least one WHERE condition and rejects ordering, pagination, and relation-loading scopes. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
+For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
 
 Both database examples update a customer's phone this way, and clear it with `SetPhone(nil)`.
+
+An Update of a change set taking scopes and no key selects its rows as a [`Delete` taking scopes](#selecting-rows-to-delete) does: its conditions, order, and page say which rows.
+
+```go
+Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
+
+n, err := repo.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"), scopes.Orders().
+    Open().
+    PlacedAtAsc().
+    IDAsc().
+    Limit(batch))
+```
+
+Without pagination, the method updates all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and updates those rows in one statement, as a paged `Delete` does, on PostgreSQL and MySQL. Its rules are those of the `Delete`: a WHERE condition is required even when a limit is supplied; a page is chosen as a read of the same scope chooses it, an order ending in the key and a page of no order holding whichever rows the database reads first; `After` and `Before` select pages too; an order without a limit, offset, or cursor is rejected rather than ignored; relation-loading scopes are rejected; and a table with neither a primary key nor a non-null unique key cannot be paged. `Limit(0)` and no matching rows return a count of zero, or an empty slice, without `orm.ErrNotFound`. Ordering chooses which rows to update; the returned rows have no guaranteed order.
+
+An Update taking a key, or a whole row, writes the rows its key names, so its scopes take conditions alone: ordering, paging, or loading relations in one is an error, as paging a `Get` is.
+
+`//kanna:lock` on an Update of a change set taking scopes and no key locks its rows in that subquery, which the statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another holds. See [Locking rows](#locking-rows).
 
 
 ### Selecting rows to delete
@@ -1179,11 +1197,29 @@ return tx.Commit(ctx)
 A read waits for the rows other transactions hold. `nowait` after the strength has it return the database's error at
 once instead, and `skip-locked` has it pass those rows over.
 
+An [`Update` of a change set](#updating-selected-columns) taking scopes and no key takes `//kanna:lock` too. It then
+selects its rows by key in a subquery whether its scope pages them or not, and the lock is on the subquery, so that
+the rows it waits for, fails on, or passes over are those it would write:
+
+```go
+// UpdateFree writes the orders no other worker holds.
+//kanna:lock update skip-locked
+UpdateFree(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
+
+n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderShipped),
+    scopes.Orders().Open().PlacedAtAsc().IDAsc().Limit(batch))
+```
+
+Its lock needs no transaction: outside one, it holds for the statement, and inside one, until the transaction ends, as
+that of any UPDATE does. An Update taking a key, or a table with neither a primary key nor a non-null unique key to
+select the rows by, stops generation. So does MySQL, whose UPDATE may still read, and wait for, rows the subquery passed
+over, as InnoDB locks the rows a statement scans.
+
 - The lock belongs to the method, not to its scopes: they narrow, order, and page the rows as ever, and no caller can
   leave the lock out or change it.
-- A lock lasts as long as its transaction, so a method with one returns an error on anything else. It tells by whether
-  what it runs on has a `Commit`, or wraps what has one: a `DBTX` of your own wrapping a transaction says so by an
-  `Unwrap` returning it, as `Unwrap() pgx.DBTX` of `orm/pgx`, or `Unwrap() stdlib.DBTX` on `database/sql`, however
+- A lock of a read lasts as long as its transaction, so a read with one returns an error on anything else. It tells by
+  whether what it runs on has a `Commit`, or wraps what has one: a `DBTX` of your own wrapping a transaction says so by
+  an `Unwrap` returning it, as `Unwrap() pgx.DBTX` of `orm/pgx`, or `Unwrap() stdlib.DBTX` on `database/sql`, however
   many wrappers deep.
 - A lock not given, by `nowait`, a timeout, or a deadlock, comes back as the database's error, wrapped, never as
   `orm.ErrNotFound`. Retrying is yours to do.
@@ -1460,11 +1496,11 @@ It reports a call at the method it calls, in the words of the error the call wou
 fail is written elsewhere, such as in a scope of your own, where that is. It finds:
 
 - an order, paging, or a relation to load in a scope given to what takes conditions alone: `Count`, `Exists`, an
-  `Update` with a change set, and the alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a relation to
-  load given to a projection, a read of one column, or a `Delete`;
-- a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`
-  ordered without `Limit` or `Offset`; a paged `Delete` of a table with neither a primary key nor a non-null unique
-  key;
+  `Update` taking a key or a whole row, and the alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a
+  relation to load given to a projection, a read of one column, a `Delete`, or an `Update` with a change set;
+- a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
+  or an `Update` of a change set taking no key, ordered without `Limit` or `Offset`, or paged on a table with neither a
+  primary key nor a non-null unique key;
 - `After` or `Before` in the scope a relation is loaded by, and `Limit` or `Offset` in that of a relation to one row;
 - a negative constant given to `Limit` or `Offset`; a change set that assigns nothing, given to an `Update`; one that
   assigns a column its method cannot write, such as the one an upsert meets its row by.

@@ -31,14 +31,24 @@ func (c Changes[M]) Set(column string, value any) Changes[M] {
 	return c
 }
 
-// RenderUpdate renders assignments followed by conditions, rejecting an empty update or an unbounded write.
+// RenderUpdate renders assignments followed by conditions, rejecting an empty update, an unbounded write, or a scope
+// holding more than conditions, as that of an Update writing the rows its keys name does.
 // allowed contains the mapped, writable columns supplied by the generated repository.
 func (c Changes[M]) RenderUpdate(d Dialect, table string, allowed []string, q Of[M]) (string, []any, error) {
-	if len(c.values) == 0 {
-		return "", nil, errors.New("orm: Update requires at least one assigned column")
-	}
 	if err := q.ConditionsOnly("Update"); err != nil {
 		return "", nil, err
+	}
+	return c.RenderUpdateSelected(d, table, allowed, nil, "", q)
+}
+
+// RenderUpdateSelected renders assignments to the rows q selects, as RenderDelete selects those it deletes, rejecting
+// an empty update or an unbounded write. lock is the locking clause of the subquery that selects the rows by key,
+// which the statement has whether or not q pages them, or nothing.
+func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key []string, lock string, q Of[M]) (
+	string, []any, error,
+) {
+	if len(c.values) == 0 {
+		return "", nil, errors.New("orm: Update requires at least one assigned column")
 	}
 	sets := make([]string, 0, len(c.values))
 	args := make([]any, 0, len(c.values))
@@ -53,15 +63,11 @@ func (c Changes[M]) RenderUpdate(d Dialect, table string, allowed []string, q Of
 		}
 		sets = append(sets, quoted(d, a.column)+" = "+placeholder)
 	}
-	rd, err := q.Render(d, len(args)+1, nil)
+	where, rest, err := q.targets(d, "Update", table, key, lock, len(args)+1)
 	if err != nil {
 		return "", nil, err
 	}
-	if rd.Where() == "" {
-		return "", nil, fmt.Errorf("orm: Update would update every row of %s: give it a condition", table)
-	}
-	text := "UPDATE " + quoted(d, table) + " SET " + strings.Join(sets, ", ") + rd.Where()
-	return text, append(args, rd.Args()...), nil
+	return "UPDATE " + quoted(d, table) + " SET " + strings.Join(sets, ", ") + where, append(args, rest...), nil
 }
 
 // UpsertValues is what method, an upsert taking c, writes over the row it meets: for each of allowed, in its order, a

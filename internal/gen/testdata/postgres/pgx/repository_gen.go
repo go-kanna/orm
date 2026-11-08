@@ -928,7 +928,7 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c scopes.OrderChangeSet
 	}
 	q := impl.Combine(qs...)
 	changes := c.Of()
-	text, args, err := changes.RenderUpdate(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return 0, r.mapError(err)
 	}
@@ -970,7 +970,7 @@ func (r OrderRepository) UpdateManyReturning(ctx context.Context, c scopes.Order
 	}
 	q := impl.Combine(qs...)
 	changes := c.Of()
-	text, args, err := changes.RenderUpdate(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
+	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return nil, r.mapError(err)
 	}
@@ -1048,6 +1048,57 @@ func (r OrderRepository) UpdateLineFields(ctx context.Context, orderID model.Ord
 		return model.OrderLine{}, r.mapError(fmt.Errorf(`update order_lines: %w`, err))
 	}
 	return row, nil
+}
+
+func (r OrderRepository) UpdateUnlocked(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) ([]model.Order, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = impl.Of[model.Order](s.Of())
+	}
+	q := impl.Combine(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, ` FOR UPDATE SKIP LOCKED`, q)
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	text += ` RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	rows, err := r.db.Query(ctx, text, args...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf(`update orders: %w`, err))
+	}
+	defer rows.Close()
+	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
+	for rows.Next() {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, r.mapError(fmt.Errorf(`update orders: %w`, err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf(`update orders: %w`, err))
+	}
+	return out, nil
+}
+
+func (r OrderRepository) UpdateNoWait(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error) {
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, s := range s {
+		qs[i] = impl.Of[model.Order](s.Of())
+	}
+	q := impl.Combine(qs...)
+	changes := c.Of()
+	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, ` FOR UPDATE NOWAIT`, q)
+	if err != nil {
+		return 0, r.mapError(err)
+	}
+	tag, err := r.db.Exec(ctx, text, args...)
+	if err != nil {
+		return 0, r.mapError(fmt.Errorf(`update orders: %w`, err))
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (r OrderRepository) UpsertCustomer(ctx context.Context, c model.Customer) (model.Customer, error) {

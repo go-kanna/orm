@@ -161,7 +161,7 @@ type repoMethod struct {
 	returns  returns
 	// conflict names the columns an upsert meets an existing row by.
 	conflict []string
-	// lock is the locking clause //kanna:lock gives a read, if any.
+	// lock is the locking clause //kanna:lock gives a read, or the subquery of an Update that selects its rows, if any.
 	lock string
 	// query is the query written by hand that implements the method, if one does.
 	query *query
@@ -1238,6 +1238,12 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			`row: take no change set, and tag the columns an upsert leaves as they were orm:",insertonly"`)}
 	}
 	return models, keyParams, nil
+}
+
+// selects reports whether m, an Update of a change set taking no key, writes the rows its scopes select as a Delete
+// deletes them: a page of them too, selected by key in a subquery, which a lock can hold.
+func (m repoMethod) selects() bool {
+	return m.verb == verbUpdate && m.changes != "" && len(m.keys) == 0
 }
 
 func (m repoMethod) updateShaped() bool {
