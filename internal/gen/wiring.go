@@ -11,15 +11,21 @@ import (
 
 type binding struct {
 	accessor, localDBTX bool
+	// db is what Bind gives the implementation: its argument, or what DBTX() of it returns.
+	db types.Type
 }
 
-// acceptsDatabase compares the input with the driver's own statement methods, without requiring the rest of it.
-func acceptsDatabase(input types.Type, imported map[string]*types.Package, drv driver) bool {
+// acceptsDatabase compares the input with the driver's own statement methods, and CopyFrom of pgx when copies says
+// so, without requiring the rest of it.
+func acceptsDatabase(input types.Type, imported map[string]*types.Package, drv driver, copies bool) bool {
 	path, name := "github.com/jackc/pgx/v5", "Conn"
 	methods := []string{"Exec", "Query", "QueryRow"}
 	if drv == driverSQL {
 		path, name = "database/sql", "DB"
 		methods = []string{"ExecContext", "QueryContext", "QueryRowContext"}
+	}
+	if copies {
+		methods = append(methods, "CopyFrom")
 	}
 	pkg := imported[path]
 	if pkg == nil || pkg.Scope().Lookup(name) == nil {
@@ -72,15 +78,16 @@ func (r repoReader) bindMethod(m repoMethod, field *ast.Field, ts *ast.TypeSpec)
 		}
 	}
 	input := sig.Params().At(0).Type()
-	if m.bind.localDBTX || acceptsDatabase(input, r.imported, r.driver) {
+	if m.bind.localDBTX || acceptsDatabase(input, r.imported, r.driver, false) {
+		m.bind.db = input
 		return m, nil
 	}
 	obj, _, _ := types.LookupFieldOrMethod(input, true, r.pkg.Types, "DBTX")
 	if fn, ok := obj.(*types.Func); ok {
 		accessor := fn.Signature()
-		if accessor.Params().Len() == 0 && accessor.Results().Len() == 1 &&
-			acceptsDatabase(accessor.Results().At(0).Type(), r.imported, r.driver) {
-			m.bind.accessor = true
+		if db := accessor.Results(); accessor.Params().Len() == 0 && db.Len() == 1 &&
+			acceptsDatabase(db.At(0).Type(), r.imported, r.driver, false) {
+			m.bind.accessor, m.bind.db = true, db.At(0).Type()
 			return m, nil
 		}
 	}

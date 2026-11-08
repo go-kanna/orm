@@ -32,6 +32,14 @@ func (e repoEmitter) hooks() {
 	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) %s.Row {\n", db, e.queryRow, ctx, pgx)
 	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\nreturn trace.Row(d.dbtx.%s(ctx,query,args...))\n}\n\n",
 		e.queryRow)
+	if e.copies {
+		e.printf("// CopyFrom copies the rows of rowSrc, which the hooks see as the statement it runs, with no arguments.\n")
+		e.printf("func (d %[1]s) CopyFrom(ctx %[2]s.Context, tableName %[3]s.Identifier, columnNames []string, "+
+			"rowSrc %[3]s.CopyFromSource) (int64, error) {\n", db, ctx, pgx)
+		e.printf("ctx, trace := d.options.StartQuery(ctx, %s.CopyFromSQL(tableName, columnNames), nil)\n"+
+			"n, err := d.dbtx.CopyFrom(ctx, tableName, columnNames, rowSrc)\ntrace.End(err)\nreturn n, err\n}\n\n",
+			e.f.Import(pgxPath, "kpgx"))
+	}
 }
 
 // sqlQueries writes the queries of kDatabase on database/sql: QueryContext and QueryRowContext, for methods written

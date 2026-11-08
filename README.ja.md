@@ -447,7 +447,7 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 `Bind(db DBTX) Category` を宣言すると、どちらのパッケージに実装するときも、トランザクションへの接続を生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数は選択したドライバの DBTX に適合し、戻り値はリポジトリ自身のインターフェースである必要があります。手書きの `Bind` があれば、その実装を維持します。
 
-repository のどのパッケージの `DBTX` も、ランタイムのものの別名です。pgx なら `github.com/go-kanna/orm/pgx` の `type DBTX = kpgx.DBTX`、`database/sql` なら `github.com/go-kanna/orm/stdlib` の `stdlib.DBTX` です。そのため 1 つの値ですべての repository を動かせ、DI では 1 度だけ渡せば済みます。kanna-di なら、コンテナのパッケージに provider を 1 つ書きます:
+repository のどのパッケージの `DBTX` も、ランタイムのものの別名です。pgx なら `github.com/go-kanna/orm/pgx` の `type DBTX = kpgx.DBTX`（kanna-orm が [Copy](#複数行の-copy) を書くパッケージでは `kpgx.CopyDBTX`）、`database/sql` なら `github.com/go-kanna/orm/stdlib` の `stdlib.DBTX` です。そのため 1 つの値ですべての repository を動かせ、DI では 1 度だけ渡せば済みます。kanna-di なら、コンテナのパッケージに provider を 1 つ書きます:
 
 ```go
 import "github.com/go-kanna/orm/pgx"
@@ -515,7 +515,7 @@ func (Order) mapError(op orderOperation, err error) error {
 
 ### 別のパッケージに実装する
 
-`-destination ../postgres` のように別のパッケージを指定すると、インターフェースと同じ名前の公開構造体、`newOrder` と `NewOrder` のコンストラクタ、値レシーバーのメソッドを生成します。ほかは同じパッケージに実装するときと同じで、`Bind`、手書きしたメソッドのヘルパー、自分で宣言する `NewOrder` が使えます。インターフェースのパッケージからは生成先の `DBTX` を参照できないので、`Bind` は `Bind(tx tx.Tx) Order` のように `DBTX()` を持つトランザクションの型か、`orm/pgx` や `orm/stdlib` のランタイムの `DBTX` を受け取ります。
+`-destination ../postgres` のように別のパッケージを指定すると、インターフェースと同じ名前の公開構造体、`newOrder` と `NewOrder` のコンストラクタ、値レシーバーのメソッドを生成します。ほかは同じパッケージに実装するときと同じで、`Bind`、手書きしたメソッドのヘルパー、自分で宣言する `NewOrder` が使えます。インターフェースのパッケージからは生成先の `DBTX` を参照できないので、`Bind` は `Bind(tx tx.Tx) Order` のように `DBTX()` を持つトランザクションの型か、`orm/pgx` や `orm/stdlib` のランタイムの `DBTX`（kanna-orm が [Copy](#複数行の-copy) を書くパッケージでは `orm/pgx` の `CopyDBTX`）を受け取ります。
 
 ```go
 // DBTX is what the repositories run on: *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
@@ -570,6 +570,7 @@ type OrderRepository interface {
 | `Update` | `Update(ctx, o model.Order) error`、または[変更セット](#指定したカラムだけを更新する)を受け取る形 | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
 | `Upsert` | `Upsert(ctx, o model.Order) error`、または[変更セット](#突き合わせた行に変更セットを書く)つき | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
 | `Delete` | `Delete(ctx, id model.OrderID) error`、または[スコープを受け取る形](#スコープで削除対象を選ぶ) | そのキーの行、またはスコープにマッチする行を削除する |
+| `Copy` | `Copy(ctx, rows []model.Order) (int64, error)` | 行を pgx の [COPY](#複数行の-copy) で書き込み、書き込んだ行数を返す |
 
 `Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたはユニークキーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。ただし、`Limit`、`Offset`、`After`、`Before` で行の一部だけを残すスコープは、キーが指す行そのものを外しうるのでエラーになります。キー引数はポインタではなく値を受け取ります。nil は何にもマッチしない `= NULL` で比べることになるので、ポインタのキー引数は生成を止めます。NULL の行はスコープの `IsNull` で絞り込みます。複数行の候補から一つ選ぶ場合は `First` を使います。スコープの順序で先頭の行を、スコープに順序がなければ主キーの順で先頭の行を返します。ポインタを返す `Find...` は、結果の構造体へのポインタでもスカラーへのポインタでも、同じ不在時の契約を保ったまま手書き SQL でも実装できます。スカラーの場合は nil が「行がない」を表すので、NULL にならない列を読みます。
 
@@ -673,7 +674,7 @@ type Product struct {
 }
 ```
 
-[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、`products.currency` に `DEFAULT 'JPY'` を定義しています。モデルに `Currency: "USD"` を渡しても INSERT では省略され、DB に保存された値が `JPY` であることを読み戻して確認します。タグがないフィールドは従来どおりゼロ値も書き込みます。一括 INSERT と Upsert にも適用し、手書き SQL は変更しません。
+[PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、`products.currency` に `DEFAULT 'JPY'` を定義しています。モデルに `Currency: "USD"` を渡しても INSERT では省略され、DB に保存された値が `JPY` であることを読み戻して確認します。タグがないフィールドは従来どおりゼロ値も書き込みます。一括 INSERT、Upsert、[Copy](#複数行の-copy) にも適用し、手書き SQL は変更しません。
 
 PostgreSQL では、モデルを返すメソッドが RETURNING で DB の値を読み戻します。例えば `ID uuid.UUID` に `orm:",default"` を指定すると、Go 側で採番せず `DEFAULT uuidv7()` の主キーを使えます。全カラムを省略する単一行の INSERT は DEFAULT VALUES を使います。一括書き込みには、少なくとも一つ入力カラムが必要です。
 
@@ -776,7 +777,35 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - MySQL では、行を `VALUES (?, ?, ?), (?, ?, ?), ...` で送り、1 つの文に入るプレースホルダの数を超える場合は複数の文に分割します。すべて成功するかすべて失敗するかにしたい場合は、コンストラクタにトランザクションを渡してください。
 - MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
-- `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込んでください。
+- `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込むか、[COPY](#複数行の-copy) してください。
+
+### 複数行の COPY
+
+`Copy` は、スライスの行を PostgreSQL の COPY で、pgx の `CopyFrom` を通して書き込み、書き込んだ行数を返します:
+
+```go
+CopyEvents(ctx context.Context, events []model.Event) (int64, error)
+```
+
+```sql
+-- what the hooks see
+COPY "events" ("kind", "tags", "note") FROM STDIN
+```
+
+COPY には `RETURNING` も `ON CONFLICT` もなく、行単位のセキュリティ（RLS）のあるテーブルには使えないので、複数行の `Insert` の中身を切り替えずに、別の動詞にしています。
+
+- 書き込むカラムは、複数行の `Insert` と同じです。`default` を指定したカラムと、データベースがいつも割り当てるカラムは外します。1 つの COPY はカラムをすべての行に書くか、どの行にも書かないので、値を与えなければデータベースが割り当てるカラム（serial など）は、すべての行が値を与えれば書き込み、どの行も与えなければデータベースに任せ、両方の行が混ざればエラーを返して何も書きません。その場合は行を分けて COPY してください。
+- `unnest` では書けない配列も、ほかの値と同じように書き込みます。
+- 行がなければ何も実行せず、0 を返します。
+- エラーは、そのメソッドの操作とともに [`mapError`](#エラーの対応づけ) を通ります。フックには、`Args` のない COPY の文として見えます。
+- pgx は値をバイナリ形式で書くので、PostgreSQL の enum 型のように pgx が知らない型のカラムは、`Conn.LoadType` と `pgtype.Map.RegisterType` で先に接続へ型を登録する必要があります。
+- pgx が必要です。MySQL や `-driver database/sql` では、生成を止めます。そこでは複数行の `Insert` で書き込んでください。
+
+kanna-orm が `Copy` か、手で書いた `Copy` が呼ぶヘルパーを書くパッケージは、`DBTX` を `kpgx.CopyDBTX` として宣言します。`CopyFrom` を持つランタイムの `DBTX` で、`*pgxpool.Pool`、`*pgx.Conn`、`pgx.Tx` はどれも持っているので、COPY できない接続はコンパイルで止まります。注文を複製する `CopyOrder` のように、自分で書いてヘルパーを呼ばない `Copy...` のメソッドは `DBTX` を変えません。`r.db.CopyFrom` を自分で呼ぶには、kanna-orm が書く `Copy` を宣言してください。そのようなパッケージの各 repository の `Bind` は、`Bind(db kpgx.CopyDBTX) Order` のようにそれを受け取るか、`DBTX()` がそれを返すトランザクションを受け取ります。COPY できないものを受け取る `Bind` では、生成を止めます。DI では、`DBTX` に加えて `CopyDBTX` も渡します:
+
+```go
+func provideCopyDBTX(pool *pgxpool.Pool) pgx.CopyDBTX { return pool }
+```
 
 ### 指定したカラムだけを更新する
 
@@ -915,9 +944,9 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
+Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。[Copy](#複数行の-copy) は、`COPY "events" ("kind", "tags", "note") FROM STDIN` のような COPY の文として、`Args` なしで見えます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
-フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は間に入って読めない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
+フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`（kanna-orm が Copy を書くパッケージでは `r.db.CopyFrom` も）、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は間に入って読めない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
 
 ### カラムの値を読む
 
@@ -1147,6 +1176,7 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 | 書き込みの読み戻し | `RETURNING` | `LAST_INSERT_ID()` とキーによる `SELECT` |
 | Upsert | 指定したキーに対する `ON CONFLICT (...)` | 任意のユニークキーに対する `ON DUPLICATE KEY UPDATE` |
 | 複数行 | `unnest`（1 つの文） | `VALUES`（長い場合は分割） |
+| 複数行の COPY | pgx の `CopyFrom` による `COPY`（pgx だけ） | なし |
 | キーによるページング | 行の比較（順序の方向が混在する場合を除く） | 展開して書く |
 
 値オブジェクトは `Value` メソッドと `Scan` メソッドを通してデータベースとやり取りし、他の型はドライバが変換するとおりにやり取りします。NULL になりうるカラムはポインタで保持します。database/sql 経由の場合、PostgreSQL の配列をスライスに読み込めるのは Go 1.27 以降で、そこでは pgx/stdlib が各カラムを自分でスキャンします。
@@ -1172,7 +1202,6 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 
 - `Count` 以外の集計（合計やグループ化など）。DTO を返す[手書きの SQL](#手書きの-sql) で書きます。
 - `created_at` と `updated_at` の設定。
-- pgx 経由での複数行の COPY。
 - リレーションの書き込み。行を参照先と一緒に保存するときの順序は、トランザクションの中で自分で組み立てます。
 - NULL になりうるカラムでのページング。
 - MariaDB や SQLite のサポート。

@@ -212,9 +212,14 @@ func Repositories(pkg *packages.Package, s snapshot.Snapshot, destDir string) ([
 	stmts, ds := readSQL(dest.dir)
 	queries, qds := readQueries(stmts)
 	ds = append(ds, qds...)
+	drv := driverPgx
+	if s.Dialect == snapshot.MySQL {
+		drv = driverSQL
+	}
 	r := repoReader{
 		pkg: pkg, s: s, queries: queries, queriesAt: dest.pkgPath, skip: dest.handWritten(),
 		imported: importedPackages([]*packages.Package{pkg}),
+		driver:   drv,
 		l:        linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx},
 	}
 	repos, rds := r.findRepositories()
