@@ -747,10 +747,7 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
-	names := make([]string, 0, len(m.keys))
-	for _, k := range m.keys {
-		names = append(names, k.col.col.Name)
-	}
+	names := m.keyColumns()
 	if m.verb == verbGet || m.verb == verbFind {
 		if d, ok := m.oneRowKey(names); !ok {
 			return []diag.Diag{d}
@@ -1240,10 +1237,20 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 	return models, keyParams, nil
 }
 
-// selects reports whether m, an Update of a change set taking no key, writes the rows its scopes select as a Delete
-// deletes them: a page of them too, selected by key in a subquery, which a lock can hold.
+// keyColumns are the columns the key parameters of m name, in their order.
+func (m repoMethod) keyColumns() []string {
+	names := make([]string, 0, len(m.keys))
+	for _, k := range m.keys {
+		names = append(names, k.col.col.Name)
+	}
+	return names
+}
+
+// selects reports whether m, an Update of a change set, writes the rows it selects as a Delete taking scopes deletes
+// them, a page of them too, selected by key in a subquery that a lock can hold: its key parameters, if any, are
+// conditions, as a Delete's are, and not a unique key, which names the one row it writes, as that of a Get does.
 func (m repoMethod) selects() bool {
-	return m.verb == verbUpdate && m.changes != "" && len(m.keys) == 0
+	return m.verb == verbUpdate && m.changes != "" && !containsKey(m.table, m.keyColumns())
 }
 
 func (m repoMethod) updateShaped() bool {

@@ -1091,7 +1091,7 @@ For multiple rows, declare `(int64, error)` for the affected count or `([]model.
 
 Both database examples update a customer's phone this way, and clear it with `SetPhone(nil)`.
 
-An Update of a change set taking scopes and no key selects its rows as a [`Delete` taking scopes](#selecting-rows-to-delete) does: its conditions, order, and page say which rows.
+An Update of a change set taking scopes, and no unique key as parameters, selects its rows as a [`Delete` taking scopes](#selecting-rows-to-delete) does: its conditions, order, and page say which rows. Parameters naming columns that are no unique key, as `customerID` of `UpdateByCustomer(ctx, customerID, c, s...)`, are conditions, as those of a `Delete` are.
 
 ```go
 Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
@@ -1105,9 +1105,9 @@ n, err := repo.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"), scopes.Or
 
 Without pagination, the method updates all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and updates those rows in one statement, as a paged `Delete` does, on PostgreSQL and MySQL. Its rules are those of the `Delete`: a WHERE condition is required even when a limit is supplied; a page is chosen as a read of the same scope chooses it, an order ending in the key and a page of no order holding whichever rows the database reads first; `After` and `Before` select pages too; an order without a limit, offset, or cursor is rejected rather than ignored; relation-loading scopes are rejected; and a table with neither a primary key nor a non-null unique key cannot be paged. `Limit(0)` and no matching rows return a count of zero, or an empty slice, without `orm.ErrNotFound`. Ordering chooses which rows to update; the returned rows have no guaranteed order. Both database examples write a memo on the two oldest open orders with a limit.
 
-An Update taking a key, or a whole row, writes the rows its key names, so its scopes take conditions alone: ordering, paging, or loading relations in one is an error, as paging a `Get` is.
+An Update taking a unique key, or a whole row, writes the one row its key names, so its scopes take conditions alone: ordering, paging, or loading relations in one is an error, as paging a `Get` is.
 
-`//kanna:lock` on an Update of a change set taking scopes and no key locks its rows in that subquery, which the statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another holds. See [Locking rows](#locking-rows).
+`//kanna:lock` on an Update of a change set taking scopes and no unique key locks its rows in that subquery, which the statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another holds. See [Locking rows](#locking-rows).
 
 
 ### Selecting rows to delete
@@ -1197,9 +1197,9 @@ return tx.Commit(ctx)
 A read waits for the rows other transactions hold. `nowait` after the strength has it return the database's error at
 once instead, and `skip-locked` has it pass those rows over.
 
-An [`Update` of a change set](#updating-selected-columns) taking scopes and no key takes `//kanna:lock` too. It then
-selects its rows by key in a subquery whether its scope pages them or not, and the lock is on the subquery, so that
-the rows it waits for, fails on, or passes over are those it would write:
+An [`Update` of a change set](#updating-selected-columns) taking scopes and no unique key, the one that can take a
+page, takes `//kanna:lock` too. It then selects its rows by key in a subquery whether its scope pages them or not, and
+the lock is on the subquery, so that the rows it waits for, fails on, or passes over are those it would write:
 
 ```go
 // UpdateFree writes the orders no other worker holds.
@@ -1211,8 +1211,8 @@ n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderShip
 ```
 
 Its lock needs no transaction: outside one, it holds for the statement, and inside one, until the transaction ends, as
-that of any UPDATE does. An Update taking a key, or a table with neither a primary key nor a non-null unique key to
-select the rows by, stops generation. So does MySQL, whose UPDATE may still read, and wait for, rows the subquery passed
+that of any UPDATE does. An Update taking a unique key, or a table with neither a primary key nor a non-null unique
+key to select the rows by, stops generation. So does MySQL, whose UPDATE may still read, and wait for, rows the subquery passed
 over, as InnoDB locks the rows a statement scans.
 
 - The lock belongs to the method, not to its scopes: they narrow, order, and page the rows as ever, and no caller can
@@ -1496,10 +1496,10 @@ It reports a call at the method it calls, in the words of the error the call wou
 fail is written elsewhere, such as in a scope of your own, where that is. It finds:
 
 - an order, paging, or a relation to load in a scope given to what takes conditions alone: `Count`, `Exists`, an
-  `Update` taking a key or a whole row, and the alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a
+  `Update` taking a unique key or a whole row, and the alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a
   relation to load given to a projection, a read of one column, a `Delete`, or an `Update` with a change set;
 - a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
-  or an `Update` of a change set taking no key, ordered without `Limit` or `Offset`, or paged on a table with neither a
+  or an `Update` of a change set taking no unique key, ordered without `Limit` or `Offset`, or paged on a table with neither a
   primary key nor a non-null unique key;
 - `After` or `Before` in the scope a relation is loaded by, and `Limit` or `Offset` in that of a relation to one row;
 - a negative constant given to `Limit` or `Offset`; a change set that assigns nothing, given to an `Update`; one that

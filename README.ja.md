@@ -838,7 +838,7 @@ change set の Update は、書き換える行をキーか scope（または両�
 
 両 DB の example は、この方法で顧客の電話番号を更新し、`SetPhone(nil)` で消します。
 
-キーを受け取らず scope を受け取る change set の Update は、[scope を受け取る `Delete`](#スコープで削除対象を選ぶ) と同じように行を選びます。どの行かは、条件・並び順・ページングで言います。
+一意キーを引数に取らず scope を受け取る change set の Update は、[scope を受け取る `Delete`](#スコープで削除対象を選ぶ) と同じように行を選びます。どの行かは、条件・並び順・ページングで言います。`UpdateByCustomer(ctx, customerID, c, s...)` の `customerID` のように、一意キーでない列の引数は、`Delete` の引数と同じく条件です。
 
 ```go
 Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
@@ -852,9 +852,9 @@ n, err := repo.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"), scopes.Or
 
 ページングがなければ条件に一致する全行を更新します。Limit・Offset がある場合は、ページつきの `Delete` と同じくサブクエリで対象のキーを選び、1 つの文でその行を更新します。PostgreSQL と MySQL の両方で使えます。規則も `Delete` と同じです。Limit があっても WHERE 条件は必須です。ページは同じスコープの読み込みと同じように選びます。並び順は最後にキーを足し、並び順のないページはデータベースが先に読んだ行になります。`After` や `Before` で続けるページでも対象を選べます。Limit・Offset・カーソルのない並び順や、関連取得のスコープは無視せずエラーにします。主キーも NULL を許さない一意キーもないテーブルでは、ページングによる更新は利用できません。`Limit(0)` や該当行なしは `orm.ErrNotFound` ではなく、件数 0 か空のスライスを返します。並び順は更新対象の選択に使い、返却行の順序は保証しません。両 DB の example では、open の注文のうち古い 2 件に、件数を制限してメモを書きます。
 
-キーやモデル全体を受け取る Update は、キーが示す行を書き換えるので、scope は条件だけを取ります。並び順・ページング・関連取得は、`Get` のページングと同じくエラーです。
+一意キーやモデル全体を受け取る Update は、キーが示す 1 行を書き換えるので、scope は条件だけを取ります。並び順・ページング・関連取得は、`Get` のページングと同じくエラーです。
 
-キーを受け取らず scope を受け取る change set の Update に `//kanna:lock` を付けると、ページングの有無によらずそのサブクエリで行を選び、そこでロックします。まとめて更新するワーカーどうしが、他が保持している行を飛ばせます。[行ロック](#行ロック)を参照してください。
+一意キーを引数に取らず scope を受け取る change set の Update に `//kanna:lock` を付けると、ページングの有無によらずそのサブクエリで行を選び、そこでロックします。まとめて更新するワーカーどうしが、他が保持している行を飛ばせます。[行ロック](#行ロック)を参照してください。
 
 
 ### スコープで削除対象を選ぶ
@@ -942,7 +942,7 @@ return tx.Commit(ctx)
 
 他のトランザクションが保持している行は、解放されるまで待ちます。強さの後に `nowait` を書くと待たずにデータベースのエラーを返し、`skip-locked` を書くとその行を飛ばします。
 
-キーを受け取らず scope を受け取る [change set の `Update`](#指定したカラムだけを更新する) にも `//kanna:lock` を付けられます。そのときは、scope がページングするかどうかによらずサブクエリでキーを選び、ロックはそのサブクエリに付けます。待つ行、エラーになる行、飛ばす行は、書き換えるはずの行です:
+一意キーを引数に取らず scope を受け取る [change set の `Update`](#指定したカラムだけを更新する)、つまりページングできる Update にも `//kanna:lock` を付けられます。そのときは、scope がページングするかどうかによらずサブクエリでキーを選び、ロックはそのサブクエリに付けます。待つ行、エラーになる行、飛ばす行は、書き換えるはずの行です:
 
 ```go
 // UpdateFree writes the orders no other worker holds.
@@ -953,7 +953,7 @@ n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderShip
     scopes.Orders().Open().PlacedAtAsc().IDAsc().Limit(batch))
 ```
 
-このロックにトランザクションは要りません。トランザクションの外では文の間、中ではトランザクションが終わるまで続きます。どの UPDATE のロックとも同じです。キーを受け取る Update や、行を選ぶ主キーも NULL を許さない一意キーもないテーブルでは、生成を止めます。MySQL でも止めます。InnoDB は文が走査した行をロックするので、MySQL の UPDATE は、サブクエリが飛ばした行を読んで待つことがあるからです。
+このロックにトランザクションは要りません。トランザクションの外では文の間、中ではトランザクションが終わるまで続きます。どの UPDATE のロックとも同じです。一意キーを受け取る Update や、行を選ぶ主キーも NULL を許さない一意キーもないテーブルでは、生成を止めます。MySQL でも止めます。InnoDB は文が走査した行をロックするので、MySQL の UPDATE は、サブクエリが飛ばした行を読んで待つことがあるからです。
 
 - ロックはスコープではなくメソッドに属します。スコープはこれまでどおり行の絞り込み、並べ替え、ページングを行い、呼び出し側がロックを外したり変えたりすることはできません。
 - 読み込みのロックはトランザクションの間だけ続くので、ロックする読み込みはトランザクション以外の上で実行するとエラーを返します。実行の土台に `Commit` があるか、`Commit` のあるものを包んでいるかで判定します。トランザクションを包む独自の `DBTX` は、中身を返す `Unwrap` で包んでいることを示します。`orm/pgx` なら `Unwrap() pgx.DBTX`、`database/sql` なら `Unwrap() stdlib.DBTX` です。包みが何重でもたどります。
@@ -1181,8 +1181,8 @@ usecase/orders.go:42:21: error: Count takes conditions alone, but its scope orde
 
 呼び出したメソッドの位置に、その呼び出しが返すエラーと同じ文で報告します。失敗の原因が別の場所（自分で書いた scope の中など）にあるときは、その場所も添えます。見つけるのは次のものです。
 
-- 条件だけを取るもの（`Count`、`Exists`、キーかモデル全体を取る `Update`、`Or` と `Not` の選択肢）に渡した scope の順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete`、change set を取る `Update` に渡した関連の読み込み
-- 条件のない scope での `Delete` と、change set を取る `Update`（すべての行に効いてしまう）。`Limit` も `Offset` もない、順序つきの `Delete` と、キーを取らない change set の `Update`。主キーも NULL のない一意キーもない表の、ページつきの `Delete` と、キーを取らない change set の `Update`
+- 条件だけを取るもの（`Count`、`Exists`、一意キーかモデル全体を取る `Update`、`Or` と `Not` の選択肢）に渡した scope の順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete`、change set を取る `Update` に渡した関連の読み込み
+- 条件のない scope での `Delete` と、change set を取る `Update`（すべての行に効いてしまう）。`Limit` も `Offset` もない、順序つきの `Delete` と、一意キーを取らない change set の `Update`。主キーも NULL のない一意キーもない表の、ページつきの `Delete` と、一意キーを取らない change set の `Update`
 - 関連を読む scope の `After` と `Before`。1 行の関連を読む scope の `Limit` と `Offset`
 - `Limit` と `Offset` に渡した負の定数。何も代入しない change set を渡した `Update`。メソッドが書けない列（upsert が行を突き合わせる列など）に代入する change set
 

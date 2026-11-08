@@ -51,12 +51,12 @@ var namedStrengths = map[string]string{
 
 // lock reads the //kanna:lock of m into its locking clause. A method that reads rows and whose name ends in the
 // strength of a lock but has none is warned about, as it would be generated without one; one whose //kanna:lock is of
-// another strength than its name ends in stops generation, as one of the two is wrong. An Update of a change set taking
-// no key locks the rows its scopes select in the subquery that selects them by key, whether a scope pages them or not,
-// which is not known before it runs.
+// another strength than its name ends in stops generation, as one of the two is wrong. An Update of a change set that
+// can take a page locks the rows it selects in the subquery that selects them by key, whether a scope pages them or
+// not, which is not known before it runs.
 func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	reads := m.verb == verbGet || m.verb == verbFind || m.verb == verbFirst || m.verb == verbList
-	updates := m.selects()
+	updates := m.selects() && m.scoped
 	if !d.Found {
 		if reads && lockedName.MatchString(m.name) {
 			return []diag.Diag{diag.Warningf(m.pos, "%s: its name tells of a lock, but it has no //kanna:lock", m.name).
@@ -70,7 +70,7 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	}
 	if !reads && !updates {
 		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set " +
-			"taking scopes and no key")}
+			"taking scopes and no unique key")}
 	}
 	if updates && r.s.Dialect == snapshot.MySQL {
 		return []diag.Diag{errorf("MySQL may still wait for the rows a locked subquery passes over, as its UPDATE can " +

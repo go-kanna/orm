@@ -57,6 +57,7 @@ type OrderRepository interface {
 	Update(ctx context.Context, o model.Order) error
 	UpdateFieldsOnly(ctx context.Context, id model.OrderID, c scopes.OrderChangeSet, s ...scopes.Order) error
 	UpdateMany(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
+	UpdateByCustomer(ctx context.Context, customerID int64, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
 	UpdateFields(ctx context.Context, id model.OrderID, c scopes.OrderChangeSet, s ...scopes.Order) (model.Order, error)
 	UpdateManyReturning(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) ([]model.Order, error)
 	UpdateScoped(ctx context.Context, o model.Order, s ...scopes.Order) (model.Order, error)

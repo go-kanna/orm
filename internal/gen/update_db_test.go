@@ -61,6 +61,13 @@ func TestUpdatePage_Postgres(t *testing.T) {
 				t.Errorf("UpdateMany of %s error = %v, want %q", tt.name, err, tt.want)
 			}
 		}
+		// A key parameter that is no unique key is a condition, as of a Delete; a unique key names the one row.
+		note := "batch"
+		n, err := repo.UpdateByCustomer(ctx, 10, pscopes.OrderChanges().SetMemo(&note), pscopes.Order{}.TotalDesc().Limit(1))
+		if noted, _ := repo.List(ctx, pscopes.Order{}.MemoEq(note)); err != nil || n != 1 ||
+			!slices.Equal(ids(noted), []model.OrderID{2}) {
+			t.Errorf("page of a customer's orders: %d, %v; noted %v", n, err, ids(noted))
+		}
 		_, err = repo.UpdateFields(ctx, 1, hold, every.Limit(1))
 		if want := "orm: Update takes conditions alone, but its scope keeps only some of the rows"; err == nil ||
 			err.Error() != want {
@@ -101,6 +108,17 @@ func TestUpdatePage_MySQL(t *testing.T) {
 	if _, err := repo.UpdateMany(ctx, hold, every.TotalAsc()); err == nil ||
 		err.Error() != "orm: Update ordering requires Limit or Offset" {
 		t.Errorf("UpdateMany of an order alone error = %v", err)
+	}
+	note := "batch"
+	n, err = repo.UpdateByCustomer(ctx, 10, mscopes.OrderChanges().SetMemo(&note), mscopes.Order{}.TotalDesc().Limit(1))
+	if noted, _ := repo.List(ctx, mscopes.Order{}.MemoEq(note)); err != nil || n != 1 ||
+		!slices.Equal(ids(noted), []model.OrderID{2}) {
+		t.Errorf("page of a customer's orders: %d, %v; noted %v", n, err, ids(noted))
+	}
+	err = repo.UpdateFieldsOnly(ctx, 1, hold, every.Limit(1))
+	if want := "orm: Update takes conditions alone, but its scope keeps only some of the rows"; err == nil ||
+		err.Error() != want {
+		t.Errorf("UpdateFieldsOnly with a limit error = %v, want %q", err, want)
 	}
 }
 

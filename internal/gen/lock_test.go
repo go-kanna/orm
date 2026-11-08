@@ -68,7 +68,7 @@ const lockWords = "update, no-key-update, share, key-share, nowait, or skip-lock
 
 // lockedVerbs is what is said of //kanna:lock on a method that cannot take one.
 const lockedVerbs = "//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set taking scopes " +
-	"and no key"
+	"and no unique key"
 
 func TestRepositories_LockMistakes(t *testing.T) {
 	t.Parallel()
@@ -284,7 +284,7 @@ func TestCommand_LockedUpdate(t *testing.T) {
 	//kanna:lock update skip-locked
 	UpdateClaimed(ctx context.Context, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)
 	//kanna:lock no-key-update nowait
-	UpdateHeld(ctx context.Context, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)
+	UpdateHeld(ctx context.Context, state string, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)
 `)
 	if code != cli.ExitOK {
 		t.Fatalf("kanna-orm = %d\n%s", code, errOut)
@@ -319,9 +319,12 @@ func TestCommand_LockedUpdateMistakes(t *testing.T) {
 		{"of a table of no key", snapshot.PostgreSQL, "\t//kanna:lock update\n" +
 			"\tUpdateLogs(ctx context.Context, c scopes.LogChangeSet, s ...scopes.Log) (int64, error)\n",
 			"error: UpdateLogs: logs has no primary key or non-null unique key to select the rows to lock by\n"},
-		{"an Update by a key", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
-			"\tUpdateCount(ctx context.Context, state string, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)\n",
-			"error: UpdateCount: " + lockedVerbs + "\n"},
+		{"an Update by a unique key", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
+			"\tUpdateJob(ctx context.Context, id int64, c scopes.JobChangeSet, s ...scopes.Job) (int64, error)\n",
+			"error: UpdateJob: " + lockedVerbs + "\n"},
+		{"an Update of a condition taking no scopes", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
+			"\tUpdateByState(ctx context.Context, state string, c scopes.JobChangeSet) (int64, error)\n",
+			"error: UpdateByState: " + lockedVerbs + "\n"},
 		{"an Update taking no scopes", snapshot.PostgreSQL, "\t//kanna:lock update nowait\n" +
 			"\tUpdateState(ctx context.Context, id int64, c scopes.JobChangeSet) error\n",
 			"error: UpdateState: " + lockedVerbs + "\n"},
