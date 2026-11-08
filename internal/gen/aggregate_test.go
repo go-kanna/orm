@@ -273,6 +273,11 @@ type FirstNotes struct {
 	MinNote string
 }
 
+type DiscountAverages struct {
+	Region      string
+	AvgDiscount float64
+}
+
 type NoteSums struct {
 	Region  string
 	SumNote string
@@ -345,6 +350,9 @@ func TestCommand_AggregateMistakes(t *testing.T) {
 		{method: "ListFirstNotes" + scoped + "([]FirstNotes, error)",
 			want: "ListFirstNotes: MinNote reads the minimum of Sale.Note, which may be NULL in every row of a group, " +
 				"as a string\n  declare it as *string, nil for such a group"},
+		{method: "ListDiscountAverages" + scoped + "([]DiscountAverages, error)",
+			want: "ListDiscountAverages: AvgDiscount reads the average of Sale.Discount, which may be NULL in every row " +
+				"of a group, as a float64\n  declare it as *float64, nil for such a group"},
 		{method: "ListNoteSums" + scoped + "([]NoteSums, error)",
 			want: "ListNoteSums: SumNote reads the sum of Sale.Note, a string, which is no number"},
 		{method: "FirstStatusCount" + scoped + "(StatusCount, error)",

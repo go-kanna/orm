@@ -96,21 +96,18 @@ func aggregateRule(m *repoMethod, a aggregate) (msg, hint string, ok bool) {
 		read, pointer = p.Elem(), true
 	}
 	rt := typeName(a.typ)
-	if a.fn == verbAvg {
-		if !isBasic(read, types.Float64) && !isBasic(read, types.Float32) {
-			return fmt.Sprintf("reads the average of %s as %s %s, which is no floating-point number", field,
-				article(rt), rt), "declare it as float64, or *float64, nil when there is no value", false
-		}
-		return "", "", true
-	}
-	if !types.Identical(read, elem) {
+	switch {
+	case a.fn == verbAvg && !isBasic(read, types.Float64) && !isBasic(read, types.Float32):
+		return fmt.Sprintf("reads the average of %s as %s %s, which is no floating-point number", field,
+			article(rt), rt), "declare it as float64, or *float64, nil when there is no value", false
+	case a.fn != verbAvg && !types.Identical(read, elem):
 		return fmt.Sprintf("reads the %s of %s, %s %s, as %s %s", word, field, article(ft), ft, article(rt), rt),
 			fmt.Sprintf("declare it as %s, or *%[1]s, nil when there is no value", ft), false
 	}
 	// A field of a projection is of a group, which has rows, but may have only NULLs in a column that may hold them.
 	if a.field != "" && !pointer && a.fn != verbSum && !c.col.NotNull {
 		return fmt.Sprintf("reads the %s of %s, which may be NULL in every row of a group, as %s %s", word, field,
-			article(rt), rt), fmt.Sprintf("declare it as *%s, nil for such a group", ft), false
+			article(rt), rt), fmt.Sprintf("declare it as *%s, nil for such a group", typeName(read)), false
 	}
 	return "", "", true
 }
