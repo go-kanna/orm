@@ -858,10 +858,10 @@ matches and groups by the whole pair. The parent model must hold both referenced
 batches using tuple conditions, so rows with the same ID in different tenants remain separate. A parent with a nil
 pointer in any key component has no related values loaded.
 
-The generated device scope has `WithTopics()`. A normal generated read loads this relation only when requested, in
+The generated device scope has `WithTopics()`. A read loads this relation only when its scope asks for it, in
 batches, ordered by the selected column. Each enum value goes through its scanner. An explicitly loaded relation with
 no rows is an empty slice; an unrequested relation remains nil. Parent inserts and updates leave the relation alone,
-and custom SQL model mappings exclude it. Writing the related rows is yours to do.
+and a hand-written query reading the model need not return a column for it. Writing the related rows is yours to do.
 
 ```go
 device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTopics())
@@ -905,8 +905,8 @@ type Product struct {
 
 The [PostgreSQL](example/postgres) and [MySQL](example/mysql) examples define `products.currency` with `DEFAULT 'JPY'`.
 Even when the model supplies `Currency: "USD"`, INSERT omits it and the stored value is `JPY`. The example reads it
-back and checks this. The option is explicit and unconditional: an untagged zero value is still written as a zero
-value. It affects generated INSERT statements, including bulk inserts and upserts, and the columns a
+back and checks this. The tag leaves the column out whatever the value, and a zero value without it is still written
+as a zero value. It affects generated INSERT statements, including bulk inserts and upserts, and the columns a
 [Copy](#copying-many-rows) writes, but not handwritten SQL.
 
 On PostgreSQL, a method returning the model reads database-generated values with RETURNING. For example,
@@ -1211,7 +1211,7 @@ updated, err := repo.UpdatePhone(ctx, customerID,
 
 An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes too, and may return the updated model. Returned models contain mapped table columns; related values are not loaded by an update.
 
-For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
+For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. A declaration returning updated models stops generation on MySQL, which has no UPDATE RETURNING; no separate readback is performed.
 
 Both database examples update a customer's phone this way, and clear it with `SetPhone(nil)`.
 
@@ -1232,7 +1232,6 @@ Without pagination, the method updates all matching rows. With `Limit` or `Offse
 An Update taking a unique key, or a whole row, writes the one row its key names, so its scopes take conditions alone: ordering, paging, or loading relations in one is an error, as paging a `Get` is.
 
 `//kanna:lock` on an Update of a change set taking scopes and no unique key locks its rows in that subquery, which the statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another holds. See [Locking rows](#locking-rows).
-
 
 ### Selecting rows to delete
 
@@ -1270,7 +1269,7 @@ deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
     Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
 ```
 
-The result can be the original model or a dedicated projection type with the same field mapping and type rules as read projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty, non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed order. MySQL has no `DELETE RETURNING`, so a slice result is rejected during generation.
+The result can be the original model or a dedicated projection type with the same field mapping and type rules as read projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty, non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed order. MySQL has no `DELETE RETURNING`, so a slice result stops generation there.
 
 ### Locking rows
 
@@ -1413,11 +1412,10 @@ ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error
 filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column
 tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field
 types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and
-relations in the result are generation errors. Filters, ordering, paging, and locks remain available, and a read of no
+relations in the result stop generation. Filters, ordering, paging, and locks remain available, and a read of no
 row returns what it does of the model: `orm.ErrNotFound` of a `Get` or a `First`, and nil of a `Find`. A scope
 requesting relation loading is rejected rather than silently ignored. A projection may hold
 [aggregates](#reading-aggregates) of groups of rows; other expressions can still use hand-written SQL returning a DTO.
-
 
 ### Joining a projection
 
