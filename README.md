@@ -33,7 +33,8 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 | `orm/pgx`    | `DBTX`, what a repository runs on by pgx, which a dependency injector provides          |
 | `orm/stdlib` | `DBTX`, what a repository runs on by `database/sql`, likewise                           |
 
-`orm/change` holds `Set`, what the `Of` of a generated change set returns, which code written by hand does not name. `orm/impl` is what the generated code runs on, and only the generated code imports it.
+`orm/change` holds `Set`, what the `Of` of a generated change set returns, which code written by hand does not name.
+`orm/impl` is what the generated code runs on, and only the generated code imports it.
 
 ## Use
 
@@ -243,19 +244,19 @@ A scope type is a struct whose only field is an unexported `scope.Of[M]`, `M` be
 into, so that nothing but its methods narrows it. Each table kanna-orm reads or writes has one, and each model belongs
 to one table: the scope type is the only place where the two are tied together.
 
-`//kanna:scopes model-package=../model` declares one, in `scopes_gen.go`, for each struct of the package of the
-models that a table of the snapshot is named after: the struct's name in snake case with its last word made plural, as
+`//kanna:scopes model-package=../model` declares one, in `scopes_gen.go`, for each struct of the package of the models
+that a table of the snapshot is named after: the struct's name in snake case with its last word made plural, as
 `order_lines` for `OrderLine`, `categories` for `Category`, and `people` for `Person`. `model-package=` takes an import
 path of the module or a path relative to the file, and more than one separated by commas, as
 `model-package=../model,../billing`. `model-package=.` names the directive's own package, where a scope type is named
-after its model and `Scope`, as `OrderScope`, apart from the model. A struct no table is named after, such as a value type, gets none, and neither does
-a table no struct is named after, such as one between two others. So a struct of those packages becomes a model once a
-table of its name is made: keep the structs that are not, such as those a query returns, in a package of their own.
-Methods of your own are written on the type as on any other, in another file of the package. One narrows the scope
-by the methods kanna-orm writes, as `Open` below does; by SQL of a shape of its own in a `.sql` file, which `describe`
-checks (see [Hand-written SQL](#hand-written-sql)); or, for SQL whose shape the program chooses as it runs, by `Raw`,
-as `InMonths` does, which nothing checks before it runs. `Raw` has `Where` and `OrderBy` alone, each returning the
-scope with all it held before.
+after its model and `Scope`, as `OrderScope`, apart from the model. A struct no table is named after, such as a value
+type, gets none, and neither does a table no struct is named after, such as one between two others. So a struct of those
+packages becomes a model once a table of its name is made: keep the structs that are not, such as those a query returns,
+in a package of their own. Methods of your own are written on the type as on any other, in another file of the package.
+One narrows the scope by the methods kanna-orm writes, as `Open` below does; by SQL of a shape of its own in a `.sql`
+file, which `describe` checks (see [Hand-written SQL](#hand-written-sql)); or, for SQL whose shape the program chooses
+as it runs, by `Raw`, as `InMonths` does, which nothing checks before it runs. `Raw` has `Where` and `OrderBy` alone,
+each returning the scope with all it held before.
 
 ```go
 func (s Order) Open() Order { return s.StatusNe("closed") }
@@ -529,9 +530,10 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 
 - A `Limit` or an `Offset` with no order keeps rows in whatever order the database reads them, as SQL does: order a
   page by the scopes for it to say which rows it holds.
-- When the order does not end in the primary key, it gets the key, in the direction of its last column, in every read
-  that orders rows, on the first page as on those `After` and `Before` continue to, so that rows equal in the order
-  come in one, the same on every page. Without it, a page that ends among equal rows repeats or skips some of them, without a word.
+-  When the order does not end in the primary key, it gets the key, in the direction of its last column, in every read
+  that orders rows, on the first page as on those `After` and `Before` continue to, so that rows equal in the order come
+  in one, the same on every page. Without it, a page that ends among equal rows repeats or skips some of them, without a
+  word.
 - When every column of the order goes the same way, the condition compares rows, as above. When they do not, and on
   MySQL, it is spelled out: `a < $1 OR (a = $1 AND b < $2)`.
 - `Before` goes the other way, to the page before the one a row is the first of. The repository reads that page from
@@ -722,9 +724,10 @@ type OrderRepository interface {
 
 What a method does is told by the verb its name starts with. What follows the verb is yours to choose for a method
 reading or writing rows, while a method reading a column or an aggregate names its field there, as `ListNames` and
-`SumTotal`. Its parameters tell the rest: a parameter of a model type is a row to write, the scopes say how to read, and any other parameter is
-named after a field of the model, as `customerID` after `CustomerID`, and the rows must equal it in the field's column.
-The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not name a parameter: `memo` does.
+`SumTotal`. Its parameters tell the rest: a parameter of a model type is a row to write, the scopes say how to read, and
+any other parameter is named after a field of the model, as `customerID` after `CustomerID`, and the rows must equal it
+in the field's column. The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not name a parameter:
+`memo` does.
 
 | Verb     | Declared as                                                                            | Does                                                                                  |
 |----------|----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
@@ -779,12 +782,12 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 - A method you write yourself on the generated struct stays in your file. Of a recognized verb or named query, it
   also gets a private helper when it calls one on its receiver, in either package.
 
-A method tells its model by its result, its row, or its scopes. One that takes nothing but keys, as
-`Delete(ctx, id)`, reads or writes the table the repository is named after: `Order` reaches `orders`, the table of
-the model `Order`, as `//kanna:scopes` names it, and so does `OrderRepository`, whose `Repository` is left out. Name
-a repository in the singular, as its model: a plural, as `Orders`, is made `orderses`. The type of a key tells nothing, so renaming a field or adding a model
-never moves a method to another table. A repository named otherwise names its table with `table=`, which wins over
-its name, and one that names neither stops generation at such a method:
+A method tells its model by its result, its row, or its scopes. One that takes nothing but keys, as `Delete(ctx, id)`,
+reads or writes the table the repository is named after: `Order` reaches `orders`, the table of the model `Order`, as
+`//kanna:scopes` names it, and so does `OrderRepository`, whose `Repository` is left out. Name a repository in the
+singular, as its model: a plural, as `Orders`, is made `orderses`. The type of a key tells nothing, so renaming a field
+or adding a model never moves a method to another table. A repository named otherwise names its table with `table=`,
+which wins over its name, and one that names neither stops generation at such a method:
 
 ```go
 //kanna:repository table=todos
@@ -845,13 +848,13 @@ type Device struct {
 }
 ```
 
-The column is the one whose plural the field's name is, as for [reading the values of a column](#reading-the-values-of-a-column):
-`Topics` of `topic`, `Categories` of `category`, and `TopicIDs` of `topic_id`. The rows are related by the foreign key
-of the model's name and `_id`, as for a has many: `device_topics.device_id` to `devices`. A column of another name is
-named with `column=`, and a foreign key of other columns with `fk=`, whose columns go on after it:
-`orm:"relation=device_topics,column=name,fk=tenant_id,device_id"`. Generation checks the column's type and nullability
-against the slice element type, and stops when two columns have the plural, as `leaf` and `leave` do, until
-`column=` names one.
+The column is the one whose plural the field's name is, as for [reading the values of a
+column](#reading-the-values-of-a-column): `Topics` of `topic`, `Categories` of `category`, and `TopicIDs` of `topic_id`.
+The rows are related by the foreign key of the model's name and `_id`, as for a has many: `device_topics.device_id` to
+`devices`. A column of another name is named with `column=`, and a foreign key of other columns with `fk=`, whose
+columns go on after it: `orm:"relation=device_topics,column=name,fk=tenant_id,device_id"`. Generation checks the
+column's type and nullability against the slice element type, and stops when two columns have the plural, as `leaf` and
+`leave` do, until `column=` names one.
 
 A foreign key of more than one column, as from `device_topics (tenant_id, device_id)` to `devices (tenant_id, id)`,
 matches and groups by the whole pair. The parent model must hold both referenced columns. Related values are loaded in
@@ -880,12 +883,12 @@ stays `false`. The times a row is created and updated at are written by a clock:
 [Creation and update times](#creation-and-update-times).
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
-done. A row goes by one of two constant statements, with the column and without, as its value says. The rows of a
-bulk insert go by one statement, whether they give the column or not: on PostgreSQL, a row whose value is zero gets
-what the database assigns the column by, which `describe` records, as `nextval('orders_id_seq'::regclass)`; on
-MySQL, it gives `NULL`, which AUTO_INCREMENT assigns. MySQL reads a row back by `LAST_INSERT_ID()` when the
-database assigned its primary key, and by its primary key, or an upsert's conflict key, otherwise. MySQL counts the rows an `Update` changes, not those it finds, so when it changes none, kanna-orm asks
-whether the row is there before returning `orm.ErrNotFound`.
+done. A row goes by one of two constant statements, with the column and without, as its value says. The rows of a bulk
+insert go by one statement, whether they give the column or not: on PostgreSQL, a row whose value is zero gets what the
+database assigns the column by, which `describe` records, as `nextval('orders_id_seq'::regclass)`; on MySQL, it gives
+`NULL`, which AUTO_INCREMENT assigns. MySQL reads a row back by `LAST_INSERT_ID()` when the database assigned its
+primary key, and by its primary key, or an upsert's conflict key, otherwise. MySQL counts the rows an `Update` changes,
+not those it finds, so when it changes none, kanna-orm asks whether the row is there before returning `orm.ErrNotFound`.
 
 ### Database defaults
 
@@ -1069,11 +1072,11 @@ stored, err := repo.UpsertByEmail(ctx, c, changes)
 ```
 
 The examples' `Customer` repository signs customers up this way: one met gets their new name, and their phone only when
-they give one. The row's values go to the insert alone, so the change set writes NULL or an empty string as it writes any
-other value. An empty change set inserts the row when none has the key, and otherwise reads back the row met as it was.
-A change set writing a column of the conflict key returns an error and writes nothing: change a key by an `Update`. Only
-an upsert of one row takes a change set; generation stops at a bulk upsert taking one, whose values would go over every
-row it meets.
+they give one. The row's values go to the insert alone, so the change set writes NULL or an empty string as it writes
+any other value. An empty change set inserts the row when none has the key, and otherwise reads back the row met as it
+was. A change set writing a column of the conflict key returns an error and writes nothing: change a key by an `Update`.
+Only an upsert of one row takes a change set; generation stops at a bulk upsert taking one, whose values would go over
+every row it meets.
 
 The statement is the same whatever the change set holds: a column it can write takes the change set's value when it
 gives one, and keeps the stored value otherwise. The [update time](#creation-and-update-times) takes the clock's time
@@ -1172,7 +1175,10 @@ The [PostgreSQL](example/postgres) example copies the approvals of its orders th
 
 ### Updating selected columns
 
-Each scope generates a typed change set, named after the scope type but for a `Scope` it ends in, so that `OrderScope` has `OrderChangeSet` too; two scope types of a package whose change sets would share the name stop generation. `CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
+Each scope generates a typed change set, named after the scope type but for a `Scope` it ends in, so that `OrderScope`
+has `OrderChangeSet` too; two scope types of a package whose change sets would share the name stop generation.
+`CustomerChanges()` returns an empty `CustomerChangeSet`; setters add only the columns to write. Setters use the model
+field's Go type, so a nullable `Phone *string` accepts `nil` to store SQL NULL:
 
 ```go
 changes := scopes.CustomerChanges().
@@ -1180,7 +1186,9 @@ changes := scopes.CustomerChanges().
     SetPhone(nil)
 ```
 
-A column that is a number in Go and in the database, and never NULL, has `Add` besides `Set`: its field is of an integer or floating-point type, or a type based on one, and its column of an integer, decimal, or floating-point type. `Add` adds to the stored value within the statement, so that no update made between a read and the write is lost:
+A column that is a number in Go and in the database, and never NULL, has `Add` besides `Set`: its field is of an integer
+or floating-point type, or a type based on one, and its column of an integer, decimal, or floating-point type. `Add`
+adds to the stored value within the statement, so that no update made between a read and the write is lost:
 
 ```go
 changes := scopes.OrderLineChanges().AddQuantity(1)
@@ -1196,7 +1204,12 @@ UPDATE `order_lines` SET `quantity` = `quantity` + ? WHERE ...
 
 A nullable column has no `Add`, as NULL plus a number stays NULL, and neither has a number a `Valuer` stores as text.
 
-Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add` of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned columns, columns tagged `insertonly`, the [creation and update times](#creation-and-update-times), and relations have no setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty change set is an error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add`
+of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged.
+Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned
+columns, columns tagged `insertonly`, the [creation and update times](#creation-and-update-times), and relations have no
+setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty change set is an
+error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 
@@ -1209,13 +1222,24 @@ updated, err := repo.UpdatePhone(ctx, customerID,
     scopes.Customers().PhoneIsNull())
 ```
 
-An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes too, and may return the updated model. Returned models contain mapped table columns; related values are not loaded by an update.
+An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation
+rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in
+the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are
+supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes
+too, and may return the updated model. Returned models contain mapped table columns; related values are not loaded by an
+update.
 
-For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. A declaration returning updated models stops generation on MySQL, which has no UPDATE RETURNING; no separate readback is performed.
+For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows.
+Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the
+number of changed rows. A single-row update that matches unchanged values still succeeds. A declaration returning
+updated models stops generation on MySQL, which has no UPDATE RETURNING; no separate readback is performed.
 
 Both database examples update a customer's phone this way, and clear it with `SetPhone(nil)`.
 
-An Update of a change set taking scopes, and no unique key as parameters, selects its rows as a [`Delete` taking scopes](#selecting-rows-to-delete) does: its conditions, order, and page say which rows. Parameters naming columns that are no unique key, as `customerID` of `UpdateByCustomer(ctx, customerID, c, s...)`, are conditions, as those of a `Delete` are.
+An Update of a change set taking scopes, and no unique key as parameters, selects its rows as a [`Delete` taking
+scopes](#selecting-rows-to-delete) does: its conditions, order, and page say which rows. Parameters naming columns that
+are no unique key, as `customerID` of `UpdateByCustomer(ctx, customerID, c, s...)`, are conditions, as those of a
+`Delete` are.
 
 ```go
 Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
@@ -1227,11 +1251,22 @@ n, err := repo.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"), scopes.Or
     Limit(batch))
 ```
 
-Without pagination, the method updates all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and updates those rows in one statement, as a paged `Delete` does, on PostgreSQL and MySQL. Its rules are those of the `Delete`: a WHERE condition is required even when a limit is supplied; a page is chosen as a read of the same scope chooses it, an order ending in the key and a page of no order holding whichever rows the database reads first; `After` and `Before` select pages too; an order without a limit, offset, or cursor is rejected rather than ignored; relation-loading scopes are rejected; and a table with neither a primary key nor a non-null unique key cannot be paged. `Limit(0)` and no matching rows return a count of zero, or an empty slice, without `orm.ErrNotFound`. Ordering chooses which rows to update; the returned rows have no guaranteed order. Both database examples write a memo on the two oldest open orders with a limit.
+Without pagination, the method updates all matching rows. With `Limit` or `Offset`, it selects the target keys in a
+subquery and updates those rows in one statement, as a paged `Delete` does, on PostgreSQL and MySQL. Its rules are those
+of the `Delete`: a WHERE condition is required even when a limit is supplied; a page is chosen as a read of the same
+scope chooses it, an order ending in the key and a page of no order holding whichever rows the database reads first;
+`After` and `Before` select pages too; an order without a limit, offset, or cursor is rejected rather than ignored;
+relation-loading scopes are rejected; and a table with neither a primary key nor a non-null unique key cannot be paged.
+`Limit(0)` and no matching rows return a count of zero, or an empty slice, without `orm.ErrNotFound`. Ordering chooses
+which rows to update; the returned rows have no guaranteed order. Both database examples write a memo on the two oldest
+open orders with a limit.
 
-An Update taking a unique key, or a whole row, writes the one row its key names, so its scopes take conditions alone: ordering, paging, or loading relations in one is an error, as paging a `Get` is.
+An Update taking a unique key, or a whole row, writes the one row its key names, so its scopes take conditions alone:
+ordering, paging, or loading relations in one is an error, as paging a `Get` is.
 
-`//kanna:lock` on an Update of a change set taking scopes and no unique key locks its rows in that subquery, which the statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another holds. See [Locking rows](#locking-rows).
+`//kanna:lock` on an Update of a change set taking scopes and no unique key locks its rows in that subquery, which the
+statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another
+holds. See [Locking rows](#locking-rows).
 
 ### Selecting rows to delete
 
@@ -1248,11 +1283,19 @@ n, err := repo.Delete(ctx, scopes.Orders().
     Limit(batch))
 ```
 
-Without pagination, the method deletes all matching rows. With `Limit` or `Offset`, it selects the target keys in a subquery and deletes those rows in one statement. Composite primary keys and non-null unique keys are supported, on PostgreSQL and MySQL. A table without either kind of key can still use an ordinary condition-based delete, but cannot use paged deletion.
+Without pagination, the method deletes all matching rows. With `Limit` or `Offset`, it selects the target keys in a
+subquery and deletes those rows in one statement. Composite primary keys and non-null unique keys are supported, on
+PostgreSQL and MySQL. A table without either kind of key can still use an ordinary condition-based delete, but cannot
+use paged deletion.
 
-A WHERE condition is required even when a limit is supplied. A page of rows to delete is chosen as a read of the same scope chooses it: an order ends in the key, so that rows equal in it are chosen alike, and a page of no order holds whichever rows the database reads first, as in SQL. A page continued by `After` or `Before` selects them too. An order without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and no matching rows both return a count of zero without `orm.ErrNotFound`.
+A WHERE condition is required even when a limit is supplied. A page of rows to delete is chosen as a read of the same
+scope chooses it: an order ends in the key, so that rows equal in it are chosen alike, and a page of no order holds
+whichever rows the database reads first, as in SQL. A page continued by `After` or `Before` selects them too. An order
+without a limit, offset, or cursor is rejected rather than ignored. Relation-loading scopes are rejected. `Limit(0)` and
+no matching rows both return a count of zero without `orm.ErrNotFound`.
 
-A `Delete(ctx, id) error` by a key returns `orm.ErrNotFound` when no row has it; the shape of the method, not its name, tells the two apart. Both database examples delete the oldest matching order with a limit.
+A `Delete(ctx, id) error` by a key returns `orm.ErrNotFound` when no row has it; the shape of the method, not its name,
+tells the two apart. Both database examples delete the oldest matching order with a limit.
 
 On PostgreSQL, a slice result generates `DELETE … RETURNING` to return the deleted rows in the same statement:
 
@@ -1269,12 +1312,16 @@ deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
     Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
 ```
 
-The result can be the original model or a dedicated projection type with the same field mapping and type rules as read projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty, non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed order. MySQL has no `DELETE RETURNING`, so a slice result stops generation there.
+The result can be the original model or a dedicated projection type with the same field mapping and type rules as read
+projections. Only the result's columns appear in `RETURNING`; relations are not loaded. Key parameters can be combined
+with scopes. The condition and pagination requirements above still apply. No matches and `Limit(0)` return an empty,
+non-nil slice without `orm.ErrNotFound`. Ordering chooses which rows to delete; the returned rows have no guaranteed
+order. MySQL has no `DELETE RETURNING`, so a slice result stops generation there.
 
 ### Locking rows
 
-`//kanna:lock` has a `Get`, a `Find`, a `First`, or a `List` lock the rows it reads until the transaction ends, so that what was
-read still holds when it is written back:
+`//kanna:lock` has a `Get`, a `Find`, a `First`, or a `List` lock the rows it reads until the transaction ends, so that
+what was read still holds when it is written back:
 
 ```go
 //kanna:repository
@@ -1334,9 +1381,9 @@ n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderShip
 ```
 
 Its lock needs no transaction: outside one, it holds for the statement, and inside one, until the transaction ends, as
-that of any UPDATE does. An Update taking a unique key, or a table with neither a primary key nor a non-null unique
-key to select the rows by, stops generation. So does MySQL, whose UPDATE may still read, and wait for, rows the subquery passed
-over, as InnoDB locks the rows a statement scans.
+that of any UPDATE does. An Update taking a unique key, or a table with neither a primary key nor a non-null unique key
+to select the rows by, stops generation. So does MySQL, whose UPDATE may still read, and wait for, rows the subquery
+passed over, as InnoDB locks the rows a statement scans.
 
 - The lock belongs to the method, not to its scopes: they narrow, order, and page the rows as ever, and no caller can
   leave the lock out or change it.
@@ -1346,8 +1393,8 @@ over, as InnoDB locks the rows a statement scans.
   many wrappers deep.
 - A lock not given, by `nowait`, a timeout, or a deadlock, comes back as the database's error, wrapped, never as
   `orm.ErrNotFound`. Retrying is yours to do.
-- With `skip-locked`, `orm.ErrNotFound` from a `First` says that no free row matches, not that no row does. A `Get` or `Find`
-  would say a held row is not there, so `skip-locked` on one stops generation; use `nowait`.
+-  With `skip-locked`, `orm.ErrNotFound` from a `First` says that no free row matches, not that no row does. A `Get` or
+  `Find` would say a held row is not there, so `skip-locked` on one stops generation; use `nowait`.
 - The relations a scope loads are read without a lock.
 - Only rows that exist are sure to be locked, so do not count on a lock to keep a row from being inserted.
 - PostgreSQL also locks the rows an `Offset` skips. InnoDB locks the rows it scans, not those it returns, so a read with
@@ -1355,11 +1402,15 @@ over, as InnoDB locks the rows a statement scans.
 - `//kanna:lock` anywhere but right above such a method gets a warning, as nothing reads it and the method is generated
   without the lock. One on a method a [hand-written query](#hand-written-sql) or your own code alone implements stops
   generation: write the lock there. A method delegating to a generated helper keeps its lock on that helper.
-- A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such as `GetForUpdateForm`, says nothing of a lock.
+-  A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a
+  warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such
+  as `GetForUpdateForm`, says nothing of a lock.
 
 ### Hooks
 
-Generated constructors accept optional repository options. `option.WithHook` takes a `hook.Hook`, a Before and an After a repository calls around each statement it runs, with no logging or tracing library dependency. Either may be nil. To log queries, give an After:
+Generated constructors accept optional repository options. `option.WithHook` takes a `hook.Hook`, a Before and an After
+a repository calls around each statement it runs, with no logging or tracing library dependency. Either may be nil. To
+log queries, give an After:
 
 ```go
 logQuery := func(ctx context.Context, e hook.Execution) {
@@ -1369,13 +1420,40 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each statement loading relations. A [Copy](#copying-many-rows) is seen as its COPY statement, as `COPY "events" ("kind", "tags", "note") FROM STDIN`, with no `Args`. A condition or validation error that prevents SQL from running calls no hook.
+A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context
+the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its
+cancellation and deadline apply to the statement. An After receives the context its own Before returned and a
+`hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or
+on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before
+`mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each
+statement loading relations. A [Copy](#copying-many-rows) is seen as its COPY statement, as
+`COPY "events" ("kind", "tags", "note") FROM STDIN`, with no `Args`. A condition or validation error that prevents SQL
+from running calls no hook.
 
-Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, no time is measured. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` on pgx, with `r.db.CopyFrom` in a package where kanna-orm writes a Copy, and `r.db.ExecContext`, `r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns, before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their rows through the hooks, on either driver. Both database examples give an After that prints each statement.
+Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with
+the context the one before returned, and each After in the reverse order, with the context of its own Before. So a
+tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever
+hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, no time is measured.
+Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify
+them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and
+MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its
+statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and
+`r.db.QueryRow` on pgx, with `r.db.CopyFrom` in a package where kanna-orm writes a Copy, and `r.db.ExecContext`,
+`r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can
+read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns,
+before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their
+rows through the hooks, on either driver. Both database examples give an After that prints each statement.
 
 ### Reading the values of a column
 
-A `Get`, a `First`, a `Find`, or a `List` returning the values of a column rather than rows reads that column: the one of the field its name says after the verb, as `GetName` reads `Name`, or, of a `List`, its plural, made as that of a table's name, as `ListNames` reads `Name` and `ListCategories` reads `Category`, or, of a field ending in an acronym, with an s, as `ListCustomerIDs` reads `CustomerID`. It returns a value of the field's type, a pointer to one of a `Find`, or a slice of them of a `List`, as a projection does. The name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering, limits, offsets, cursors, and `//kanna:lock` work as for rows; a scope loading a relation is an error, as there is no row to load it into. Duplicate values are preserved and no matching rows returns an empty slice.
+A `Get`, a `First`, a `Find`, or a `List` returning the values of a column rather than rows reads that column: the one
+of the field its name says after the verb, as `GetName` reads `Name`, or, of a `List`, its plural, made as that of a
+table's name, as `ListNames` reads `Name` and `ListCategories` reads `Category`, or, of a field ending in an acronym,
+with an s, as `ListCustomerIDs` reads `CustomerID`. It returns a value of the field's type, a pointer to one of a
+`Find`, or a slice of them of a `List`, as a projection does. The name says what it reads, and nothing more: which rows,
+as ever, are told by its keys and scopes, so a name such as `ListNamesByPrice` stops generation. Conditions, ordering,
+limits, offsets, cursors, and `//kanna:lock` work as for rows; a scope loading a relation is an error, as there is no
+row to load it into. Duplicate values are preserved and no matching rows returns an empty slice.
 
 ```go
 ListNames(ctx context.Context, s ...scopes.Product) ([]string, error)
@@ -1387,7 +1465,8 @@ names, err := products.ListNames(ctx, scopes.Products().PriceLt(2000).PriceAsc()
 
 Both database examples read the affordable product names this way.
 
-A name may also end in its lock, which is taken off before the field is read, so `ListIDsForKeyShare` with `//kanna:lock key-share` reads `ID` and locks its rows `FOR KEY SHARE`:
+A name may also end in its lock, which is taken off before the field is read, so `ListIDsForKeyShare` with
+`//kanna:lock key-share` reads `ID` and locks its rows `FOR KEY SHARE`:
 
 ```go
 //kanna:lock key-share
@@ -1396,7 +1475,8 @@ ListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, err
 
 ### Reading a projection
 
-A `Get...`, `Find...`, `First...`, or `List...` method may return a different named struct while taking the original model's scopes. The result type selects the columns; it needs no scope of its own:
+A `Get...`, `Find...`, `First...`, or `List...` method may return a different named struct while taking the original
+model's scopes. The result type selects the columns; it needs no scope of its own:
 
 ```go
 type ProductSummary struct {
@@ -1419,7 +1499,8 @@ requesting relation loading is rejected rather than silently ignored. A projecti
 
 ### Joining a projection
 
-A projection reads the columns of a table its table refers to by a nested struct. A struct is an INNER JOIN, and a pointer to one a LEFT JOIN, nil when no row joins:
+A projection reads the columns of a table its table refers to by a nested struct. A struct is an INNER JOIN, and a
+pointer to one a LEFT JOIN, nil when no row joins:
 
 ```go
 type MembershipSummary struct {
@@ -1439,18 +1520,32 @@ INNER JOIN users AS "user" ON "user".id = memberships.user_id
 LEFT JOIN users AS inviter ON inviter.id = memberships.inviter_id
 ```
 
-- The table joined is the one the foreign key of the field's name and `_id` refers to, as for a [relation](#relations). A foreign key of other columns is named by a tag, as `orm:"fk=created_by"`, or `orm:"fk=tenant_id,customer_id"` for more than one.
-- The fields of a nested struct match the fields of the model of the table joined, by name or by a column tag, as those of the projection match the original model's. The table joined needs a scope type, which tells its model; its conditions and relations are not brought in.
-- A table goes by the name of its field in snake case, so one can be joined twice, or to itself, as `Parent *struct{ Name string }` of categories by `parent_id`. A name the table read or another field goes by already stops generation.
-- A LEFT JOIN tells a row joining from none by the column the foreign key refers to, so a column of the row that is NULL reads as nil or as the zero `nullzero` makes it, and the struct is still there.
-- The nested type is a struct of its own, not a model: a model is read by a [relation](#relations). A struct in a nested struct, a table that no foreign key of the table read refers to, and a join of a Delete are written by hand.
-- The scope's conditions read the table read alone, and its order and limit follow the joins, so rows an INNER JOIN leaves out are not counted, and `First` reads the first row of the join. The order is by columns of the table read. A projection joining a table takes no `//kanna:lock`: lock the rows by reading the model, or write the query by hand, as `FOR UPDATE OF` locks the rows of the tables meant.
+-  The table joined is the one the foreign key of the field's name and `_id` refers to, as for a [relation](#relations).
+  A foreign key of other columns is named by a tag, as `orm:"fk=created_by"`, or `orm:"fk=tenant_id,customer_id"` for
+  more than one.
+-  The fields of a nested struct match the fields of the model of the table joined, by name or by a column tag, as those
+  of the projection match the original model's. The table joined needs a scope type, which tells its model; its
+  conditions and relations are not brought in.
+-  A table goes by the name of its field in snake case, so one can be joined twice, or to itself, as
+  `Parent *struct{ Name string }` of categories by `parent_id`. A name the table read or another field goes by already
+  stops generation.
+-  A LEFT JOIN tells a row joining from none by the column the foreign key refers to, so a column of the row that is
+  NULL reads as nil or as the zero `nullzero` makes it, and the struct is still there.
+-  The nested type is a struct of its own, not a model: a model is read by a [relation](#relations). A struct in a
+  nested struct, a table that no foreign key of the table read refers to, and a join of a Delete are written by hand.
+-  The scope's conditions read the table read alone, and its order and limit follow the joins, so rows an INNER JOIN
+  leaves out are not counted, and `First` reads the first row of the join. The order is by columns of the table read. A
+  projection joining a table takes no `//kanna:lock`: lock the rows by reading the model, or write the query by hand, as
+  `FOR UPDATE OF` locks the rows of the tables meant.
 
 Both database examples read the name of an order's customer into an order summary this way.
 
 ### Reading aggregates
 
-A `Sum`, a `Min`, a `Max`, or an `Avg` reads the sum, the least value, the greatest value, or the average of the column of the field its name says after the verb, as `SumTotal` reads the sum of `Total`. As for [the values of a column](#reading-the-values-of-a-column), the name says what it reads, and nothing more: which rows, as ever, are told by its keys and scopes, so a name such as `SumTotalByStatus` stops generation.
+A `Sum`, a `Min`, a `Max`, or an `Avg` reads the sum, the least value, the greatest value, or the average of the column
+of the field its name says after the verb, as `SumTotal` reads the sum of `Total`. As for [the values of a
+column](#reading-the-values-of-a-column), the name says what it reads, and nothing more: which rows, as ever, are told
+by its keys and scopes, so a name such as `SumTotalByStatus` stops generation.
 
 ```go
 SumTotal(ctx context.Context, s ...scopes.Order) (int64, error)
@@ -1462,13 +1557,27 @@ AvgTotal(ctx context.Context, customerID model.CustomerID) (float64, error)
 SELECT coalesce(sum(total)::bigint, 0) FROM orders WHERE ...
 ```
 
-- `Sum` and `Avg` read a column of numbers, held by a field of an integer or a floating-point type, or of a type made of one; `Min` and `Max` read a column of numbers, strings, or times. A column of another kind stops generation. MySQL compares the values of an `ENUM` column as strings, not in the order the type declares them.
-- `Sum`, `Min`, and `Max` return a value of the field's type, or a pointer to one: of a field `*int64`, as a column that may be NULL has, an `int64` or an `*int64`. `Avg` returns a `float64` or a `float32`, or a pointer to one, as the average of integers is seldom one. Any other type stops generation. A sum too large for its type is an error when the method runs, not a value cut short.
-- When no row matches, or the column is NULL in every row matched, one returning a value returns 0 of a `Sum`, and `orm.ErrNotFound` of a `Min`, a `Max`, or an `Avg`, as a `Get` does; one returning a pointer returns nil, as a `Find` does.
-- Their scopes give their conditions alone, as those of `Count` do: a scope that orders, pages, or loads a relation makes them return an error.
-- On PostgreSQL, a sum of integers is cast to `bigint`, as the sum of `bigint`s is `numeric`, and an average to `double precision`. On MySQL, an average is cast to `DOUBLE`, as one of integers is otherwise a `DECIMAL` of four decimal places; a sum of integers stays a `DECIMAL`, which database/sql reads into the field's type, failing if it does not fit.
+-  `Sum` and `Avg` read a column of numbers, held by a field of an integer or a floating-point type, or of a type made
+  of one; `Min` and `Max` read a column of numbers, strings, or times. A column of another kind stops generation. MySQL
+  compares the values of an `ENUM` column as strings, not in the order the type declares them.
+-  `Sum`, `Min`, and `Max` return a value of the field's type, or a pointer to one: of a field `*int64`, as a column
+  that may be NULL has, an `int64` or an `*int64`. `Avg` returns a `float64` or a `float32`, or a pointer to one, as the
+  average of integers is seldom one. Any other type stops generation. A sum too large for its type is an error when the
+  method runs, not a value cut short.
+-  When no row matches, or the column is NULL in every row matched, one returning a value returns 0 of a `Sum`, and
+  `orm.ErrNotFound` of a `Min`, a `Max`, or an `Avg`, as a `Get` does; one returning a pointer returns nil, as a `Find`
+  does.
+-  Their scopes give their conditions alone, as those of `Count` do: a scope that orders, pages, or loads a relation
+  makes them return an error.
+-  On PostgreSQL, a sum of integers is cast to `bigint`, as the sum of `bigint`s is `numeric`, and an average to
+  `double precision`. On MySQL, an average is cast to `DOUBLE`, as one of integers is otherwise a `DECIMAL` of four
+  decimal places; a sum of integers stays a `DECIMAL`, which database/sql reads into the field's type, failing if it
+  does not fit.
 
-A projection read by a `List` may hold aggregates of groups of rows. A field named `Count`, an `int64`, holds the number of the rows of a group, and one named `Sum`, `Min`, `Max`, or `Avg` followed by the name of a field of the model holds that aggregate of its column, of a type its verb returns. The rows are grouped by the other fields, which name the model's columns as those of any projection do:
+A projection read by a `List` may hold aggregates of groups of rows. A field named `Count`, an `int64`, holds the number
+of the rows of a group, and one named `Sum`, `Min`, `Max`, or `Avg` followed by the name of a field of the model holds
+that aggregate of its column, of a type its verb returns. The rows are grouped by the other fields, which name the
+model's columns as those of any projection do:
 
 ```go
 type StatusCount struct {
@@ -1483,9 +1592,12 @@ ListStatusCounts(ctx context.Context, s ...scopes.Order) ([]StatusCount, error)
 SELECT status, count(*) FROM orders WHERE ... GROUP BY status
 ```
 
-- A group has rows, but a column that may be NULL may be NULL in every row of one: a `Min`, a `Max`, or an `Avg` of it is a pointer, nil for such a group, and a `Sum` of it is 0, or nil of a pointer.
+-  A group has rows, but a column that may be NULL may be NULL in every row of one: a `Min`, a `Max`, or an `Avg` of it
+  is a pointer, nil for such a group, and a `Sum` of it is 0, or nil of a pointer.
 - The groups come in no order, as SQL returns them. The scopes give their conditions alone, as those of `Count` do.
-- A projection of aggregates is read by a `List`, groups by one field or more, joins no table, and takes no `//kanna:lock`; generation stops otherwise. A field of an aggregate takes no tag, and a model with a field named as one, as `Count`, stops generation, as the projection could read either.
+-  A projection of aggregates is read by a `List`, groups by one field or more, joins no table, and takes no
+  `//kanna:lock`; generation stops otherwise. A field of an aggregate takes no tag, and a model with a field named as
+  one, as `Count`, stops generation, as the projection could read either.
 - HAVING, an order by an aggregate, and other shapes are written in [SQL](#hand-written-sql) returning a DTO.
 
 Both database examples count their orders by status this way.
@@ -1691,9 +1803,9 @@ fail is written elsewhere, such as in a scope of your own, where that is. It fin
   `Min`, `Max`, `Avg`, a `List` of a projection of aggregates, an `Update` taking a unique key or a whole row, and the
   alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a relation to load given to a projection, a read of
   one column, a `Delete`, or an `Update` with a change set;
-- a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
-  or an `Update` of a change set taking no unique key, ordered without `Limit` or `Offset`, or paged on a table with neither a
-  primary key nor a non-null unique key;
+-  a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
+  or an `Update` of a change set taking no unique key, ordered without `Limit` or `Offset`, or paged on a table with
+  neither a primary key nor a non-null unique key;
 - `After` or `Before` in the scope a relation is loaded by, and `Limit` or `Offset` in that of a relation to one row;
 - a negative constant given to `Limit` or `Offset`; a change set that assigns nothing, given to an `Update`; one that
   assigns a column its method cannot write, such as the one an upsert meets its row by.
@@ -1807,10 +1919,10 @@ The packages default to the one in the current directory, so `//go:generate go t
 with every kanna generator, `KANNA_CHECK=1 go generate ./...` checks instead of writing. A run that succeeds prints
 nothing but its warnings; one that finds neither a `//kanna:scope` type nor a `//kanna:repository` interface says so. A
 package whose scope declarations are all gone has its `scopes_gen.go` removed. A destination whose repository interfaces
-are all gone has its `repository_gen.go` removed, unless code in the packages the run loads still calls what it declares; a file of that name without the
-generated-code header is never touched. The `go generate` that removes one ends with
-`open ...: no such file or directory`, from go generate itself, which lists a package's files before it runs the
-generators; the file is gone as it should be ([golang/go#36068](https://github.com/golang/go/issues/36068)).
+are all gone has its `repository_gen.go` removed, unless code in the packages the run loads still calls what it
+declares; a file of that name without the generated-code header is never touched. The `go generate` that removes one
+ends with `open ...: no such file or directory`, from go generate itself, which lists a package's files before it runs
+the generators; the file is gone as it should be ([golang/go#36068](https://github.com/golang/go/issues/36068)).
 
 ## Example
 
