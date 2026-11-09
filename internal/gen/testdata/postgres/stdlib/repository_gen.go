@@ -1088,6 +1088,23 @@ WHERE id = $10`
 	return nil
 }
 
+func (r OrderRepository) UpdateReturning(ctx context.Context, o model.Order) (model.Order, error) {
+	const q = `UPDATE orders
+SET customer_id = $1, status = $2, placed_at = $3, note = $4, total = $5, paid = $6, contact = $7, receipt = $8, "order" = $9
+WHERE id = $10
+RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
+	var row model.Order
+	err := r.db.queryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position, o.ID).
+		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Order{}, fmt.Errorf("orders with id %v: %w", o.ID, orm.ErrNotFound)
+	}
+	if err != nil {
+		return model.Order{}, fmt.Errorf("update orders: %w", err)
+	}
+	return row, nil
+}
+
 func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID, c scopes.OrderChangeSet, s ...scopes.Order) error {
 	qs := make([]impl.Of[model.Order], len(s))
 	for i, s := range s {

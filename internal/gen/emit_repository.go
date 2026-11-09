@@ -336,7 +336,7 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	case verbInsert, verbUpsert:
 		e.insert(m, sc, recv, sig)
 	case verbUpdate:
-		if m.changes != "" || m.scoped || m.returns != returnsNone {
+		if m.changes != "" || m.scoped {
 			e.updateChanges(m, sc, recv, sig)
 		} else {
 			e.update(m, sc, recv, sig)
@@ -735,8 +735,8 @@ func (e repoEmitter) insertTail(m repoMethod, first int) string {
 	return tail.String()
 }
 
-// update writes the body of m, an Update: its row written over the one with its key, or orm.ErrNotFound when none
-// has it.
+// update writes the body of m, an Update: its row written over the one with its key, and read back by RETURNING when
+// m returns it, or orm.ErrNotFound when none has it.
 func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig signature) {
 	table := sqlName(e.d, m.target.table)
 	updated, key := m.updated(), m.rowKey()
@@ -753,13 +753,32 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	}
 	where := strings.Join(conds, " AND ")
 	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + where
+	notFound := sig.mapped(e.notFound(m.target.table, key, keyArgs))
+
+	if m.returns == returnsRow { // on PostgreSQL alone, as MySQL has no UPDATE RETURNING
+		model := types.TypeString(m.model, e.f.Qualifier)
+		q, row, err := sc.Name("q"), sc.Name("row"), sc.Name("err")
+		wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "update "+m.target.table+": %w") + ", " + err +
+			")")
+		e.printf("const %s = %s\n", q, goString(query+"\nRETURNING "+e.columnList(m.columns)))
+		e.printf("var %s %s\n", row, model)
+		dests, assignments := e.scanTargets(sc, row, m.columns)
+		e.printf("%s := %s.db.%s(%s).\nScan(%s)\n", err, recv, e.queryRow,
+			strings.Join(append([]string{sig.ctx, q}, args...), ", "), strings.Join(dests, ", "))
+		e.printf("if %s.Is(%s, %s.ErrNoRows) {\nreturn %s{}, %s\n}\n", e.f.Import("errors", "errors"), err,
+			e.driverPkg(), model, notFound)
+		e.printf("if %s != nil {\nreturn %s{}, %s\n}\n", err, model, wrap)
+		e.assignScanned(assignments)
+		e.printf("return %s, nil\n", row)
+		return
+	}
 
 	q, res, err := sc.Name("q"), e.execResult(sc), sc.Name("err")
 	wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "update "+m.target.table+": %w") + ", " + err + ")")
 	e.printf("const %s = %s\n", q, goString(query))
 	e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s)\nif %[2]s != nil {\nreturn %[6]s\n}\n", res, err, recv, e.exec,
 		strings.Join(append([]string{sig.ctx, q}, args...), ", "), wrap)
-	affected, notFound := e.rowsAffected(sc, res, err, "", wrap), sig.mapped(e.notFound(m.target.table, key, keyArgs))
+	affected := e.rowsAffected(sc, res, err, "", wrap)
 	if e.d != snapshot.MySQL {
 		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound)
 		return
