@@ -1233,7 +1233,6 @@ An Update taking a unique key, or a whole row, writes the one row its key names,
 
 `//kanna:lock` on an Update of a change set taking scopes and no unique key locks its rows in that subquery, which the statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another holds. See [Locking rows](#locking-rows).
 
-
 ### Selecting rows to delete
 
 A `Delete` taking scopes returns the number of rows it deleted. Its conditions, order, and page say which rows:
@@ -1417,7 +1416,6 @@ relations in the result stop generation. Filters, ordering, paging, and locks re
 row returns what it does of the model: `orm.ErrNotFound` of a `Get` or a `First`, and nil of a `Find`. A scope
 requesting relation loading is rejected rather than silently ignored. A projection may hold
 [aggregates](#reading-aggregates) of groups of rows; other expressions can still use hand-written SQL returning a DTO.
-
 
 ### Joining a projection
 
