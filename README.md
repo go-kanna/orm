@@ -687,7 +687,7 @@ A transaction is begun and committed as it would be without kanna-orm: give the 
 ### One package
 
 The models, their scope types, the repositories, and their implementations can all be one package. This document
-shows a package for each, and one package changes no more than the names below.
+shows a package for each, and one package changes no more than what is listed below.
 
 ```go
 package store
@@ -720,8 +720,9 @@ type OrderRepository interface {
 
 ### Methods
 
-What a method does is told by the verb its name starts with; what follows the verb is yours to choose. Its parameters
-tell the rest: a parameter of a model type is a row to write, the scopes say how to read, and any other parameter is
+What a method does is told by the verb its name starts with. What follows the verb is yours to choose for a method
+reading or writing rows, while a method reading a column or an aggregate names its field there, as `ListNames` and
+`SumTotal`. Its parameters tell the rest: a parameter of a model type is a row to write, the scopes say how to read, and any other parameter is
 named after a field of the model, as `customerID` after `CustomerID`, and the rows must equal it in the field's column.
 The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not name a parameter: `memo` does.
 
@@ -1208,7 +1209,7 @@ updated, err := repo.UpdatePhone(ctx, customerID,
     scopes.Customers().PhoneIsNull())
 ```
 
-An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes too, and may return the updated model. Returned models contain mapped table columns; related values and preloads are not loaded by an update.
+An Update of a change set selects the rows it writes by keys, scopes, or both; one taking neither stops generation rather than write every row. On PostgreSQL, a model result generates `UPDATE ... RETURNING` and reads the stored row in the same statement. A failed condition or missing key returns `orm.ErrNotFound`. Composite and alternate unique keys are supported. Returning only `error` updates the row without reading it back. A whole-model `Update` takes condition scopes too, and may return the updated model. Returned models contain mapped table columns; related values are not loaded by an update.
 
 For multiple rows, declare `(int64, error)` for the affected count or `([]model.Customer, error)` for the returned rows. Returned rows have no guaranteed order. MySQL supports change sets with `error` or an affected count; its count is the number of changed rows. A single-row update that matches unchanged values still succeeds. MySQL declarations returning updated models fail generation because MySQL has no UPDATE RETURNING; no separate readback is performed.
 
@@ -1369,7 +1370,7 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each preload statement. A [Copy](#copying-many-rows) is seen as its COPY statement, as `COPY "events" ("kind", "tags", "note") FROM STDIN`, with no `Args`. A condition or validation error that prevents SQL from running calls no hook.
+A Before receives a `hook.Query`, with `SQL string` and `Args []any`, as the statement starts, and returns the context the statement runs with: a tracer can start a span there. Return the context received, or one derived from it; its cancellation and deadline apply to the statement. An After receives the context its own Before returned and a `hook.Execution`, the `Query` with `Duration time.Duration` and `Err error`, after execution and result consumption, or on a query, scan, or iteration error. Duration includes reading the results, not the Befores. Errors are observed before `mapError`. Each executed statement is reported once, including generated CRUD, SQL from `.sql` files, and each statement loading relations. A [Copy](#copying-many-rows) is seen as its COPY statement, as `COPY "events" ("kind", "tags", "note") FROM STDIN`, with no `Args`. A condition or validation error that prevents SQL from running calls no hook.
 
 Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with the context the one before returned, and each After in the reverse order, with the context of its own Before. So a tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, no time is measured. Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its statements on `r.db`, the one field of the implementation. Its methods are those of DBTX: `r.db.Exec`, `r.db.Query`, and `r.db.QueryRow` on pgx, with `r.db.CopyFrom` in a package where kanna-orm writes a Copy, and `r.db.ExecContext`, `r.db.QueryContext`, and `r.db.QueryRowContext` on `database/sql`. As `*sql.Rows` and `*sql.Row` are types nothing can read through, the hooks see a query on `database/sql` done as `r.db.QueryContext` or `r.db.QueryRowContext` returns, before its rows are read: its `Duration` and `Err` leave the reading out. The methods kanna-orm generates read their rows through the hooks, on either driver. Both database examples give an After that prints each statement.
 
@@ -1752,9 +1753,9 @@ a slice on Go 1.27 or later, where pgx/stdlib scans each column itself.
   called.
 - Take a zero value for the column's default: a zero is written as a value, and `orm:",default"` says the database
   assigns one.
-- Generate arbitrary joins or nested query shapes, such as subqueries, CTEs, or UNION, from scopes. INNER JOINs through
-  foreign keys or explicit column equalities are supported for read projections, and so is grouping by the fields of a
-  projection of aggregates; other query shapes can use [hand-written SQL](#hand-written-sql).
+- Generate arbitrary joins or nested query shapes, such as subqueries, CTEs, or UNION, from scopes. Joins through
+  foreign keys are supported for read projections, INNER or LEFT, and so is grouping by the fields of a projection of
+  aggregates; other query shapes can use [hand-written SQL](#hand-written-sql).
 - Run one generated package on both databases: the types are those one database answers.
 - Create or apply migrations. Use goose or any other tool, and describe the result.
 

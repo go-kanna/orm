@@ -530,7 +530,7 @@ func NewOrder(db DBTX, opts ...option.Option) Order
 
 ### 1 つのパッケージにまとめる
 
-モデル、そのスコープ型、repository とその実装を、すべて 1 つのパッケージに置けます。この文書ではそれぞれを別のパッケージに置いた形で説明しますが、1 つにまとめても変わるのは次の名前だけです。
+モデル、そのスコープ型、repository とその実装を、すべて 1 つのパッケージに置けます。この文書ではそれぞれを別のパッケージに置いた形で説明しますが、1 つにまとめても変わるのは次の点だけです。
 
 ```go
 package store
@@ -558,7 +558,7 @@ type OrderRepository interface {
 
 ### メソッド
 
-メソッドの動作は、名前の先頭の動詞で決まります。動詞の後ろは自由に決められます。残りはパラメータで決まります。モデル型のパラメータは書き込む行、スコープは読み込み方を表します。それ以外のパラメータは、`CustomerID` に対する `customerID` のようにモデルのフィールドの名前で、そのフィールドのカラムの値がパラメータと等しい行が対象になります。タグで決まるカラム名（`Memo` の `orm:"note"` など）はパラメータの名前になりません。この場合の名前は `memo` です。
+メソッドの動作は、名前の先頭の動詞で決まります。行を読み書きするメソッドでは、動詞の後ろは自由に決められます。カラムの値や集計を読むメソッドでは、`ListNames` や `SumTotal` のように、動詞の後ろでフィールドを名指します。残りはパラメータで決まります。モデル型のパラメータは書き込む行、スコープは読み込み方を表します。それ以外のパラメータは、`CustomerID` に対する `customerID` のようにモデルのフィールドの名前で、そのフィールドのカラムの値がパラメータと等しい行が対象になります。タグで決まるカラム名（`Memo` の `orm:"note"` など）はパラメータの名前になりません。この場合の名前は `memo` です。
 
 | 動詞 | 宣言 | 動作 |
 |---|---|---|
@@ -922,7 +922,7 @@ updated, err := repo.UpdatePhone(ctx, customerID,
     scopes.Customers().PhoneIsNull())
 ```
 
-change set の Update は、書き換える行をキーか scope（または両方）で選びます。どちらも受け取らない宣言は、全行を書き換えるのではなく生成時エラーにします。PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。モデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値や preload は読み込みません。
+change set の Update は、書き換える行をキーか scope（または両方）で選びます。どちらも受け取らない宣言は、全行を書き換えるのではなく生成時エラーにします。PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。モデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値は読み込みません。
 
 複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言は生成エラーとし、別 SELECT による読み戻しは行いません。
 
@@ -1067,7 +1067,7 @@ logQuery := func(ctx context.Context, e hook.Execution) {
 repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 ```
 
-Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・各 Preload の SQL を、実行した文ごとに一度呼びます。[Copy](#複数行の-copy) は、`COPY "events" ("kind", "tags", "note") FROM STDIN` のような COPY の文として、`Args` なしで見えます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
+Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・関連を読み込む SQL を、実行した文ごとに一度呼びます。[Copy](#複数行の-copy) は、`COPY "events" ("kind", "tags", "note") FROM STDIN` のような COPY の文として、`Args` なしで見えます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
 フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`（kanna-orm が Copy を書くパッケージでは `r.db.CopyFrom` も）、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は間に入って読めない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
 
@@ -1365,7 +1365,7 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 
 - 変更の追跡、アイデンティティマップの保持、遅延読み込み。メソッドは、呼ばれたときに、宣言が言う文を実行します。
 - ゼロ値をカラムのデフォルト値とみなすこと。ゼロ値は値として書き、データベースが値を割り当てることは `orm:",default"` で言います。
-- 任意の JOIN や、副問合せ・CTE・UNION のようなネストするクエリを scope から組み立てること。読み取り projection の外部キーまたは明示した列の等値条件による INNER JOIN と、集計の projection のフィールドによるグループ化に対応し、それ以外は[手書きの SQL](#手書きの-sql) を使います。
+- 任意の JOIN や、副問合せ・CTE・UNION のようなネストするクエリを scope から組み立てること。読み取り projection での外部キーによる INNER JOIN と LEFT JOIN、集計の projection のフィールドによるグループ化には対応し、それ以外は[手書きの SQL](#手書きの-sql) を使います。
 - 1 つの生成パッケージを PostgreSQL と MySQL の両方で動かすこと。型は、1 つのデータベースが答えたものです。
 - マイグレーションの作成や適用。goose などのツールを使い、その結果を `describe` してください。
 
