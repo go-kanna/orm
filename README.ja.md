@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/tag/go-kanna/orm?label=release&sort=semver)](https://github.com/go-kanna/orm/tags)
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
 
-kanna-orm は、リポジトリのインターフェースの裏側で動くデータベースのコードを生成します。インターフェースと、それが読み取るテーブルごとのスコープ型を宣言すると、kanna-orm は実装を生成し、クエリの絞り込み、並べ替え、ページング、行が参照する先の読み込みの方法ごとに、スコープ型のメソッドも生成します。SQL はリテラルとして生成コードに残り、スキーマと合わないカラムや型で止まるのはリクエストではなく、生成かコンパイルです。
+kanna-orm は、repository のインターフェースの裏側で動くデータベースのコードを生成します。インターフェースと、それが読み取るテーブルごとのスコープ型を宣言すると、kanna-orm は実装を生成し、クエリの絞り込み、並べ替え、ページング、行が参照する先の読み込みの方法ごとに、スコープ型のメソッドも生成します。SQL はリテラルとして生成コードに残り、スキーマと合わないカラムや型で止まるのはリクエストではなく、生成かコンパイルです。
 
 [kanna](https://go-kanna.github.io/ja/) コードジェネレータファミリーの 1 つです。Go 1.26 以上と、pgx か database/sql 経由の PostgreSQL、または database/sql 経由の MySQL 8.4 以上が必要です。
 
@@ -28,7 +28,7 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 | `orm/pgx`    | pgx で repository を動かす `DBTX`。DI で 1 度だけ渡す |
 | `orm/stdlib` | `database/sql` で repository を動かす `DBTX`。同上 |
 
-`orm/change` の `Set` は、生成される change set の `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
+`orm/change` の `Set` は、生成される変更セットの `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
 
 ## 使い方
 
@@ -50,7 +50,7 @@ package scopes
 //kanna:scopes model-package=../model
 ```
 
-さらに、コードの他の部分が依存するリポジトリを宣言します:
+さらに、コードの他の部分が依存する repository を宣言します:
 
 ```go
 package repository
@@ -163,11 +163,11 @@ $ go generate ./...
   use List, or add a unique index on orders (status)
 ```
 
-リポジトリのインターフェースが参照する `scopes.Order` は `//kanna:scopes` が生成するまで存在しないので、初回の実行前にはコンパイルが通りません。それでも実行は止まりません。kanna-orm はこのディレクティブから型を判断するので、`go generate` が 2 つのパッケージをどちらの順で処理しても構いません。コードが生成前のメソッドを呼び出していても構いません。その実行で生成されるメソッドがないと述べるだけのエラーでは、実行は止まりません。
+repository のインターフェースが参照する `scopes.Order` は `//kanna:scopes` が生成するまで存在しないので、初回の実行前にはコンパイルが通りません。それでも実行は止まりません。kanna-orm はこのディレクティブから型を判断するので、`go generate` が 2 つのパッケージをどちらの順で処理しても構いません。コードが生成前のメソッドを呼び出していても構いません。その実行で生成されるメソッドがないと述べるだけのエラーでは、実行は止まりません。
 
 ## スナップショット
 
-`describe` はデータベースに接続し、テーブルごとに、カラム（型、NULL になりうるか、identity、serial、AUTO_INCREMENT のカラムのようにデータベースが自分で値を割り当てるか）、主キー、ユニークキー、外部キーを記録します。さらに、引数のパッケージと、引数が指すディレクトリのうちまだパッケージがないもの（初回の生成前のリポジトリの出力先など）にある[手書きのクエリとスコープ](#手書きの-sql)をそれぞれプリペアし、パラメータと結果カラムの型を記録します。`describe` が実行するものは、何も書き込みません。
+`describe` はデータベースに接続し、テーブルごとに、カラム（型、NULL になりうるか、identity、serial、AUTO_INCREMENT のカラムのようにデータベースが自分で値を割り当てるか）、主キー、一意キー、外部キーを記録します。さらに、引数のパッケージと、引数が指すディレクトリのうちまだパッケージがないもの（初回の生成前の repository の出力先など）にある[手書きのクエリとスコープ](#手書きの-sql)をそれぞれプリペアし、パラメータと結果カラムの型を記録します。`describe` が実行するものは、何も書き込みません。
 
 データベースは `-database-url` で指定したもの、指定がなければ `$DATABASE_URL` です:
 
@@ -182,7 +182,7 @@ $ go generate ./...
 |---|---|
 | カラムの型（宣言した長さや精度を含む）: `varchar(100)`, `numeric(10,2)` | デフォルト値の内容（デフォルト値があることだけを記録する） |
 | カラムが NULL になりうるか、デフォルト値を持つか、データベースが値を割り当てるか | CHECK 制約 |
-| 主キー、ユニークキー、外部キー | 部分インデックスの条件 |
+| 主キー、一意キー、外部キー | 部分インデックスの条件 |
 | 手書きのクエリごとのパラメータと結果カラムの型 | トリガー、照合順序、コメント |
 
 記録されないものだけを変更するマイグレーションでは、スナップショットは変わりません。それらをレビューしたり、2 つのデータベースを比較したりするには、マイグレーションのツールを使ってください。
@@ -216,7 +216,7 @@ $ go tool kanna-orm describe -check ./...
 
 スコープ型は、フィールドが非公開の `scope.Of[M]` だけの構造体です。`M` はテーブルの行を読み込むモデルです。これにより、スコープを絞り込めるのはそのメソッドだけになります。kanna-orm が読み書きするテーブルにはそれぞれスコープ型が 1 つあり、各モデルは 1 つのテーブルに属します。テーブルとモデルを結び付けるのはスコープ型だけです。
 
-`//kanna:scopes model-package=../model` と書くと、モデルのパッケージの構造体のうち、スナップショットに対応する名前のテーブルがあるものそれぞれについて、`scopes_gen.go` にスコープ型を宣言します。対応するテーブルの名前は、構造体の名前をスネークケースにして最後の単語を複数形にしたもの（`OrderLine` なら `order_lines`、`Category` なら `categories`、`Person` なら `people`）です。`model-package=` には、モジュールのパッケージのインポートパスか、ファイルからの相対パスを書きます。`model-package=../model,../billing` のように、カンマで区切って複数書けます。`model-package=.` は directive のあるパッケージそのものを指し、そのときのスコープ型は、モデルと分けて `OrderScope` のようにモデルの名前に `Scope` を付けた名前になります。値オブジェクトのように対応するテーブルがない構造体にはスコープ型が宣言されず、中間テーブルのように対応する構造体がないテーブルにも宣言されません。そのため、これらのパッケージの構造体は、その名前のテーブルができるとモデルになります。クエリが返す型のように、モデルでない構造体は別のパッケージに置いてください。自分のメソッドは、他の型と同じように、パッケージの別のファイルでこの型に書きます。スコープを絞るには、下の `Open` のように kanna-orm が書いたメソッドを使うか、形の決まった SQL を `.sql` ファイルに書きます。`.sql` ファイルの SQL は `describe` が確かめます（[手書きの SQL](#手書きの-sql) を参照）。実行時にプログラムが形を決める SQL は、`InMonths` のように `Raw` で書きます。こちらは実行するまで何も確かめません。`Raw` が持つのは `Where` と `OrderBy` だけで、どちらもそれまでの内容をすべて保ったスコープを返します。
+`//kanna:scopes model-package=../model` と書くと、モデルのパッケージの構造体のうち、スナップショットに対応する名前のテーブルがあるものそれぞれについて、`scopes_gen.go` にスコープ型を宣言します。対応するテーブルの名前は、構造体の名前をスネークケースにして最後の単語を複数形にしたもの（`OrderLine` なら `order_lines`、`Category` なら `categories`、`Person` なら `people`）です。`model-package=` には、モジュールのパッケージのインポートパスか、ファイルからの相対パスを書きます。`model-package=../model,../billing` のように、カンマで区切って複数書けます。`model-package=.` はディレクティブのあるパッケージそのものを指し、そのときのスコープ型は、モデルと分けて `OrderScope` のようにモデルの名前に `Scope` を付けた名前になります。値オブジェクトのように対応するテーブルがない構造体にはスコープ型が宣言されず、中間テーブルのように対応する構造体がないテーブルにも宣言されません。そのため、これらのパッケージの構造体は、その名前のテーブルができるとモデルになります。クエリが返す型のように、モデルでない構造体は別のパッケージに置いてください。自分のメソッドは、他の型と同じように、パッケージの別のファイルでこの型に書きます。スコープを絞るには、下の `Open` のように kanna-orm が書いたメソッドを使うか、形の決まった SQL を `.sql` ファイルに書きます。`.sql` ファイルの SQL は `describe` が確かめます（[手書きの SQL](#手書きの-sql) を参照）。実行時にプログラムが形を決める SQL は、`InMonths` のように `Raw` で書きます。こちらは実行するまで何も確かめません。`Raw` が持つのは `Where` と `OrderBy` だけで、どちらもそれまでの内容をすべて保ったスコープを返します。
 
 ```go
 func (s Order) Open() Order { return s.StatusNe("closed") }
@@ -273,7 +273,7 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 
 カラムのないフィールド、nil になれないフィールドが保持する NULL になりうるカラム、そして insert されるテーブルで、データベースが値を必須とするのにモデルにフィールドがないカラムは、いずれも生成を止めます。それ以外の場合、モデルにフィールドがないカラムには何もしません。
 
-nullable な文字列の欠落をフィールドのゼロ値で表す場合は `nullzero` を指定できます。`sql.Scanner` を実装した enum などの名前付き文字列型にも対応します。生成コードは `sql.Null[T]` を使うため、NULL を enum 自身の非 NULL 用 Scan へ渡さず、非 NULL の値は引き続きその Scan で検証します。テーブル操作と手書きクエリのモデルの両方に適用されます。フィールド名の snake case がカラム名と一致する場合、`orm:",nullzero"` とカラム名を省略できます。
+nullable な文字列の欠落をフィールドのゼロ値で表す場合は `nullzero` を指定できます。`sql.Scanner` を実装した enum などの名前付き文字列型にも対応します。生成コードは `sql.Null[T]` を使うため、NULL を enum 自身の非 NULL 用 Scan へ渡さず、非 NULL の値は引き続きその Scan で検証します。テーブル操作と手書きクエリのモデルの両方に適用されます。フィールド名のスネークケースがカラム名と一致する場合、`orm:",nullzero"` とカラム名を省略できます。
 
 [PostgreSQL](example/postgres/model/model.go) と [MySQL](example/mysql/model/model.go) の example では、省略できる注文メモに使っています。
 
@@ -354,7 +354,7 @@ s := scopes.Orders().Or(
 | `Order` のフィールド | 名前で決まる外部キー | 種類 |
 |---|---|---|
 | `Customer *Customer` | `customers` への `orders.customer_id`。フィールド名と `_id` | belongs to |
-| `Shipment *Shipment` | `orders` への `shipments.order_id`（ユニークキー）。モデル名と `_id` | has one |
+| `Shipment *Shipment` | `orders` への `shipments.order_id`（一意キー）。モデル名と `_id` | has one |
 | `Lines []OrderLine` | `orders` への `order_lines.order_id`。モデル名と `_id` | has many |
 | `Tags []Tag` | モデル名とフィールド名の `order_tags` を経由し、その `order_id` と `tag_id` | many to many |
 
@@ -383,7 +383,7 @@ type Category struct {
   orders.customer_id to customers reads it: tag the field orm:"fk=customer_id"
 ```
 
-名前が many to many の規約に合わない中間テーブル（2 カラムのキーを参照するものなど）は、それ自身をモデルにして、has many と belongs to でたどります。どちらのテーブルの同じ名前の外部キーでも読めるポインタのように、名前で決まらないリレーションは、手書きの SQL で読み込みます。[クエリに scope を渡す](#クエリに-scope-を渡す) と [外部キー以外のカラムで関連する値を足す](#外部キー以外のカラムで関連する値を足す) を参照してください。
+名前が many to many の規約に合わない中間テーブル（2 カラムのキーを参照するものなど）は、それ自身をモデルにして、has many と belongs to でたどります。どちらのテーブルの同じ名前の外部キーでも読めるポインタのように、名前で決まらないリレーションは、手書きの SQL で読み込みます。[クエリにスコープを渡す](#クエリにスコープを渡す) と [外部キー以外のカラムで関連する値を足す](#外部キー以外のカラムで関連する値を足す) を参照してください。
 
 リレーションは、スコープが `With` メソッドで要求したときにだけ読み込まれます。`With` メソッドは関連する行のスコープを受け取り、その条件、並び順、さらに読み込むリレーションを指定できます。
 
@@ -422,7 +422,7 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 
 - 順序が主キーで終わっていない場合は、行を並べる読み込みのすべてで、最後のカラムの向きで主キーを追加します。1 ページ目も、`After` と `Before` で続けるページも同じなので、順序の上で等しい行にも、どのページでも同じ 1 つの順序が付きます。主キーがないと、等しい行の途中で終わるページでは、その一部が黙って重複したり抜けたりします。
 - 順序のすべてのカラムが同じ方向なら、条件は上の例のように行の比較になります。そうでない場合と MySQL では、`a < $1 OR (a = $1 AND b < $2)` のように展開して書かれます。
-- `Before` は逆方向に進み、渡した行が先頭にあるページの 1 つ前のページに移動します。リポジトリはそのページを末尾から読み込み、行をスコープの順序に戻して返します。
+- `Before` は逆方向に進み、渡した行が先頭にあるページの 1 つ前のページに移動します。repository はそのページを末尾から読み込み、行をスコープの順序に戻して返します。
 - NULL になりうるカラムで並べると、行の続きを読み込むクエリはエラーを返し、`Cursor` も同様にエラーを返します。データベースによって NULL の並ぶ位置が異なるからです。
 
 位置をクライアントに渡すには、`Cursor` で文字列にエンコードし、`AfterCursor` でスコープにデコードします:
@@ -439,7 +439,7 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 カーソルは、作成時の順序と、その順序における行の値を JSON として保持します。空のカーソルは先頭を表し、別の順序で作成したカーソルはエラーになります。各値はその型を通してデコードされるので、値オブジェクトはルールをチェックします。クライアントがカーソルを改変しても、変わるのはページの開始位置だけです。
 
-## リポジトリ
+## repository
 
 `//kanna:repository` を付けたインターフェースは、データベースより上のコードがデータベースに対して何をしてよいかを宣言します。そのパッケージで `kanna-orm -destination <dir>` を実行すると、そのディレクトリの `repository_gen.go` に実装の構造体、そのコンストラクタ、実行の土台となる `DBTX`（sqlc と同じ名前）が書き出されます。
 
@@ -447,7 +447,7 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 `-destination .` を指定すると、インターフェースと生成実装を同じパッケージに置けます。インターフェースは公開する必要があります。`Category` なら、非公開の `category`、`newCategory(db DBTX, opts ...option.Option) category` コンストラクタ、値レシーバーのメソッドを生成します。関数 `NewCategory` を自分で宣言していなければ、`NewCategory(db DBTX, opts ...option.Option) Category` も生成します。自分で宣言する `NewCategory` からは `newCategory` を呼べます。スコープ型も同じパッケージに置けます（[1 つのパッケージにまとめる](#1-つのパッケージにまとめる)を参照）。
 
-`Bind(db DBTX) Category` を宣言すると、どちらのパッケージに実装するときも、トランザクションへ切り替える `Bind` の実装を生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数か、その `DBTX()` が返すものは `-driver` で指定したドライバの `DBTX` を実装し、戻り値はリポジトリ自身のインターフェースである必要があります。`Bind` を自分で書いたときは、kanna-orm は `Bind` を書きません。
+`Bind(db DBTX) Category` を宣言すると、どちらのパッケージに実装するときも、トランザクションへ切り替える `Bind` の実装を生成します。引数には、DBTX を実装した具体的な接続・トランザクションの型や、引数なしの `DBTX()` メソッドでそれを返す型も指定できます。たとえば `Bind(tx tx.Tx) Category` です。Bind は指定された接続を使う新しい実装を返し、元の実装は変更しません。引数か、その `DBTX()` が返すものは `-driver` で指定したドライバの `DBTX` を実装し、戻り値は repository 自身のインターフェースである必要があります。`Bind` を自分で書いたときは、kanna-orm は `Bind` を書きません。
 
 repository のどのパッケージの `DBTX` も、ランタイムのものの別名です。pgx なら `github.com/go-kanna/orm/pgx` の `type DBTX = kpgx.DBTX`（kanna-orm が [Copy](#複数行の-copy) を書くパッケージでは `kpgx.CopyDBTX`）、`database/sql` なら `github.com/go-kanna/orm/stdlib` の `stdlib.DBTX` です。そのため 1 つの値ですべての repository を動かせ、DI では 1 度だけ渡せば済みます。kanna-di なら、コンテナのパッケージに provider を 1 つ書きます:
 
@@ -554,7 +554,7 @@ type OrderRepository interface {
 - `//kanna:scopes` が同じパッケージのモデルについて宣言するスコープ型は、モデルの名前に `Scope` を付けた名前（`OrderScope`）になります。スコープを返す関数は今までどおりテーブルの名前（`Orders()`）で、変更セットはスコープ型の名前から `Scope` を除いた名前（`OrderChangeSet` と `OrderChanges()`）です。
 - 1 回の実行で `scopes_gen.go` と `repository_gen.go` の両方を書き、どちらももう一方が宣言する名前を避けます。
 - 1 つの `.sql` ファイルに、パッケージの `-- scope:` と `-- query:` の両方を書けます。
-- `DBTX`、`newOrderRepository`、`Orders`、`OrderChangeSet` のように、手書きのコードから見える名前をパッケージがすでに宣言していれば、生成を止めます。ただし、自分で宣言する関数 `NewOrderRepository` は生成するものを置き換えます。kanna-orm が自分のために書く helper は `k` で始まり、空いている最初の名前を使います。
+- `DBTX`、`newOrderRepository`、`Orders`、`OrderChangeSet` のように、手書きのコードから見える名前をパッケージがすでに宣言していれば、生成を止めます。ただし、自分で宣言する関数 `NewOrderRepository` は生成するものを置き換えます。kanna-orm が自分のために書くヘルパーは `k` で始まり、空いている最初の名前を使います。
 
 ### メソッド
 
@@ -570,7 +570,7 @@ type OrderRepository interface {
 | `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)` | マッチする行があるかどうかを返す |
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`、または `error` のみを返す形 | 行を 1 つ、または[複数](#複数行の書き込み)書き込む |
 | `Update` | `Update(ctx, o model.Order) error`、または[変更セット](#指定したカラムだけを更新する)を受け取る形 | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
-| `Upsert` | `Upsert(ctx, o model.Order) error`、または[変更セット](#突き合わせた行に変更セットを書く)つき | 行を insert するか、同じキー、または[別のユニークキー](#upsert)を持つ行を update する |
+| `Upsert` | `Upsert(ctx, o model.Order) error`、または[変更セット](#突き合わせた行に変更セットを書く)つき | 行を insert するか、同じキー、または[別の一意キー](#upsert)を持つ行を update する |
 | `Delete` | `Delete(ctx, id model.OrderID) error`、または[スコープを受け取る形](#スコープで削除対象を選ぶ) | そのキーの行、またはスコープにマッチする行を削除する |
 | `Copy` | `Copy(ctx, rows []model.Order) (int64, error)` | 行を pgx の [COPY](#複数行の-copy) で書き込み、書き込んだ行数を返す |
 | `Sum` | `SumTotal(ctx, s ...scopes.Order) (int64, error)` | スコープにマッチする行のカラムの合計を読む。[集計](#集計を読む)を参照 |
@@ -578,7 +578,7 @@ type OrderRepository interface {
 | `Max` | `MaxPlacedAt(ctx, s ...scopes.Order) (time.Time, error)` | スコープにマッチする行のカラムの最大値を読む |
 | `Avg` | `AvgTotal(ctx, s ...scopes.Order) (float64, error)` | スコープにマッチする行のカラムの平均を読む |
 
-`Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたはユニークキーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。ただし、`Limit`、`Offset`、`After`、`Before` で行の一部だけを残すスコープは、キーが指す行そのものを外しうるのでエラーになります。キー引数はポインタではなく値を受け取ります。nil は何にもマッチしない `= NULL` で比べることになるので、ポインタのキー引数は生成を止めます。NULL の行はスコープの `IsNull` で絞り込みます。複数行の候補から一つ選ぶ場合は `First` を使います。スコープの順序で先頭の行を、スコープに順序がなければ主キーの順で先頭の行を返します。ポインタを返す `Find...` は、結果の構造体へのポインタでもスカラーへのポインタでも、手書き SQL で実装できます。生成された `Find` と同じく、行がなければ `nil, nil` を返します。スカラーの場合は nil が「行がない」を表すので、NULL にならない列を読みます。
+`Get` は行の存在を必須とし、なければ `orm.ErrNotFound` を返します。`Find` はポインタを返し、不在は `nil, nil`、DB エラーは `nil, err` になります。どちらも主キーまたは一意キーを満たすキー引数が必要です。追加のスコープで条件を絞り、関連を読み込めます。ただし、`Limit`、`Offset`、`After`、`Before` で行の一部だけを残すスコープは、キーが指す行そのものを外しうるのでエラーになります。キー引数はポインタではなく値を受け取ります。nil は何にもマッチしない `= NULL` で比べることになるので、ポインタのキー引数は生成を止めます。NULL の行はスコープの `IsNull` で絞り込みます。複数行の候補から一つ選ぶ場合は `First` を使います。スコープの順序で先頭の行を、スコープに順序がなければ主キーの順で先頭の行を返します。ポインタを返す `Find...` は、結果の構造体へのポインタでもスカラーへのポインタでも、手書き SQL で実装できます。生成された `Find` と同じく、行がなければ `nil, nil` を返します。スカラーの場合は nil が「行がない」を表すので、NULL にならない列を読みます。
 
 ```go
 // customerID is customer_id: the orders of one customer.
@@ -593,7 +593,7 @@ GetLine(ctx context.Context, orderID model.OrderID, sku model.SKU) (model.OrderL
 
 - 対象のテーブルは、スコープ型がメソッドのモデルを保持するテーブルです。そのため、1 つのインターフェースで集約のすべてのテーブルを読み書きできます。
 - 複数のスコープは、チェーンした場合と同じくすべてが同時に適用されます。
-- `Get` は、パラメータが主キーかユニークキーのカラムをすべて与えていない限り、生成を止めます。
+- `Get` は、パラメータが主キーか一意キーのカラムをすべて与えていない限り、生成を止めます。
 - `Count`、`Exists`、[集計](#集計を読む)は、スコープの条件だけを使います。並び順、limit、読み込むリレーションを持つスコープを渡すと、それらを無視せずにエラーを返します。
 - スコープを渡しても条件がない `Delete` は、すべての行を削除せずにエラーを返します。
 - `error` だけを返す `Delete` は、`Update` と同じく、1 行も削除しなかったときに `orm.ErrNotFound` を返します。`(int64, error)` を返す `Delete` は削除した行数を返します。0 行の場合も同じです。
@@ -669,7 +669,7 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 ### DB のデフォルト値
 
-`orm:",default"` を指定したフィールドは、生成する INSERT のカラムから常に省略します。カラム名が異なる場合は `orm:"currency_code,default"` のように指定できます。スナップショットに DB の DEFAULT または自動採番の情報がないカラムは生成エラーになります。ただし、トリガーが値を入れうる[作成と更新の時刻](#作成と更新の時刻)は除きます。`default` と `nullzero` は併用できます。
+`orm:",default"` を指定したフィールドは、生成する INSERT のカラムから常に省略します。カラム名が異なる場合は `orm:"currency_code,default"` のように指定できます。スナップショットに DB の DEFAULT または自動採番の情報がないカラムに指定すると、生成を止めます。ただし、トリガーが値を入れうる[作成と更新の時刻](#作成と更新の時刻)は除きます。`default` と `nullzero` は併用できます。
 
 ```go
 type Product struct {
@@ -748,7 +748,7 @@ func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
 
 ### Upsert
 
-`Upsert` は、主キーで既存の行と突き合わせます。別のユニークキーで突き合わせるには、`//kanna:conflict` でそのカラムを指定します:
+`Upsert` は、主キーで既存の行と突き合わせます。別の一意キーで突き合わせるには、`//kanna:conflict` でそのカラムを指定します:
 
 ```go
 // package model
@@ -783,7 +783,7 @@ VALUES (?, ?, ?, ?) AS new
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 ```
 
-カラムはテーブルの主キーかユニークキーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`insertonly` を指定したカラム、[作成の時刻](#作成と更新の時刻)を除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。MySQL はどのユニークキーの競合でも更新するので、指定したキー以外のユニークキーを持つテーブルには警告が出ます:
+カラムはテーブルの主キーか一意キーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`insertonly` を指定したカラム、[作成の時刻](#作成と更新の時刻)を除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。MySQL はどの一意キーの競合でも更新するので、指定したキー以外の一意キーを持つテーブルには警告が出ます:
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
@@ -885,7 +885,7 @@ func provideCopyDBTX(pool *pgxpool.Pool) pgx.CopyDBTX { return pool }
 
 ### 指定したカラムだけを更新する
 
-各 scope に型付きの変更セットを生成します。名前はスコープ型の名前から末尾の `Scope` を除いたもので、`OrderScope` の変更セットも `OrderChangeSet` です。同じパッケージの 2 つのスコープ型の変更セットが同じ名前になるときは、生成を止めます。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
+各スコープに型付きの変更セットを生成します。名前はスコープ型の名前から末尾の `Scope` を除いたもので、`OrderScope` の変更セットも `OrderChangeSet` です。同じパッケージの 2 つのスコープ型の変更セットが同じ名前になるときは、生成を止めます。`CustomerChanges()` は空の `CustomerChangeSet` を返し、setter で更新対象のカラムを指定します。setter の引数はモデルの Go 型に合わせるため、`Phone *string` には `nil` を渡して SQL NULL を設定できます。
 
 ```go
 changes := scopes.CustomerChanges().
@@ -922,13 +922,13 @@ updated, err := repo.UpdatePhone(ctx, customerID,
     scopes.Customers().PhoneIsNull())
 ```
 
-change set の Update は、書き換える行をキーか scope（または両方）で選びます。どちらも受け取らない宣言は、全行を書き換えるのではなく生成時エラーにします。PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。モデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値は読み込みません。
+変更セットの Update は、書き換える行をキーかスコープ（または両方）で選びます。どちらも受け取らない宣言は、全行を書き換えるのではなく、生成を止めます。PostgreSQL でモデルを返す宣言には `UPDATE ... RETURNING` を生成し、同じ文で保存後の行を取得します。条件に一致しない場合やキーが存在しない場合は `orm.ErrNotFound` を返します。複合キーや主キー以外の一意キーも利用できます。戻り値を `error` だけにすると更新結果を読み戻しません。モデル全体を渡す Update にも、条件スコープとモデルの戻り値を指定できます。返すモデルにはテーブルにマップしたカラムを読み込み、関連値は読み込みません。
 
-複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言は生成エラーとし、別 SELECT による読み戻しは行いません。
+複数行を更新する場合は、更新件数なら `(int64, error)`、更新結果の一覧なら `([]model.Customer, error)` を宣言します。返される行の順序は保証しません。MySQL では変更セットと `error` または更新件数を利用できます。件数は値が変わった行数で、一行更新で同じ値の行に一致した場合は成功として扱います。MySQL には UPDATE RETURNING がないため、更新したモデルを返す宣言では生成を止め、別の SELECT で読み戻すことはしません。
 
 両 DB の example は、この方法で顧客の電話番号を更新し、`SetPhone(nil)` で消します。
 
-一意キーを引数に取らず scope を受け取る change set の Update は、[scope を受け取る `Delete`](#スコープで削除対象を選ぶ) と同じように行を選びます。どの行かは、条件・並び順・ページングで言います。`UpdateByCustomer(ctx, customerID, c, s...)` の `customerID` のように、一意キーでない列の引数は、`Delete` の引数と同じく条件です。
+一意キーを引数に取らずスコープを受け取る変更セットの Update は、[スコープを受け取る `Delete`](#スコープで削除対象を選ぶ) と同じように行を選びます。どの行かは、条件・並び順・ページングで言います。`UpdateByCustomer(ctx, customerID, c, s...)` の `customerID` のように、一意キーでない列の引数は、`Delete` の引数と同じく条件です。
 
 ```go
 Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
@@ -942,9 +942,9 @@ n, err := repo.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"), scopes.Or
 
 ページングがなければ条件に一致する全行を更新します。Limit・Offset がある場合は、ページつきの `Delete` と同じくサブクエリで対象のキーを選び、1 つの文でその行を更新します。PostgreSQL と MySQL の両方で使えます。規則も `Delete` と同じです。Limit があっても WHERE 条件は必須です。ページは同じスコープの読み込みと同じように選びます。並び順は最後にキーを足し、並び順のないページはデータベースが先に読んだ行になります。`After` や `Before` で続けるページでも対象を選べます。Limit・Offset・カーソルのない並び順や、関連取得のスコープは無視せずエラーにします。主キーも NULL を許さない一意キーもないテーブルでは、ページングによる更新は利用できません。`Limit(0)` や該当行なしは `orm.ErrNotFound` ではなく、件数 0 か空のスライスを返します。並び順は更新対象の選択に使い、返却行の順序は保証しません。両 DB の example では、open の注文のうち古い 2 件に、件数を制限してメモを書きます。
 
-一意キーやモデル全体を受け取る Update は、キーが示す 1 行を書き換えるので、scope は条件だけを取ります。並び順・ページング・関連取得は、`Get` のページングと同じくエラーです。
+一意キーやモデル全体を受け取る Update は、キーが示す 1 行を書き換えるので、スコープは条件だけを取ります。並び順・ページング・関連取得は、`Get` のページングと同じくエラーです。
 
-一意キーを引数に取らず scope を受け取る change set の Update に `//kanna:lock` を付けると、ページングの有無によらずそのサブクエリで行を選び、そこでロックします。まとめて更新するワーカーどうしが、他が保持している行を飛ばせます。[行ロック](#行ロック)を参照してください。
+一意キーを引数に取らずスコープを受け取る変更セットの Update に `//kanna:lock` を付けると、ページングの有無によらずそのサブクエリで行を選び、そこでロックします。まとめて更新するワーカーどうしが、他が保持している行を飛ばせます。[行ロック](#行ロック)を参照してください。
 
 
 ### スコープで削除対象を選ぶ
@@ -983,7 +983,7 @@ deleted, err := repo.DeleteSummaries(ctx, scopes.Orders().
     Open().PlacedAtLt(before).PlacedAtAsc().IDAsc().Limit(batch))
 ```
 
-元モデルと、読み取りの projection と同じフィールド対応・型の規則に従う専用の型を返せます。`RETURNING` には返却型のカラムだけを指定し、関連は取得しません。キー引数と scope も併用できます。条件やページングの要件は上記と同じです。該当行なしと `Limit(0)` は `orm.ErrNotFound` ではなく空の非 nil スライスを返します。並び順は削除対象の選択に使い、返却行の順序は保証しません。MySQL は `DELETE RETURNING` を持たないため、スライスを返す宣言は生成時にエラーにします。
+元モデルと、読み取りの projection と同じフィールド対応・型の規則に従う専用の型を返せます。`RETURNING` には返却型のカラムだけを指定し、関連は取得しません。キー引数とスコープも併用できます。条件やページングの要件は上記と同じです。該当行なしと `Limit(0)` は `orm.ErrNotFound` ではなく空の非 nil スライスを返します。並び順は削除対象の選択に使い、返却行の順序は保証しません。MySQL は `DELETE RETURNING` を持たないため、スライスを返す宣言は生成時にエラーにします。
 
 ### 行ロック
 
@@ -1032,7 +1032,7 @@ return tx.Commit(ctx)
 
 他のトランザクションが保持している行は、解放されるまで待ちます。強さの後に `nowait` を書くと待たずにデータベースのエラーを返し、`skip-locked` を書くとその行を飛ばします。
 
-一意キーを引数に取らず scope を受け取る [change set の `Update`](#指定したカラムだけを更新する)、つまりページングできる Update にも `//kanna:lock` を付けられます。そのときは、scope がページングするかどうかによらずサブクエリでキーを選び、ロックはそのサブクエリに付けます。待つ行、エラーになる行、飛ばす行は、書き換えるはずの行です:
+一意キーを引数に取らずスコープを受け取る [変更セットの `Update`](#指定したカラムだけを更新する)、つまりページングできる Update にも `//kanna:lock` を付けられます。そのときは、スコープがページングするかどうかによらずサブクエリでキーを選び、ロックはそのサブクエリに付けます。待つ行、エラーになる行、飛ばす行は、書き換えるはずの行です:
 
 ```go
 // UpdateFree writes the orders no other worker holds.
@@ -1069,7 +1069,7 @@ repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 
 Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・関連を読み込む SQL を、実行した文ごとに一度呼びます。[Copy](#複数行の-copy) は、`COPY "events" ("kind", "tags", "note") FROM STDIN` のような COPY の文として、`Args` なしで見えます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
-フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`（kanna-orm が Copy を書くパッケージでは `r.db.CopyFrom` も）、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は間に入って読めない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
+フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`（kanna-orm が Copy を書くパッケージでは `r.db.CopyFrom` も）、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は、行の読み込みを包んでフックに通すことができない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
 
 ### カラムの値を読む
 
@@ -1094,7 +1094,7 @@ ListIDsForKeyShare(ctx context.Context, s ...scopes.Order) ([]model.OrderID, err
 
 ### 専用の型へ読み込む projection
 
-`Get...`・`Find...`・`First...`・`List...` は、元モデルの scope を受け取りながら別の名前付き構造体を返せます。戻り値型のフィールドから取得列を決めるため、専用型に scope は不要です。
+`Get...`・`Find...`・`First...`・`List...` は、元モデルのスコープを受け取りながら別の名前付き構造体を返せます。戻り値型のフィールドから取得列を決めるため、専用型にスコープは不要です。
 
 ```go
 type ProductSummary struct {
@@ -1106,7 +1106,7 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元の scope を使います。フィールドは、同じ名前の元モデルのフィールドに結び付け、そのカラム名のタグと `nullzero` の扱いを引き継ぎます。別の名前のフィールドは、`orm:"note"` のようにカラム名のタグで指定します。フィールドの型は元モデルと同一である必要があります。存在しないフィールド・取得列の重複・空の projection・結果型に含まれる関連は生成エラーです。読み取り専用です。絞り込み・並べ替え・ページング・ロックはモデルを読むときと同じく使え、行がないときも、モデルを読むときと同じく `Get` と `First` は `orm.ErrNotFound` を、`Find` は nil を返します。関連取得を指定した scope は無視せずエラーにします。projection には行のグループの[集計](#集計を読む)を持たせられます。そのほかの式は手書き SQL と DTO で表現できます。
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` は `products` から `name, price` だけを取得し、絞り込みや並べ替えには元のスコープを使います。フィールドは、同じ名前の元モデルのフィールドに結び付け、そのカラム名のタグと `nullzero` の扱いを引き継ぎます。別の名前のフィールドは、`orm:"note"` のようにカラム名のタグで指定します。フィールドの型は元モデルと同一である必要があります。存在しないフィールド、取得列の重複、空の projection、結果型に含まれる関連があると、生成を止めます。読み取り専用です。絞り込み・並べ替え・ページング・ロックはモデルを読むときと同じく使え、行がないときも、モデルを読むときと同じく `Get` と `First` は `orm.ErrNotFound` を、`Find` は nil を返します。関連取得を指定したスコープは無視せずエラーにします。projection には行のグループの[集計](#集計を読む)を持たせられます。そのほかの式は手書き SQL と DTO で表現できます。
 
 
 ### JOIN する projection
@@ -1132,11 +1132,11 @@ LEFT JOIN users AS inviter ON inviter.id = memberships.inviter_id
 ```
 
 - 結合するテーブルは、[リレーション](#リレーション)と同じく、フィールド名と `_id` の外部キーが参照するテーブルです。ほかのカラムの外部キーは `orm:"fk=created_by"` のようにタグで指定し、複数カラムなら `orm:"fk=tenant_id,customer_id"` と並べます。
-- 入れ子の struct のフィールドは、projection のフィールドが元モデルに結び付くのと同じく、結合するテーブルのモデルのフィールドに、名前かカラム名のタグで結び付きます。結合するテーブルには、そのモデルを示す scope 型が要ります。その scope の条件や関連は持ち込みません。
-- テーブルの別名はフィールド名の snake case です。そのため、同じテーブルを 2 回結合することも、`parent_id` で categories の `Parent *struct{ Name string }` を読むような自己結合もできます。元のテーブルや別のフィールドと別名が重なれば、生成を止めます。
+- 入れ子の struct のフィールドは、projection のフィールドが元モデルに結び付くのと同じく、結合するテーブルのモデルのフィールドに、名前かカラム名のタグで結び付きます。結合するテーブルには、そのモデルを示すスコープ型が要ります。そのスコープの条件や関連は持ち込みません。
+- テーブルの別名はフィールド名のスネークケースです。そのため、同じテーブルを 2 回結合することも、`parent_id` で categories の `Parent *struct{ Name string }` を読むような自己結合もできます。元のテーブルや別のフィールドと別名が重なれば、生成を止めます。
 - LEFT JOIN は、外部キーが参照するカラムで結合する行があるかを見分けます。結合した行のカラムが NULL でも、nil か `nullzero` のゼロ値として読み、struct はそのまま残ります。
 - 入れ子の型は専用の struct で、モデルにはしません。モデルは[リレーション](#リレーション)で読みます。入れ子の struct の中の struct、元のテーブルの外部キーが参照しないテーブル、Delete での結合は、手書きの SQL で書きます。
-- scope の条件は元のテーブルだけを読み、並び順と LIMIT は結合のあとに付きます。そのため、INNER JOIN で落ちた行は数えず、`First` は結合結果の先頭を読みます。並び順は元のテーブルの列で指定します。テーブルを結合する projection には `//kanna:lock` を付けられません。モデルを読んで行をロックするか、`FOR UPDATE OF` のように対象のテーブルを指定してロックするクエリを手で書いてください。
+- スコープの条件は元のテーブルだけを読み、並び順と LIMIT は結合のあとに付きます。そのため、INNER JOIN で落ちた行は数えず、`First` は結合結果の先頭を読みます。並び順は元のテーブルの列で指定します。テーブルを結合する projection には `//kanna:lock` を付けられません。モデルを読んで行をロックするか、`FOR UPDATE OF` のように対象のテーブルを指定してロックするクエリを手で書いてください。
 
 両 DB の example に、注文の summary へ顧客名をこの形で読み込む例があります。
 
@@ -1184,7 +1184,7 @@ SELECT status, count(*) FROM orders WHERE ... GROUP BY status
 
 ## 手書きの SQL
 
-メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前のリポジトリのメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。動詞で始まる名前のメソッドは、その動詞の生成メソッドと同じものを返します。どこで読んでも動詞が同じことを言うためです。`Get` と `First` は 1 行で、なければ `orm.ErrNotFound`、`Find` はポインタで、なければ nil、`List` はスライス、`Count` は結果の 1 列の `int64`、`Exists` は結果の 1 列の `bool`、`Sum`・`Min`・`Max` は結果の 1 列の値かそのポインタ、`Avg` は結果の 1 列の `float64` か `float32`、またはそのポインタ、`Insert`・`Update`・`Upsert`・`Delete` は error だけか、影響した行数の `(int64, error)` か、`RETURNING` が返す行です。それ以外は生成を止めます。`MonthCounts` のように動詞で始まらない名前なら、何を返しても構いません。`-destination .` なら、インターフェースと同じディレクトリです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
+メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前の repository のメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。動詞で始まる名前のメソッドは、その動詞の生成メソッドと同じものを返します。どこで読んでも動詞が同じことを言うためです。`Get` と `First` は 1 行で、なければ `orm.ErrNotFound`、`Find` はポインタで、なければ nil、`List` はスライス、`Count` は結果の 1 列の `int64`、`Exists` は結果の 1 列の `bool`、`Sum`・`Min`・`Max` は結果の 1 列の値かそのポインタ、`Avg` は結果の 1 列の `float64` か `float32`、またはそのポインタ、`Insert`・`Update`・`Upsert`・`Delete` は error だけか、影響した行数の `(int64, error)` か、`RETURNING` が返す行です。それ以外は生成を止めます。`MonthCounts` のように動詞で始まらない名前なら、何を返しても構いません。`-destination .` なら、インターフェースと同じディレクトリです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
 
 ```text
 repository/repository.go   //kanna:repository interfaces, MonthCounts among their methods
@@ -1247,11 +1247,11 @@ ORDER BY 1`
 - スコープは、上のものなら `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at);` のように、そのテーブルに対する文としても書けます。条件だけでは SQL の linter が解析できないので、クエリと同じように linter にかけられるようにするためです。kanna-orm は条件だけを取り出して自分の文に入れるので、文の形はこれ 1 つに限ります。`1` を選び、テーブルに別名は付けません。条件を入れる先では、別名は意味を持たないからです。条件の後には `;` しか置けません。テーブルの名前は、データベースと同じように読みます。引用符で囲んだ名前は書いたとおりに比べます。囲まない名前は、PostgreSQL では小文字にして比べ（PostgreSQL がそう読むため）、MySQL では大文字と小文字を区別せずに比べます（MySQL の規則はサーバーの設定で変わるため）。`SELECT` で始まるそれ以外の文は生成を止めます。`id IN (SELECT ...)` のような条件は、これまでどおり条件です。
 - 文は、その `-- query:` や `-- scope:` の行から、次の文のコメントまたはその行までです。文の終わりにある空行とコメント行は文に含まれず、文の一番最後に付いたコメントも含まれません。そのため、スコープはコメントで終えられます。
 - MySQL では、2 回使うパラメータは `?` ごとに 1 回ずつ渡します。
-- `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、メソッドの実行時に値ごとの `?` に展開します。値がないとき、`IN` の括弧のすぐ内側なら、行のない部分問合せ（空の集合）にします。`IN (:ids)` はどの行にも一致せず、`NOT IN (:ids)` はすべての行に一致します。PostgreSQL の `= ANY` と `<> ALL` と同じです。`FIELD(id, :ids)` のようにそれ以外の場所では `NULL` にします。
+- `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、メソッドの実行時に値ごとの `?` に展開します。値がないとき、`IN` の括弧のすぐ内側なら、行のないサブクエリ（空の集合）にします。`IN (:ids)` はどの行にも一致せず、`NOT IN (:ids)` はすべての行に一致します。PostgreSQL の `= ANY` と `<> ALL` と同じです。`FIELD(id, :ids)` のようにそれ以外の場所では `NULL` にします。
 
-### クエリに scope を渡す
+### クエリにスコープを渡す
 
-`ListWithCustomers(ctx, s ...scopes.Order)` のように、メソッドが scope を受け取るクエリは、1 つのテーブルとして読みます。クエリの結果を scope のテーブルの行として読み、scope がそれを絞り込み、並べ、ページを切り、関連を読み込みます。kanna-orm は、クエリをメソッド名の `WITH` に入れ、その後に scope を書きます:
+`ListWithCustomers(ctx, s ...scopes.Order)` のように、メソッドがスコープを受け取るクエリは、1 つのテーブルとして読みます。クエリの結果をスコープのテーブルの行として読み、スコープがそれを絞り込み、並べ、ページを切り、関連を読み込みます。kanna-orm は、クエリをメソッド名の `WITH` に入れ、その後にスコープを書きます:
 
 ```sql
 -- query: ListWithCustomers
@@ -1275,15 +1275,15 @@ WITH list_with_customers AS (SELECT o.id, ..., c.name AS customer_name FROM orde
 SELECT orders.id, ..., orders.customer_name FROM list_with_customers AS orders WHERE (status = $1) ORDER BY id
 ```
 
-- `Get`・`Find`・`First`・`List` のどれかで、scope のモデルの行か、モデルを値で埋め込んだ構造体の行を読みます。埋め込んだ構造体のほかのフィールドは、クエリが足すカラムを保持します。結果のカラムとフィールド（モデルのフィールドも含む）は 1 対 1 で対応し、クエリが足すカラムはモデルのカラムと重なってはいけません。scope を受け取らないクエリは、これまでどおり何を返しても構いません。
-- クエリのパラメータが先、scope のパラメータが後です。
-- クエリの中の `LIMIT` は、scope が絞り込む前に行を残します。クエリの中の `ORDER BY` は scope が読む行を並べないので、`LIMIT` のない `ORDER BY` には警告が出ます。行は scope で並べてください。
+- `Get`・`Find`・`First`・`List` のどれかで、スコープのモデルの行か、モデルを値で埋め込んだ構造体の行を読みます。埋め込んだ構造体のほかのフィールドは、クエリが足すカラムを保持します。結果のカラムとフィールド（モデルのフィールドも含む）は 1 対 1 で対応し、クエリが足すカラムはモデルのカラムと重なってはいけません。スコープを受け取らないクエリは、これまでどおり何を返しても構いません。
+- クエリのパラメータが先、スコープのパラメータが後です。
+- クエリの中の `LIMIT` は、スコープが絞り込む前に行を残します。クエリの中の `ORDER BY` はスコープが読む行を並べないので、`LIMIT` のない `ORDER BY` には警告が出ます。行はスコープで並べてください。
 - `After`、`Before`、`Cursor` はモデルの主キーでページを続けるので、結果の行は主キーで区別できなければなりません。2 回現れる行には、それぞれに関連を読み込みます。
 - 速さはデータベースが決め、kanna-orm は約束しません。PostgreSQL 12 以降は 1 回だけ使う `WITH` を文に取り込み、MySQL は取り込むことも、先に全体を読むこともあります。遅いときは、絞り込む条件をクエリの中に書いてください。
 
 ### 外部キー以外のカラムで関連する値を足す
 
-注文の現在の版を承認した担当者のように、外部キー以外のカラムで行に関連する値は、自分で書くクエリで読み込みます。行はいつもどおり scope、カーソル、リレーションで読み、そのキーの値をもう 1 本のクエリで読んで、Go でつなぎます:
+注文の現在の版を承認した担当者のように、外部キー以外のカラムで行に関連する値は、自分で書くクエリで読み込みます。行はいつもどおりスコープ、カーソル、リレーションで読み、そのキーの値をもう 1 本のクエリで読んで、Go でつなぎます:
 
 ```sql
 -- query: ListApprovers
@@ -1306,9 +1306,9 @@ approvers, err := repo.ListApprovers(ctx, ids)
 
 [example](example/postgres/main.go) は、この方法で注文の承認者を読み込みます。
 
-## 渡す scope の検査
+## 渡すスコープの検査
 
-scope によっては、repository のメソッドが、SQL を送る前に毎回失敗します。`Count` は条件だけを取るので、行を並べ替える scope を渡すと `orm: Count takes conditions alone, but its scope orders the rows` を返します。`kanna-orm vet` は、そうした呼び出しを、実行せずに見つけます。
+スコープによっては、repository のメソッドが、SQL を送る前に毎回失敗します。`Count` は条件だけを取るので、行を並べ替えるスコープを渡すと `orm: Count takes conditions alone, but its scope orders the rows` を返します。`kanna-orm vet` は、そうした呼び出しを、実行せずに見つけます。
 
 ```sh
 go tool kanna-orm vet ./...
@@ -1319,14 +1319,14 @@ usecase/orders.go:42:21: error: Count takes conditions alone, but its scope orde
   scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
 ```
 
-呼び出したメソッドの位置に、その呼び出しが返すエラーと同じ文で報告します。失敗の原因が別の場所（自分で書いた scope の中など）にあるときは、その場所も添えます。見つけるのは次のものです。
+呼び出したメソッドの位置に、その呼び出しが返すエラーと同じ文で報告します。失敗の原因が別の場所（自分で書いたスコープの中など）にあるときは、その場所も添えます。見つけるのは次のものです。
 
-- 条件だけを取るもの（`Count`、`Exists`、`Sum`、`Min`、`Max`、`Avg`、集計の projection の `List`、一意キーかモデル全体を取る `Update`、`Or` と `Not` の選択肢）に渡した scope の順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete`、change set を取る `Update` に渡した関連の読み込み
-- 条件のない scope での `Delete` と、change set を取る `Update`（すべての行に効いてしまう）。`Limit` も `Offset` もない、順序つきの `Delete` と、一意キーを取らない change set の `Update`。主キーも NULL のない一意キーもない表の、ページつきの `Delete` と、一意キーを取らない change set の `Update`
-- 関連を読む scope の `After` と `Before`。1 行の関連を読む scope の `Limit` と `Offset`
-- `Limit` と `Offset` に渡した負の定数。何も代入しない change set を渡した `Update`。メソッドが書けない列（upsert が行を突き合わせる列など）に代入する change set
+- 条件だけを取るもの（`Count`、`Exists`、`Sum`、`Min`、`Max`、`Avg`、集計の projection の `List`、一意キーかモデル全体を取る `Update`、`Or` と `Not` の選択肢）に渡したスコープの順序、ページング、関連の読み込み。`Get` と `Find` に渡したページング。projection、1 列の読み込み、`Delete`、変更セットを取る `Update` に渡した関連の読み込み
+- 条件のないスコープでの `Delete` と、変更セットを取る `Update`（すべての行に効いてしまう）。`Limit` も `Offset` もない、順序つきの `Delete` と、一意キーを取らない変更セットの `Update`。主キーも NULL のない一意キーもない表の、ページつきの `Delete` と、一意キーを取らない変更セットの `Update`
+- 関連を読むスコープの `After` と `Before`。1 行の関連を読むスコープの `Limit` と `Offset`
+- `Limit` と `Offset` に渡した負の定数。何も代入しない変更セットを渡した `Update`。メソッドが書けない列（upsert が行を突き合わせる列など）に代入する変更セット
 
-vet は、関数の中の変数、scope を組み立てる分岐、scope を読むクロージャ、自分で書いた scope のメソッドと関数をたどります。interface を通した呼び出しは、kanna-orm がそれに生成した実装が実行するとおりに検査します。報告するのは、どの経路でも失敗する呼び出しだけです。2 ページ目以降でだけページングする scope のように、一部の経路でだけ失敗するものは報告しません。vet がたどらない scope（引数、フィールド、パッケージ変数、スライスで来たもの）も報告しません。テストのファイルは検査しません。テストでは、わざと失敗させることがあるためです。vet が通っても、vet が失敗を見つけた呼び出しがないというだけで、失敗する呼び出しがないことの証明ではありません。
+vet は、関数の中の変数、スコープを組み立てる分岐、スコープを読むクロージャ、自分で書いたスコープのメソッドと関数をたどります。interface を通した呼び出しは、kanna-orm がそれに生成した実装が実行するとおりに検査します。報告するのは、どの経路でも失敗する呼び出しだけです。2 ページ目以降でだけページングするスコープのように、一部の経路でだけ失敗するものは報告しません。vet がたどらないスコープ（引数、フィールド、パッケージ変数、スライスで来たもの）も報告しません。テストのファイルは検査しません。テストでは、わざと失敗させることがあるためです。vet が通っても、vet が失敗を見つけた呼び出しがないというだけで、失敗する呼び出しがないことの証明ではありません。
 
 ## ドライバと方言
 
@@ -1347,7 +1347,7 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 | キーのリスト | `= ANY($1)` | `IN (?, ...)`（長い場合は分割） |
 | リレーションのキー | `unnest(...)` を JOIN | `VALUES ROW(...)` を JOIN（長い場合は分割） |
 | 書き込みの読み戻し | `RETURNING` | `LAST_INSERT_ID()` とキーによる `SELECT` |
-| Upsert | 指定したキーに対する `ON CONFLICT (...)` | 任意のユニークキーに対する `ON DUPLICATE KEY UPDATE` |
+| Upsert | 指定したキーに対する `ON CONFLICT (...)` | 任意の一意キーに対する `ON DUPLICATE KEY UPDATE` |
 | 複数行 | `unnest`（1 つの文） | `VALUES`（長い場合は分割） |
 | 複数行の COPY | pgx の `CopyFrom` による `COPY`（pgx だけ） | なし |
 | キーによるページング | 行の比較（順序の方向が混在する場合を除く） | 展開して書く |
@@ -1365,7 +1365,7 @@ vet は、関数の中の変数、scope を組み立てる分岐、scope を読�
 
 - 変更の追跡、アイデンティティマップの保持、遅延読み込み。メソッドは、呼ばれたときに、宣言が言う文を実行します。
 - ゼロ値をカラムのデフォルト値とみなすこと。ゼロ値は値として書き、データベースが値を割り当てることは `orm:",default"` で言います。
-- 任意の JOIN や、副問合せ・CTE・UNION のようなネストするクエリを scope から組み立てること。読み取り projection での外部キーによる INNER JOIN と LEFT JOIN、集計の projection のフィールドによるグループ化には対応し、それ以外は[手書きの SQL](#手書きの-sql) を使います。
+- 任意の JOIN や、サブクエリ・CTE・UNION のようなネストするクエリをスコープから組み立てること。読み取り projection での外部キーによる INNER JOIN と LEFT JOIN、集計の projection のフィールドによるグループ化には対応し、それ以外は[手書きの SQL](#手書きの-sql) を使います。
 - 1 つの生成パッケージを PostgreSQL と MySQL の両方で動かすこと。型は、1 つのデータベースが答えたものです。
 - マイグレーションの作成や適用。goose などのツールを使い、その結果を `describe` してください。
 
@@ -1390,7 +1390,7 @@ kanna-orm vet [flags] [packages]
 
 | フラグ | 意味 |
 |---|---|
-| `-destination <dir>` | リポジトリの実装を dir に書き出す。インターフェースがある場合は必須。`.` ならインターフェースと同じパッケージに出力する |
+| `-destination <dir>` | repository の実装を dir に書き出す。インターフェースがある場合は必須。`.` ならインターフェースと同じパッケージに出力する |
 | `-driver <name>` | `pgx` または `database/sql`（デフォルト: PostgreSQL では `pgx`、MySQL では `database/sql`） |
 | `-snapshot <file>` | 読み込むスナップショット（デフォルト: モジュールのルートの `kanna-orm.snapshot.json`） |
 | `-tags <list>` | カンマ区切りのビルドタグ |
