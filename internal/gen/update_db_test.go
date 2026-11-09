@@ -217,6 +217,27 @@ func TestUpdateChanges_Postgres(t *testing.T) {
 	})
 }
 
+func TestUpdateReturning_Postgres(t *testing.T) {
+	t.Parallel()
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		ctx := t.Context()
+		o, err := repo.Get(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.Total, o.Status = 333, "held"
+		stored, err := repo.UpdateReturning(ctx, o)
+		if err != nil || stored.ID != 1 || stored.Total != 333 || stored.Status != "held" ||
+			stored.CustomerID != o.CustomerID {
+			t.Fatalf("UpdateReturning = %+v, %v", stored, err)
+		}
+		o.ID = 999
+		if stored, err := repo.UpdateReturning(ctx, o); !errors.Is(err, orm.ErrNotFound) {
+			t.Fatalf("UpdateReturning of no row = %+v, %v; want orm.ErrNotFound", stored, err)
+		}
+	})
+}
+
 func TestUpdateChanges_MySQL(t *testing.T) {
 	t.Parallel()
 	repo := mstdlib.NewOrderRepository(mysqlDB(t))
