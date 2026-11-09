@@ -569,11 +569,12 @@ and value receiver methods. It also generates `NewCategory(db DBTX, opts ...opti
 already declare a function `NewCategory` yourself, which can call `newCategory`.
 The scope types may be in the package too: see [One package](#one-package).
 
-Declare `Bind(db DBTX) Category` to generate transaction binding, in either package. The argument may instead be a concrete database or
-transaction type implementing DBTX, or a type exposing a parameterless `DBTX()` method that returns one, such as
-`Bind(tx tx.Tx) Category`. Bind returns a new implementation using that connection and leaves the original unchanged.
-The input must match the selected driver's statement methods, and the result must be the repository's own interface.
-An existing hand-written `Bind` is preserved.
+Declare `Bind(db DBTX) Category`, in either package, and kanna-orm writes it, so that the repository can run on a
+transaction. The argument may instead be a concrete database or transaction type implementing DBTX, or a type exposing a
+parameterless `DBTX()` method that returns one, such as `Bind(tx tx.Tx) Category`. Bind returns a new implementation
+using that connection and leaves the original unchanged. The argument, or what its `DBTX()` returns, must implement the
+`DBTX` of the driver `-driver` names, and the result must be the repository's own interface. kanna-orm writes no `Bind`
+when you have written one yourself.
 
 The `DBTX` of every package of repositories is the one of the runtime, `type DBTX = kpgx.DBTX` of
 `github.com/go-kanna/orm/pgx`, or `kpgx.CopyDBTX` where kanna-orm writes a [Copy](#copying-many-rows), or
@@ -589,14 +590,13 @@ func provideDBTX(reader db.Reader) pgx.DBTX { return reader }
 A repository that runs on another is given it by a provider of its own, written by hand, as
 `func provideCategory(w db.Writer) Category { return NewCategory(w) }`.
 
-Write application-specific methods directly on the generated type. A method without a recognized verb or SQL query,
-other than `Bind`, is yours to write there; generation stops while it is missing. When you implement a method with a recognized verb or SQL query,
-kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can check its row
-before calling `r.upsert`. kanna-orm writes the helper only when a method written on the type calls it on its
-receiver, as `r.upsert`, so a method running SQL of its own needs none. The helper has the same
-signature and follows the interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not
-already be declared. Queries belong in the destination's
-`.sql` files, including when the destination also declares the interface.
+Write methods of your own on the generated type. A method without a recognized verb or SQL query, other than `Bind`, is
+yours to write there; generation stops while it is missing. When you implement a method with a recognized verb or SQL
+query, kanna-orm generates its database operation under an unexported name: a hand-written `Upsert` can check its row
+before calling `r.upsert`. kanna-orm writes the helper only when a method written on the type calls it on its receiver,
+as `r.upsert`, so a method running SQL of its own needs none. The helper has the same signature and follows the
+interface method's `//kanna:conflict` and `//kanna:lock` directives. Its name must not already be declared. Queries
+belong in the destination's `.sql` files, including when the destination also declares the interface.
 
 ```go
 //go:generate go tool kanna-orm -destination .
@@ -743,7 +743,15 @@ The column's name, which a tag may give, as `orm:"note"` of `Memo`, does not nam
 | `Max`    | `MaxPlacedAt(ctx, s ...scopes.Order) (time.Time, error)`                               | reads the greatest value of a column of the rows the scopes match                     |
 | `Avg`    | `AvgTotal(ctx, s ...scopes.Order) (float64, error)`                                    | reads the average of a column of the rows the scopes match                            |
 
-`Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, with the same absence contract; a scalar one reads a column that is never NULL, as its nil means no row.
+`Get` requires the row to exist and returns `orm.ErrNotFound` when it does not. `Find` returns a pointer and treats
+absence as `nil, nil`; database errors still return `nil, err`. Both require explicit key parameters covering a primary
+or unique key. Additional scopes can filter the row and load relations; a scope that keeps only some of the rows, by a
+`Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A
+key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops
+at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially
+larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may
+implement a `Find...` returning a pointer, to a result struct or to a scalar, which returns `nil, nil` for no row as a
+generated `Find` does; a scalar one reads a column that is never NULL, as its nil means no row.
 
 ```go
 // customerID is customer_id: the orders of one customer.
@@ -852,7 +860,7 @@ pointer in any key component has no related values loaded.
 The generated device scope has `WithTopics()`. A normal generated read loads this relation only when requested, in
 batches, ordered by the selected column. Each enum value goes through its scanner. An explicitly loaded relation with
 no rows is an empty slice; an unrequested relation remains nil. Parent inserts and updates leave the relation alone,
-and custom SQL model mappings exclude it. Write application-specific relation updates separately.
+and custom SQL model mappings exclude it. Writing the related rows is yours to do.
 
 ```go
 device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTopics())
@@ -908,7 +916,7 @@ UPDATE keeps writing the model's values for tagged non-key fields. An upsert kee
 conflict rather than reset it to its database default. The time a row is updated at is written on a conflict by the
 clock, unless `default` leaves it to the database too: see [Creation and update times](#creation-and-update-times).
 
-**On MySQL**, which has no RETURNING, a method returning the model reads its row back by AUTO_INCREMENT, by a primary
+On MySQL, which has no RETURNING, a method returning the model reads its row back by AUTO_INCREMENT, by a primary
 key it writes, or by an upsert's conflict key. When `default` leaves out the key that read needs, generation stops at a
 method returning the model; one returning `error` alone reads nothing back and may leave it out. A bulk write returns
 no model on MySQL.
@@ -1400,7 +1408,14 @@ type ProductSummary struct {
 ListSummaries(ctx context.Context, s ...scopes.Product) ([]ProductSummary, error)
 ```
 
-`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and relations in the result are generation errors. Read projection methods preserve the read contract; filters, ordering, paging, locks, and the normal absence contracts remain available. A scope requesting relation loading is rejected rather than silently ignored. A projection may hold [aggregates](#reading-aggregates) of groups of rows; other expressions can still use hand-written SQL returning a DTO.
+`ListSummaries(ctx, scopes.Products().SKUAsc().PriceLt(2000))` selects only `name, price` from `products`, while
+filtering and ordering by the original scope. A field matches the field of the original model of its name, whose column
+tag and `nullzero` handling it inherits; a field of another name names the column with a tag, as `orm:"note"`. Field
+types must match the corresponding model field exactly. Missing fields, duplicate source columns, empty projections, and
+relations in the result are generation errors. Filters, ordering, paging, and locks remain available, and a read of no
+row returns what it does of the model: `orm.ErrNotFound` of a `Get` or a `First`, and nil of a `Find`. A scope
+requesting relation loading is rejected rather than silently ignored. A projection may hold
+[aggregates](#reading-aggregates) of groups of rows; other expressions can still use hand-written SQL returning a DTO.
 
 
 ### Joining a projection
