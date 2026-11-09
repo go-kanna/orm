@@ -66,7 +66,7 @@ type Order interface {
 }
 ```
 
-モデルは、ドメインでの形のままです:
+モデルには、ドメインで定義したままの型を使います:
 
 ```go
 package model
@@ -655,7 +655,7 @@ type Device struct {
 
 `device_topics (tenant_id, device_id)` から `devices (tenant_id, id)` への関連のような複数カラムの外部キーは、組全体で検索し、親ごとに振り分けます。親モデルは参照先の両カラムを保持する必要があります。組を条件にしてバッチで読み込むため、別テナントで同じ ID があっても混在しません。キーのいずれかのポインタが nil の親は、関連の読み込み対象から外れます。
 
-生成されたスコープには `WithTopics()` が追加されます。生成された通常の読み込みで指定した場合だけ、関連する値をバッチで読み込み、選択したカラムの昇順で格納します。enum の値は Scanner を通ります。読み込んだ関連が 0 件なら空のスライス、指定しなかった関連は nil です。親の INSERT・UPDATE と手書き SQL のモデルマッピングからは除外します。関連の更新処理は別に実装してください。
+生成されたスコープには `WithTopics()` が追加されます。読み込みのスコープで指定した場合だけ、関連する値をバッチで読み込み、選択したカラムの昇順で格納します。enum の値は Scanner を通ります。読み込んだ関連が 0 件なら空のスライス、指定しなかった関連は nil です。親の INSERT と UPDATE は、この関連に触れません。モデルを読む手書きの SQL は、このフィールドのカラムを返さなくても構いません。関連の更新処理は別に実装してください。
 
 ```go
 device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTopics())
@@ -790,7 +790,7 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
   users has unique keys other than (tenant_id, email)
 ```
 
-`orm:",insertonly"` を指定したフィールドは、利用者が登録した経路のように insert でだけ書きます。`Update` と、行と突き合わせた Upsert はそのカラムを変えず、変更セットにもその setter はありません。insert から省く `default` と一緒に指定すると、どこでも書かれなくなるので、生成を止めます。
+`orm:",insertonly"` を指定したフィールドは、利用者がどこから登録したかのように、insert でだけ書きます。`Update` と、行と突き合わせた Upsert はそのカラムを変えず、変更セットにもその setter はありません。insert から省く `default` と一緒に指定すると、どこでも書かれなくなるので、生成を止めます。
 
 #### 突き合わせた行に変更セットを書く
 
