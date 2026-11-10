@@ -245,7 +245,7 @@ func TestCommand_CopyDeclarations(t *testing.T) {
 		{"database/sql", withoutBind, "database/sql", "repository.go:12:2: error: Copy: " +
 			"database/sql has no CopyFrom of pgx, which a Copy writes its rows by\n  generate the repositories on pgx: " +
 			"-driver pgx\n  or write the rows by an Insert of many rows: Insert(ctx context.Context, rows " +
-			"[]model.Order) error"},
+			"[]model.Event) error"},
 		{"Bind of a DBTX that cannot copy", func(a string) string {
 			return strings.Replace(a, bind, "\tBind(db kpgx.DBTX) Event\n", 1)
 		}, "pgx", "repository.go:16:2: " + fmt.Sprintf(noCopyFrom, "its argument", "take")},

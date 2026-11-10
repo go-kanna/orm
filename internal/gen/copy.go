@@ -1,15 +1,18 @@
 package gen
 
 import (
+	"go/types"
+
 	"github.com/go-kanna/internal/diag"
 
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
-// copyDriver reports why m, a Copy, which writes its rows by CopyFrom of pgx, cannot be written for the database and
-// the driver of the run, if it cannot.
-func (r repoReader) copyDriver(m repoMethod) []diag.Diag {
-	insert := "write the rows by an Insert of many rows: Insert(ctx context.Context, rows []model.Order) error"
+// copyDriver reports why m, a Copy of rows of model, which writes its rows by CopyFrom of pgx, cannot be written for
+// the database and the driver of the run, if it cannot.
+func (r repoReader) copyDriver(m repoMethod, model *types.Named) []diag.Diag {
+	insert := "write the rows by an Insert of many rows: " +
+		r.shapeNames(model).fill("Insert(ctx context.Context, rows []{model}) error")
 	switch {
 	case r.s.Dialect == snapshot.MySQL:
 		return []diag.Diag{diag.Errorf(m.pos, "%s: MySQL has no COPY, which a Copy writes its rows by", m.name).

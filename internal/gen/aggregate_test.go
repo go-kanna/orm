@@ -320,7 +320,7 @@ func TestCommand_AggregateMistakes(t *testing.T) {
 	}{
 		{method: "SumAmountByStatus" + scoped + "(model.Cents, error)",
 			want: "SumAmountByStatus: it reads the sum of a column, but model.Sale has no field named AmountByStatus\n" +
-				"  name it after a field, as in SumTotal(ctx context.Context, s ...scopes.Order) (int64, error), whose " +
+				"  name it after a field, as in SumUnits(ctx context.Context, s ...scopes.Sale) (int32, error), whose " +
 				"keys and scopes tell the rows"},
 		{method: "Sum" + scoped + "(int64, error)",
 			want: "Sum: it names no field after Sum, whose column it reads the sum of"},
