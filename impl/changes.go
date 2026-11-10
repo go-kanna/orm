@@ -1,10 +1,11 @@
 package impl
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/go-kanna/orm"
 )
 
 // Changes holds the explicitly assigned columns of an update. Its zero value assigns nothing.
@@ -67,7 +68,7 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 	string, []any, error,
 ) {
 	if len(c.values) == 0 {
-		return "", nil, errors.New("orm: Update requires at least one assigned column")
+		return "", nil, orm.ErrEmptyChangeSet
 	}
 	sets := make([]string, 0, len(c.values))
 	args := make([]any, 0, len(c.values))

@@ -2,10 +2,13 @@ package impl_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/impl"
 )
 
@@ -194,16 +197,16 @@ func TestCursor(t *testing.T) {
 		want        string
 	}{
 		{"another order", token, q.OrderBy("placed_at", false),
-			"orm: the cursor was made in another order: [placed_at desc id desc]"},
+			"orm: invalid cursor: made in another order: [placed_at desc id desc]"},
 		{"no order", token, q, unordered},
-		{"not base64", "!", s, "orm: the cursor is not one kanna-orm made"},
-		{"not JSON", "bm90IEpTT04", s, "orm: the cursor is not one kanna-orm made"},
+		{"not base64", "!", s, "orm: invalid cursor: not one kanna-orm made"},
+		{"not JSON", "bm90IEpTT04", s, "orm: invalid cursor: not one kanna-orm made"},
 		{"a null value", forged(`{"order":["placed_at desc","id desc"],"values":[5,null]}`), s,
-			"orm: the cursor is not one kanna-orm made"},
+			"orm: invalid cursor: not one kanna-orm made"},
 		{"null values only", forged(`{"order":["placed_at desc","id desc"],"values":[null, null]}`), s,
-			"orm: the cursor is not one kanna-orm made"},
+			"orm: invalid cursor: not one kanna-orm made"},
 		{"a value missing", forged(`{"order":["placed_at desc","id desc"],"values":[5]}`), s,
-			"orm: the cursor is not one kanna-orm made"},
+			"orm: invalid cursor: not one kanna-orm made"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,6 +216,9 @@ func TestCursor(t *testing.T) {
 			err := tt.q.DecodeCursor(tt.token, key, map[string]any{"id": &id, "placed_at": &placedAt})
 			if err == nil || err.Error() != tt.want {
 				t.Errorf("DecodeCursor error = %v, want %q", err, tt.want)
+			}
+			if got, want := errors.Is(err, orm.ErrInvalidCursor), tt.want != unordered; got != want {
+				t.Errorf("errors.Is(%v, orm.ErrInvalidCursor) = %v, want %v", err, got, want)
 			}
 		})
 	}
@@ -241,7 +247,12 @@ func TestCursor_Errors(t *testing.T) {
 	}
 	var id, status int
 	err = q.OrderBy("status", false).DecodeCursor(token, key, map[string]any{"id": &id, "status": &status})
-	if err == nil || !strings.HasPrefix(err.Error(), "orm: decode status of the cursor: ") {
-		t.Errorf("DecodeCursor error = %v, want one about decoding status", err)
+	if err == nil || !strings.HasPrefix(err.Error(), "orm: invalid cursor: decode status: ") ||
+		!errors.Is(err, orm.ErrInvalidCursor) {
+		t.Errorf("DecodeCursor error = %v, want orm.ErrInvalidCursor about decoding status", err)
+	}
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		t.Errorf("DecodeCursor error = %v, want it to wrap the error of decoding status", err)
 	}
 }

@@ -1,5 +1,5 @@
-// Package orm holds the error a repository kanna-orm generates returns, and the clock it writes the creation and
-// update times of its rows by. What else code written by hand uses is in its packages:
+// Package orm holds the errors a repository kanna-orm generates and its scopes return, and the clock it writes the
+// creation and update times of its rows by. What else code written by hand uses is in its packages:
 //
 //   - [github.com/go-kanna/orm/scope]: Of, the one field of a scope type declared by hand.
 //   - [github.com/go-kanna/orm/option]: the options a repository's constructor takes.

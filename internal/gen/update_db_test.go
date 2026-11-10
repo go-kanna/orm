@@ -178,8 +178,8 @@ func TestUpdateChanges_Postgres(t *testing.T) {
 		if changed.Memo != nil || changed.Total != 0 || changed.Paid || changed.CustomerID != 10 || changed.Contact == nil {
 			t.Fatalf("partial update: %+v", changed)
 		}
-		if _, err := repo.UpdateFields(ctx, 1, pscopes.OrderChanges()); err == nil {
-			t.Fatal("empty changes accepted")
+		if _, err := repo.UpdateFields(ctx, 1, pscopes.OrderChanges()); !errors.Is(err, orm.ErrEmptyChangeSet) {
+			t.Fatalf("empty changes: %v, want orm.ErrEmptyChangeSet", err)
 		}
 		_, err = repo.UpdateFields(ctx, 1, pscopes.OrderChanges().SetStatus("closed"), pscopes.Order{}.StatusEq("open"))
 		if err != nil {
