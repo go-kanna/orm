@@ -318,6 +318,13 @@ func TestRepositories_Mistakes(t *testing.T) {
 				"  declare it in a form of Delete, as in Delete(ctx context.Context, orderID model.OrderID, lineNo int) " +
 				"error, or DeleteStale(ctx context.Context, s ...scopes.OrderLine) (int64, error) or " +
 				"([]model.OrderLine, error)"},
+		{"a row taken by a pointer", snapshot.PostgreSQL, "\tUpdatePtr(ctx context.Context, l *model.Log) error\n",
+			at + "error: UpdatePtr: it takes l, *model.Log, and rows to write are taken by their values\n" +
+				"  declare it as model.Log"},
+		{"rows taken by pointers", snapshot.PostgreSQL,
+			"\tInsertUsers(ctx context.Context, us []*model.User) error\n",
+			at + "error: InsertUsers: it takes us, []*model.User, and rows to write are taken by their values\n" +
+				"  declare it as []model.User"},
 		{"a column of another model misspelled", snapshot.PostgreSQL,
 			"\tListNamez(ctx context.Context, s ...scopes.User) ([]string, error)\n",
 			at + "error: ListNamez: it returns the values of a column, but model.User has no field whose plural is " +

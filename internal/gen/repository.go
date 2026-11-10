@@ -1294,6 +1294,12 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 		if model, ok := r.unscoped(p.Type()); ok {
 			return nil, nil, noScopeType(*m, model)
 		}
+		if value, ok := valueOfPointers(p.Type()); ok {
+			if _, _, ok := r.rowModel(value); ok {
+				return nil, nil, []diag.Diag{diag.Errorf(m.pos, "%s: it takes %s, %s, and rows to write are taken "+
+					"by their values", m.name, p.Name(), typeName(p.Type())).WithHints("declare it as " + typeName(value))}
+			}
+		}
 		if p.Name() == "" || p.Name() == "_" {
 			return nil, nil, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
 		}
@@ -1305,6 +1311,19 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			`row: take no change set, and tag the columns an upsert leaves as they were orm:",insertonly"`)}
 	}
 	return models, keyParams, nil
+}
+
+// valueOfPointers is t, a pointer or a slice of pointers, of the values they point to.
+func valueOfPointers(t types.Type) (types.Type, bool) {
+	if s, ok := t.Underlying().(*types.Slice); ok {
+		if p, ok := s.Elem().Underlying().(*types.Pointer); ok {
+			return types.NewSlice(p.Elem()), true
+		}
+	}
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		return p.Elem(), true
+	}
+	return nil, false
 }
 
 // keyColumns are the columns the key parameters of m name, in their order.
