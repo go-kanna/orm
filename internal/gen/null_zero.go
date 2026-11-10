@@ -15,6 +15,16 @@ func (e repoEmitter) storageType(c column) string {
 	return typ
 }
 
+// importStorage imports the packages storageValue names for cols, and only those, so that they keep their names when
+// called before the locals are named.
+func (e repoEmitter) importStorage(cols []column) {
+	for _, c := range cols {
+		if c.nullzero {
+			e.storageType(c)
+		}
+	}
+}
+
 func (e repoEmitter) storageValue(c column, expression string) string {
 	if c.nullzero {
 		return fmt.Sprintf("%s{V: %s, Valid: %s != \"\"}", e.storageType(c), expression, expression)
