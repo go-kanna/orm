@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"cmp"
 	"fmt"
 	"go/token"
 	"go/types"
@@ -46,6 +47,8 @@ type matched struct {
 	relations []relation
 	// unchecked names the fields whose types do not type-check.
 	unchecked []string
+	// failed names the columns held by a field reported as wrong, which no column of columns holds then.
+	failed []string
 }
 
 // fields matches the fields of the model of sc to the columns of t, its table. It reports a field that is neither a
@@ -59,6 +62,28 @@ func fields(fset *token.FileSet, sc scope, t snapshot.Table) (matched, []diag.Di
 	m.audits()
 	m.defaults()
 	return m.matched, m.ds
+}
+
+// mistakes are the errors of ds, the diagnostics of fields, but those of a field whose type does not type-check, which
+// the type error behind it says more of.
+func mistakes(ds []diag.Diag) []diag.Diag {
+	var errs []diag.Diag
+	for _, d := range ds {
+		if d.Severity == diag.Error && d.Message != packages.NotTypeChecked(d.Pos).Message {
+			errs = append(errs, d)
+		}
+	}
+	return errs
+}
+
+// distinct returns ds, each told once.
+func distinct(ds []diag.Diag) []diag.Diag {
+	seen := map[string]bool{}
+	return slices.DeleteFunc(ds, func(d diag.Diag) bool {
+		told := seen[d.String()]
+		seen[d.String()] = true
+		return told
+	})
 }
 
 type matcher struct {
@@ -98,6 +123,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 		case packages.Invalid(f.Type()):
 			m.ds = append(m.ds, packages.NotTypeChecked(pos))
 			m.unchecked = append(m.unchecked, f.Name())
+			m.failed = append(m.failed, cmp.Or(tag.column, columnName(f.Name())))
 			continue
 		}
 
@@ -149,6 +175,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 			typ := types.TypeString(t, relativeTo(f.Pkg()))
 			m.ds = append(m.ds, diag.Errorf(pos, "%s: %s is neither a column nor a relation", label, typ).
 				WithHints(`hold the column in a type with a Scan method, or leave the field out with orm:"-"`))
+			m.failed = append(m.failed, cmp.Or(tag.column, columnName(f.Name())))
 		}
 	}
 }
@@ -173,6 +200,12 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		return
 	}
 	col := m.table.Columns[i]
+	reported := len(m.ds)
+	defer func() {
+		if len(m.ds) > reported {
+			m.failed = append(m.failed, name)
+		}
+	}()
 	if insertDefault && tag.insertOnly {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: default leaves %s.%s out of an insert, and insertonly out of every "+
 			"other write, so it would never be written", label, m.sc.table, name))

@@ -130,7 +130,7 @@ func Links(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, e
 	for _, sc := range scopes {
 		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
-		links, lds := l.link(sc, f.columns, f.relations)
+		links, lds := l.link(sc, f)
 		ds = append(ds, lds...)
 		for _, lk := range links {
 			got = append(got, fmt.Sprintf("%s.%s %s %s.%s: %s; %s = %s", sc.model.Obj().Name(),

@@ -61,7 +61,7 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 	for _, sc := range scopes {
 		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
-		links, lds := l.link(sc, f.columns, f.relations)
+		links, lds := l.link(sc, f)
 		ds = append(ds, lds...)
 		ds = append(ds, sameNames(sc, f.columns, links)...)
 		key, missing := held(f.columns, s.Tables[sc.table].PrimaryKey)
@@ -77,7 +77,8 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 		plans[i].written = written[plans[i].name]
 	}
 	ds = append(ds, wds...)
-	return plans, append(ds, checkNames(pkg, plans, s.Dialect)...)
+	// The fields of a model another package declares the scope type of are told once, however many relations reach it.
+	return plans, distinct(append(ds, checkNames(pkg, plans, s.Dialect)...))
 }
 
 // sameNames reports a field whose name is that of another of its kind, columns or links, so that their methods would

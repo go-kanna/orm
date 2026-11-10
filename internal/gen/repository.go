@@ -296,7 +296,10 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 	}
 	ds = append(ds, r.copyBinds(repos)...)
 	ds = append(ds, generatedTwice(repos)...)
-	return repos, append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
+	ds = append(ds, unusedQueries(r.queries, r.pkg.PkgPath, methods)...)
+	// What is wrong with a table or a model many methods share is told once: that of the repository's name, which each
+	// method that tells no table is told, and the fields of a model.
+	return repos, distinct(ds)
 }
 
 // declaredAlready reports each of names, which the implementation of repo declares, that the destination declares
@@ -339,24 +342,22 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	if repo.publicConstructor {
 		names = append(names, "New"+repo.name)
 	}
-	if ds := r.declaredAlready(repo, names); ds != nil {
-		return repo, ds
-	}
+	// The methods are read all the same, so that what is wrong with them is told, and their queries are not unused.
+	ds := r.declaredAlready(repo, names)
 	if r.local && !ts.Name.IsExported() {
-		return repo, []diag.Diag{diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
-			repo.name)}
+		return repo, append(ds, diag.Errorf(pos, "%s: a repository implemented in its own package must be exported",
+			repo.name))
 	}
 	obj, _ := r.pkg.Types.Scope().Lookup(ts.Name.Name).(*types.TypeName)
 	syntax, isInterface := ts.Type.(*ast.InterfaceType)
 	if obj == nil || !isInterface || ts.TypeParams != nil {
-		return repo, []diag.Diag{diag.Errorf(pos, "%s: //kanna:repository marks an interface, not generic", repo.name)}
+		return repo, append(ds, diag.Errorf(pos, "%s: //kanna:repository marks an interface, not generic", repo.name))
 	}
 	iface := obj.Type().Underlying().(*types.Interface) //nolint:forcetypeassert // its syntax is an interface's
 	var fallback tableModel
 	if d.Table != "" {
-		if fallback = r.modelOfTable(d.Pos, repo.name, d.Table, "which table= names"); fallback.ds != nil {
-			return repo, fallback.ds
-		}
+		fallback = r.modelOfTable(d.Pos, repo.name, d.Table, "which table= names")
+		ds = append(ds, fallback.ds...)
 	} else if table, ok := decl.TableOf(strings.TrimSuffix(repo.name, "Repository"), func(table string) bool {
 		_, ok := r.s.Tables[table]
 		return ok
@@ -376,7 +377,6 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	}
 	slices.SortFunc(methods, func(a, b *types.Func) int { return cmp.Compare(a.Pos(), b.Pos()) })
 
-	var ds []diag.Diag
 	implementation := repo.implementation()
 	called := r.calls[implementation]
 	for _, fn := range methods {
@@ -427,13 +427,7 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 			ds = append(ds, r.declaredAlready(repo, repo.operationNames())...)
 		}
 	}
-	// Each method that tells no table is told what is wrong with the one of the repository's name, which is told once.
-	seen := map[string]bool{}
-	return repo, slices.DeleteFunc(ds, func(d diag.Diag) bool {
-		told := seen[d.String()]
-		seen[d.String()] = true
-		return told
-	})
+	return repo, ds
 }
 
 // method reads fn, a method of the repository ts declares, as field, its syntax, declares it. fallback is the model
@@ -583,7 +577,10 @@ func (r repoReader) target(m *repoMethod, models []*types.Named, fallback tableM
 			target.name)
 	}
 	m.target, m.table = target, table
-	f, _ := fields(r.pkg.Fset, scope{name: target.name, model: m.model, table: target.table}, table)
+	f, fds := fields(r.pkg.Fset, scope{name: target.name, model: m.model, table: target.table}, table)
+	if wrong := mistakes(fds); wrong != nil {
+		return wrong // what the method says of the fields would follow from them
+	}
 	m.columns = f.columns
 	if m.projection != nil {
 		return r.projectionFields(m)
