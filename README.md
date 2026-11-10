@@ -1414,7 +1414,8 @@ passed over, as InnoDB locks the rows a statement scans.
   no index for its condition locks the whole table.
 - `//kanna:lock` anywhere but right above such a method gets a warning, as nothing reads it and the method is generated
   without the lock. One on a method a [hand-written query](#hand-written-sql) or your own code alone implements stops
-  generation: write the lock there. A method delegating to a generated helper keeps its lock on that helper.
+  generation: write the lock there, and in a query taking scopes, mind [what it locks](#scopes-on-a-query). A method
+  delegating to a generated helper keeps its lock on that helper.
 -  A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a
   warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such
   as `GetForUpdateForm`, says nothing of a lock.
@@ -1761,6 +1762,10 @@ SELECT orders.id, ..., orders.customer_name FROM list_with_customers AS orders W
 - The query's parameters come first, then those of the scopes.
 - A `LIMIT` in the query keeps its rows before the scopes narrow them. An `ORDER BY` in it orders nothing the scopes
   read, so one without a `LIMIT` gets a warning: order the rows by the scopes.
+- A lock in the query, as `FOR UPDATE SKIP LOCKED`, locks the rows the query reads before the scopes narrow and page
+  them: with `Limit(1)`, it locks every row of the query, and a second worker skipping them gets none. Such a lock gets
+  a warning: to lock the rows of a page, write its condition and its `LIMIT` in the query, and take no scopes.
+  `//kanna:lock` on such a method stops generation, as on any query written by hand.
 - `After`, `Before`, and `Cursor` continue a page by the primary key of the model, so the rows of the result must be
   told apart by it. A row that appears twice gets its relations twice, one set each.
 - How fast it runs is for the database to say, and kanna-orm promises nothing of it: PostgreSQL 12 and later read a

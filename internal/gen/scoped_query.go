@@ -50,7 +50,8 @@ func (r repoReader) queryScope(m *repoMethod, model *types.Named) []diag.Diag {
 
 // scopedResult checks the result of m, a query written by hand that takes scopes: rows of its model, or of a struct
 // embedding it, which adds the columns the query adds to them. It names the query in the statement that applies the
-// scopes to its result, and warns of an order of the query's own, which that statement does not keep.
+// scopes to its result, and warns of an order of the query's own, which that statement does not keep, and of a lock
+// of the query's own, which takes the rows before the scopes narrow them.
 func (r repoReader) scopedResult(m *repoMethod, q *query, st sqlfile.Statement) []diag.Diag {
 	if q.scalar || !types.Identical(q.row, m.model) && embedded(q.row, m.model) == "" {
 		model := typeName(m.model)
@@ -58,11 +59,16 @@ func (r repoReader) scopedResult(m *repoMethod, q *query, st sqlfile.Statement) 
 			m.name, model, model).WithHints("as in struct{ " + model + "; Approver *string }, which adds a column")}
 	}
 	q.cte = r.cteName(m.name, m.target.table)
+	var ds []diag.Diag
 	if outerOrderWithoutLimit(q.sql) {
-		return []diag.Diag{diag.Warningf(st.Header, "-- query: %s: its ORDER BY orders no rows the scopes read", m.name).
-			WithHints("order them by the scopes, or keep the ORDER BY with a LIMIT")}
+		ds = append(ds, diag.Warningf(st.Header, "-- query: %s: its ORDER BY orders no rows the scopes read", m.name).
+			WithHints("order them by the scopes, or keep the ORDER BY with a LIMIT"))
 	}
-	return nil
+	if pos, clause, ok := st.Lock(r.s.Dialect); ok {
+		ds = append(ds, diag.Warningf(pos, "-- query: %s: its %s locks the rows of the query before the scopes narrow "+
+			"and page them", m.name, clause).WithHints("write the condition and the page in the query, and take no scopes"))
+	}
+	return ds
 }
 
 // embedded names the field of row, a struct, embedding model by value, if there is one.

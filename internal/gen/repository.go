@@ -462,10 +462,16 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		if conflict.Found {
 			cds = append(cds, hasNoGeneratedSQL(conflict, "conflict", m.name, "-- query: "+m.name))
 		}
+		qds := r.query(&m, fn, st, field, ts)
 		if lock.Found {
-			cds = append(cds, hasNoGeneratedSQL(lock, "lock", m.name, "-- query: "+m.name))
+			d := hasNoGeneratedSQL(lock, "lock", m.name, "-- query: "+m.name)
+			if m.scoped {
+				d.Hints = []string{"lock in -- query: " + m.name + ", with the condition and the page written there, and " +
+					"take no scopes", "a lock there with scopes takes the rows before the scopes narrow and page them"}
+			}
+			cds = append(cds, d)
 		}
-		return m, append(cds, r.query(&m, fn, st, field, ts)...)
+		return m, append(cds, qds...)
 	}
 
 	sig := fn.Signature()

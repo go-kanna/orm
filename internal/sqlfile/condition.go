@@ -54,12 +54,17 @@ func (s Statement) Condition(table string, d snapshot.Dialect) (Condition, *diag
 
 	text := strings.TrimRightFunc(s.Text[start:stop], unicode.IsSpace)
 	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
-	before := s.Text[:start+len(text)-len(trimmed)]
-	return Condition{Text: trimmed, Pos: token.Position{
+	return Condition{Text: trimmed, Pos: s.at(start + len(text) - len(trimmed))}, nil
+}
+
+// at is the position of the byte at offset of s.Text.
+func (s Statement) at(offset int) token.Position {
+	before := s.Text[:offset]
+	return token.Position{
 		Filename: s.Header.Filename,
 		Line:     s.Line + strings.Count(before, "\n"),
 		Column:   utf8.RuneCountInString(before[strings.LastIndexByte(before, '\n')+1:]) + 1,
-	}}, nil
+	}
 }
 
 const notShaped = "is not of the shape a scope takes"
