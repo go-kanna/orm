@@ -9,6 +9,7 @@ import (
 	"github.com/go-kanna/internal/cli"
 
 	"github.com/go-kanna/orm/internal/gen"
+	"github.com/go-kanna/orm/internal/snapshot"
 )
 
 func TestCommand_HandWrittenVerbs(t *testing.T) {
@@ -53,6 +54,13 @@ func TestCommand_HandWrittenVerbs(t *testing.T) {
 // methods a query implements, declared as declared, the query renamed after it, and reports what the run returned.
 func generateRenamedQuery(t *testing.T, archive, method, declared string) (int, string) {
 	t.Helper()
+	return generateRewrittenQuery(t, archive, method, declared, "", "")
+}
+
+// generateRewrittenQuery is generateRenamedQuery with the SQL of the query from, as the snapshot describes it, written
+// as to in archive.
+func generateRewrittenQuery(t *testing.T, archive, method, declared, from, to string) (int, string) {
+	t.Helper()
 	old, _, _ := strings.Cut(method, "(")
 	name, _, _ := strings.Cut(declared, "(")
 	archive = strings.Replace(archive, method, declared, 1)
@@ -65,6 +73,9 @@ func generateRenamedQuery(t *testing.T, archive, method, declared string) (int, 
 		t.Fatal(err)
 	}
 	data = []byte(strings.ReplaceAll(string(data), "impl."+old+`"`, "impl."+name+`"`))
+	if from != "" {
+		data = []byte(strings.Replace(string(data), snapshot.Digest(from), snapshot.Digest(to), 1))
+	}
 	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // test module snapshot
 		t.Fatal(err)
 	}
@@ -139,5 +150,39 @@ func TestListOf(t *testing.T) {
 		if got := gen.ListOf(tt.before, tt.after); got != tt.want {
 			t.Errorf("ListOf(%q, %q) = %s, want %s", tt.before, tt.after, got, tt.want)
 		}
+	}
+}
+
+func TestCommand_ScopedQueryLocks(t *testing.T) {
+	t.Parallel()
+	const (
+		lookup   = "Lookup(ctx context.Context, id int64) (model.Record, error)"
+		declared = "ListRecords(ctx context.Context, id int64, s ...scopes.Record) ([]model.Record, error)"
+		sql      = "SELECT id, state, note FROM records WHERE id = :id;"
+	)
+	for _, tt := range []struct {
+		name, archive, sql string
+		ok                 bool
+		want               string
+	}{
+		{"a lock in the query", typedQueryShop, "SELECT id, state, note FROM records WHERE id = :id\nFOR UPDATE SKIP LOCKED;",
+			true, "queries.sql:5:1: warning: -- query: ListRecords: its FOR UPDATE locks the rows of the query before the " +
+				"scopes narrow and page them\n  write the condition and the page in the query, and take no scopes"},
+		{"a lock in a comment of the query", typedQueryShop,
+			"SELECT id, state, note FROM records WHERE id = :id; -- not FOR UPDATE", true, ""},
+		{"//kanna:lock", strings.Replace(typedQueryShop, "\tLookup(ctx", "\t//kanna:lock update\n\tLookup(ctx", 1), sql,
+			false, "ListRecords: //kanna:lock is for a method kanna-orm writes the SQL of\n" +
+				"  lock in -- query: ListRecords, with the condition and the page written there, and take no scopes\n" +
+				"  a lock there with scopes takes the rows before the scopes narrow and page them"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			archive := strings.Replace(tt.archive, sql, tt.sql, 1)
+			code, errOut := generateRewrittenQuery(t, archive, lookup, declared, sql, tt.sql)
+			if (code == cli.ExitOK) != tt.ok || !strings.Contains(errOut, tt.want) ||
+				tt.want == "" && strings.Contains(errOut, "lock") {
+				t.Fatalf("generate = %d, want %q\n%s", code, tt.want, errOut)
+			}
+		})
 	}
 }
