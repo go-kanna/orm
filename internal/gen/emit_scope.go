@@ -399,12 +399,18 @@ func (e emitter) column(c column) {
 		s, vs := sc.Name("s"), sc.Name("vs")
 		in, notIn := e.where(s, goString(sql+" = ANY("), vs, goString(")")),
 			e.where(s, goString(sql+" <> ALL("), vs, goString(")"))
+		// In of no values is the empty set, which matches no row, so that Not of it matches every row: PostgreSQL
+		// is given an empty array, as a nil slice would go as NULL, and MySQL a subquery of no rows.
+		none := fmt.Sprintf("if %[1]s == nil {\n%[1]s = []%[2]s{}\n}\n", vs, typ)
 		if e.d == snapshot.MySQL {
-			list := e.ref("List") + "(" + vs + ")"
+			list := e.ref("InList") + "(" + vs + ")"
 			in, notIn = e.where(s, goString(sql+" IN ("), list, goString(")")),
 				e.where(s, goString(sql+" NOT IN ("), list, goString(")"))
+			none = ""
 		}
-		e.method(fmt.Sprintf("narrows to the rows whose %s is one of %s.", col, vs), s, name+"In", vs+" ..."+typ, in)
+		e.printf("// %sIn narrows to the rows whose %s is one of %s.\n", name, col, vs)
+		e.printf("func (%[1]s %[2]s) %[3]sIn(%[4]s ...%[5]s) %[2]s {\n%[6]sreturn %[2]s{%[8]s(%[7]s)}\n}\n\n", s,
+			e.p.name, name, vs, typ, none, in, e.toScope)
 		e.printf("// %sNotIn narrows to the rows whose %s is none of %s.\n", name, col, vs)
 		e.printf("func (%[1]s %[2]s) %[3]sNotIn(%[4]s ...%[5]s) %[2]s {\nif len(%[4]s) == 0 {\nreturn %[1]s\n}\n"+
 			"return %[2]s{%[7]s(%[6]s)}\n}\n\n", s, e.p.name, name, vs, typ, notIn, e.toScope)

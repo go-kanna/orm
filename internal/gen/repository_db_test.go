@@ -259,6 +259,33 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 	})
 }
 
+func TestGeneratedRepository_PostgresInOfNone(t *testing.T) {
+	t.Parallel()
+
+	o := pscopes.Order{}
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		for _, tt := range []struct {
+			name  string
+			scope pscopes.Order
+			want  []model.OrderID
+		}{
+			{"In of none", o.IDIn(), nil},
+			{"In of an empty slice", o.IDIn([]model.OrderID{}...), nil},
+			{"Not of In of none", o.Not(o.IDIn()), []model.OrderID{1, 2, 3}},
+			{"Not of In of an empty slice", o.Not(o.IDIn([]model.OrderID{}...)), []model.OrderID{1, 2, 3}},
+			{"Not of In of none, of a column that may be NULL", o.Not(o.MemoIn()), []model.OrderID{1, 2, 3}},
+			{"Or of In of none", o.Or(o.IDIn(), o.IDEq(3)), []model.OrderID{3}},
+			{"Not of Or of In of none", o.Not(o.Or(o.IDIn(), o.IDEq(3))), []model.OrderID{1, 2}},
+			{"NotIn of none", o.IDNotIn(), []model.OrderID{1, 2, 3}},
+		} {
+			got, err := repo.List(t.Context(), tt.scope.IDAsc())
+			if err != nil || !slices.Equal(ids(got), tt.want) {
+				t.Errorf("List, %s = %v, %v; want %v", tt.name, ids(got), err, tt.want)
+			}
+		}
+	})
+}
+
 func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 	t.Parallel()
 
