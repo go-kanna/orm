@@ -83,10 +83,10 @@ func (e repoEmitter) written(c column, row, now string) string {
 	return e.storageValue(c, row+"."+fieldPath(c))
 }
 
-// changesOf is the change set, of the parameter changes, an update or an upsert of m writes: the one given, writing
-// the update time too, now, when it writes any column.
-func changesOf(m repoMethod, changes, now string) string {
-	of := changes + ".Of()"
+// changesOf is the change set, of the parameter changes, an update or an upsert of m writes: the one given, as the
+// runtime reads it, writing the update time too, now, when it writes any column.
+func (e repoEmitter) changesOf(m repoMethod, changes, now string) string {
+	of := fmt.Sprintf("%s[%s](%s.Of())", e.ref("Changes"), types.TypeString(m.model, e.f.Qualifier), changes)
 	if c, ok := m.touched(); ok {
 		of += fmt.Sprintf(".Touch(%q, %s)", c.col.Name, now)
 	}

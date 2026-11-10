@@ -59,7 +59,8 @@ first := NewOrders(reader, option.WithHook(hook.Hook{After: after}))
 	if first.(orders).db.dbtx != reader { t.Fatal("constructor did not use reader") }
 	tx := db.Tx{}
 	bound := first.Bind(%s)
-	if len(bound.(orders).db.options.Hooks) != 1 { t.Fatal("Bind dropped the hooks") }
+	_, trace := bound.(orders).db.options.StartQuery(context.Background(), "SELECT 1", nil)
+	if trace == nil { t.Fatal("Bind dropped the hooks") }
 	if bound.(orders).db.dbtx != tx.DBTX() { t.Fatal("Bind did not use the transaction") }
 	if first.(orders).db.dbtx != reader { t.Fatal("Bind changed the original repository") }
 }

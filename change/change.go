@@ -4,5 +4,6 @@ package change
 
 import "github.com/go-kanna/orm/impl"
 
-// Set is the columns an update writes, and their values. The Of method of a generated change set returns it.
-type Set[M any] = impl.Changes[M]
+// Set is the columns an update writes, and their values. The Of method of a generated change set returns it, and only
+// the setters of the change set write it.
+type Set[M any] impl.Changes[M]

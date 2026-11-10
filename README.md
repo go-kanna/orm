@@ -28,7 +28,7 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 |--------------|-----------------------------------------------------------------------------------------|
 | `orm`        | `ErrNotFound`, `ErrInvalidCursor`, and `ErrEmptyChangeSet`, the errors to test for      |
 | `orm/scope`  | `Of`, the one field of a scope type declared by hand, and `Raw`, for SQL written in Go  |
-| `orm/option` | `WithHook`, the option a repository's constructor takes                                 |
+| `orm/option` | `WithHook`, `WithClock`, and `Join`, the options a repository's constructor takes       |
 | `orm/hook`   | `Hook`, `Query`, and `Execution`, the functions that option takes and what they receive |
 | `orm/pgx`    | `DBTX`, what a repository runs on by pgx, which a dependency injector provides          |
 | `orm/stdlib` | `DBTX`, what a repository runs on by `database/sql`, likewise                           |
@@ -1524,7 +1524,8 @@ from running calls no hook.
 Hooks can be given more than once, and those given first enclose the others: each Before runs in the order given, with
 the context the one before returned, and each After in the reverse order, with the context of its own Before. So a
 tracing hook that starts a span in its Before and ends the span of its context in its After ends its own span, whatever
-hooks come after it. `Bind` keeps the hooks when switching to a transaction. Without an After, no time is measured.
+hooks come after it. `option.Join` gives options as one, in their order, for a dependency injector that holds one value
+of a type. `Bind` keeps the hooks when switching to a transaction. Without an After, no time is measured.
 Hooks can run concurrently and should be safe for concurrent use. Treat arguments as borrowed values: do not modify
 them, and copy values you need to retain after the call. This works with PostgreSQL through pgx or `database/sql`, and
 MySQL through `database/sql`. A method you write on the implementation goes through the hooks too when it runs its

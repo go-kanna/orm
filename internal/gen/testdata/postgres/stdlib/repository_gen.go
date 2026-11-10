@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-kanna/orm"
-	"github.com/go-kanna/orm/change"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	"github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
@@ -718,7 +717,7 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 }
 
 func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR UPDATE`
@@ -734,7 +733,7 @@ func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (mo
 }
 
 func (r OrderRepository) GetForNoKeyUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetForNoKeyUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR NO KEY UPDATE`
@@ -750,7 +749,7 @@ func (r OrderRepository) GetForNoKeyUpdate(ctx context.Context, id model.OrderID
 }
 
 func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR SHARE`
@@ -766,7 +765,7 @@ func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (mod
 }
 
 func (r OrderRepository) GetForKeyShare(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetForKeyShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order" FROM orders WHERE id = $1 FOR KEY SHARE`
@@ -782,7 +781,7 @@ func (r OrderRepository) GetForKeyShare(ctx context.Context, id model.OrderID) (
 }
 
 func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetNoWait needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -805,7 +804,7 @@ func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...s
 }
 
 func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: FirstUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -828,7 +827,7 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (
 }
 
 func (r OrderRepository) ListUnlocked(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return nil, fmt.Errorf("orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -845,7 +844,7 @@ func (r OrderRepository) ListIDsForKeyShare(ctx context.Context, s ...scopes.Ord
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return nil, fmt.Errorf("orm: ListIDsForKeyShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	if err := q.ProjectionOnly("ListIDsForKeyShare"); err != nil {
@@ -883,7 +882,7 @@ func (r OrderRepository) GetStatusForUpdate(ctx context.Context, id model.OrderI
 	var q impl.Of[model.Order]
 	q = q.Where(`id = `, id)
 	var zero model.OrderStatus
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return zero, fmt.Errorf("orm: GetStatusForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	if err := q.ProjectionOnly("GetStatusForUpdate"); err != nil {
@@ -1117,7 +1116,7 @@ func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID,
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	q = q.Where(`id = `, id)
 	text, args, err := changes.RenderUpdate(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
 	if err != nil {
@@ -1143,7 +1142,7 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c scopes.OrderChangeSet
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return 0, err
@@ -1165,7 +1164,7 @@ func (r OrderRepository) UpdateByCustomer(ctx context.Context, customerID int64,
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	q = q.Where(`customer_id = `, customerID)
 	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
@@ -1188,7 +1187,7 @@ func (r OrderRepository) UpdateFields(ctx context.Context, id model.OrderID, c s
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	q = q.Where(`id = `, id)
 	text, args, err := changes.RenderUpdate(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
 	if err != nil {
@@ -1212,7 +1211,7 @@ func (r OrderRepository) UpdateManyReturning(ctx context.Context, c scopes.Order
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return nil, err
@@ -1245,7 +1244,7 @@ func (r OrderRepository) UpdateScoped(ctx context.Context, o model.Order, s ...s
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	var changes change.Set[model.Order]
+	var changes impl.Changes[model.Order]
 	changes = changes.Set("customer_id", o.CustomerID)
 	changes = changes.Set("status", o.Status)
 	changes = changes.Set("placed_at", o.PlacedAt)
@@ -1274,7 +1273,7 @@ func (r OrderRepository) UpdateScoped(ctx context.Context, o model.Order, s ...s
 
 func (r OrderRepository) UpdateLineFields(ctx context.Context, orderID model.OrderID, lineNo int, c scopes.OrderLineChangeSet) (model.OrderLine, error) {
 	var q impl.Of[model.OrderLine]
-	changes := c.Of()
+	changes := impl.Changes[model.OrderLine](c.Of())
 	q = q.Where(`order_id = `, orderID)
 	q = q.Where(`line_no = `, lineNo)
 	text, args, err := changes.RenderUpdate(impl.Postgres, "order_lines", []string{"sku"}, q)
@@ -1299,7 +1298,7 @@ func (r OrderRepository) UpdateUnlocked(ctx context.Context, c scopes.OrderChang
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, ` FOR UPDATE SKIP LOCKED`, q)
 	if err != nil {
 		return nil, err
@@ -1332,7 +1331,7 @@ func (r OrderRepository) UpdateNoWait(ctx context.Context, c scopes.OrderChangeS
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	text, args, err := changes.RenderUpdateSelected(impl.Postgres, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, ` FOR UPDATE NOWAIT`, q)
 	if err != nil {
 		return 0, err
@@ -1363,7 +1362,7 @@ RETURNING id, name, nickname`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error) {
-	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
+	set, err := impl.Changes[model.Order](c.Of()).UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
 	if err != nil {
 		return model.Order{}, err
 	}

@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	implPath  = "github.com/go-kanna/orm/impl"
-	scopePath = "github.com/go-kanna/orm/scope"
+	implPath   = "github.com/go-kanna/orm/impl"
+	scopePath  = "github.com/go-kanna/orm/scope"
+	changePath = "github.com/go-kanna/orm/change"
 )
 
 // isScope reports whether t is a scope: the runtime's, the scope package's, or a scope type, whose one field is a
@@ -22,9 +23,10 @@ func isScope(t types.Type) bool {
 		wrapsWith(t, func(f types.Type) bool { return isNamedIn(f, scopePath, "Of") })
 }
 
-// isChange reports whether t is a change set: the runtime's, which change.Set names, or one of a scope type.
+// isChange reports whether t is a change set: the runtime's, the change package's, or one of a scope type, whose one
+// field is the runtime's.
 func isChange(t types.Type) bool {
-	return isNamedIn(t, implPath, "Changes") ||
+	return isNamedIn(t, implPath, "Changes") || isNamedIn(t, changePath, "Set") ||
 		wrapsWith(t, func(f types.Type) bool { return isNamedIn(f, implPath, "Changes") })
 }
 

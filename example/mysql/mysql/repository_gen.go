@@ -79,11 +79,11 @@ func (d kDatabase) queryRow(ctx context.Context, query string, args ...any) impl
 }
 
 // kSQLRows and kSQLRow tell of a time read without parseTime=true, which the DSN of go-sql-driver/mysql needs.
-func (r kSQLRows) Scan(dest ...any) error { return stdlib.MySQLScanError(r.Rows.Scan(dest...)) }
+func (r kSQLRows) Scan(dest ...any) error { return impl.MySQLScanError(r.Rows.Scan(dest...)) }
 
 type kSQLRow struct{ *sql.Row }
 
-func (r kSQLRow) Scan(dest ...any) error { return stdlib.MySQLScanError(r.Row.Scan(dest...)) }
+func (r kSQLRow) Scan(dest ...any) error { return impl.MySQLScanError(r.Row.Scan(dest...)) }
 
 // Customer implements repository.Customer on MySQL through database/sql.
 type Customer struct{ db kDatabase }
@@ -99,7 +99,7 @@ var _ repository.Customer = Customer{}
 
 func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
 	now := r.db.Now(ctx)
-	set, err := changes.Of().Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"email"})
+	set, err := impl.Changes[model.Customer](changes.Of()).Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"email"})
 	if err != nil {
 		return model.Customer{}, err
 	}
@@ -156,7 +156,7 @@ func (r Customer) UpdatePhone(ctx context.Context, id model.CustomerID, c scopes
 		qs[i] = impl.Of[model.Customer](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of().Touch("updated_at", now)
+	changes := impl.Changes[model.Customer](c.Of()).Touch("updated_at", now)
 	q = q.Where(`id = `, id)
 	text, args, err := changes.RenderUpdate(impl.MySQL, "customers", []string{"email", "name", "phone", "updated_at"}, q)
 	if err != nil {
@@ -599,7 +599,7 @@ func (r Order) Update(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note"}, []string{"id"}, "", q)
 	if err != nil {
 		return 0, r.mapError(orderOperationUpdate, err)
@@ -690,7 +690,7 @@ func NewFulfillment(db DBTX, opts ...option.Option) Fulfillment { return newFulf
 var _ repository.Fulfillment = Fulfillment{}
 
 func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	const q = `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ? FOR UPDATE`
@@ -708,7 +708,7 @@ func (r Fulfillment) GetForUpdate(ctx context.Context, id model.OrderID) (model.
 }
 
 func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, fmt.Errorf("orm: FirstToShip needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it")
 	}
 	qs := make([]impl.Of[model.Order], len(s))

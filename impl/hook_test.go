@@ -134,11 +134,37 @@ func TestStartQuery_BeforeAlone(t *testing.T) {
 
 func TestOptions_Option(t *testing.T) {
 	t.Parallel()
-	noop := hook.Hook{After: func(context.Context, hook.Execution) {}}
-	o := impl.NewOptions(impl.WithHook(noop))
-	more := impl.NewOptions(o.Option(), impl.WithHook(noop))
-	if len(o.Hooks) != 1 || len(more.Hooks) != 2 {
-		t.Fatalf("Option gave %d hooks and kept %d of its own, want 2 and 1", len(more.Hooks), len(o.Hooks))
+	n := 0
+	counted := impl.WithHook(hook.Hook{After: func(context.Context, hook.Execution) { n++ }})
+	afters := func(o impl.Options) int {
+		n = 0
+		_, trace := o.StartQuery(t.Context(), "SELECT 1", nil)
+		trace.End(nil)
+		return n
+	}
+	o := impl.NewOptions(counted)
+	more := impl.NewOptions(o.Option(), counted)
+	if a, b := afters(o), afters(more); a != 1 || b != 2 {
+		t.Fatalf("Option gave %d hooks and kept %d of its own, want 2 and 1", b, a)
+	}
+}
+
+func TestJoin(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	named := func(name string) impl.Option {
+		return impl.WithHook(hook.Hook{Before: func(ctx context.Context, _ hook.Query) context.Context {
+			calls = append(calls, name)
+			return ctx
+		}})
+	}
+	opts := []impl.Option{named("b"), named("c")}
+	joined := impl.Join(opts...)
+	opts[0] = named("x")
+	o := impl.NewOptions(named("a"), joined, impl.Join[impl.Option](), impl.Option{}, named("d"))
+	o.StartQuery(t.Context(), "SELECT 1", nil)
+	if want := []string{"a", "b", "c", "d"}; !slices.Equal(calls, want) {
+		t.Errorf("Befores ran as %q, want %q", calls, want)
 	}
 }
 
@@ -149,7 +175,7 @@ func (c fixedClock) Now(context.Context) time.Time { return time.Time(c) }
 func TestOptions_Now(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	for _, o := range []impl.Options{impl.NewOptions(), impl.NewOptions(impl.WithClock(nil))} {
+	for _, o := range []impl.Options{impl.NewOptions[impl.Option](), impl.NewOptions(impl.WithClock(nil))} {
 		if now := o.Now(ctx); time.Since(now).Abs() > time.Minute || now.Location() != time.UTC {
 			t.Errorf("Now with no clock = %v, want time.Now in UTC", now)
 		}

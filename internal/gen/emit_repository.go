@@ -297,8 +297,8 @@ func (e repoEmitter) bind(repo repository, m repoMethod, sc gofile.Scope, recv s
 	if m.bind.accessor {
 		input += ".DBTX()"
 	}
-	e.printf("func (%s %s) %s(%s %s) %s {\nreturn %s(%s, %s.db.options.Option())\n}\n\n",
-		recv, repo.implementation(), m.name, name, typ, result, repo.constructor(), input, recv)
+	e.printf("func (%s %s) %s(%s %s) %s {\nreturn %s(%s, %s(%s.db.options.Option()))\n}\n\n",
+		recv, repo.implementation(), m.name, name, typ, result, repo.constructor(), input, e.ref("Option"), recv)
 }
 
 // dialect is the orm.Dialect of the database, as the file names it.
@@ -508,8 +508,8 @@ func (e repoEmitter) inTransaction(m repoMethod, recv string, sig signature, zer
 	if e.drv == driverPgx {
 		path, name, tx = pgxPath, "kpgx", "pgx.Tx"
 	}
-	pkg := e.f.Import(path, name)
-	e.printf("if !%s.InTransaction(%s.db.dbtx) {\nreturn %s, %s\n}\n", pkg, recv, zero,
+	dbtx := e.f.Import(path, name) + ".DBTX"
+	e.printf("if !%s[%s](%s.db.dbtx) {\nreturn %s, %s\n}\n", e.ref("InTransaction"), dbtx, recv, zero,
 		sig.mapped(e.fmtPkg()+".Errorf("+strconv.Quote("orm: "+m.name+" needs a transaction to hold its lock: give the "+
 			"repository a "+tx+", or a DBTX wrapping one with an Unwrap method returning it")+")"))
 }

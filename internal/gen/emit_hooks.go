@@ -40,9 +40,9 @@ func (e repoEmitter) hooks() {
 		e.printf("// CopyFrom copies the rows of rowSrc, which the hooks see as the statement it runs, with no arguments.\n")
 		e.printf("func (d %[1]s) CopyFrom(ctx %[2]s.Context, tableName %[3]s.Identifier, columnNames []string, "+
 			"rowSrc %[3]s.CopyFromSource) (int64, error) {\n", db, ctx, pgx)
-		e.printf("ctx, trace := d.options.StartQuery(ctx, %s.CopyFromSQL(tableName, columnNames), nil)\n"+
+		e.printf("ctx, trace := d.options.StartQuery(ctx, %s(tableName, columnNames), nil)\n"+
 			"n, err := d.dbtx.CopyFrom(ctx, tableName, columnNames, rowSrc)\ntrace.End(err)\nreturn n, err\n}\n\n",
-			e.f.Import(pgxPath, "kpgx"))
+			e.ref("CopyFromSQL"))
 	}
 }
 
@@ -73,7 +73,7 @@ func (e repoEmitter) sqlQueries(ctx string) {
 	}
 	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\n"+
 		"return trace.Row(%s{Row: d.dbtx.QueryRowContext(ctx,query,args...)})\n}\n\n", e.row)
-	scanError := e.f.Import(stdlibPath, "stdlib") + ".MySQLScanError"
+	scanError := e.ref("MySQLScanError")
 	e.printf("// %[1]s and %[2]s tell of a time read without parseTime=true, which the DSN of go-sql-driver/mysql "+
 		"needs.\n"+
 		"func (r %[1]s) Scan(dest ...any) error { return %[3]s(r.Rows.Scan(dest...)) }\n\n"+

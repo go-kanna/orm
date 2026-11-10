@@ -57,7 +57,7 @@ func (e repoEmitter) changeValues(m repoMethod, sc gofile.Scope, sig signature, 
 		added = columnNamesLiteral(cs)
 	}
 	e.printf("%[1]s, %[2]s := %[3]s.UpsertValues(%[4]q, %[5]s, %[6]s, %[7]s)\n"+
-		"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", set, err, changesOf(m, sig.params[m.changes], sig.now), m.name,
+		"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", set, err, e.changesOf(m, sig.params[m.changes], sig.now), m.name,
 		columnNamesLiteral(updated), added, namesLiteral(m.rowKey()), zero, sig.mapped(err))
 	return set, err
 }
