@@ -1048,12 +1048,18 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 The columns must be the primary key or a unique key of the table, exactly, and none the database always assigns, as an
 insert never gives those to meet a row by. The row met gets every column but those of the key, the primary key, those
 tagged `insertonly`, and the [creation time](#creation-and-update-times); with none left, the key is set to itself, so
-that the row is still read back. MySQL updates on a conflict over any unique key, so a table with unique keys besides
-the one named gets a warning:
+that the row is still read back.
+
+MySQL updates a row on a conflict over any unique key, not only the one an upsert meets its row by, so an upsert of a
+table with other unique keys gets a warning, whether it names its key or meets the row by the primary key. The primary
+key is among them when the insert writes it, as it writes the AUTO_INCREMENT `id` of a row whose `ID` is not zero; a key
+holding every column of the one met is not, as it meets no other row. On PostgreSQL, a conflict over another key returns
+a unique violation and writes nothing.
 
 ```console
-./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
+./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (id) or (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
+  an insert writes id of a row whose ID is not zero
 ```
 
 A field tagged `orm:",insertonly"` is written by an insert alone, as the channel a user signed up through: an `Update`,

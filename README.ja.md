@@ -785,11 +785,14 @@ VALUES (?, ?, ?, ?) AS new
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 ```
 
-カラムはテーブルの主キーか一意キーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`insertonly` を指定したカラム、[作成の時刻](#作成と更新の時刻)を除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。MySQL はどの一意キーの競合でも更新するので、指定したキー以外の一意キーを持つテーブルには警告が出ます:
+カラムはテーブルの主キーか一意キーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`insertonly` を指定したカラム、[作成の時刻](#作成と更新の時刻)を除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。
+
+MySQL は、Upsert が行を突き合わせるキーに限らず、どの一意キーの競合でも行を更新します。そのため、ほかにも一意キーを持つテーブルの Upsert には、キーを指定していても、主キーで突き合わせていても、警告が出ます。insert が主キーを書くとき（`ID` が 0 でない行の AUTO_INCREMENT の `id` など）は、主キーもほかの一意キーに数えます。突き合わせるキーのカラムをすべて含むキーは、別の行と競合しないので数えません。PostgreSQL では、ほかのキーで競合すると一意制約の違反のエラーになり、何も書きません。
 
 ```console
-./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (tenant_id, login) also updates the row
+./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (id) or (tenant_id, login) also updates the row
   users has unique keys other than (tenant_id, email)
+  an insert writes id of a row whose ID is not zero
 ```
 
 `orm:",insertonly"` を指定したフィールドは、利用者がどこから登録したかのように、insert でだけ書きます。`Update` と、行と突き合わせた Upsert はそのカラムを変えず、変更セットにもその setter はありません。insert から省く `default` と一緒に指定すると、どこでも書かれなくなるので、生成を止めます。
