@@ -198,9 +198,13 @@ columns. Nothing it runs writes.
 The database is the one `-database-url` names, or else `$DATABASE_URL`:
 
 - `postgres://user:password@host:5432/database` is PostgreSQL, through pgx. The tables are those of the current
-  schema, which `?search_path=` chooses.
+  schema, which `?search_path=` chooses. The SQL generated names a table without its schema, so the application's
+  connections need the same search path.
 - `mysql://user:password@host:3306/database` is MySQL, through go-sql-driver/mysql, which takes the options after `?`.
   The tables are those of the database the URL names.
+
+Views and materialized views are not recorded: read one by a [query written by hand](#hand-written-sql), which
+`describe` prepares as it does any other.
 
 The types are what the database itself answers, so kanna-orm has no SQL parser of its own to disagree with it. MySQL
 does not describe the result of a statement it prepares, so there, `describe` reads the columns of the statement
@@ -360,7 +364,10 @@ A field's type must be one the driver reads the column's type into: an integer t
 declared of it, or a string for `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of.
 database/sql reads a binary column into a string too, but pgx reads a `bytea` into no string, so a string holding one
 stops generation on pgx. A type with `Scan` and `Value` methods converts itself, and fits any column, and a type of the
-database kanna-orm does not know, such as an enum or `json`, is taken at the field's word.
+database kanna-orm does not know, such as an enum or `json`, is taken at the field's word. That word is still one of a
+column: hold a `json` or `jsonb` column in a string, a `[]byte` such as `json.RawMessage`, or a type with `Scan` and
+`Value` methods that decode and encode the JSON. A struct or a map without them is neither a column nor a relation, and
+stops generation.
 
 A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
 scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least
@@ -945,6 +952,11 @@ database assigns the column by, which `describe` records, as `nextval('orders_id
 primary key, and by its primary key, or an upsert's conflict key, otherwise. MySQL counts the rows an `Update` changes,
 not those it finds, so when it changes none, kanna-orm asks whether the row is there before returning `orm.ErrNotFound`.
 
+A method reading back what it writes, as an `Insert`, an `Update`, or an `Upsert` returning the model does, has written
+it before it reads: when the read fails, as a time does on MySQL without [`parseTime=true`](#drivers-and-dialects), the
+method returns the error, and the row stays written. Outside a transaction, a retry may write the row twice: run a write
+that must not be repeated in a transaction, and roll it back on the error.
+
 ### Database defaults
 
 Tag a field with `orm:",default"` to leave its column out of generated INSERT statements. A field with a different
@@ -969,6 +981,9 @@ as a zero value. It affects generated INSERT statements, including bulk inserts 
 
 On PostgreSQL, a method returning the model reads database-generated values with RETURNING. For example,
 `ID uuid.UUID` tagged `orm:",default"` can use a `DEFAULT uuidv7()` primary key without assigning the ID in Go.
+Without the tag, such a key is written as any other column is, the zero UUID of a model giving no ID included, and the
+second such row conflicts with the first: only a serial, an identity, or an AUTO_INCREMENT column is left to the
+database for a zero value, as [Writing](#writing) says.
 A single row with every column omitted uses DEFAULT VALUES. Bulk writes still require at least one input column.
 
 UPDATE keeps writing the model's values for tagged non-key fields. An upsert keeps a tagged column's stored value on a
@@ -1097,6 +1112,11 @@ The columns must be the primary key or a unique key of the table, exactly, and n
 insert never gives those to meet a row by. The row met gets every column but those of the key, the primary key, those
 tagged `insertonly`, and the [creation time](#creation-and-update-times); with none left, the key is set to itself, so
 that the row is still read back.
+
+A key may hold a column that may be NULL, but a row whose value there is NULL meets no other, as SQL takes no two NULLs
+for equal: an upsert of such a row inserts one each time, and so does one of a `nullzero` field's zero value, which is
+written as NULL. On PostgreSQL, a unique key declared `NULLS NOT DISTINCT` meets the row. Otherwise, to meet rows by a
+key, hold its columns NOT NULL.
 
 MySQL updates a row on a conflict over any unique key, not only the one an upsert meets its row by, so an upsert of a
 table with other unique keys gets a warning, whether it names its key or meets the row by the primary key. The primary
@@ -1893,6 +1913,13 @@ The snapshot knows which database it came from, so only the driver is chosen, wi
 | PostgreSQL         | `pgx`, the default                                       | `pgx.Rows`, `$1`, `= ANY($1)`, `RETURNING`          |
 | PostgreSQL         | `database/sql`, through pgx/stdlib                       | `*sql.Rows`, `$1`, `= ANY($1)`, `RETURNING`         |
 | MySQL 8.4 or later | `database/sql`, the default, through go-sql-driver/mysql | `*sql.Rows`, `?`, `IN (?, ...)`, `LAST_INSERT_ID()` |
+
+go-sql-driver/mysql reads a `DATETIME` or a `TIMESTAMP` into a `time.Time` only when its DSN has `parseTime=true`, so
+the DSN the application opens needs it: without it, a read of a time returns an error saying so, and an `Insert`
+returning the model returns it [after writing its row](#writing). The driver then writes a time in the location `loc`
+names, UTC unless it names another, and reads a `DATETIME`, which holds no zone, as a time there. Give every program
+that reads and writes the database the same `loc`, and, for a `TIMESTAMP`, which MySQL converts by the session's
+`time_zone`, the same zone there too.
 
 The code differs for each, and none of it hides the database behind an abstraction: where PostgreSQL and MySQL differ,
 the difference is settled when the code is generated.
