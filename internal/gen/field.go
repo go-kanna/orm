@@ -209,7 +209,9 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 	}()
 	if insertDefault && tag.insertOnly {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: default leaves %s.%s out of an insert, and insertonly out of every "+
-			"other write, so it would never be written", label, m.sc.table, name))
+			"other write, so kanna-orm would never write it", label, m.sc.table, name).
+			WithHints(`if a trigger writes it after the insert, tag it insertonly alone: the insert writes its first `+
+				`value, and no other write touches it`))
 		return
 	}
 
