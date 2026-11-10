@@ -71,6 +71,10 @@ type Order interface {
 ```go
 package model
 
+type OrderID uuid.UUID
+
+type CustomerID uuid.UUID
+
 type Order struct {
 	ID         OrderID
 	CustomerID CustomerID
@@ -80,6 +84,8 @@ type Order struct {
 	Lines      []OrderLine
 }
 ```
+
+`OrderID` と `CustomerID` は `uuid` カラムを保持します。`uuid.UUID` を元に宣言しているので、片方の値をもう片方の代わりに渡すとコンパイルエラーになります（[uuid をキーにする](#uuid-をキーにする)）。
 
 `go generate ./...` を実行すると、スコープ型と同じディレクトリに `scopes_gen.go` が書き出されます:
 
@@ -285,7 +291,7 @@ Memo string `orm:"note,nullzero"`
 
 `nullzero` の代償は、NULL と `''` を区別できなくなることです。空文字は NULL として書き込まれ、読み込むときは NULL もテーブルにすでにある `''` も空文字になります。そのため、読み込んだ値で行を検索しても見つかるとは限りません。`MemoEq("")` は `= ''` で比べるので、NULL の行には一致しません。NULL の行は `MemoIsNull()` で絞り込み、NULL と `''` が別の意味を持つなら、カラムを `*string` で保持してください。
 
-フィールドの型は、ドライバがカラムの型を読み込める型でなければなりません。`bigint` には整数型、`text` や `citext` には string、`timestamptz` や `datetime` には `time.Time`、`bytea` や `blob` には `[]byte`、`uuid` には Go 1.27 の `uuid.UUID` か string、PostgreSQL の配列にはそれらのスライスです（MySQL に配列はありません）。database/sql はバイナリのカラムを string にも読み込みますが、pgx は `bytea` を string に読み込めないので、pgx では `bytea` を持つ string のフィールドで生成が止まります。`Scan` メソッドと `Value` メソッドを持つ型は自分で変換するので、どのカラムにも使えます。enum や `json` のように kanna-orm が知らないデータベースの型については、フィールドの型をそのまま信用します。
+フィールドの型は、ドライバがカラムの型を読み込める型でなければなりません。`bigint` には整数型、`text` や `citext` には string、`timestamptz` や `datetime` には `time.Time`、`bytea` や `blob` には `[]byte`、`uuid` には Go 1.27 の `uuid.UUID`、それを元に宣言した型、string のいずれか、PostgreSQL の配列にはそれらのスライスです（MySQL に配列はありません）。database/sql はバイナリのカラムを string にも読み込みますが、pgx は `bytea` を string に読み込めないので、pgx では `bytea` を持つ string のフィールドで生成が止まります。`Scan` メソッドと `Value` メソッドを持つ型は自分で変換するので、どのカラムにも使えます。enum や `json` のように kanna-orm が知らないデータベースの型については、フィールドの型をそのまま信用します。
 
 カラムから読み込むフィールドは、カラムが持ちうるすべての値も保持できなければなりません。フィールドの範囲を超える値を持つ行はスキャンに失敗し、`float8` や `double` から読み込んだ `float32` は黙って精度を失います。そのため、整数フィールドの幅はカラム以上にします。`bigint` には `int64`、`integer` には `int32` です。符号付きのカラムには符号付きの型を、符号なしのカラムには符号なしの型か少し幅の広い型を使います。`bigint unsigned` には `uint64`、`int unsigned` には `int64` です。`int` と `uint` は、amd64 と同じく 64 ビット幅として扱います。書き込みには、このような幅は必要ありません。データベースは、カラムの範囲を超える値を別の値にして保存せず、拒否するからです。そのため、`integer` に対する `int` のようにカラムより幅の広いフィールドでも問題なく、パラメータの幅も問いません。`numeric` や `decimal` のカラムは、string か、`Scan` メソッドと `Value` メソッドを持つ型に読み込みます。浮動小数点数のフィールドは、正確に表せない値を丸めるので、生成が止まります。整数のフィールドが読み込めるのは、位取りが 0 で、すべての値を保持できるカラムだけです。`int64` なら `numeric(18,0)` まで、`int32` なら `numeric(9,0)` までです。精度を宣言していない `numeric` と、`sum` の結果のように手書きのクエリが返すカラムは、位取りが記録されないので、string にしか読み込めません。クエリの中でキャストしてもかまいません。`numeric` に書き込むパラメータは、どの数値型でもかまいません。
 
@@ -638,7 +644,25 @@ type TodoRepository interface {
 - uuid しか受け取らないメソッドからはテーブルが決まりません。`Delete` は `TodoRepository` の名前の `todos` を、`Get` は戻り値のテーブルを読み書きします。
 - uuid には比較できる順序がないので、そのカラムには `Eq`、`Ne`、`In`、`NotIn`、`Asc`、`Desc` は生成されますが、`Lt` も `Between` も生成されません。それでもページは uuid を基準に行の続きから読み込めて、カーソルは uuid をテキストとして保持します。
 - デフォルトが `uuidv7()` のカラムを、自動採番の対象として自動判定はしません。`orm:",default"` がなければ、insert はゼロの UUID もそのまま書き込みます。Go 側で `uuid.NewV7()` を使って ID を与えるか、フィールドに `orm:",default"` を指定して DB のデフォルト値を使ってください。
-- MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` を受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。
+- MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` も、それを元に宣言した型も受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。
+
+`uuid.UUID` を元に宣言した型でも uuid を保持できます。あるテーブルのキーを、別のテーブルのキーの代わりに渡すことを型で防げます:
+
+```go
+type TodoID uuid.UUID
+
+type Todo struct {
+	ID    TodoID
+	Title string
+}
+
+//kanna:repository
+type TodoRepository interface {
+	Get(ctx context.Context, id model.TodoID) (model.Todo, error)
+}
+```
+
+Go では、`uuid.UUID` を元に宣言した型と `[16]byte` を元に宣言した型を区別できないので、kanna-orm はどちらも受け付けます。database/sql がこうした型に uuid を読み込めるのは Go 1.27 からなので、スコープ型のモジュールは `go.mod` で `go 1.27` 以上を宣言する必要があります。宣言していなければ生成が止まります。`uuid.UUID` そのものは Go 1.27 以降にしかないので、この条件はかかりません。カーソルは、こうした型のキーも `uuid.UUID` と同じくテキストとして保持します。
 
 [go-kanna/showcase](https://github.com/go-kanna/showcase) は、to-do を `uuid.UUID` をキーにして管理する to-do サービスです。
 

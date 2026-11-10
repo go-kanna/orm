@@ -79,6 +79,10 @@ With the model as your domain has it:
 ```go
 package model
 
+type OrderID uuid.UUID
+
+type CustomerID uuid.UUID
+
 type Order struct {
 	ID         OrderID
 	CustomerID CustomerID
@@ -88,6 +92,9 @@ type Order struct {
 	Lines      []OrderLine
 }
 ```
+
+`OrderID` and `CustomerID` hold `uuid` columns, declared of `uuid.UUID` so that one is not passed for the other: see
+[Keyed by a uuid](#keyed-by-a-uuid).
 
 `go generate ./...` writes `scopes_gen.go` next to the scope types:
 
@@ -346,11 +353,11 @@ compares by `= ''`, which matches no NULL. Narrow to the absent ones with `MemoI
 `*string` when NULL and `''` say different things.
 
 A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text` or
-`citext`, `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a
-string for `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of. database/sql reads a binary
-column into a string too, but pgx reads a `bytea` into no string, so a string holding one stops generation on pgx. A
-type with `Scan` and `Value` methods converts itself, and fits any column, and a type of the database kanna-orm does not
-know, such as an enum or `json`, is taken at the field's word.
+`citext`, `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27, a type
+declared of it, or a string for `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of.
+database/sql reads a binary column into a string too, but pgx reads a `bytea` into no string, so a string holding one
+stops generation on pgx. A type with `Scan` and `Value` methods converts itself, and fits any column, and a type of the
+database kanna-orm does not know, such as an enum or `json`, is taken at the field's word.
 
 A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
 scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least
@@ -846,8 +853,29 @@ type TodoRepository interface {
 - A column defaulting to `uuidv7()` is not automatically treated as assigned. Without `orm:",default"`, an insert
   writes the model's ID, the zero UUID included. Either give each row its ID in Go with `uuid.NewV7()`, or tag the
   field with `orm:",default"` to use the database's default.
-- MySQL has no `uuid` type, and kanna-orm does not take `uuid.UUID` for a `binary(16)` or a `char(36)`: hold one in a
-  `[]byte`, a string, or a type of your own with `Scan` and `Value` methods.
+- MySQL has no `uuid` type, and kanna-orm does not take `uuid.UUID`, or a type declared of it, for a `binary(16)` or a
+  `char(36)`: hold one in a `[]byte`, a string, or a type of your own with `Scan` and `Value` methods.
+
+A type declared of `uuid.UUID` holds a uuid as well, so that the key of one table is not passed for that of another:
+
+```go
+type TodoID uuid.UUID
+
+type Todo struct {
+	ID    TodoID
+	Title string
+}
+
+//kanna:repository
+type TodoRepository interface {
+	Get(ctx context.Context, id model.TodoID) (model.Todo, error)
+}
+```
+
+Go does not tell a type declared of `uuid.UUID` from one declared of `[16]byte`, so kanna-orm takes either. database/sql
+reads a uuid into such a type from Go 1.27 on, so the module of the scope types must declare `go 1.27` or later in
+`go.mod`, or generation stops. `uuid.UUID` itself exists from Go 1.27 on only, so it needs no such check. A cursor holds
+such a key as the text of a uuid, as it holds a `uuid.UUID`.
 
 [go-kanna/showcase](https://github.com/go-kanna/showcase) is a to-do service whose to-dos are keyed by `uuid.UUID`.
 
