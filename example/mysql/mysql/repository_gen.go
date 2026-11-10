@@ -75,8 +75,15 @@ func (r kSQLRows) Close() { _ = r.Rows.Close() }
 
 func (d kDatabase) queryRow(ctx context.Context, query string, args ...any) impl.Row {
 	ctx, trace := d.options.StartQuery(ctx, query, args)
-	return trace.Row(d.dbtx.QueryRowContext(ctx, query, args...))
+	return trace.Row(kSQLRow{Row: d.dbtx.QueryRowContext(ctx, query, args...)})
 }
+
+// kSQLRows and kSQLRow tell of a time read without parseTime=true, which the DSN of go-sql-driver/mysql needs.
+func (r kSQLRows) Scan(dest ...any) error { return stdlib.MySQLScanError(r.Rows.Scan(dest...)) }
+
+type kSQLRow struct{ *sql.Row }
+
+func (r kSQLRow) Scan(dest ...any) error { return stdlib.MySQLScanError(r.Row.Scan(dest...)) }
 
 // Customer implements repository.Customer on MySQL through database/sql.
 type Customer struct{ db kDatabase }

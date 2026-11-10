@@ -13,6 +13,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// errNoURL tells of a database URL that is no URL, as a DSN of go-sql-driver/mysql or a connection string of keywords
+// is, without quoting it, as it may hold a password.
+var errNoURL = errors.New("the database URL is not a URL, as postgres://user:password@host:5432/database and " +
+	"mysql://user:password@host:3306/database are")
+
 // Open connects to the database rawURL names: one at postgres:// or postgresql:// through pgx, and one at mysql://
 // through go-sql-driver/mysql. The func returned closes the connection.
 func Open(ctx context.Context, rawURL string) (Database, func() error, error) {
@@ -46,7 +51,14 @@ func Open(ctx context.Context, rawURL string) (Database, func() error, error) {
 			return nil, nil, errors.Join(fmt.Errorf("connect: %w", err), db.Close())
 		}
 		return MySQL(conn), func() error { return errors.Join(conn.Close(), db.Close()) }, nil
+	case "":
+		return nil, nil, errNoURL
 	default:
+		// The DSN of go-sql-driver/mysql reads as a URL of its user name, as user:password@tcp(host:3306)/database
+		// does, with no // after the scheme.
+		if u.Opaque != "" {
+			return nil, nil, errNoURL
+		}
 		return nil, nil, fmt.Errorf("the database URL starts %q, but kanna-orm knows postgres:// and mysql://",
 			u.Scheme+"://")
 	}

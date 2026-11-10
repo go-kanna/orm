@@ -66,6 +66,18 @@ func (e repoEmitter) sqlQueries(ctx string) {
 	e.printf("if err != nil { trace.End(err); return nil,err }\nreturn trace.Rows(%s{Rows:rows},nil)\n}\n\n", e.rows)
 	e.printf("type %s struct { *%s.Rows }\nfunc (r %s) Close() { _ = r.Rows.Close() }\n\n", e.rows, sql, e.rows)
 	e.printf("func (d %s) %s(ctx %s.Context, query string, args ...any) %s {\n", db, e.queryRow, ctx, e.ref("Row"))
-	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\n" +
-		"return trace.Row(d.dbtx.QueryRowContext(ctx,query,args...))\n}\n\n")
+	if e.row == "" {
+		e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\n" +
+			"return trace.Row(d.dbtx.QueryRowContext(ctx,query,args...))\n}\n\n")
+		return
+	}
+	e.printf("ctx, trace := d.options.StartQuery(ctx,query,args)\n"+
+		"return trace.Row(%s{Row: d.dbtx.QueryRowContext(ctx,query,args...)})\n}\n\n", e.row)
+	scanError := e.f.Import(stdlibPath, "stdlib") + ".MySQLScanError"
+	e.printf("// %[1]s and %[2]s tell of a time read without parseTime=true, which the DSN of go-sql-driver/mysql "+
+		"needs.\n"+
+		"func (r %[1]s) Scan(dest ...any) error { return %[3]s(r.Rows.Scan(dest...)) }\n\n"+
+		"type %[2]s struct { *%[4]s.Row }\n"+
+		"func (r %[2]s) Scan(dest ...any) error { return %[3]s(r.Row.Scan(dest...)) }\n\n",
+		e.rows, e.row, scanError, sql)
 }

@@ -484,3 +484,36 @@ func TestInList_MySQL(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneratedRepository_MySQLWithoutParseTime(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	var name string
+	if err := mysqlDB(t).QueryRowContext(ctx, "SELECT DATABASE()").Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := gomysql.ParseDSN(os.Getenv("KANNA_ORM_TEST_MYSQL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DBName, cfg.ParseTime = name, false
+	db, err := sql.Open("mysql", cfg.FormatDSN())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	repo := mstdlib.NewOrderRepository(db)
+
+	const want = "(a time.Time reads a DATETIME or a TIMESTAMP when the DSN of go-sql-driver/mysql has parseTime=true)"
+	if _, err := repo.Get(ctx, 1); err == nil || !strings.HasSuffix(err.Error(), want) {
+		t.Errorf("Get(1) error = %v, want one ending %q", err, want)
+	}
+	if _, err := repo.List(ctx, mscopes.Order{}); err == nil || !strings.HasSuffix(err.Error(), want) {
+		t.Errorf("List error = %v, want one ending %q", err, want)
+	}
+}

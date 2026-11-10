@@ -41,6 +41,12 @@ func TestOpen_Rejects(t *testing.T) {
 		{"an option MySQL does not take", "mysql://kanna:secret@127.0.0.1:13306/shop?parseTime=maybe",
 			"read the options of the database URL"},
 		{"a URL that does not parse", "postgres://kanna:secret@[::1", "read the database URL"},
+		{"a DSN of go-sql-driver/mysql", "kanna:secret@tcp(127.0.0.1:13306)/shop?parseTime=true",
+			"the database URL is not a URL, as postgres://user:password@host:5432/database and " +
+				"mysql://user:password@host:3306/database are"},
+		{"a connection string of keywords", "host=127.0.0.1 user=kanna password=secret dbname=shop",
+			"the database URL is not a URL, as postgres://user:password@host:5432/database and " +
+				"mysql://user:password@host:3306/database are"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
