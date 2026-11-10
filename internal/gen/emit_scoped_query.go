@@ -30,6 +30,8 @@ func (e repoEmitter) scopedQuery(m repoMethod, sc gofile.Scope, recv string, sig
 	e.printf("%s := %s(%s...)\n", q, e.ref("Combine"), qs)
 	switch verb { //nolint:exhaustive // queryScope takes these alone
 	case verbFirst:
+		e.printf("if %[1]s := %[2]s.Forward(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,
+			sig.mapped(err))
 		e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
 	case verbGet, verbFind:
 		e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,

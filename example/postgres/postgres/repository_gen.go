@@ -682,6 +682,9 @@ func (r Fulfillment) FirstToShip(ctx context.Context, s ...scopes.Order) (model.
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
+	if err := q.Forward("FirstToShip"); err != nil {
+		return model.Order{}, err
+	}
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	rows, err := kSelectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {

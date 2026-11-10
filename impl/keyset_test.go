@@ -39,8 +39,10 @@ func TestAfter(t *testing.T) {
 		{"an order holding the key already", q.OrderBy("id", true).OrderBy("placed_at", false).After(key, row), impl.Postgres,
 			"SELECT id FROM orders WHERE ((id < $1) OR (id = $2 AND placed_at > $3)) ORDER BY id DESC, placed_at",
 			[]any{9, 9, 5}},
-		{"no order but the key", q.After(key, row), impl.Postgres,
+		{"ordered by the key", q.OrderBy("id", false).After(key, row), impl.Postgres,
 			"SELECT id FROM orders WHERE ((id) > ($1)) ORDER BY id", []any{9}},
+		{"ordered by a scope after it", impl.Combine(q.After(key, row), q.OrderBy("placed_at", false)), impl.Postgres,
+			"SELECT id FROM orders WHERE ((placed_at, id) > ($1, $2)) ORDER BY placed_at, id", []any{5, 9}},
 		{"after conditions of its own", q.Where("status = ", "open").OrderBy("placed_at", false).After(key, row),
 			impl.Postgres, "SELECT id FROM orders WHERE (status = $1) AND ((placed_at, id) > ($2, $3)) ORDER BY placed_at, id",
 			[]any{"open", 5, 9}},
@@ -141,6 +143,11 @@ func TestAfter_Errors(t *testing.T) {
 			"orm: a page cannot continue by note, which may be NULL"},
 		{"a column the row has no value of", q.OrderBy("total", false).After(key, row),
 			"orm: a page cannot continue by total, which the row has no value of"},
+		{"no order", q.After(key, row).Limit(20), unordered},
+		{"no order, read backward", q.Before(key, row), unordered},
+		{"no order, for the first row", q.After(key, row).DefaultOrder(key).Limit(1), unordered},
+		{"two rows", q.OrderBy("id", false).After(key, row).Before(key, row), twoRows},
+		{"two rows in two scopes", impl.Combine(q.OrderBy("id", false).After(key, row), q.After(key, row)), twoRows},
 		{"a page continued in or", q.Or(q.After(key, row)),
 			"orm: Or takes conditions alone, but its scope keeps only some of the rows"},
 		{"a page continued among the related rows", impl.Preload(q, "Lines", impl.Of[line]{}.After(key, row)),
@@ -156,6 +163,12 @@ func TestAfter_Errors(t *testing.T) {
 		})
 	}
 }
+
+const (
+	unordered = "orm: a page continues from a row in the order of its scope, which has none: " +
+		"order it, as by the primary key"
+	twoRows = "orm: a page continues from one row, but its scope is given two"
+)
 
 func TestCursor(t *testing.T) {
 	t.Parallel()
@@ -182,6 +195,7 @@ func TestCursor(t *testing.T) {
 	}{
 		{"another order", token, q.OrderBy("placed_at", false),
 			"orm: the cursor was made in another order: [placed_at desc id desc]"},
+		{"no order", token, q, unordered},
 		{"not base64", "!", s, "orm: the cursor is not one kanna-orm made"},
 		{"not JSON", "bm90IEpTT04", s, "orm: the cursor is not one kanna-orm made"},
 		{"a null value", forged(`{"order":["placed_at desc","id desc"],"values":[5,null]}`), s,
@@ -216,6 +230,9 @@ func TestCursor_Errors(t *testing.T) {
 	if _, err := q.OrderBy("note", false).Cursor(key, row); err == nil ||
 		err.Error() != "orm: a page cannot continue by note, which may be NULL" {
 		t.Errorf("Cursor error = %v", err)
+	}
+	if _, err := q.Cursor(key, row); err == nil || err.Error() != unordered {
+		t.Errorf("Cursor of a scope without an order error = %v", err)
 	}
 
 	token, err := q.OrderBy("status", false).Cursor(key, row)

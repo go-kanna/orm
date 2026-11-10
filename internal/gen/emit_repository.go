@@ -428,15 +428,18 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 	switch m.verb {
 	case verbGet, verbFind, verbFirst:
 		rows := sc.Name("rows")
+		zero := model + "{}, "
+		if m.optional {
+			zero = "nil, "
+		}
+		check := "Unpaged"
+		if m.verb == verbFirst {
+			check = "Forward"
+		}
+		e.printf("if %[1]s := %[2]s.%[3]s(%[4]q); %[1]s != nil {\nreturn %[5]s%[6]s\n}\n", err, q, check, m.name, zero,
+			sig.mapped(err))
 		if m.verb == verbFirst {
 			e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
-		} else {
-			zero := model + "{}, "
-			if m.optional {
-				zero = "nil, "
-			}
-			e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s%[5]s\n}\n", err, q, m.name, zero,
-				sig.mapped(err))
 		}
 		e.printf("%s, %s := %s(%s, %s.db, %s, %s)\n", rows, err, e.helpers[m.target.table].selectRows, sig.ctx, recv, q,
 			lockClause(m))
@@ -1108,6 +1111,8 @@ func (e repoEmitter) pluckRead(m repoMethod, sc gofile.Scope, recv string, sig s
 		sig.mapped(err))
 	switch m.verb { //nolint:exhaustive // a value is read by these alone
 	case verbFirst:
+		e.printf("if %[1]s := %[2]s.Forward(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,
+			sig.mapped(err))
 		e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
 	case verbGet, verbFind:
 		e.printf("if %[1]s := %[2]s.Unpaged(%[3]q); %[1]s != nil {\nreturn %[4]s, %[5]s\n}\n", err, q, m.name, zero,

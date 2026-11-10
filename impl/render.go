@@ -24,6 +24,9 @@ func (q Of[M]) Render(d Dialect, first int, key []string) (Rendered, error) {
 	var r Rendered
 	conds, orders := q.conds, q.orders
 	if q.seeking {
+		if len(orders) == 0 {
+			return Rendered{}, errUnordered
+		}
 		orders = q.ordersWith(q.seek.key)
 		c, err := q.seek.cond(orders, d)
 		if err != nil {

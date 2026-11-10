@@ -183,7 +183,7 @@ func TestGenerated_Paging(t *testing.T) {
 		}
 	}
 
-	r, err := runtime(pscopes.OrderLine{}.After(line).Of()).Render(impl.Postgres, 1, nil)
+	r, err := runtime(pscopes.OrderLine{}.OrderIDAsc().After(line).Of()).Render(impl.Postgres, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +193,9 @@ func TestGenerated_Paging(t *testing.T) {
 
 	if _, err := runtime(pscopes.Order{}.MemoAsc().After(row).Of()).Render(impl.Postgres, 1, nil); err == nil {
 		t.Error("After in the order of a column that may be NULL renders")
+	}
+	if _, err := runtime(pscopes.Order{}.Limit(20).After(row).Of()).Render(impl.Postgres, 1, nil); err == nil {
+		t.Error("After in a scope without an order renders")
 	}
 }
 
@@ -220,5 +223,11 @@ func TestGenerated_Cursor(t *testing.T) {
 	}
 	if _, err := (pscopes.Order{}).PlacedAtAsc().AfterCursor(cursor); err == nil {
 		t.Error("AfterCursor takes a cursor made in another order")
+	}
+	if _, err := (pscopes.Order{}).Cursor(row); err == nil {
+		t.Error("Cursor encodes a row in a scope without an order")
+	}
+	if _, err := (pscopes.Order{}).AfterCursor(cursor); err == nil {
+		t.Error("AfterCursor takes a scope without an order")
 	}
 }

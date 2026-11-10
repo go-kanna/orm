@@ -2,6 +2,7 @@ package impl
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -23,18 +24,32 @@ type seek struct {
 	backward bool
 }
 
+var (
+	errUnordered = errors.New("orm: a page continues from a row in the order of its scope, which has none: " +
+		"order it, as by the primary key")
+	errTwoRows = errors.New("orm: a page continues from one row, but its scope is given two")
+)
+
 // After narrows to the rows that come after a row in the order of q, so that a page continues from the last row of the
 // one before. values holds the row's value in each column of its table, and key names the columns of its primary key.
 // When the order does not end in the primary key, After adds it, so that rows equal in the order still come in one.
+// The query returns an error when q has no order, as its first page comes in whatever order the database reads rows,
+// or when q continues from another row as well.
 func (q Of[M]) After(key []string, values map[string]any) Of[M] {
-	q.seek, q.seeking = seek{key: key, values: values}, true
-	return q
+	return q.from(seek{key: key, values: values})
 }
 
 // Before is After the other way, for the page before the one a row is the first of. The query reads that page in the
 // reverse order, and Rendered.Reversed says so, for its rows to be turned around.
 func (q Of[M]) Before(key []string, values map[string]any) Of[M] {
-	q.seek, q.seeking = seek{key: key, values: values, backward: true}, true
+	return q.from(seek{key: key, values: values, backward: true})
+}
+
+func (q Of[M]) from(s seek) Of[M] {
+	if q.seeking {
+		q.err = cmp.Or(q.err, errTwoRows)
+	}
+	q.seek, q.seeking = s, true
 	return q
 }
 
@@ -47,8 +62,11 @@ type cursor struct {
 var errNotACursor = errors.New("orm: the cursor is not one kanna-orm made")
 
 // Cursor encodes the position of a row in the order of q, for a client to hand back for the page after it. values and
-// key are as After takes them.
+// key are as After takes them. A q without an order is an error, as it is for After.
 func (q Of[M]) Cursor(key []string, values map[string]any) (string, error) {
+	if len(q.orders) == 0 {
+		return "", errUnordered
+	}
 	orders := q.ordersWith(key)
 	c := cursor{Order: describeOrders(orders)}
 	for _, o := range orders {
@@ -70,8 +88,12 @@ func (q Of[M]) Cursor(key []string, values map[string]any) (string, error) {
 }
 
 // DecodeCursor decodes the values a cursor holds into dest, which has a pointer for each column of the table, so that
-// the row can be given to After. A cursor made in another order than that of q is an error.
+// the row can be given to After. A cursor made in another order than that of q is an error, and so is a q without an
+// order.
 func (q Of[M]) DecodeCursor(token string, key []string, dest map[string]any) error {
+	if len(q.orders) == 0 {
+		return errUnordered
+	}
 	data, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return errNotACursor

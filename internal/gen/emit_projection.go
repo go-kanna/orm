@@ -26,6 +26,8 @@ func (e repoEmitter) projectedRead(m repoMethod, sc gofile.Scope, recv string, s
 	err, text, args, reversed := sc.Name("err"), sc.Name("text"), sc.Name("args"), sc.Name("reversed")
 	e.printf("if %s := %s.ProjectionOnly(%q); %s != nil { return %s, %s }\n", err, q, m.name, err, zero, mapped(err))
 	if m.verb == verbFirst {
+		e.printf("if %[1]s := %[2]s.Forward(%[3]q); %[1]s != nil { return %[4]s, %[5]s }\n", err, q, m.name, zero,
+			mapped(err))
 		e.printf("%[1]s = %[1]s.DefaultOrder(%[2]s).Limit(1)\n", q, e.orderKey(m.table))
 	}
 	if m.verb == verbGet || m.verb == verbFind {
