@@ -383,6 +383,14 @@ type need be, and a column held in a slice other than `[]byte`, an array, has no
 column that may be NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written;
 `StatusIsNull` says what it would have meant.
 
+A comparison with NULL is neither true nor false, as in SQL, so a row whose column is NULL matches no comparison but
+`IsNull`: `MemoNe(v)`, `MemoNotIn(vs...)`, and `Not` of `MemoEq(v)` all leave it out. Keep it with `Or`:
+
+```go
+// WHERE ... AND ((note <> $1) OR (note IS NULL))
+s := scopes.Orders().Or(scopes.Orders().MemoNe(v), scopes.Orders().MemoIsNull())
+```
+
 ### Your own scopes
 
 A scope you name is a method you write on the scope type, out of the generated ones. It chains as they do:
@@ -426,9 +434,10 @@ s := scopes.Orders().Or(
 )
 ```
 
-`Not` matches the rows its scope does not. A scope given to `Or` or `Not` holds conditions only: one with an order, a
-limit, or a relation to load makes the query return an error. When every alternative is a value of one column,
-`StatusIn` says the same more plainly.
+`Not` matches the rows its scope is false for. A condition comparing a NULL is unknown, not false, so its row matches
+neither the scope nor `Not` of it, as in SQL: see [Methods for columns](#methods-for-columns). A scope given to `Or` or
+`Not` holds conditions only: one with an order, a limit, or a relation to load makes the query return an error. When
+every alternative is a value of one column, `StatusIn` says the same more plainly.
 
 ### Relations
 

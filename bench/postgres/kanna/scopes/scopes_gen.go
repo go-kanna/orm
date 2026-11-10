@@ -344,7 +344,7 @@ func (s Customer) Or(alternatives ...Customer) Customer {
 	return Customer{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Customer) Not(other Customer) Customer {
 	return Customer{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -697,7 +697,7 @@ func (s Order) NoteEq(v string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note = `, v))}
 }
 
-// NoteNe narrows to the rows whose note is not v.
+// NoteNe narrows to the rows whose note is not v, leaving out those whose note is NULL.
 func (s Order) NoteNe(v string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note <> `, v))}
 }
@@ -710,7 +710,7 @@ func (s Order) NoteIn(vs ...string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note = ANY(`, vs, `)`))}
 }
 
-// NoteNotIn narrows to the rows whose note is none of vs.
+// NoteNotIn narrows to the rows whose note is none of vs, leaving out those whose note is NULL unless vs is empty.
 func (s Order) NoteNotIn(vs ...string) Order {
 	if len(vs) == 0 {
 		return s
@@ -811,7 +811,7 @@ func (s Order) Or(alternatives ...Order) Order {
 	return Order{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Order) Not(other Order) Order {
 	return Order{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1179,7 +1179,7 @@ func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
 	return OrderLine{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s OrderLine) Not(other OrderLine) OrderLine {
 	return OrderLine{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }

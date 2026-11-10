@@ -207,8 +207,8 @@ func (e emitter) scope() {
 
 	sc = e.f.Scope()
 	s, other := sc.Name("s"), sc.Name("other")
-	e.method("narrows to the rows "+other+", holding conditions alone, does not match.", s, "Not",
-		other+" "+p.name, e.q(s)+".Not("+e.q(other)+")")
+	e.method("narrows to the rows for which "+other+", holding conditions alone, is false, not unknown as by a NULL.",
+		s, "Not", other+" "+p.name, e.q(s)+".Not("+e.q(other)+")")
 
 	if len(p.primaryKey) > 0 {
 		e.paging(model)
@@ -391,7 +391,11 @@ func (e emitter) column(c column) {
 	s, v := sc.Name("s"), sc.Name("v")
 	e.method(fmt.Sprintf("narrows to the rows whose %s is %s.", col, v), s, name+"Eq", v+" "+typ,
 		e.where(s, goString(sql+" = "), v))
-	e.method(fmt.Sprintf("narrows to the rows whose %s is not %s.", col, v), s, name+"Ne", v+" "+typ,
+	nulls := ""
+	if !c.col.NotNull {
+		nulls = ", leaving out those whose " + col + " is NULL"
+	}
+	e.method(fmt.Sprintf("narrows to the rows whose %s is not %s%s.", col, v, nulls), s, name+"Ne", v+" "+typ,
 		e.where(s, goString(sql+" <> "), v))
 
 	if !k.array {
@@ -411,7 +415,11 @@ func (e emitter) column(c column) {
 		e.printf("// %sIn narrows to the rows whose %s is one of %s.\n", name, col, vs)
 		e.printf("func (%[1]s %[2]s) %[3]sIn(%[4]s ...%[5]s) %[2]s {\n%[6]sreturn %[2]s{%[8]s(%[7]s)}\n}\n\n", s,
 			e.p.name, name, vs, typ, none, in, e.toScope)
-		e.printf("// %sNotIn narrows to the rows whose %s is none of %s.\n", name, col, vs)
+		notInNulls := ""
+		if !c.col.NotNull {
+			notInNulls = nulls + " unless " + vs + " is empty"
+		}
+		e.printf("// %sNotIn narrows to the rows whose %s is none of %s%s.\n", name, col, vs, notInNulls)
 		e.printf("func (%[1]s %[2]s) %[3]sNotIn(%[4]s ...%[5]s) %[2]s {\nif len(%[4]s) == 0 {\nreturn %[1]s\n}\n"+
 			"return %[2]s{%[7]s(%[6]s)}\n}\n\n", s, e.p.name, name, vs, typ, notIn, e.toScope)
 	}
