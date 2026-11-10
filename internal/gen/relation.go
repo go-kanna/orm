@@ -12,6 +12,7 @@ import (
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/packages"
 
+	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -77,15 +78,15 @@ type linker struct {
 	driver driver
 }
 
-// link finds the foreign key each of relations, fields of the model of sc, follows, and the fields holding the keys
-// it joins by: columns, of the model of sc, and those of the related model.
-func (l linker) link(sc scope, columns []column, relations []relation) ([]link, []diag.Diag) {
+// link finds the foreign key each relation of f, the fields of the model of sc, follows, and the fields holding the
+// keys it joins by: columns of f, and those of the related model.
+func (l linker) link(sc scope, f matched) ([]link, []diag.Diag) {
 	var (
 		links []link
 		ds    []diag.Diag
 	)
-	for _, r := range relations {
-		lk, rds, ok := l.linkOne(sc, columns, r)
+	for _, r := range f.relations {
+		lk, rds, ok := l.linkOne(sc, f, r)
 		ds = append(ds, rds...)
 		if ok {
 			links = append(links, lk)
@@ -94,9 +95,9 @@ func (l linker) link(sc scope, columns []column, relations []relation) ([]link, 
 	return links, ds
 }
 
-func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Diag, bool) {
+func (l linker) linkOne(sc scope, f matched, r relation) (link, []diag.Diag, bool) {
 	if r.table != "" {
-		return l.scalarLink(sc, columns, r)
+		return l.scalarLink(sc, f.columns, r)
 	}
 	field := r.path[len(r.path)-1]
 	errorf := func(format string, args ...any) diag.Diag {
@@ -108,9 +109,15 @@ func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Di
 
 	target, ok := l.scopeOf(model)
 	if !ok {
-		hint := "declare one where its rows are queried: //kanna:scope table=<table>"
 		if t := l.referenced(sc.table, field); t != "" {
-			hint = fmt.Sprintf("declare one where %s are queried: //kanna:scope table=%[1]s", t)
+			return link{}, []diag.Diag{errorf("no scope type is declared for %s", modelName).
+				WithHints(fmt.Sprintf("declare one where %s are queried: //kanna:scope table=%[1]s", t))}, false
+		}
+		hint := "declare one where its rows are queried: //kanna:scope table=<table>"
+		if t := decl.Plural(model.Obj().Name()); !l.has(t) {
+			// A table added since the snapshot was taken implies no scope type of the model named after it yet.
+			return link{}, []diag.Diag{errorf("no scope type is declared for %s, and the snapshot has no table %s, "+
+				"which it is named after", modelName, t).WithHints(describeAgain, "or "+hint)}, false
 		}
 		return link{}, []diag.Diag{errorf("no scope type is declared for %s", modelName).WithHints(hint)}, false
 	}
@@ -138,14 +145,22 @@ func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Di
 
 	w := ways[0]
 	own, other := w.keys()
-	keys, missing := held(columns, own)
-	if missing != "" {
+	keys, missing := held(f.columns, own)
+	switch {
+	case slices.Contains(f.failed, missing):
+		return link{}, nil, false // fields reports the field holding it
+	case missing != "":
 		return link{}, []diag.Diag{errorf("no field of %s holds %s.%s, which %s is loaded by",
 			sc.model.Obj().Name(), sc.table, missing, field)}, false
 	}
-	targetFields, _ := fields(l.fset, scope{name: target.name, model: model, table: target.table}, related)
+	targetFields, tds := fields(l.fset, scope{name: target.name, model: model, table: target.table}, related)
 	targetKeys, missing := held(targetFields.columns, other)
-	if missing != "" {
+	switch {
+	case slices.Contains(targetFields.failed, missing) && target.pkgPath == l.pkgPath:
+		return link{}, nil, false // fields reports the field holding it, of a scope type of the package
+	case slices.Contains(targetFields.failed, missing):
+		return link{}, mistakes(tds), false
+	case missing != "":
 		return link{}, []diag.Diag{errorf("no field of %s holds %s.%s, which %s is loaded by",
 			modelName, target.table, missing, field)}, false
 	}
@@ -181,6 +196,11 @@ func (l linker) scopeOf(model *types.Named) (indexed, bool) {
 		}
 	}
 	return indexed{}, false
+}
+
+func (l linker) has(table string) bool {
+	_, ok := l.tables[table]
+	return ok
 }
 
 // loadedScopes returns the scope types of pkgs as the index has them, for a linker to look them up in.

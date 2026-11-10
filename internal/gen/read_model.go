@@ -49,7 +49,7 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 		sc := scope{name: rm.target.name, model: rm.model, table: rm.target.table}
 		f, _ := fields(r.pkg.Fset, sc, rm.table) // the run generating for the scope type reports what is wrong
 		rm.columns = f.columns
-		links, _ := r.l.link(sc, f.columns, f.relations)
+		links, _ := r.l.link(sc, f)
 		for _, lk := range links {
 			if lk.scalar != nil {
 				rm.links = append(rm.links, lk)

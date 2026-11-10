@@ -5,6 +5,8 @@ package stdlib
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 )
 
 // DBTX is what the repositories run on: *sql.DB, *sql.Conn, or *sql.Tx.
@@ -27,4 +29,15 @@ func InTransaction(db DBTX) bool {
 		}
 		db = u.Unwrap()
 	}
+}
+
+// MySQLScanError returns err, an error of a Scan of a row of MySQL, told that the DSN of go-sql-driver/mysql needs
+// parseTime=true when it is what the driver returns without it: a DATETIME or a TIMESTAMP, read as bytes, that a
+// time.Time cannot hold. database/sql tells it by its message alone.
+func MySQLScanError(err error) error {
+	if err == nil || !strings.Contains(err.Error(), "storing driver.Value type []uint8 into type *time.Time") {
+		return err
+	}
+	return fmt.Errorf("%w (a time.Time reads a DATETIME or a TIMESTAMP when the DSN of go-sql-driver/mysql has "+
+		"parseTime=true)", err)
 }

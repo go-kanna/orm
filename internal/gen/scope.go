@@ -140,6 +140,9 @@ func impliesNothing(pkg *packages.Package, s snapshot.Snapshot, models []decl.Mo
 	return ds
 }
 
+// describeAgain is the hint of a table or a column the snapshot has not, which may be new since it was taken.
+const describeAgain = "if it is new, describe the database again: go tool kanna-orm describe"
+
 // scopeOf reads the scope type d declares.
 func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, []diag.Diag) {
 	field, model, ds := modelOf(pkg, d.Spec)
@@ -153,7 +156,7 @@ func scopeOf(pkg *packages.Package, s snapshot.Snapshot, d decl.Scope) (scope, [
 		if near, ok := suggest.Closest(d.Table, slices.Sorted(maps.Keys(s.Tables))); ok {
 			missing = missing.WithHints(fmt.Sprintf("did you mean %s?", near))
 		} else {
-			missing = missing.WithHints("if it is new, describe the database again: go tool kanna-orm describe")
+			missing = missing.WithHints(describeAgain)
 		}
 		return sc, append(ds, missing)
 	}

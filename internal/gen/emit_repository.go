@@ -31,6 +31,8 @@ type repoEmitter struct {
 	// exec, query, and queryRow are the names of the methods of DBTX running a statement.
 	exec, query, queryRow string
 	database, rows        string
+	// row is the *sql.Row a repository on MySQL reads a row through, empty on another database.
+	row string
 	// models are the models whose whole rows the repositories read, by table, and helpers the functions reading them
 	// and loading their relations.
 	models  map[string]readModel
@@ -85,6 +87,10 @@ func emitRepositories(pkgPath, pkgName string, d snapshot.Dialect, drv driver, r
 	}
 	e.database, e.rows = f.Scope().Name("kDatabase"), f.Scope().Name(rows)
 	f.Reserve(e.database, e.rows)
+	if drv == driverSQL && d == snapshot.MySQL {
+		e.row = f.Scope().Name("kSQLRow")
+		f.Reserve(e.row)
+	}
 
 	e.db()
 	e.hooks()

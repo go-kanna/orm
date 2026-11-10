@@ -172,8 +172,8 @@ $ go generate ./...
   did you mean orders?
 ../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
   declare it as *string
-./order_repository.go:12:2: error: ListByCustomer: orders has no column for the parameter custmerID
-  did you mean customerID (customer_id)?
+./order_repository.go:12:2: error: ListByCustomer: model.Order has no field for the parameter custmerID
+  did you mean customerID?
 ./order_repository.go:14:2: error: GetByStatus: status is not a unique key of orders, so Get cannot return one row
   use List, or add a unique index on orders (status)
 ```
@@ -182,6 +182,9 @@ The repository interface names `scopes.Order`, which does not exist until `//kan
 does not compile before the first run. That does not stop the run: kanna-orm knows the type from that directive, and
 `go generate` can reach the two packages in either order. Code may also call a method that is generated before it is:
 errors saying only that a method the run generates is missing do not stop it.
+
+With two or more kanna generators, run them with [`go tool kanna gen`](https://github.com/go-kanna/kanna), which runs
+them in the order they need.
 
 ## The snapshot
 
@@ -390,6 +393,14 @@ type need be, and a column held in a slice other than `[]byte`, an array, has no
 column that may be NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written;
 `StatusIsNull` says what it would have meant.
 
+A comparison with NULL is neither true nor false, as in SQL, so a row whose column is NULL matches no comparison but
+`IsNull`: `MemoNe(v)`, `MemoNotIn(vs...)`, and `Not` of `MemoEq(v)` all leave it out. Keep it with `Or`:
+
+```go
+// WHERE ... AND ((note <> $1) OR (note IS NULL))
+s := scopes.Orders().Or(scopes.Orders().MemoNe(v), scopes.Orders().MemoIsNull())
+```
+
 ### Your own scopes
 
 A scope you name is a method you write on the scope type, out of the generated ones. It chains as they do:
@@ -433,9 +444,10 @@ s := scopes.Orders().Or(
 )
 ```
 
-`Not` matches the rows its scope does not. A scope given to `Or` or `Not` holds conditions only: one with an order, a
-limit, or a relation to load makes the query return an error. When every alternative is a value of one column,
-`StatusIn` says the same more plainly.
+`Not` matches the rows its scope is false for. A condition comparing a NULL is unknown, not false, so its row matches
+neither the scope nor `Not` of it, as in SQL: see [Methods for columns](#methods-for-columns). A scope given to `Or` or
+`Not` holds conditions only: one with an order, a limit, or a relation to load makes the query return an error. When
+every alternative is a value of one column, `StatusIn` says the same more plainly.
 
 ### Relations
 
@@ -918,12 +930,12 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 A row is written as the model holds it. A column the database assigns unless given, as a serial, an identity
 `BY DEFAULT`, or an AUTO_INCREMENT one, is left to the database when the model's value is zero, and written when it is
 not, as gorm and Rails do: an id is never 0, so 0 reads as none. So a fixture can give its ids, and an `Upsert` can meet
-its row by such a key, inserting a row of no id and updating the one of its id. Writing a value does not move the
-sequence, so a later row the database assigns may take the same one: give values the sequence will not reach, or set
-it after. A column the database always assigns, as an identity `ALWAYS` or a generated one, is left out always, as is a
-field tagged `default`. Otherwise a zero value is written as a zero value: a `false` for a column defaulting to `true`
-stays `false`. The times a row is created and updated at are written by a clock: see
-[Creation and update times](#creation-and-update-times).
+its row by such a key, inserting a row of no id and updating the one of its id. On PostgreSQL, writing a value does not
+move the sequence, so a later row the database assigns may take the same one: give values the sequence will not reach,
+or set it after. MySQL moves its AUTO_INCREMENT past a value written. A column the database always assigns, as an
+identity `ALWAYS` or a generated one, is left out always, as is a field tagged `default`. Otherwise a zero value is
+written as a zero value: a `false` for a column defaulting to `true` stays `false`. The times a row is created and
+updated at are written by a clock: see [Creation and update times](#creation-and-update-times).
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
 done. A row goes by one of two constant statements, with the column and without, as its value says. The rows of a bulk
@@ -1702,7 +1714,7 @@ type MonthCount struct {
 ```sql
 -- PlacedInMonth narrows to the orders placed in the month of at.
 -- scope: Order.PlacedInMonth(at time.Time)
-date_trunc('month', placed_at) = date_trunc('month', :at)
+date_trunc('month', placed_at) = date_trunc('month', :at::timestamptz)
 ```
 
 The generated code holds each as a literal, its parameters numbered for the database:
@@ -1747,14 +1759,14 @@ ORDER BY 1`
   over the model's file and package for its name. A package none of these names is imported in a Go file of the scope
   type's package for this alone, as in `import _ "time"`.
 - A scope can also be written as a statement on its table, as
-  `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at);` is the one above, so that a
-  SQL linter, which cannot parse a condition alone, reads the file as it reads the queries. kanna-orm takes the
-  condition alone into statements of its own, so the statement has that shape and no other: it selects `1` from the
+  `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at::timestamptz);` is the one above,
+  so that a SQL linter, which cannot parse a condition alone, reads the file as it reads the queries. kanna-orm takes
+  the condition alone into statements of its own, so the statement has that shape and no other: it selects `1` from the
   scope type's table, gives the table no alias, which would mean nothing where the condition goes, and holds nothing
   after the condition but a `;`. The table's name is read as the database reads it: quoted, as it is written, and
   unquoted, in lower case on PostgreSQL, which folds it so, and in any case on MySQL, whose rule depends on how its
-  server is set up. Another statement starting with `SELECT` stops generation; a condition such as
-  `id IN (SELECT ...)` is a condition as before.
+  server is set up. Another statement starting with `SELECT` stops generation; a condition such as `id IN (SELECT ...)`
+  is a condition as before.
 - A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
   ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.

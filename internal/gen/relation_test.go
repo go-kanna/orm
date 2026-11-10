@@ -215,6 +215,11 @@ func TestLinks_Mistakes(t *testing.T) {
 		{"a model of no scope type", "Notes []Note",
 			"model.go:9:1: error: Order.Notes: no scope type is declared for model.Note\n" +
 				"  declare one where its rows are queried: //kanna:scope table=<table>"},
+		{"a model of no scope type, named after a table the snapshot has not", "Refunds []Refund",
+			"model.go:9:1: error: Order.Refunds: no scope type is declared for model.Refund, and the snapshot has no " +
+				"table refunds, which it is named after\n" +
+				"  if it is new, describe the database again: go tool kanna-orm describe\n" +
+				"  or declare one where its rows are queried: //kanna:scope table=<table>"},
 		{"a scope type of a table the snapshot has not", "Gift *Gift",
 			"model.go:9:1: error: Order.Gift: the snapshot has no table gifts, of which catalog.Gift is a scope type"},
 		{"no foreign key of the name, and two others", "Address *Address",
@@ -390,6 +395,8 @@ type Invoice struct {
 }
 
 type Note struct{ ID int64 }
+
+type Refund struct{ ID int64 }
 
 type Gift struct{ ID int64 }
 -- catalog/catalog.go --
