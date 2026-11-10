@@ -157,8 +157,8 @@ $ go generate ./...
   did you mean orders?
 ../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
   declare it as *string
-./order_repository.go:12:2: error: ListByCustomer: orders has no column for the parameter custmerID
-  did you mean customerID (customer_id)?
+./order_repository.go:12:2: error: ListByCustomer: model.Order has no field for the parameter custmerID
+  did you mean customerID?
 ./order_repository.go:14:2: error: GetByStatus: status is not a unique key of orders, so Get cannot return one row
   use List, or add a unique index on orders (status)
 ```
