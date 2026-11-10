@@ -71,9 +71,12 @@ func findScopes(pkg *packages.Package, s snapshot.Snapshot, idx []indexed) ([]sc
 			continue
 		}
 		decls, fds := decl.Read(pkg.Fset, file)
-		ds = append(ds, fds...)
+		mds := decl.Misplaced(pkg.Fset, file, pkg.Types)
+		ds = append(append(ds, fds...), mds...)
 		for _, d := range decls.Scopes {
-			add(scopeOf(pkg, s, d))
+			if !decl.IsMisplaced(mds, d.Pos) {
+				add(scopeOf(pkg, s, d))
+			}
 		}
 		models = append(models, decls.Models...)
 	}

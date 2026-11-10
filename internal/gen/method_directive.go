@@ -31,9 +31,10 @@ func hasNoGeneratedSQL(d directive.Directive, key, name, where string) diag.Diag
 		WithHints(instead + " in " + where)
 }
 
-// strayDirectives warns of the method directives of file on no method of repos. One in no doc comment, as one at the
-// end of a line or parted from a method by a blank line, is directive.Loose's to tell; one in the doc of something
-// else, orm's. Nothing reads them, so the method would go on without them.
+// strayDirectives warns of the method directives of file on a method of an interface other than repos. One in no doc
+// comment, as one at the end of a line or parted from a method by a blank line, is directive.Loose's to tell; one in
+// the doc of something other than a method of an interface, decl.Misplaced's. Nothing reads them, so the method would
+// go on without them.
 func strayDirectives(fset *token.FileSet, file *ast.File, repos []decl.Repository) []diag.Diag {
 	docs := map[*ast.CommentGroup]bool{}
 	for _, repo := range repos {
@@ -61,7 +62,9 @@ func strayDirectives(fset *token.FileSet, file *ast.File, repos []decl.Repositor
 		for _, key := range keys {
 			d, fds := directive.Find(fset, cg, key)
 			ds = append(ds, fds...)
-			if d.Found && slices.ContainsFunc(lines, func(l directive.Line) bool { return l.Pos == d.Pos && l.Attached }) {
+			if d.Found && slices.ContainsFunc(lines, func(l directive.Line) bool {
+				return l.Pos == d.Pos && l.Shape(nil) == directive.InterfaceMethod
+			}) {
 				ds = append(ds, diag.Warningf(d.Pos, "//kanna:%s marks no method of a //kanna:repository", key).
 					WithHints("write it right above the method"))
 			}

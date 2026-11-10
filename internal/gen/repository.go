@@ -261,7 +261,11 @@ func (r repoReader) findRepositories() ([]repository, []diag.Diag) {
 			continue
 		}
 		decls, _ := decl.Read(r.pkg.Fset, file) // findScopes reports what is wrong with the directives
+		mds := decl.Misplaced(r.pkg.Fset, file, r.pkg.Types)
 		for _, d := range decls.Repositories {
+			if decl.IsMisplaced(mds, d.Pos) {
+				continue
+			}
 			repo, rds := r.repository(d)
 			ds = append(ds, rds...)
 			for _, m := range repo.methods {

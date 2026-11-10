@@ -235,12 +235,18 @@ func declarations(pkg *packages.Package, tables map[string]snapshot.Table) (map[
 	)
 	for _, file := range pkg.Syntax {
 		decls, fds := decl.Read(pkg.Fset, file)
-		ds = append(ds, fds...)
+		mds := decl.Misplaced(pkg.Fset, file, pkg.Types)
+		ds = append(append(ds, fds...), mds...)
 		for _, sc := range decls.Scopes {
+			if decl.IsMisplaced(mds, sc.Pos) {
+				continue
+			}
 			scopes[sc.Spec.Name.Name] = sc.Table
 		}
 		models = append(models, decls.Models...)
-		repository = repository || len(decls.Repositories) > 0
+		repository = repository || slices.ContainsFunc(decls.Repositories, func(r decl.Repository) bool {
+			return !decl.IsMisplaced(mds, r.Pos)
+		})
 	}
 	if pkg.Module == nil {
 		return scopes, repository, ds

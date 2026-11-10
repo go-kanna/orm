@@ -282,10 +282,10 @@ func (s Order) InMonths(months []int) Order {
 }
 ```
 
-A scope type of a name of your own is declared by hand with `//kanna:scope`. Its table is the one its model is named
-after, as with `//kanna:scopes`, unless `table=` names another, as one in the singular. It wins over the one
-`//kanna:scopes` would imply of its model or its table in its own package; one of another package stops generation,
-as a table has one scope type:
+A scope type of a name of your own is declared by hand with `//kanna:scope`, which marks a struct alone: on anything
+else it stops generation, as nothing reads it. Its table is the one its model is named after, as with `//kanna:scopes`,
+unless `table=` names another, as one in the singular. It wins over the one `//kanna:scopes` would imply of its model or
+its table in its own package; one of another package stops generation, as a table has one scope type:
 
 ```go
 //kanna:scope table=person
@@ -602,6 +602,8 @@ handler can tell a bad page token from a failure of its own with `errors.Is`.
 An interface marked `//kanna:repository` declares what the code above the database may do with it. Its package runs
 `kanna-orm -destination <dir>`, which writes the implementation into `repository_gen.go` there: a struct named after the
 interface when generated into a separate package, its constructor, and the `DBTX` it runs on, named as sqlc names it.
+`//kanna:repository` on anything but an interface, and `//kanna:conflict` or `//kanna:lock` on anything but a method of
+an interface, stop generation, as nothing reads them.
 
 ### Same-package implementations
 
@@ -1491,10 +1493,11 @@ passed over, as InnoDB locks the rows a statement scans.
 - Only rows that exist are sure to be locked, so do not count on a lock to keep a row from being inserted.
 - PostgreSQL also locks the rows an `Offset` skips. InnoDB locks the rows it scans, not those it returns, so a read with
   no index for its condition locks the whole table.
-- `//kanna:lock` anywhere but right above such a method gets a warning, as nothing reads it and the method is generated
-  without the lock. One on a method a [hand-written query](#hand-written-sql) or your own code alone implements stops
-  generation: write the lock there, and in a query taking scopes, mind [what it locks](#scopes-on-a-query). A method
-  delegating to a generated helper keeps its lock on that helper.
+- `//kanna:lock` parted from such a method by a blank line, or on a method of an interface no `//kanna:repository`
+  marks, gets a warning, as nothing reads it and the method is generated without the lock; one on anything but a method
+  of an interface stops generation. One on a method a [hand-written query](#hand-written-sql) or your own code alone
+  implements stops generation: write the lock there, and in a query taking scopes, mind
+  [what it locks](#scopes-on-a-query). A method delegating to a generated helper keeps its lock on that helper.
 -  A `Get`, a `Find`, a `First`, or a `List` whose name ends in a lock, such as `GetForUpdate` or `ListForShare`, gets a
   warning without `//kanna:lock`, and stops generation with one of another strength. A name in which more follows, such
   as `GetForUpdateForm`, says nothing of a lock.

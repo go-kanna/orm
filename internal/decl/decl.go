@@ -1,6 +1,6 @@
 // Package decl reads, from the syntax of a file alone, what is declared there for kanna-orm: the types marked
 // //kanna:scope, the packages of models //kanna:scopes implies scope types for, and the interfaces marked
-// //kanna:repository.
+// //kanna:repository. Misplaced, which tells the directives marking what their keys do not, reads the types too.
 package decl
 
 import (
@@ -59,8 +59,6 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		decls Decls
 		ds    []diag.Diag
 		docs  = map[*ast.CommentGroup]bool{}
-		// marking are the comments read as the doc of a type, which //kanna:scope and //kanna:repository mark.
-		marking = map[*ast.CommentGroup]bool{}
 	)
 	for _, node := range file.Decls {
 		gd, ok := node.(*ast.GenDecl)
@@ -77,7 +75,7 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 			if doc == nil && len(gd.Specs) == 1 {
 				doc = gd.Doc
 			}
-			docs[doc], marking[doc] = true, true
+			docs[doc] = true
 
 			d, fds := directive.Find(fset, doc, "scope")
 			ds = append(ds, fds...)
@@ -109,16 +107,10 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 	}
 
 	// A //kanna:scope or //kanna:repository in no doc comment is loose; one in the doc of something else than a type
-	// is stray. //kanna:scopes marks no declaration, so it stands in a comment of its own.
+	// is Misplaced's to tell. //kanna:scopes marks no declaration, so it stands in a comment of its own.
 	lines := directive.Lines(fset, []*ast.File{file})
 	ds = append(ds, directive.Loose(lines, "scope", "repository")...)
 	for _, cg := range file.Comments {
-		if !marking[cg] {
-			if sds := stray(fset, cg, lines); len(sds) > 0 {
-				ds = append(ds, sds...)
-				continue
-			}
-		}
 		if docs[cg] {
 			if d, _ := directive.Find(fset, cg, "scopes"); d.Found {
 				ds = append(ds, diag.Warningf(d.Pos, "//kanna:scopes marks no declaration, so nothing reads it in the "+
@@ -139,25 +131,6 @@ func Read(fset *token.FileSet, file *ast.File) (Decls, []diag.Diag) {
 		decls.Models = append(decls.Models, Models{Pos: d.Pos, Paths: paths})
 	}
 	return decls, ds
-}
-
-// stray warns of each //kanna:scope and //kanna:repository of cg, a comment read as the doc of no one type: the doc of
-// a function, of a field, or of a group of types. One in no doc comment at all is left to directive.Loose, as lines
-// tell.
-func stray(fset *token.FileSet, cg *ast.CommentGroup, lines []directive.Line) []diag.Diag {
-	var ds []diag.Diag
-	for _, c := range cg.List {
-		body, ok := strings.CutPrefix(c.Text, "//kanna:")
-		key, _, _ := strings.Cut(body, " ")
-		pos := fset.Position(c.Pos())
-		if !ok || key != "scope" && key != "repository" ||
-			slices.ContainsFunc(lines, func(l directive.Line) bool { return l.Pos == pos && !l.Attached }) {
-			continue
-		}
-		ds = append(ds, diag.Warningf(pos, "//kanna:%s marks the type it is the doc of, but this comment is the doc of "+
-			"no one type", key).WithHints("write it right above one type, with no blank line between"))
-	}
-	return ds
 }
 
 // scopeArgs reads what follows //kanna:scope on the type name: the table table= names, if any. A func= is told apart

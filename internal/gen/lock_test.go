@@ -192,30 +192,6 @@ func TestRepositories_LockMistakes(t *testing.T) {
 	}
 }
 
-func TestRepositories_LockOnTheInterface(t *testing.T) {
-	t.Parallel()
-
-	const want = "repository.go:22:1: warning: //kanna:lock marks no method of a //kanna:repository\n" +
-		"  write it right above the method"
-	_, ds := repositoriesMarked(t, snapshot.PostgreSQL, "//kanna:lock update\n//kanna:repository",
-		"\tList(ctx context.Context, s ...scopes.Order) ([]model.Order, error)\n", "", nil)
-	if ds != want {
-		t.Errorf("Repositories reports\n%s\nwant\n%s", ds, want)
-	}
-}
-
-func TestRepositories_LockOnAnEmbeddedInterface(t *testing.T) {
-	t.Parallel()
-
-	const want = "repository.go:26:2: warning: //kanna:lock marks no method of a //kanna:repository\n" +
-		"  write it right above the method"
-	_, ds := repositoriesMarked(t, snapshot.PostgreSQL, "type Base interface{}\n\n//kanna:repository",
-		"\t//kanna:lock update\n\tBase\n", "", nil)
-	if ds != want {
-		t.Errorf("Repositories reports\n%s\nwant\n%s", ds, want)
-	}
-}
-
 func TestRepositories_LockOnAQueryWrittenByHand(t *testing.T) {
 	t.Parallel()
 
