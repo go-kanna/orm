@@ -228,6 +228,31 @@ func TestUnpaged(t *testing.T) {
 	}
 }
 
+func TestForward(t *testing.T) {
+	t.Parallel()
+
+	var q impl.Of[order]
+	key := []string{"id"}
+	row := map[string]any{"id": 9}
+	for _, tt := range []struct {
+		q    impl.Of[order]
+		want string
+	}{
+		{q.OrderBy("placed_at", true).Limit(20), ""},
+		{q.OrderBy("id", false).After(key, row), ""},
+		{q.OrderBy("id", false).Before(key, row),
+			"orm: First reads the first row in its scope's order, but its scope goes the other way, to the rows before a row"},
+	} {
+		got := ""
+		if err := tt.q.Forward("First"); err != nil {
+			got = err.Error()
+		}
+		if got != tt.want {
+			t.Errorf("Forward = %q, want %q", got, tt.want)
+		}
+	}
+}
+
 func TestDefaultOrder(t *testing.T) {
 	t.Parallel()
 

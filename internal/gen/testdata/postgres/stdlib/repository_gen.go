@@ -118,6 +118,9 @@ func (r OrderRepository) First(ctx context.Context, s ...scopes.Order) (model.Or
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
+	if err := q.Forward("First"); err != nil {
+		return model.Order{}, err
+	}
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	rows, err := kSelectOrders(ctx, r.db, q, "")
 	if err != nil {
@@ -810,6 +813,9 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
+	if err := q.Forward("FirstUnlocked"); err != nil {
+		return model.Order{}, err
+	}
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	rows, err := kSelectOrders(ctx, r.db, q, ` FOR UPDATE SKIP LOCKED`)
 	if err != nil {
@@ -1549,6 +1555,9 @@ func (r OrderRepository) FirstPlacedSince(ctx context.Context, since time.Time, 
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
+	if err := q.Forward("FirstPlacedSince"); err != nil {
+		return model.Order{}, err
+	}
 	q = q.DefaultOrder([]string{`id`}).Limit(1)
 	const text = `WITH first_placed_since AS (SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
 FROM orders o

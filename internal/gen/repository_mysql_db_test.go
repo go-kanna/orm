@@ -174,6 +174,27 @@ func TestGeneratedRepository_MySQL(t *testing.T) {
 	if next, err := repo.List(ctx, tied.After(first[1])); err != nil || !slices.Equal(ids(next), []model.OrderID{1}) {
 		t.Errorf("the page after one among equal rows = %v, %v; want [1]", ids(next), err)
 	}
+	unordered := mscopes.Order{}.Limit(2)
+	if first, err = repo.List(ctx, unordered); err != nil || len(first) != 2 {
+		t.Fatalf("the first page of no order = %v, %v", ids(first), err)
+	}
+	if _, err := repo.List(ctx, unordered.After(first[1])); err == nil || err.Error() != pageOfNoOrder {
+		t.Errorf("the page after one of no order error = %v", err)
+	}
+	if _, err := repo.List(ctx, page.After(first[0]), mscopes.Order{}.Before(first[1])); err == nil ||
+		err.Error() != pageFromTwoRows {
+		t.Errorf("a page from two rows error = %v", err)
+	}
+	latest := mscopes.Order{}.PlacedAtDesc()
+	if first, err = repo.List(ctx, latest); err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2, 1}) {
+		t.Fatalf("the orders, latest first = %v, %v", ids(first), err)
+	}
+	if o, err := repo.First(ctx, latest.After(first[0])); err != nil || o.ID != 2 {
+		t.Errorf("First after 3 = %v, %v; want 2", o.ID, err)
+	}
+	if _, err := repo.First(ctx, latest.Before(first[2])); err == nil || err.Error() != firstBefore {
+		t.Errorf("First before 1 error = %v", err)
+	}
 
 	if n, err := repo.Count(ctx, mscopes.Order{}.StatusEq("open")); err != nil || n != 2 {
 		t.Errorf("Count of the open orders = %d, %v; want 2", n, err)

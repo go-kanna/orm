@@ -153,6 +153,15 @@ func ids(orders []model.Order) []model.OrderID {
 	return out
 }
 
+// The errors of a read continuing from a row, which a scope without an order, two rows, or First given Before makes.
+const (
+	pageOfNoOrder = "orm: a page continues from a row in the order of its scope, which has none: " +
+		"order it, as by the primary key"
+	pageFromTwoRows = "orm: a page continues from one row, but its scope is given two"
+	firstBefore     = "orm: First reads the first row in its scope's order, but its scope goes the other way, " +
+		"to the rows before a row"
+)
+
 func TestGeneratedRepository_Postgres(t *testing.T) {
 	t.Parallel()
 
@@ -222,6 +231,29 @@ func TestGeneratedRepository_Postgres(t *testing.T) {
 		}
 		if next, err := repo.List(ctx, tied.After(first[1])); err != nil || !slices.Equal(ids(next), []model.OrderID{1}) {
 			t.Errorf("the page after one among equal rows = %v, %v; want [1]", ids(next), err)
+		}
+		// The first page of a scope without an order comes as the database reads the rows, which no page can continue
+		// from.
+		unordered := pscopes.Order{}.Limit(2)
+		if first, err = repo.List(ctx, unordered); err != nil || len(first) != 2 {
+			t.Fatalf("the first page of no order = %v, %v", ids(first), err)
+		}
+		if _, err := repo.List(ctx, unordered.After(first[1])); err == nil || err.Error() != pageOfNoOrder {
+			t.Errorf("the page after one of no order error = %v", err)
+		}
+		if _, err := repo.List(ctx, page.After(first[0]), pscopes.Order{}.Before(first[1])); err == nil ||
+			err.Error() != pageFromTwoRows {
+			t.Errorf("a page from two rows error = %v", err)
+		}
+		latest := pscopes.Order{}.PlacedAtDesc()
+		if first, err = repo.List(ctx, latest); err != nil || !slices.Equal(ids(first), []model.OrderID{3, 2, 1}) {
+			t.Fatalf("the orders, latest first = %v, %v", ids(first), err)
+		}
+		if o, err := repo.First(ctx, latest.After(first[0])); err != nil || o.ID != 2 {
+			t.Errorf("First after 3 = %v, %v; want 2", o.ID, err)
+		}
+		if _, err := repo.First(ctx, latest.Before(first[2])); err == nil || err.Error() != firstBefore {
+			t.Errorf("First before 1 error = %v", err)
 		}
 
 		if n, err := repo.Count(ctx, pscopes.Order{}.StatusEq("open")); err != nil || n != 2 {

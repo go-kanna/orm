@@ -133,8 +133,8 @@ func (q Of[M]) Not(s Of[M]) Of[M] {
 	return q
 }
 
-// Combine makes one scope of qs, as if each were chained onto the one before: their conditions and orders add up, and a
-// later limit or offset replaces an earlier one.
+// Combine makes one scope of qs, as if each were chained onto the one before: their conditions and orders add up, a
+// later limit or offset replaces an earlier one, and a row to continue from in more than one is an error.
 func Combine[M any](qs ...Of[M]) Of[M] {
 	if len(qs) == 1 {
 		return qs[0]
@@ -153,7 +153,7 @@ func Combine[M any](qs ...Of[M]) Of[M] {
 			q.preloads = addPreload(q.preloads, p)
 		}
 		if s.seeking {
-			q.seek, q.seeking = s.seek, true
+			q = q.from(s.seek)
 		}
 		q.err = cmp.Or(q.err, s.err)
 	}
@@ -186,8 +186,19 @@ func (q Of[M]) Unpaged(what string) error {
 	return nil
 }
 
+// Forward reports why q, given to what, a read of the first row in its order, goes the other way, as Before does: the
+// row it would read is the one right before a row, not the first of the page before it.
+func (q Of[M]) Forward(what string) error {
+	if q.seeking && q.seek.backward {
+		return fmt.Errorf("orm: %s reads the first row in its scope's order, but its scope goes the other way, "+
+			"to the rows before a row", what)
+	}
+	return nil
+}
+
 // DefaultOrder orders q by key, the primary key of its table, when q has no order of its own, so that the first of
-// its rows is one row and not any. A nil key leaves q as it is.
+// its rows is one row and not any. A nil key leaves q as it is, and so does a row to continue from, which needs an
+// order of the scope's own.
 func (q Of[M]) DefaultOrder(key []string) Of[M] {
 	if len(q.orders) > 0 || q.seeking {
 		return q
