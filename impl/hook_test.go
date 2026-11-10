@@ -150,14 +150,15 @@ func TestOptions_Now(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	for _, o := range []impl.Options{impl.NewOptions(), impl.NewOptions(impl.WithClock(nil))} {
-		if now := o.Now(ctx); time.Since(now).Abs() > time.Minute {
-			t.Errorf("Now with no clock = %v, want time.Now", now)
+		if now := o.Now(ctx); time.Since(now).Abs() > time.Minute || now.Location() != time.UTC {
+			t.Errorf("Now with no clock = %v, want time.Now in UTC", now)
 		}
 	}
-	first, last := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	jst := time.FixedZone("JST", 9*60*60)
+	first, last := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 2, 1, 9, 0, 0, 0, jst)
 	o := impl.NewOptions(impl.WithClock(fixedClock(first)), impl.WithClock(fixedClock(last)))
-	if now := o.Now(ctx); !now.Equal(last) {
-		t.Errorf("Now = %v, want %v of the clock given last", now, last)
+	if now := o.Now(ctx); !now.Equal(last) || now.Location() != time.UTC {
+		t.Errorf("Now = %v, want %v of the clock given last, in UTC", now, last)
 	}
 	if now := impl.NewOptions(o.Option()).Now(ctx); !now.Equal(last) {
 		t.Errorf("Now of the options Option gives = %v, want %v, as Bind keeps the clock", now, last)

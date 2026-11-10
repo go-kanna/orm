@@ -44,12 +44,13 @@ func NewOptions(opts ...Option) Options {
 // Option is the option giving a repository o, as Bind gives the repository it returns those of its receiver.
 func (o Options) Option() Option { return func(p *Options) { *p = o } }
 
-// Now is the time of the clock, or time.Now without one.
+// Now is the time of the clock, or time.Now without one, in UTC, so that a column keeping no time zone keeps the same
+// time whatever zone the clock tells it in.
 func (o Options) Now(ctx context.Context) time.Time {
 	if o.Clock == nil {
-		return time.Now()
+		return time.Now().UTC()
 	}
-	return o.Clock.Now(ctx)
+	return o.Clock.Now(ctx).UTC()
 }
 
 // QueryTrace is used by generated repositories to observe one statement.
