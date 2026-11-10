@@ -23,7 +23,7 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 |--------------|-----------------------------------------------------------------------------|
 | `orm`        | `errors.Is` で調べるエラー `ErrNotFound`、`ErrInvalidCursor`、`ErrEmptyChangeSet` |
 | `orm/scope`  | 手書きで宣言するスコープ型のフィールド `Of` と、Go で SQL を書く `Raw`        |
-| `orm/option` | repository の constructor に渡す option `WithHook`                          |
+| `orm/option` | repository の constructor に渡す option `WithHook`、`WithClock`、`Join`     |
 | `orm/hook`   | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution` |
 | `orm/pgx`    | pgx で repository を動かす `DBTX`。DI で 1 度だけ渡す |
 | `orm/stdlib` | `database/sql` で repository を動かす `DBTX`。同上 |
@@ -1115,7 +1115,7 @@ repo := postgres.NewOrder(db, option.WithHook(hook.Hook{After: logQuery}))
 
 Before は文の開始時に `hook.Query`（`SQL string`、`Args []any`）を受け取り、文を実行する context を返します。トレーサーはここで span を開始できます。受け取った context か、そこから派生させた context を返してください。その context のキャンセルと期限は、文の実行にもそのまま効きます。After は同じ組の Before が返した context と `hook.Execution`（`Query` に `Duration time.Duration`、`Err error` を加えたもの）を受け取ります。実行と結果の読み取りが完了したとき、または Query・Scan・行の読み取りが失敗したときに呼ばれます。所要時間には結果の読み取りを含み、Before の時間は含みません。`mapError` を通す前のエラーを渡します。生成 CRUD・`.sql` ファイルの SQL・関連を読み込む SQL を、実行した文ごとに一度呼びます。[Copy](#複数行の-copy) は、`COPY "events" ("kind", "tags", "note") FROM STDIN` のような COPY の文として、`Args` なしで見えます。条件や検証のエラーで SQL を実行しなかった場合は、どのフックも呼びません。
 
-フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`（kanna-orm が Copy を書くパッケージでは `r.db.CopyFrom` も）、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は、行の読み込みを包んでフックに通すことができない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
+フックは何度でも渡せ、先に渡したものがほかを包みます。Before は渡した順に、前の Before が返した context で呼ばれ、After は逆順に、同じ組の Before が返した context で呼ばれます。そのため、Before で span を開始し、After で context の span を終える tracing のフックは、後にどんなフックがあっても自分の span を終えます。`option.Join` は、複数の option を渡した順のまま 1 つにします。型ごとに値を 1 つ持つ DI に渡すときに使います。`Bind` でトランザクションへ切り替えてもフックを引き継ぎます。After がなければ時刻も取得しません。フックは並行して呼ばれるため、並行利用できるようにしてください。引数は借用した値として扱い、変更せず、呼び出しの後も保持する値はコピーしてください。PostgreSQL は pgx／`database/sql`、MySQL は `database/sql` で利用できます。実装の型に自分で書いたメソッドも、実装のただ 1 つのフィールド `r.db` で文を実行すればフックを通ります。メソッドは DBTX と同じで、pgx では `r.db.Exec`、`r.db.Query`、`r.db.QueryRow`（kanna-orm が Copy を書くパッケージでは `r.db.CopyFrom` も）、`database/sql` では `r.db.ExecContext`、`r.db.QueryContext`、`r.db.QueryRowContext` です。`*sql.Rows` と `*sql.Row` は、行の読み込みを包んでフックに通すことができない型なので、`database/sql` のクエリは、`r.db.QueryContext` か `r.db.QueryRowContext` が返った時点で、行を読む前に終わったとフックに見えます。`Duration` と `Err` に行の読み込みは入りません。kanna-orm が生成するメソッドは、どちらのドライバでも行をフックを通して読みます。両 DB の example に、実行した文を出す After を渡す例があります。
 
 ### カラムの値を読む
 

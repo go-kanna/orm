@@ -140,7 +140,7 @@ func TestCommand_Copy(t *testing.T) {
 		"type DBTX = kpgx.CopyDBTX\n",
 		`func (d kDatabase) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, ` +
 			`rowSrc pgx.CopyFromSource) (int64, error) {
-	ctx, trace := d.options.StartQuery(ctx, kpgx.CopyFromSQL(tableName, columnNames), nil)
+	ctx, trace := d.options.StartQuery(ctx, impl.CopyFromSQL(tableName, columnNames), nil)
 	n, err := d.dbtx.CopyFrom(ctx, tableName, columnNames, rowSrc)
 	trace.End(err)
 	return n, err

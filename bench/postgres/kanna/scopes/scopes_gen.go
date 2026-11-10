@@ -27,11 +27,13 @@ func Customers() Customer { return Customer{} }
 func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
 // CustomerChangeSet holds explicitly assigned columns of customers.
-type CustomerChangeSet struct{ changes change.Set[model.Customer] }
+type CustomerChangeSet struct{ changes impl.Changes[model.Customer] }
 
 func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
 
-func (c CustomerChangeSet) Of() change.Set[model.Customer] { return c.changes }
+func (c CustomerChangeSet) Of() change.Set[model.Customer] {
+	return change.Set[model.Customer](c.changes)
+}
 
 func (c CustomerChangeSet) SetEmail(v string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("email", v)}
@@ -402,11 +404,11 @@ func Orders() Order { return Order{} }
 func (s Order) Of() scope.Of[model.Order] { return s.q }
 
 // OrderChangeSet holds explicitly assigned columns of orders.
-type OrderChangeSet struct{ changes change.Set[model.Order] }
+type OrderChangeSet struct{ changes impl.Changes[model.Order] }
 
 func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
 
-func (c OrderChangeSet) Of() change.Set[model.Order] { return c.changes }
+func (c OrderChangeSet) Of() change.Set[model.Order] { return change.Set[model.Order](c.changes) }
 
 func (c OrderChangeSet) SetCustomerID(v int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
@@ -870,11 +872,13 @@ func OrderLines() OrderLine { return OrderLine{} }
 func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
 // OrderLineChangeSet holds explicitly assigned columns of order_lines.
-type OrderLineChangeSet struct{ changes change.Set[model.OrderLine] }
+type OrderLineChangeSet struct{ changes impl.Changes[model.OrderLine] }
 
 func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
 
-func (c OrderLineChangeSet) Of() change.Set[model.OrderLine] { return c.changes }
+func (c OrderLineChangeSet) Of() change.Set[model.OrderLine] {
+	return change.Set[model.OrderLine](c.changes)
+}
 
 func (c OrderLineChangeSet) SetOrderID(v int64) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("order_id", v)}

@@ -79,11 +79,11 @@ func (d kDatabase) queryRow(ctx context.Context, query string, args ...any) impl
 }
 
 // kSQLRows and kSQLRow tell of a time read without parseTime=true, which the DSN of go-sql-driver/mysql needs.
-func (r kSQLRows) Scan(dest ...any) error { return stdlib.MySQLScanError(r.Rows.Scan(dest...)) }
+func (r kSQLRows) Scan(dest ...any) error { return impl.MySQLScanError(r.Rows.Scan(dest...)) }
 
 type kSQLRow struct{ *sql.Row }
 
-func (r kSQLRow) Scan(dest ...any) error { return stdlib.MySQLScanError(r.Row.Scan(dest...)) }
+func (r kSQLRow) Scan(dest ...any) error { return impl.MySQLScanError(r.Row.Scan(dest...)) }
 
 // OrderRepository implements repository.OrderRepository on MySQL through database/sql.
 type OrderRepository struct{ db kDatabase }
@@ -639,7 +639,7 @@ func (r OrderRepository) GetLine(ctx context.Context, orderID model.OrderID, lin
 }
 
 func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	const q = "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ? FOR UPDATE"
@@ -655,7 +655,7 @@ func (r OrderRepository) GetForUpdate(ctx context.Context, id model.OrderID) (mo
 }
 
 func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetForShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	const q = "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ? FOR SHARE"
@@ -671,7 +671,7 @@ func (r OrderRepository) GetForShare(ctx context.Context, id model.OrderID) (mod
 }
 
 func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, r.mapError(fmt.Errorf("orm: GetNoWait needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -694,7 +694,7 @@ func (r OrderRepository) GetNoWait(ctx context.Context, id model.OrderID, s ...s
 }
 
 func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return model.Order{}, r.mapError(fmt.Errorf("orm: FirstUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -717,7 +717,7 @@ func (r OrderRepository) FirstUnlocked(ctx context.Context, s ...scopes.Order) (
 }
 
 func (r OrderRepository) ListUnlocked(ctx context.Context, s ...scopes.Order) ([]model.Order, error) {
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return nil, r.mapError(fmt.Errorf("orm: ListUnlocked needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	qs := make([]impl.Of[model.Order], len(s))
@@ -738,7 +738,7 @@ func (r OrderRepository) ListIDsForShare(ctx context.Context, s ...scopes.Order)
 		qs[i] = impl.Of[model.Order](x.Of())
 	}
 	q := impl.Combine(qs...)
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return nil, r.mapError(fmt.Errorf("orm: ListIDsForShare needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	if err := q.ProjectionOnly("ListIDsForShare"); err != nil {
@@ -776,7 +776,7 @@ func (r OrderRepository) GetStatusForUpdate(ctx context.Context, id model.OrderI
 	var q impl.Of[model.Order]
 	q = q.Where(`id = `, id)
 	var zero model.OrderStatus
-	if !stdlib.InTransaction(r.db.dbtx) {
+	if !impl.InTransaction[stdlib.DBTX](r.db.dbtx) {
 		return zero, r.mapError(fmt.Errorf("orm: GetStatusForUpdate needs a transaction to hold its lock: give the repository a *sql.Tx, or a DBTX wrapping one with an Unwrap method returning it"))
 	}
 	if err := q.ProjectionOnly("GetStatusForUpdate"); err != nil {
@@ -975,7 +975,7 @@ func (r OrderRepository) UpdateFieldsOnly(ctx context.Context, id model.OrderID,
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	q = q.Where(`id = `, id)
 	text, args, err := changes.RenderUpdate(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, q)
 	if err != nil {
@@ -1011,7 +1011,7 @@ func (r OrderRepository) UpdateMany(ctx context.Context, c scopes.OrderChangeSet
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
 		return 0, r.mapError(err)
@@ -1033,7 +1033,7 @@ func (r OrderRepository) UpdateByCustomer(ctx context.Context, customerID int64,
 		qs[i] = impl.Of[model.Order](s.Of())
 	}
 	q := impl.Combine(qs...)
-	changes := c.Of()
+	changes := impl.Changes[model.Order](c.Of())
 	q = q.Where(`customer_id = `, customerID)
 	text, args, err := changes.RenderUpdateSelected(impl.MySQL, "orders", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt", "order"}, []string{"id"}, "", q)
 	if err != nil {
@@ -1067,7 +1067,7 @@ ON DUPLICATE KEY UPDATE name = new.name, nickname = new.nickname`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error) {
-	set, err := c.Of().UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
+	set, err := impl.Changes[model.Order](c.Of()).UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
 	if err != nil {
 		return model.Order{}, r.mapError(err)
 	}

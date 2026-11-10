@@ -28,11 +28,13 @@ func Customers() Customer { return Customer{} }
 func (s Customer) Of() scope.Of[model.Customer] { return s.q }
 
 // CustomerChangeSet holds explicitly assigned columns of customers.
-type CustomerChangeSet struct{ changes change.Set[model.Customer] }
+type CustomerChangeSet struct{ changes impl.Changes[model.Customer] }
 
 func CustomerChanges() CustomerChangeSet { return CustomerChangeSet{} }
 
-func (c CustomerChangeSet) Of() change.Set[model.Customer] { return c.changes }
+func (c CustomerChangeSet) Of() change.Set[model.Customer] {
+	return change.Set[model.Customer](c.changes)
+}
 
 func (c CustomerChangeSet) SetEmail(v string) CustomerChangeSet {
 	return CustomerChangeSet{c.changes.Set("email", v)}
@@ -529,11 +531,11 @@ func Products() Product { return Product{} }
 func (s Product) Of() scope.Of[model.Product] { return s.q }
 
 // ProductChangeSet holds explicitly assigned columns of products.
-type ProductChangeSet struct{ changes change.Set[model.Product] }
+type ProductChangeSet struct{ changes impl.Changes[model.Product] }
 
 func ProductChanges() ProductChangeSet { return ProductChangeSet{} }
 
-func (c ProductChangeSet) Of() change.Set[model.Product] { return c.changes }
+func (c ProductChangeSet) Of() change.Set[model.Product] { return change.Set[model.Product](c.changes) }
 
 func (c ProductChangeSet) SetName(v string) ProductChangeSet {
 	return ProductChangeSet{c.changes.Set("name", v)}
@@ -905,11 +907,11 @@ func Orders() Order { return Order{} }
 func (s Order) Of() scope.Of[model.Order] { return s.q }
 
 // OrderChangeSet holds explicitly assigned columns of orders.
-type OrderChangeSet struct{ changes change.Set[model.Order] }
+type OrderChangeSet struct{ changes impl.Changes[model.Order] }
 
 func OrderChanges() OrderChangeSet { return OrderChangeSet{} }
 
-func (c OrderChangeSet) Of() change.Set[model.Order] { return c.changes }
+func (c OrderChangeSet) Of() change.Set[model.Order] { return change.Set[model.Order](c.changes) }
 
 func (c OrderChangeSet) SetCustomerID(v model.CustomerID) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("customer_id", v)}
@@ -1389,11 +1391,13 @@ func OrderLines() OrderLine { return OrderLine{} }
 func (s OrderLine) Of() scope.Of[model.OrderLine] { return s.q }
 
 // OrderLineChangeSet holds explicitly assigned columns of order_lines.
-type OrderLineChangeSet struct{ changes change.Set[model.OrderLine] }
+type OrderLineChangeSet struct{ changes impl.Changes[model.OrderLine] }
 
 func OrderLineChanges() OrderLineChangeSet { return OrderLineChangeSet{} }
 
-func (c OrderLineChangeSet) Of() change.Set[model.OrderLine] { return c.changes }
+func (c OrderLineChangeSet) Of() change.Set[model.OrderLine] {
+	return change.Set[model.OrderLine](c.changes)
+}
 
 func (c OrderLineChangeSet) SetSKU(v model.SKU) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("sku", v)}
@@ -1740,11 +1744,13 @@ func Shipments() Shipment { return Shipment{} }
 func (s Shipment) Of() scope.Of[model.Shipment] { return s.q }
 
 // ShipmentChangeSet holds explicitly assigned columns of shipments.
-type ShipmentChangeSet struct{ changes change.Set[model.Shipment] }
+type ShipmentChangeSet struct{ changes impl.Changes[model.Shipment] }
 
 func ShipmentChanges() ShipmentChangeSet { return ShipmentChangeSet{} }
 
-func (c ShipmentChangeSet) Of() change.Set[model.Shipment] { return c.changes }
+func (c ShipmentChangeSet) Of() change.Set[model.Shipment] {
+	return change.Set[model.Shipment](c.changes)
+}
 
 func (c ShipmentChangeSet) SetCarrier(v string) ShipmentChangeSet {
 	return ShipmentChangeSet{c.changes.Set("carrier", v)}
@@ -2033,11 +2039,11 @@ func Tags() Tag { return Tag{} }
 func (s Tag) Of() scope.Of[model.Tag] { return s.q }
 
 // TagChangeSet holds explicitly assigned columns of tags.
-type TagChangeSet struct{ changes change.Set[model.Tag] }
+type TagChangeSet struct{ changes impl.Changes[model.Tag] }
 
 func TagChanges() TagChangeSet { return TagChangeSet{} }
 
-func (c TagChangeSet) Of() change.Set[model.Tag] { return c.changes }
+func (c TagChangeSet) Of() change.Set[model.Tag] { return change.Set[model.Tag](c.changes) }
 
 // NameEq narrows to the rows whose name is v.
 func (s Tag) NameEq(v string) Tag {
@@ -2183,11 +2189,13 @@ func Approvals() Approval { return Approval{} }
 func (s Approval) Of() scope.Of[model.Approval] { return s.q }
 
 // ApprovalChangeSet holds explicitly assigned columns of approvals.
-type ApprovalChangeSet struct{ changes change.Set[model.Approval] }
+type ApprovalChangeSet struct{ changes impl.Changes[model.Approval] }
 
 func ApprovalChanges() ApprovalChangeSet { return ApprovalChangeSet{} }
 
-func (c ApprovalChangeSet) Of() change.Set[model.Approval] { return c.changes }
+func (c ApprovalChangeSet) Of() change.Set[model.Approval] {
+	return change.Set[model.Approval](c.changes)
+}
 
 func (c ApprovalChangeSet) SetOrderID(v model.OrderID) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Set("order_id", v)}
