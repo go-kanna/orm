@@ -87,6 +87,9 @@ func (s Order) IDNe(v model.OrderID) Order {
 
 // IDIn narrows to the rows whose id is one of vs.
 func (s Order) IDIn(vs ...model.OrderID) Order {
+	if vs == nil {
+		vs = []model.OrderID{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`id = ANY(`, vs, `)`))}
 }
 
@@ -145,6 +148,9 @@ func (s Order) CustomerIDNe(v int64) Order {
 
 // CustomerIDIn narrows to the rows whose customer_id is one of vs.
 func (s Order) CustomerIDIn(vs ...int64) Order {
+	if vs == nil {
+		vs = []int64{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`customer_id = ANY(`, vs, `)`))}
 }
 
@@ -203,6 +209,9 @@ func (s Order) StatusNe(v model.OrderStatus) Order {
 
 // StatusIn narrows to the rows whose status is one of vs.
 func (s Order) StatusIn(vs ...model.OrderStatus) Order {
+	if vs == nil {
+		vs = []model.OrderStatus{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`status = ANY(`, vs, `)`))}
 }
 
@@ -281,6 +290,9 @@ func (s Order) PlacedAtNe(v time.Time) Order {
 
 // PlacedAtIn narrows to the rows whose placed_at is one of vs.
 func (s Order) PlacedAtIn(vs ...time.Time) Order {
+	if vs == nil {
+		vs = []time.Time{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`placed_at = ANY(`, vs, `)`))}
 }
 
@@ -339,6 +351,9 @@ func (s Order) MemoNe(v string) Order {
 
 // MemoIn narrows to the rows whose note is one of vs.
 func (s Order) MemoIn(vs ...string) Order {
+	if vs == nil {
+		vs = []string{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`note = ANY(`, vs, `)`))}
 }
 
@@ -427,6 +442,9 @@ func (s Order) TotalNe(v int64) Order {
 
 // TotalIn narrows to the rows whose total is one of vs.
 func (s Order) TotalIn(vs ...int64) Order {
+	if vs == nil {
+		vs = []int64{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`total = ANY(`, vs, `)`))}
 }
 
@@ -485,6 +503,9 @@ func (s Order) PaidNe(v bool) Order {
 
 // PaidIn narrows to the rows whose paid is one of vs.
 func (s Order) PaidIn(vs ...bool) Order {
+	if vs == nil {
+		vs = []bool{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`paid = ANY(`, vs, `)`))}
 }
 
@@ -518,6 +539,9 @@ func (s Order) ContactNe(v model.Email) Order {
 
 // ContactIn narrows to the rows whose contact is one of vs.
 func (s Order) ContactIn(vs ...model.Email) Order {
+	if vs == nil {
+		vs = []model.Email{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`contact = ANY(`, vs, `)`))}
 }
 
@@ -606,6 +630,9 @@ func (s Order) ReceiptNe(v []byte) Order {
 
 // ReceiptIn narrows to the rows whose receipt is one of vs.
 func (s Order) ReceiptIn(vs ...[]byte) Order {
+	if vs == nil {
+		vs = [][]byte{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`receipt = ANY(`, vs, `)`))}
 }
 
@@ -649,6 +676,9 @@ func (s Order) PositionNe(v int) Order {
 
 // PositionIn narrows to the rows whose order is one of vs.
 func (s Order) PositionIn(vs ...int) Order {
+	if vs == nil {
+		vs = []int{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`"order" = ANY(`, vs, `)`))}
 }
 
@@ -850,6 +880,9 @@ func (s Customer) IDNe(v int64) Customer {
 
 // IDIn narrows to the rows whose id is one of vs.
 func (s Customer) IDIn(vs ...int64) Customer {
+	if vs == nil {
+		vs = []int64{}
+	}
 	return Customer{kScope(kRuntime(s.q).Where(`id = ANY(`, vs, `)`))}
 }
 
@@ -908,6 +941,9 @@ func (s Customer) NameNe(v string) Customer {
 
 // NameIn narrows to the rows whose name is one of vs.
 func (s Customer) NameIn(vs ...string) Customer {
+	if vs == nil {
+		vs = []string{}
+	}
 	return Customer{kScope(kRuntime(s.q).Where(`name = ANY(`, vs, `)`))}
 }
 
@@ -986,6 +1022,9 @@ func (s Customer) NicknameNe(v string) Customer {
 
 // NicknameIn narrows to the rows whose nickname is one of vs.
 func (s Customer) NicknameIn(vs ...string) Customer {
+	if vs == nil {
+		vs = []string{}
+	}
 	return Customer{kScope(kRuntime(s.q).Where(`nickname = ANY(`, vs, `)`))}
 }
 
@@ -1152,6 +1191,9 @@ func (s OrderLine) OrderIDNe(v model.OrderID) OrderLine {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s OrderLine) OrderIDIn(vs ...model.OrderID) OrderLine {
+	if vs == nil {
+		vs = []model.OrderID{}
+	}
 	return OrderLine{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
@@ -1210,6 +1252,9 @@ func (s OrderLine) LineNoNe(v int) OrderLine {
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s OrderLine) LineNoIn(vs ...int) OrderLine {
+	if vs == nil {
+		vs = []int{}
+	}
 	return OrderLine{kScope(kRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
 }
 
@@ -1268,6 +1313,9 @@ func (s OrderLine) SKUNe(v string) OrderLine {
 
 // SKUIn narrows to the rows whose sku is one of vs.
 func (s OrderLine) SKUIn(vs ...string) OrderLine {
+	if vs == nil {
+		vs = []string{}
+	}
 	return OrderLine{kScope(kRuntime(s.q).Where(`sku = ANY(`, vs, `)`))}
 }
 
@@ -1455,6 +1503,9 @@ func (s Tag) NameNe(v string) Tag {
 
 // NameIn narrows to the rows whose name is one of vs.
 func (s Tag) NameIn(vs ...string) Tag {
+	if vs == nil {
+		vs = []string{}
+	}
 	return Tag{kScope(kRuntime(s.q).Where(`name = ANY(`, vs, `)`))}
 }
 
@@ -1590,6 +1641,9 @@ func (s LineNote) OrderIDNe(v model.OrderID) LineNote {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s LineNote) OrderIDIn(vs ...model.OrderID) LineNote {
+	if vs == nil {
+		vs = []model.OrderID{}
+	}
 	return LineNote{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
@@ -1648,6 +1702,9 @@ func (s LineNote) LineNoNe(v int) LineNote {
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s LineNote) LineNoIn(vs ...int) LineNote {
+	if vs == nil {
+		vs = []int{}
+	}
 	return LineNote{kScope(kRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
 }
 
@@ -1706,6 +1763,9 @@ func (s LineNote) BodyNe(v string) LineNote {
 
 // BodyIn narrows to the rows whose body is one of vs.
 func (s LineNote) BodyIn(vs ...string) LineNote {
+	if vs == nil {
+		vs = []string{}
+	}
 	return LineNote{kScope(kRuntime(s.q).Where(`body = ANY(`, vs, `)`))}
 }
 
@@ -1827,6 +1887,9 @@ func (s LineTag) OrderIDNe(v model.OrderID) LineTag {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s LineTag) OrderIDIn(vs ...model.OrderID) LineTag {
+	if vs == nil {
+		vs = []model.OrderID{}
+	}
 	return LineTag{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 
@@ -1885,6 +1948,9 @@ func (s LineTag) LineNoNe(v int) LineTag {
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s LineTag) LineNoIn(vs ...int) LineTag {
+	if vs == nil {
+		vs = []int{}
+	}
 	return LineTag{kScope(kRuntime(s.q).Where(`line_no = ANY(`, vs, `)`))}
 }
 
@@ -1943,6 +2009,9 @@ func (s LineTag) TagIDNe(v string) LineTag {
 
 // TagIDIn narrows to the rows whose tag_id is one of vs.
 func (s LineTag) TagIDIn(vs ...string) LineTag {
+	if vs == nil {
+		vs = []string{}
+	}
 	return LineTag{kScope(kRuntime(s.q).Where(`tag_id = ANY(`, vs, `)`))}
 }
 
@@ -2109,6 +2178,9 @@ func (s Label) OrderIDNe(v model.OrderID) Label {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s Label) OrderIDIn(vs ...model.OrderID) Label {
+	if vs == nil {
+		vs = []model.OrderID{}
+	}
 	return Label{kScope(kRuntime(s.q).Where(`order_id = ANY(`, vs, `)`))}
 }
 

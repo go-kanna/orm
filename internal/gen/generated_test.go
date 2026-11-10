@@ -65,6 +65,7 @@ func TestGenerated_Postgres(t *testing.T) {
 		{"Eq of a reserved word", pscopes.Order{}.PositionEq(1), rendered{` WHERE ("order" = $1)`, []any{1}}},
 		{"In", pscopes.Order{}.IDIn(1, 2),
 			rendered{" WHERE (id = ANY($1))", []any{[]model.OrderID{1, 2}}}},
+		{"In none", pscopes.Order{}.IDIn(), rendered{" WHERE (id = ANY($1))", []any{[]model.OrderID{}}}},
 		{"NotIn", pscopes.Order{}.IDNotIn(1, 2),
 			rendered{" WHERE (id <> ALL($1))", []any{[]model.OrderID{1, 2}}}},
 		{"NotIn none", pscopes.Order{}.IDNotIn(), rendered{}},
@@ -112,7 +113,7 @@ func TestGenerated_MySQL(t *testing.T) {
 	}{
 		{"Eq of a reserved word", mscopes.Order{}.PositionEq(1), rendered{" WHERE (`order` = ?)", []any{1}}},
 		{"In", mscopes.Order{}.IDIn(1, 2), rendered{" WHERE (id IN (?, ?))", []any{model.OrderID(1), model.OrderID(2)}}},
-		{"In none", mscopes.Order{}.IDIn(), rendered{" WHERE (id IN (NULL))", nil}},
+		{"In none", mscopes.Order{}.IDIn(), rendered{" WHERE (id IN (SELECT NULL FROM DUAL WHERE FALSE))", nil}},
 		{"NotIn", mscopes.Order{}.StatusNotIn("open"),
 			rendered{" WHERE (status NOT IN (?))", []any{model.OrderStatus("open")}}},
 		{"HasPrefix", mscopes.Order{}.MemoHasPrefix("a_b"), rendered{" WHERE (note LIKE ? ESCAPE '!')", []any{"a!_b%"}}},

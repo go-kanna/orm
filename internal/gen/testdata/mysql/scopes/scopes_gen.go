@@ -87,7 +87,7 @@ func (s Order) IDNe(v model.OrderID) Order {
 
 // IDIn narrows to the rows whose id is one of vs.
 func (s Order) IDIn(vs ...model.OrderID) Order {
-	return Order{kScope(kRuntime(s.q).Where(`id IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`id IN (`, impl.InList(vs), `)`))}
 }
 
 // IDNotIn narrows to the rows whose id is none of vs.
@@ -95,7 +95,7 @@ func (s Order) IDNotIn(vs ...model.OrderID) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`id NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // IDLt narrows to the rows whose id is less than v.
@@ -145,7 +145,7 @@ func (s Order) CustomerIDNe(v int64) Order {
 
 // CustomerIDIn narrows to the rows whose customer_id is one of vs.
 func (s Order) CustomerIDIn(vs ...int64) Order {
-	return Order{kScope(kRuntime(s.q).Where(`customer_id IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id IN (`, impl.InList(vs), `)`))}
 }
 
 // CustomerIDNotIn narrows to the rows whose customer_id is none of vs.
@@ -153,7 +153,7 @@ func (s Order) CustomerIDNotIn(vs ...int64) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`customer_id NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`customer_id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // CustomerIDLt narrows to the rows whose customer_id is less than v.
@@ -203,7 +203,7 @@ func (s Order) StatusNe(v model.OrderStatus) Order {
 
 // StatusIn narrows to the rows whose status is one of vs.
 func (s Order) StatusIn(vs ...model.OrderStatus) Order {
-	return Order{kScope(kRuntime(s.q).Where(`status IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`status IN (`, impl.InList(vs), `)`))}
 }
 
 // StatusNotIn narrows to the rows whose status is none of vs.
@@ -211,7 +211,7 @@ func (s Order) StatusNotIn(vs ...model.OrderStatus) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`status NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`status NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // StatusLt narrows to the rows whose status is less than v.
@@ -276,7 +276,7 @@ func (s Order) PlacedAtNe(v time.Time) Order {
 
 // PlacedAtIn narrows to the rows whose placed_at is one of vs.
 func (s Order) PlacedAtIn(vs ...time.Time) Order {
-	return Order{kScope(kRuntime(s.q).Where(`placed_at IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at IN (`, impl.InList(vs), `)`))}
 }
 
 // PlacedAtNotIn narrows to the rows whose placed_at is none of vs.
@@ -284,7 +284,7 @@ func (s Order) PlacedAtNotIn(vs ...time.Time) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`placed_at NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`placed_at NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // PlacedAtLt narrows to the rows whose placed_at is less than v.
@@ -334,7 +334,7 @@ func (s Order) MemoNe(v string) Order {
 
 // MemoIn narrows to the rows whose note is one of vs.
 func (s Order) MemoIn(vs ...string) Order {
-	return Order{kScope(kRuntime(s.q).Where(`note IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`note IN (`, impl.InList(vs), `)`))}
 }
 
 // MemoNotIn narrows to the rows whose note is none of vs.
@@ -342,7 +342,7 @@ func (s Order) MemoNotIn(vs ...string) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`note NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`note NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // MemoLt narrows to the rows whose note is less than v.
@@ -417,7 +417,7 @@ func (s Order) TotalNe(v int64) Order {
 
 // TotalIn narrows to the rows whose total is one of vs.
 func (s Order) TotalIn(vs ...int64) Order {
-	return Order{kScope(kRuntime(s.q).Where(`total IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`total IN (`, impl.InList(vs), `)`))}
 }
 
 // TotalNotIn narrows to the rows whose total is none of vs.
@@ -425,7 +425,7 @@ func (s Order) TotalNotIn(vs ...int64) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`total NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`total NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // TotalLt narrows to the rows whose total is less than v.
@@ -475,7 +475,7 @@ func (s Order) PaidNe(v bool) Order {
 
 // PaidIn narrows to the rows whose paid is one of vs.
 func (s Order) PaidIn(vs ...bool) Order {
-	return Order{kScope(kRuntime(s.q).Where(`paid IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`paid IN (`, impl.InList(vs), `)`))}
 }
 
 // PaidNotIn narrows to the rows whose paid is none of vs.
@@ -483,7 +483,7 @@ func (s Order) PaidNotIn(vs ...bool) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`paid NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`paid NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // PaidAsc orders the rows by paid, in ascending order.
@@ -508,7 +508,7 @@ func (s Order) ContactNe(v model.Email) Order {
 
 // ContactIn narrows to the rows whose contact is one of vs.
 func (s Order) ContactIn(vs ...model.Email) Order {
-	return Order{kScope(kRuntime(s.q).Where(`contact IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact IN (`, impl.InList(vs), `)`))}
 }
 
 // ContactNotIn narrows to the rows whose contact is none of vs.
@@ -516,7 +516,7 @@ func (s Order) ContactNotIn(vs ...model.Email) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`contact NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`contact NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // ContactLt narrows to the rows whose contact is less than v.
@@ -591,7 +591,7 @@ func (s Order) ReceiptNe(v []byte) Order {
 
 // ReceiptIn narrows to the rows whose receipt is one of vs.
 func (s Order) ReceiptIn(vs ...[]byte) Order {
-	return Order{kScope(kRuntime(s.q).Where(`receipt IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt IN (`, impl.InList(vs), `)`))}
 }
 
 // ReceiptNotIn narrows to the rows whose receipt is none of vs.
@@ -599,7 +599,7 @@ func (s Order) ReceiptNotIn(vs ...[]byte) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where(`receipt NOT IN (`, impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where(`receipt NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // ReceiptIsNull narrows to the rows whose receipt is NULL.
@@ -634,7 +634,7 @@ func (s Order) PositionNe(v int) Order {
 
 // PositionIn narrows to the rows whose order is one of vs.
 func (s Order) PositionIn(vs ...int) Order {
-	return Order{kScope(kRuntime(s.q).Where("`order` IN (", impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where("`order` IN (", impl.InList(vs), `)`))}
 }
 
 // PositionNotIn narrows to the rows whose order is none of vs.
@@ -642,7 +642,7 @@ func (s Order) PositionNotIn(vs ...int) Order {
 	if len(vs) == 0 {
 		return s
 	}
-	return Order{kScope(kRuntime(s.q).Where("`order` NOT IN (", impl.List(vs), `)`))}
+	return Order{kScope(kRuntime(s.q).Where("`order` NOT IN (", impl.InList(vs), `)`))}
 }
 
 // PositionLt narrows to the rows whose order is less than v.
@@ -828,7 +828,7 @@ func (s Customer) IDNe(v int64) Customer {
 
 // IDIn narrows to the rows whose id is one of vs.
 func (s Customer) IDIn(vs ...int64) Customer {
-	return Customer{kScope(kRuntime(s.q).Where(`id IN (`, impl.List(vs), `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`id IN (`, impl.InList(vs), `)`))}
 }
 
 // IDNotIn narrows to the rows whose id is none of vs.
@@ -836,7 +836,7 @@ func (s Customer) IDNotIn(vs ...int64) Customer {
 	if len(vs) == 0 {
 		return s
 	}
-	return Customer{kScope(kRuntime(s.q).Where(`id NOT IN (`, impl.List(vs), `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // IDLt narrows to the rows whose id is less than v.
@@ -886,7 +886,7 @@ func (s Customer) NameNe(v string) Customer {
 
 // NameIn narrows to the rows whose name is one of vs.
 func (s Customer) NameIn(vs ...string) Customer {
-	return Customer{kScope(kRuntime(s.q).Where(`name IN (`, impl.List(vs), `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`name IN (`, impl.InList(vs), `)`))}
 }
 
 // NameNotIn narrows to the rows whose name is none of vs.
@@ -894,7 +894,7 @@ func (s Customer) NameNotIn(vs ...string) Customer {
 	if len(vs) == 0 {
 		return s
 	}
-	return Customer{kScope(kRuntime(s.q).Where(`name NOT IN (`, impl.List(vs), `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`name NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // NameLt narrows to the rows whose name is less than v.
@@ -959,7 +959,7 @@ func (s Customer) NicknameNe(v string) Customer {
 
 // NicknameIn narrows to the rows whose nickname is one of vs.
 func (s Customer) NicknameIn(vs ...string) Customer {
-	return Customer{kScope(kRuntime(s.q).Where(`nickname IN (`, impl.List(vs), `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname IN (`, impl.InList(vs), `)`))}
 }
 
 // NicknameNotIn narrows to the rows whose nickname is none of vs.
@@ -967,7 +967,7 @@ func (s Customer) NicknameNotIn(vs ...string) Customer {
 	if len(vs) == 0 {
 		return s
 	}
-	return Customer{kScope(kRuntime(s.q).Where(`nickname NOT IN (`, impl.List(vs), `)`))}
+	return Customer{kScope(kRuntime(s.q).Where(`nickname NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // NicknameLt narrows to the rows whose nickname is less than v.
@@ -1120,7 +1120,7 @@ func (s OrderLine) OrderIDNe(v model.OrderID) OrderLine {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s OrderLine) OrderIDIn(vs ...model.OrderID) OrderLine {
-	return OrderLine{kScope(kRuntime(s.q).Where(`order_id IN (`, impl.List(vs), `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id IN (`, impl.InList(vs), `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -1128,7 +1128,7 @@ func (s OrderLine) OrderIDNotIn(vs ...model.OrderID) OrderLine {
 	if len(vs) == 0 {
 		return s
 	}
-	return OrderLine{kScope(kRuntime(s.q).Where(`order_id NOT IN (`, impl.List(vs), `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`order_id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
@@ -1178,7 +1178,7 @@ func (s OrderLine) LineNoNe(v int) OrderLine {
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s OrderLine) LineNoIn(vs ...int) OrderLine {
-	return OrderLine{kScope(kRuntime(s.q).Where(`line_no IN (`, impl.List(vs), `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no IN (`, impl.InList(vs), `)`))}
 }
 
 // LineNoNotIn narrows to the rows whose line_no is none of vs.
@@ -1186,7 +1186,7 @@ func (s OrderLine) LineNoNotIn(vs ...int) OrderLine {
 	if len(vs) == 0 {
 		return s
 	}
-	return OrderLine{kScope(kRuntime(s.q).Where(`line_no NOT IN (`, impl.List(vs), `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`line_no NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // LineNoLt narrows to the rows whose line_no is less than v.
@@ -1236,7 +1236,7 @@ func (s OrderLine) SKUNe(v string) OrderLine {
 
 // SKUIn narrows to the rows whose sku is one of vs.
 func (s OrderLine) SKUIn(vs ...string) OrderLine {
-	return OrderLine{kScope(kRuntime(s.q).Where(`sku IN (`, impl.List(vs), `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku IN (`, impl.InList(vs), `)`))}
 }
 
 // SKUNotIn narrows to the rows whose sku is none of vs.
@@ -1244,7 +1244,7 @@ func (s OrderLine) SKUNotIn(vs ...string) OrderLine {
 	if len(vs) == 0 {
 		return s
 	}
-	return OrderLine{kScope(kRuntime(s.q).Where(`sku NOT IN (`, impl.List(vs), `)`))}
+	return OrderLine{kScope(kRuntime(s.q).Where(`sku NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // SKULt narrows to the rows whose sku is less than v.
@@ -1418,7 +1418,7 @@ func (s Tag) NameNe(v string) Tag {
 
 // NameIn narrows to the rows whose name is one of vs.
 func (s Tag) NameIn(vs ...string) Tag {
-	return Tag{kScope(kRuntime(s.q).Where(`name IN (`, impl.List(vs), `)`))}
+	return Tag{kScope(kRuntime(s.q).Where(`name IN (`, impl.InList(vs), `)`))}
 }
 
 // NameNotIn narrows to the rows whose name is none of vs.
@@ -1426,7 +1426,7 @@ func (s Tag) NameNotIn(vs ...string) Tag {
 	if len(vs) == 0 {
 		return s
 	}
-	return Tag{kScope(kRuntime(s.q).Where(`name NOT IN (`, impl.List(vs), `)`))}
+	return Tag{kScope(kRuntime(s.q).Where(`name NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // NameLt narrows to the rows whose name is less than v.
@@ -1548,7 +1548,7 @@ func (s LineNote) OrderIDNe(v model.OrderID) LineNote {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s LineNote) OrderIDIn(vs ...model.OrderID) LineNote {
-	return LineNote{kScope(kRuntime(s.q).Where(`order_id IN (`, impl.List(vs), `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id IN (`, impl.InList(vs), `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -1556,7 +1556,7 @@ func (s LineNote) OrderIDNotIn(vs ...model.OrderID) LineNote {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineNote{kScope(kRuntime(s.q).Where(`order_id NOT IN (`, impl.List(vs), `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`order_id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
@@ -1606,7 +1606,7 @@ func (s LineNote) LineNoNe(v int) LineNote {
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s LineNote) LineNoIn(vs ...int) LineNote {
-	return LineNote{kScope(kRuntime(s.q).Where(`line_no IN (`, impl.List(vs), `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no IN (`, impl.InList(vs), `)`))}
 }
 
 // LineNoNotIn narrows to the rows whose line_no is none of vs.
@@ -1614,7 +1614,7 @@ func (s LineNote) LineNoNotIn(vs ...int) LineNote {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineNote{kScope(kRuntime(s.q).Where(`line_no NOT IN (`, impl.List(vs), `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`line_no NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // LineNoLt narrows to the rows whose line_no is less than v.
@@ -1664,7 +1664,7 @@ func (s LineNote) BodyNe(v string) LineNote {
 
 // BodyIn narrows to the rows whose body is one of vs.
 func (s LineNote) BodyIn(vs ...string) LineNote {
-	return LineNote{kScope(kRuntime(s.q).Where(`body IN (`, impl.List(vs), `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body IN (`, impl.InList(vs), `)`))}
 }
 
 // BodyNotIn narrows to the rows whose body is none of vs.
@@ -1672,7 +1672,7 @@ func (s LineNote) BodyNotIn(vs ...string) LineNote {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineNote{kScope(kRuntime(s.q).Where(`body NOT IN (`, impl.List(vs), `)`))}
+	return LineNote{kScope(kRuntime(s.q).Where(`body NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // BodyLt narrows to the rows whose body is less than v.
@@ -1780,7 +1780,7 @@ func (s LineTag) OrderIDNe(v model.OrderID) LineTag {
 
 // OrderIDIn narrows to the rows whose order_id is one of vs.
 func (s LineTag) OrderIDIn(vs ...model.OrderID) LineTag {
-	return LineTag{kScope(kRuntime(s.q).Where(`order_id IN (`, impl.List(vs), `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id IN (`, impl.InList(vs), `)`))}
 }
 
 // OrderIDNotIn narrows to the rows whose order_id is none of vs.
@@ -1788,7 +1788,7 @@ func (s LineTag) OrderIDNotIn(vs ...model.OrderID) LineTag {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineTag{kScope(kRuntime(s.q).Where(`order_id NOT IN (`, impl.List(vs), `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`order_id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // OrderIDLt narrows to the rows whose order_id is less than v.
@@ -1838,7 +1838,7 @@ func (s LineTag) LineNoNe(v int) LineTag {
 
 // LineNoIn narrows to the rows whose line_no is one of vs.
 func (s LineTag) LineNoIn(vs ...int) LineTag {
-	return LineTag{kScope(kRuntime(s.q).Where(`line_no IN (`, impl.List(vs), `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no IN (`, impl.InList(vs), `)`))}
 }
 
 // LineNoNotIn narrows to the rows whose line_no is none of vs.
@@ -1846,7 +1846,7 @@ func (s LineTag) LineNoNotIn(vs ...int) LineTag {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineTag{kScope(kRuntime(s.q).Where(`line_no NOT IN (`, impl.List(vs), `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`line_no NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // LineNoLt narrows to the rows whose line_no is less than v.
@@ -1896,7 +1896,7 @@ func (s LineTag) TagIDNe(v string) LineTag {
 
 // TagIDIn narrows to the rows whose tag_id is one of vs.
 func (s LineTag) TagIDIn(vs ...string) LineTag {
-	return LineTag{kScope(kRuntime(s.q).Where(`tag_id IN (`, impl.List(vs), `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id IN (`, impl.InList(vs), `)`))}
 }
 
 // TagIDNotIn narrows to the rows whose tag_id is none of vs.
@@ -1904,7 +1904,7 @@ func (s LineTag) TagIDNotIn(vs ...string) LineTag {
 	if len(vs) == 0 {
 		return s
 	}
-	return LineTag{kScope(kRuntime(s.q).Where(`tag_id NOT IN (`, impl.List(vs), `)`))}
+	return LineTag{kScope(kRuntime(s.q).Where(`tag_id NOT IN (`, impl.InList(vs), `)`))}
 }
 
 // TagIDLt narrows to the rows whose tag_id is less than v.
