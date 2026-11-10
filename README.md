@@ -26,7 +26,7 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 
 | Package      | What for                                                                                |
 |--------------|-----------------------------------------------------------------------------------------|
-| `orm`        | `ErrNotFound`, the error a repository returns                                           |
+| `orm`        | `ErrNotFound`, `ErrInvalidCursor`, and `ErrEmptyChangeSet`, the errors to test for      |
 | `orm/scope`  | `Of`, the one field of a scope type declared by hand, and `Raw`, for SQL written in Go  |
 | `orm/option` | `WithHook`, the option a repository's constructor takes                                 |
 | `orm/hook`   | `Hook`, `Query`, and `Execution`, the functions that option takes and what they receive |
@@ -565,7 +565,9 @@ res.NextPageToken, err = s.Cursor(page[len(page)-1])
 
 A cursor holds the order it was made in and the row's values in that order, as JSON; an empty one is the start, and
 one made in another order is an error. Each value is decoded through its type, so a value type checks its rule. A
-cursor a client has altered changes where the page starts, and nothing else.
+cursor a client has altered changes where the page starts, and nothing else. A cursor that kanna-orm did not make, that
+was made in another order, or whose value its type rejects returns an error wrapping `orm.ErrInvalidCursor`, so a
+handler can tell a bad page token from a failure of its own with `errors.Is`.
 
 ## Repositories
 
@@ -1227,8 +1229,9 @@ Not calling a setter leaves that column unchanged. Zero values are written, rath
 of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged.
 Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned
 columns, columns tagged `insertonly`, the [creation and update times](#creation-and-update-times), and relations have no
-setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty change set is an
-error; an [upsert](#writing-a-change-set-over-the-row-met) of one is not.
+setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty change set returns
+`orm.ErrEmptyChangeSet`, which a handler can test for with `errors.Is` to reject a request that changes nothing; an
+[upsert](#writing-a-change-set-over-the-row-met) of one is not an error.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 

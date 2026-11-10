@@ -1,10 +1,12 @@
 package impl_test
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/impl"
 )
 
@@ -227,7 +229,7 @@ func TestChanges_Touch(t *testing.T) {
 		t.Errorf("Touch changed the change set it derives from: %v, %v", args, err)
 	}
 	if _, _, err := (impl.Changes[int]{}).Touch("updated_at", "now").RenderUpdate(impl.Postgres, "users", allowed,
-		q); err == nil || err.Error() != "orm: Update requires at least one assigned column" {
+		q); !errors.Is(err, orm.ErrEmptyChangeSet) {
 		t.Errorf("Touch of no change error = %v", err)
 	}
 	for _, tt := range []struct {

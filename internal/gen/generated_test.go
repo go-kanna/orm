@@ -1,10 +1,12 @@
 package gen_test
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/impl"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	mscopes "github.com/go-kanna/orm/internal/gen/testdata/mysql/scopes"
@@ -222,8 +224,8 @@ func TestGenerated_Cursor(t *testing.T) {
 		render(t, runtime(page.Of()), impl.Postgres)) {
 		t.Errorf("AfterCursor of no cursor = %+v, %v; want the scope itself", start, err)
 	}
-	if _, err := (pscopes.Order{}).PlacedAtAsc().AfterCursor(cursor); err == nil {
-		t.Error("AfterCursor takes a cursor made in another order")
+	if _, err := (pscopes.Order{}).PlacedAtAsc().AfterCursor(cursor); !errors.Is(err, orm.ErrInvalidCursor) {
+		t.Errorf("AfterCursor of a cursor made in another order = %v, want orm.ErrInvalidCursor", err)
 	}
 	if _, err := (pscopes.Order{}).Cursor(row); err == nil {
 		t.Error("Cursor encodes a row in a scope without an order")

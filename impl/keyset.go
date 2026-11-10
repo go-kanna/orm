@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/go-kanna/orm"
 )
 
 // MayBeNull stands, among the values of a row After and Cursor are given, for that of a column which may be NULL. The
@@ -59,7 +61,7 @@ type cursor struct {
 	Values []json.RawMessage `json:"values"`
 }
 
-var errNotACursor = errors.New("orm: the cursor is not one kanna-orm made")
+var errNotACursor = fmt.Errorf("%w: not one kanna-orm made", orm.ErrInvalidCursor)
 
 // Cursor encodes the position of a row in the order of q, for a client to hand back for the page after it. values and
 // key are as After takes them. A q without an order is an error, as it is for After.
@@ -104,7 +106,7 @@ func (q Of[M]) DecodeCursor(token string, key []string, dest map[string]any) err
 	}
 	orders := q.ordersWith(key)
 	if !slices.Equal(c.Order, describeOrders(orders)) {
-		return fmt.Errorf("orm: the cursor was made in another order: %v", c.Order)
+		return fmt.Errorf("%w: made in another order: %v", orm.ErrInvalidCursor, c.Order)
 	}
 	if len(c.Values) != len(orders) {
 		return errNotACursor
@@ -120,7 +122,7 @@ func (q Of[M]) DecodeCursor(token string, key []string, dest map[string]any) err
 			return fmt.Errorf("orm: the cursor has a value of %s, which the row has nowhere to keep", o.column)
 		}
 		if err := json.Unmarshal(c.Values[i], p); err != nil {
-			return fmt.Errorf("orm: decode %s of the cursor: %w", o.column, err)
+			return fmt.Errorf("%w: decode %s: %w", orm.ErrInvalidCursor, o.column, err)
 		}
 	}
 	return nil
