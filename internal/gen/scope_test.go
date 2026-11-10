@@ -206,13 +206,13 @@ type OrderLine struct{ q scope.Of[model.Order] }
 		{"not a struct", `
 //kanna:scope table=orders
 type Order int
-`, "scopes.go:11:6: error: Order: a scope type is a struct whose only field is an scope.Of of its model\n" +
-			"  as in type Order struct{ q scope.Of[model.Order] }"},
+`, "scopes.go:10:1: error: //kanna:scope marks a struct type, not a type other than a struct or an interface, so " +
+			"nothing reads it\n  write it right above a struct type"},
 		{"an alias", `
 //kanna:scope table=orders
 type Order = model.Order
-`, "scopes.go:11:6: error: Order: a scope type is a struct whose only field is an scope.Of of its model\n" +
-			"  as in type Order struct{ q scope.Of[model.Order] }"},
+`, "scopes.go:10:1: error: //kanna:scope marks a struct type, not a type alias, so nothing reads it\n" +
+			"  write it right above a struct type"},
 		{"a second field", `
 //kanna:scope table=orders
 type Order struct {
@@ -251,7 +251,7 @@ type Order struct{ q scope.Of[[]model.Order] }
 `, "scopes.go:11:6: error: Order: the model, []model.Order, is not a named struct"},
 		{"what is wrong with the type and with the directive", `
 //kanna:scope table=order
-type Order int
+type Order struct{ q model.Order }
 `, "scopes.go:11:6: error: Order: a scope type is a struct whose only field is an scope.Of of its model\n" +
 			"  as in type Order struct{ q scope.Of[model.Order] }\n" +
 			"scopes.go:10:1: error: Order: the snapshot has no table order\n  did you mean orders?"},

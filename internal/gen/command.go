@@ -478,7 +478,8 @@ func planRepository(repoPkgs, pkgs []*packages.Package, s snapshot.Snapshot, idx
 	return repoPlan{repos: repos, models: models, driver: drv}, ds
 }
 
-// declarations tells which of pkgs declare a //kanna:scope type, and which a //kanna:repository interface.
+// declarations tells which of pkgs declare a //kanna:scope type, and which a //kanna:repository interface, leaving out
+// a directive marking what its key does not.
 func declarations(pkgs []*packages.Package) (scoped, repos []*packages.Package) {
 	for _, pkg := range pkgs {
 		hasScopes, hasRepos := false, false
@@ -487,8 +488,13 @@ func declarations(pkgs []*packages.Package) (scoped, repos []*packages.Package) 
 				continue
 			}
 			decls, _ := decl.Read(pkg.Fset, f)
-			hasScopes = hasScopes || len(decls.Scopes) > 0 || len(decls.Models) > 0
-			hasRepos = hasRepos || len(decls.Repositories) > 0
+			mds := decl.Misplaced(pkg.Fset, f, pkg.Types)
+			hasScopes = hasScopes || len(decls.Models) > 0 || slices.ContainsFunc(decls.Scopes, func(sc decl.Scope) bool {
+				return !decl.IsMisplaced(mds, sc.Pos)
+			})
+			hasRepos = hasRepos || slices.ContainsFunc(decls.Repositories, func(r decl.Repository) bool {
+				return !decl.IsMisplaced(mds, r.Pos)
+			})
 		}
 		if hasScopes {
 			scoped = append(scoped, pkg)
@@ -501,14 +507,14 @@ func declarations(pkgs []*packages.Package) (scoped, repos []*packages.Package) 
 }
 
 // directiveDiags tells what is wrong with the //kanna:scope, //kanna:scopes, and //kanna:repository directives of
-// pkgs.
+// pkgs, and the directives of kanna-orm marking what their keys do not.
 func directiveDiags(pkgs []*packages.Package) []diag.Diag {
 	var ds []diag.Diag
 	for _, pkg := range pkgs {
 		for _, f := range pkg.Syntax {
 			if !ast.IsGenerated(f) {
 				_, fds := decl.Read(pkg.Fset, f)
-				ds = append(ds, fds...)
+				ds = append(append(ds, fds...), decl.Misplaced(pkg.Fset, f, pkg.Types)...)
 			}
 		}
 	}

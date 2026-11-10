@@ -214,6 +214,23 @@ func TestCommand_DirectiveDeclaringNothing(t *testing.T) {
 				"  write it right above what it marks, with no blank line between\n" +
 				"warning: no type is marked //kanna:scope or //kanna:repository in example.com/shop/repository\n",
 			cli.ExitOK},
+		{"repository of a function", "repository", "package repository\n\n//kanna:repository\nfunc Order() {}\n",
+			"./repository.go:3:1: error: //kanna:repository marks an interface type, not a function, so nothing reads " +
+				"it\n  write it right above an interface type\n", cli.ExitFailure},
+		{"repository of a struct", "repository", "package repository\n\n//kanna:repository\ntype Order struct{}\n",
+			"./repository.go:3:1: error: //kanna:repository marks an interface type, not a struct type, so nothing " +
+				"reads it\n  write it right above an interface type\n", cli.ExitFailure},
+		{"lock of the repository", "repository", "package repository\n\nimport \"context\"\n\n" +
+			"//kanna:lock update\n//kanna:repository\ntype Order interface {\n" +
+			"\tDelete(ctx context.Context, id int64) error\n}\n",
+			"./repository.go:5:1: error: //kanna:lock marks a method of an interface, not an interface type, so " +
+				"nothing reads it\n  write it right above a method of an interface\n" +
+				"error: example.com/shop/repository declares //kanna:repository interfaces, whose implementations go " +
+				"into the package -destination names\n  as in //go:generate go tool kanna-orm -destination ../postgres\n",
+			cli.ExitFailure},
+		{"scope of a string type", "scopes", "package scopes\n\n//kanna:scope table=orders\ntype Order string\n",
+			"./scopes.go:3:1: error: //kanna:scope marks a struct type, not a type other than a struct or an " +
+				"interface, so nothing reads it\n  write it right above a struct type\n", cli.ExitFailure},
 		// one warning, though scope is a typo away from scopes, which the comment is read for
 		{"loose scope", "scopes", "package scopes\n\n//kanna:scope\n\ntype Order struct{}\n",
 			"./scopes.go:3:1: warning: //kanna:scope is not attached to a declaration, so nothing reads it\n" +
