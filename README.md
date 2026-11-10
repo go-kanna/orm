@@ -528,8 +528,12 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 // ORDER BY placed_at DESC, id DESC LIMIT 20
 ```
 
-- A `Limit` or an `Offset` with no order keeps rows in whatever order the database reads them, as SQL does: order a
-  page by the scopes for it to say which rows it holds.
+- A `Limit` or an `Offset` with no order keeps rows in whatever order the database reads them, as SQL does: order a page
+  by the scopes for it to say which rows it holds. No page continues from such a page: given a scope without an order, a
+  query continuing from a row returns an error, and so do `Cursor` and `AfterCursor`. The order may come from another
+  scope of the same call.
+- A page continues from one row. Two, as `After` and `Before`, `After` and `AfterCursor`, or one in each of two scopes
+  of a call, make the query return an error, rather than the later one take the place of the earlier.
 -  When the order does not end in the primary key, it gets the key, in the direction of its last column, in every read
   that orders rows, on the first page as on those `After` and `Before` continue to, so that rows equal in the order come
   in one, the same on every page. Without it, a page that ends among equal rows repeats or skips some of them, without a
@@ -753,9 +757,12 @@ or unique key. Additional scopes can filter the row and load relations; a scope 
 `Limit`, an `Offset`, `After`, or `Before`, is an error for them, as it could leave out the very row the key names. A
 key parameter takes the value, not a pointer: nil would compare by `= NULL`, which matches no row, so generation stops
 at one, and the scope's `IsNull` narrows to the rows whose column is NULL. `First` selects a row from a potentially
-larger set instead: the first in the scope's order, or by the primary key when the scope has none. Hand-written SQL may
-implement a `Find...` returning a pointer, to a result struct or to a scalar, which returns `nil, nil` for no row as a
-generated `Find` does; a scalar one reads a column that is never NULL, as its nil means no row.
+larger set instead: the first in the scope's order, or by the primary key when the scope has none. Given `After`, it
+reads the row right after one in the scope's order, which the scope needs then, as a page does. `Before` is an error for
+it: the page before a row is read from its end, so the row read would be the one right before, not the first of that
+page. Hand-written SQL may implement a `Find...` returning a pointer, to a result struct or to a scalar, which returns
+`nil, nil` for no row as a generated `Find` does; a scalar one reads a column that is never NULL, as its nil means no
+row.
 
 ```go
 // customerID is customer_id: the orders of one customer.
