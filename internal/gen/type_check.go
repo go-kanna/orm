@@ -2,6 +2,7 @@ package gen
 
 import (
 	"go/types"
+	"strconv"
 	"strings"
 )
 
@@ -39,18 +40,24 @@ var dbClasses = map[string]dbClass{
 	"uuid": classUUID,
 }
 
-// classOf classifies dbType. A type it does not know, such as an enum of PostgreSQL or json, is classUnknown.
+// classOf classifies dbType. A type it does not know, such as an enum of PostgreSQL or json, is classUnknown. citext,
+// of an extension, is named with the schema it is installed in.
 func classOf(dbType string) dbClass {
 	if strings.ToLower(strings.TrimSpace(dbType)) == "tinyint(1)" {
 		return classTinyint1
 	}
-	return dbClasses[baseType(dbType)]
+	base := baseType(dbType)
+	if i := strings.LastIndexByte(base, '.'); i >= 0 && base[i+1:] == "citext" {
+		base = "citext"
+	}
+	return dbClasses[base]
 }
 
-// fits reports whether a Go value of type t is what a driver reads a value of dbType into, and writes it from, and if
-// not, the type to declare instead. A type with a Scan method converts itself, and a database type kanna-orm does not
-// know, or does not tell, is taken at the Go type's word.
-func fits(t types.Type, dbType string) (want string, ok bool) {
+// fits reports whether a Go value of type t is what drv reads a value of dbType into, and writes it from, and if not,
+// the type to declare instead; drv is empty when the run does not know it, and any driver will do. A type with a Scan
+// method converts itself, and a database type kanna-orm does not know, or does not tell, is taken at the Go type's
+// word.
+func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		t = p.Elem()
 	}
@@ -62,7 +69,7 @@ func fits(t types.Type, dbType string) (want string, ok bool) {
 		if !isSlice || isBytes(t) {
 			return "a slice", false
 		}
-		if want, ok := fits(s.Elem(), elem); !ok {
+		if want, ok := fits(s.Elem(), elem, drv); !ok {
 			return "[]" + want, false
 		}
 		return "", true
@@ -94,7 +101,8 @@ func fits(t types.Type, dbType string) (want string, ok bool) {
 	case classTime:
 		return "time.Time", isTime(t)
 	case classBytes:
-		return "[]byte", isBytes(t) || str
+		// pgx reads a bytea in binary, which it scans into no string.
+		return "[]byte", isBytes(t) || str && (drv != driverPgx || baseType(dbType) != "bytea")
 	case classUUID:
 		return "string", str || isBytes(t) || isUUID(t)
 	}
@@ -102,10 +110,10 @@ func fits(t types.Type, dbType string) (want string, ok bool) {
 }
 
 // readable is fits for a value read from a column: the Go type also has to hold every value of dbType, so that no row
-// fails to scan for the number it holds, or loses precision in a float32. A value written needs only fits, as a
-// database rejects one beyond its column's range rather than store another.
-func readable(t types.Type, dbType string) (want string, ok bool) {
-	if want, ok := fits(t, dbType); !ok {
+// fails to scan for the number it holds, or loses precision in a float. A value written needs only fits, as a database
+// rejects one beyond its column's range rather than store another.
+func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
+	if want, ok := fits(t, dbType, drv); !ok {
 		return want, false
 	}
 	if p, ok := t.Underlying().(*types.Pointer); ok {
@@ -116,7 +124,7 @@ func readable(t types.Type, dbType string) (want string, ok bool) {
 	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		if s, ok := t.Underlying().(*types.Slice); ok {
-			if want, ok := readable(s.Elem(), elem); !ok {
+			if want, ok := readable(s.Elem(), elem, drv); !ok {
 				return "[]" + want, false
 			}
 		}
@@ -132,7 +140,60 @@ func readable(t types.Type, dbType string) (want string, ok bool) {
 	if bits, ok := floatBits[baseType(dbType)]; ok && b.Kind() == types.Float32 && bits > 32 {
 		return "float64", false
 	}
+	if classOf(dbType) == classNumeric && b.Info()&(types.IsInteger|types.IsFloat) != 0 {
+		return numericWant(b, dbType)
+	}
 	return "", true
+}
+
+// numericWant reports whether b, a Go number, holds every value of dbType, a numeric or decimal, and if not, the type
+// to declare instead. An integer holds one of scale 0, as wide as its digits; a floating-point number none, as it
+// rounds what it does not hold exactly; and none holds a numeric whose scale is not recorded.
+func numericWant(b *types.Basic, dbType string) (want string, ok bool) {
+	precision, scale, recorded := numericDigits(dbType)
+	if b.Info()&types.IsFloat != 0 || !recorded || scale != 0 {
+		return "string", false
+	}
+	if b.Info()&types.IsUnsigned != 0 && !strings.Contains(strings.ToLower(dbType), "unsigned") ||
+		precision > intDigits(b) {
+		if precision <= intDigits(types.Typ[types.Int64]) {
+			return "int64", false
+		}
+		return "string", false
+	}
+	return "", true
+}
+
+// numericDigits returns the precision and scale dbType declares in parentheses, numeric(10,2) or decimal(10), whose
+// scale is 0, if it declares them.
+func numericDigits(dbType string) (precision, scale int, ok bool) {
+	_, args, ok := strings.Cut(dbType, "(")
+	if !ok {
+		return 0, 0, false
+	}
+	args, _, _ = strings.Cut(args, ")")
+	p, s, hasScale := strings.Cut(args, ",")
+	precision, err := strconv.Atoi(strings.TrimSpace(p))
+	if err != nil {
+		return 0, 0, false
+	}
+	if hasScale {
+		if scale, err = strconv.Atoi(strings.TrimSpace(s)); err != nil {
+			return 0, 0, false
+		}
+	}
+	return precision, scale, true
+}
+
+// intDigits is the number of decimal digits every value of which b, a Go integer, holds: 18 of an int64. int and uint
+// are taken to be 64 bits wide, as on amd64.
+func intDigits(b *types.Basic) int {
+	bits := 8 * types.SizesFor("gc", "amd64").Sizeof(b)
+	if b.Info()&types.IsUnsigned == 0 {
+		bits--
+	}
+	maxValue := uint64(1)<<(bits-1)<<1 - 1
+	return len(strconv.FormatUint(maxValue, 10)) - 1
 }
 
 // intRange is the integers a column of an integer type holds: those of bits bits, signed or not.

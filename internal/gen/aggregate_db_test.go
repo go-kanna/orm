@@ -82,7 +82,7 @@ func TestAggregates(t *testing.T) {
 	small, err := sales.AvgAmount(ctx)
 	check("AvgAmount", small == 162.5, small, err)
 	average, err = sales.AvgPrice(ctx)
-	check("AvgPrice", math.Abs(average-1.9) < 1e-9, average, err)
+	check("AvgPrice", math.Abs(average-2.5) < 1e-9, average, err)
 	average, err = sales.AvgUnits(ctx, north)
 	notFound("AvgUnits of no sale", average, err)
 	for _, tt := range []struct {
@@ -189,10 +189,10 @@ func aggregateSales(d snapshot.Dialect) string {
 	}
 	return `
 const sales = "INSERT INTO sales (region, status, units, amount, discount, rate, price, note, sold_at) VALUES " +
-	"('east', 'open', 2, 100, 10, 1.5, 1.25, 'a', '2026-01-01 00:00:00` + zone + `'), " +
-	"('east', 'closed', 3, 200, NULL, 2.5, 2.50, NULL, '2026-01-02 00:00:00` + zone + `'), " +
-	"('west', 'open', 5, 300, NULL, 3.0, 3.75, 'b', '2026-01-03 00:00:00` + zone + `'), " +
-	"('west', 'open', 1, 50, NULL, 0.5, 0.10, NULL, '2026-01-04 00:00:00` + zone + `')"
+	"('east', 'open', 2, 100, 10, 1.5, 2, 'a', '2026-01-01 00:00:00` + zone + `'), " +
+	"('east', 'closed', 3, 200, NULL, 2.5, 3, NULL, '2026-01-02 00:00:00` + zone + `'), " +
+	"('west', 'open', 5, 300, NULL, 3.0, 4, 'b', '2026-01-03 00:00:00` + zone + `'), " +
+	"('west', 'open', 1, 50, NULL, 0.5, 1, NULL, '2026-01-04 00:00:00` + zone + `')"
 
 const overflowing = "INSERT INTO sales (region, status, units, amount, rate, price, sold_at) VALUES " +
 	"('big', 'open', 2000000000, 0, 0, 0, '2026-01-05 00:00:00` + zone + `'), " +
@@ -297,7 +297,7 @@ func open(t *testing.T) (DBTX, func(string)) {
 	exec("USE " + name)
 	exec("CREATE TABLE sales (id bigint AUTO_INCREMENT PRIMARY KEY, region varchar(64) NOT NULL, " +
 		"status varchar(64) NOT NULL, units int NOT NULL, amount bigint NOT NULL, discount bigint, " +
-		"rate double NOT NULL, price decimal(10,2) NOT NULL, note varchar(64), sold_at datetime(6) NOT NULL)")
+		"rate double NOT NULL, price decimal(10,0) NOT NULL, note varchar(64), sold_at datetime(6) NOT NULL)")
 	exec(sales)
 	return conn, exec
 }
@@ -333,7 +333,7 @@ func execOn(t *testing.T, conn *sql.Conn) func(string) {
 const aggregatePostgresSchema = `
 const postgresSales = "CREATE TABLE sales (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, region text NOT NULL, " +
 	"status text NOT NULL, units integer NOT NULL, amount bigint NOT NULL, discount bigint, " +
-	"rate double precision NOT NULL, price numeric(10,2) NOT NULL, note text, sold_at timestamptz NOT NULL)"
+	"rate double precision NOT NULL, price numeric(10,0) NOT NULL, note text, sold_at timestamptz NOT NULL)"
 `
 
 // aggregatesOfOrders checks the aggregates of the orders of ordersSchema that repo reads.

@@ -61,7 +61,7 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 		return fail("%s has no column %s", r.table, value)
 	}
 	c := table.Columns[i]
-	if _, ok := readable(valueType, c.Type); !ok || !c.NotNull && !nilable(valueType) {
+	if _, ok := readable(valueType, c.Type, l.driver); !ok || !c.NotNull && !nilable(valueType) {
 		return fail("%s cannot hold %s.%s (%s), including its nullability", typeName(valueType), r.table, value, c.Type)
 	}
 	keyColumns := r.fk
@@ -100,7 +100,7 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 		if j < 0 {
 			return fail("%s has no foreign key column %s", r.table, name)
 		}
-		if _, ok := readable(elemOf(keys[i].typ), table.Columns[j].Type); !ok {
+		if _, ok := readable(elemOf(keys[i].typ), table.Columns[j].Type, l.driver); !ok {
 			return fail("the relation key cannot hold %s.%s", r.table, name)
 		}
 		targetKeys = append(targetKeys, column{typ: keys[i].typ, col: table.Columns[j]})

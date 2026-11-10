@@ -166,7 +166,7 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement, f
 			if r.s.Dialect == snapshot.MySQL && expands(typ) {
 				typ = typ.Underlying().(*types.Slice).Elem() //nolint:forcetypeassert // expands sees a slice
 			}
-			if want, ok := fits(typ, p.Type); !ok {
+			if want, ok := fits(typ, p.Type, r.driver); !ok {
 				typ := typeName(arg.typ)
 				ds = append(ds, diag.Errorf(st.Header, "-- query: %s: :%s is %s, which %s, %s %s, is not", st.Name,
 					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want))
@@ -244,7 +244,7 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 				if m.optional && c.Nullable && !nilable(q.row) {
 					return []diag.Diag{findOfNull(st.Header, m.name, c.Name, q.row)}
 				}
-				if _, ok := readable(q.row, c.Type); !ok || c.Nullable && !nilable(q.row) {
+				if _, ok := readable(q.row, c.Type, r.driver); !ok || c.Nullable && !nilable(q.row) {
 					return []diag.Diag{diag.Errorf(st.Header, "%s: the scalar result cannot hold column %s (%s)",
 						m.name, c.Name, c.Type)}
 				}
@@ -264,7 +264,7 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 		return []diag.Diag{diag.Errorf(m.pos, "%s: the query returns columns, but (int64, error) is the number of "+
 			"rows it affects", m.name).WithHints(rowsHint)}
 	case !q.scalar && (m.returns == returnsRow || m.returns == returnsRows):
-		fields, fds := resultFields(r.pkg.Fset, q.row, described.Columns, st.Header, m.name)
+		fields, fds := resultFields(r.pkg.Fset, q.row, described.Columns, st.Header, m.name, r.driver)
 		if diag.HasErrors(fds) {
 			return fds
 		}
@@ -274,9 +274,9 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 }
 
 // resultFields matches the fields of row, a struct, to columns, the result of a query written by hand at header, for
-// the method name: one for each column, by its name or its tag, in the order of the columns.
+// the method name, read through drv: one for each column, by its name or its tag, in the order of the columns.
 func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.OutputColumn, header token.Position,
-	name string,
+	name string, drv driver,
 ) ([]column, []diag.Diag) {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(header, "-- query: %s: %s", name, fmt.Sprintf(format, args...))
@@ -317,7 +317,7 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Output
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as *"+typ))
 			continue
 		}
-		if want, ok := readable(f.typ, c.Type); !ok {
+		if want, ok := readable(f.typ, c.Type, drv); !ok {
 			ds = append(ds, errorf("the column %s is %s, which %s.%s, %s %s, cannot hold", c.Name, c.Type,
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want))
 			continue

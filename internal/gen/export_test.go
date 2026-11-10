@@ -23,9 +23,9 @@ var OuterOrderWithoutLimit = outerOrderWithoutLimit
 
 var ListOf = listOf
 
-// Readable is readable, for a Go type named by its basic kind.
-func Readable(kind types.BasicKind, dbType string) (string, bool) {
-	return readable(types.Typ[kind], dbType)
+// Readable is readable, for a Go type named by its basic kind, through the driver named, or any for "".
+func Readable(kind types.BasicKind, dbType, drv string) (string, bool) {
+	return readable(types.Typ[kind], dbType, driver(drv))
 }
 
 // ParseTag is parseTag, with what the tag says spread out, the columns of fk= and those a scalar relation reads by

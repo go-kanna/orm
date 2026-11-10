@@ -184,7 +184,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 		funcs:    dest.functions(),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
-			loaded: loadedScopes(others, s, idx),
+			loaded: loadedScopes(others, s, idx), driver: drv,
 		},
 	}
 	repos, rds := r.findRepositories()
@@ -192,7 +192,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 		return nil, nil, ds
 	}
 	models, mds := r.readModels(repos)
-	return repos, models, append(ds, mds...)
+	return repos, models, slices.Concat(ds, mds, r.driverReads(repos, models))
 }
 
 // repositoryNames names what the implementations of the repositories of pkg declare in the package at pkgPath, as

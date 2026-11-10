@@ -233,7 +233,7 @@ type Order struct {
 	Attempts int32
 	Total    Cents
 	Rate     float64
-	Amount   float64
+	Amount   int64
 	Quota    *int
 	Code     Code
 	Status   string
@@ -246,10 +246,10 @@ type Order struct {
 		d     snapshot.Dialect
 		types map[string]string
 	}{
-		{snapshot.PostgreSQL, map[string]string{"int": "int4", "bigint": "int8", "float": "float8", "decimal": "numeric",
-			"text": "text", "bool": "bool"}},
+		{snapshot.PostgreSQL, map[string]string{"int": "int4", "bigint": "int8", "float": "float8",
+			"decimal": "numeric(12,0)", "text": "text", "bool": "bool"}},
 		{snapshot.MySQL, map[string]string{"int": "int", "bigint": "bigint", "float": "double",
-			"decimal": "decimal(10,2)", "text": "varchar(255)", "bool": "tinyint(1)"}},
+			"decimal": "decimal(12,0)", "text": "varchar(255)", "bool": "tinyint(1)"}},
 	} {
 		s := snapshot.Snapshot{Dialect: tt.d, Tables: map[string]snapshot.Table{
 			"orders": {Columns: []snapshot.Column{
@@ -275,7 +275,7 @@ type Order struct {
 				"\treturn OrderChangeSet{c.changes.Add(\"attempts\", n)}\n}",
 			"func (c OrderChangeSet) AddTotal(n model.Cents) OrderChangeSet {",
 			"func (c OrderChangeSet) AddRate(n float64) OrderChangeSet {",
-			"func (c OrderChangeSet) AddAmount(n float64) OrderChangeSet {",
+			"func (c OrderChangeSet) AddAmount(n int64) OrderChangeSet {",
 			"func (c OrderChangeSet) SetQuota(v *int) OrderChangeSet {",
 			"func (c OrderChangeSet) SetCode(v model.Code) OrderChangeSet {",
 		} {
