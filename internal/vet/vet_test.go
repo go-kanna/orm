@@ -274,7 +274,7 @@ usecase.go:27:18: error: a limit of -1 rows
 usecase.go:28:18: error: Or takes conditions alone, but its scope orders the rows
 usecase.go:29:18: error: Customer keeps only some of the rows it loads, which would count those of every row together
 usecase.go:30:18: error: Approvals continues a page of the rows of each row by Offset, not by a row
-usecase.go:31:21: error: Update requires at least one assigned column
+usecase.go:31:21: error: Update of an empty change set returns orm.ErrEmptyChangeSet
 usecase.go:32:21: error: Update takes conditions alone, but its scope orders the rows
 usecase.go:33:21: error: UpsertByEmail meets its row by email, which its change set cannot write
 usecase.go:34:18: error: Not takes conditions alone, but its scope keeps only some of the rows
@@ -332,7 +332,7 @@ usecase.go:13:16: error: Get reads one row by its key, but its scope keeps only 
 usecase.go:14:16: error: ListSummaries is a projection, but its scope loads relations
 usecase.go:15:16: error: Delete ordering requires Limit or Offset
 usecase.go:16:16: error: an offset of -1 rows
-usecase.go:17:16: error: Update requires at least one assigned column
+usecase.go:17:16: error: Update of an empty change set returns orm.ErrEmptyChangeSet
 usecase.go:18:16: error: Update ordering requires Limit or Offset
 usecase.go:19:19: error: UpsertByEmail meets its row by email, which its change set cannot write
 usecase.go:22:16: error: ListStatusCounts takes conditions alone, but its scope keeps only some of the rows`
