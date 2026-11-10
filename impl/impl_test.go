@@ -1,6 +1,7 @@
 package impl_test
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -99,6 +100,8 @@ func TestRender_Errors(t *testing.T) {
 		{"a negative limit", q.Limit(-1), "orm: a limit of -1 rows"},
 		{"a negative offset", q.Offset(-1), "orm: an offset of -1 rows"},
 		{"an error combined", impl.Combine(q.Where("a = ", 1), q.Limit(-1)), "orm: a limit of -1 rows"},
+		{"a failure", q.Fail(errors.New("orm: failed")).Where("a = ", 1), "orm: failed"},
+		{"the first failure", q.Limit(-1).Fail(errors.New("orm: failed")), "orm: a limit of -1 rows"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

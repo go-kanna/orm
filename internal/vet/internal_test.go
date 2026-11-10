@@ -99,3 +99,24 @@ func TestPaths(t *testing.T) {
 		t.Errorf("an error with nothing added = %+v, want it kept", got)
 	}
 }
+
+// Raw's Where may make an error of the scope, by parts vet does not read, and keeps one the scope holds already.
+func TestRawWhere(t *testing.T) {
+	t.Parallel()
+
+	at := cause{pos: 1, in: "Purge", method: "Limit"}
+	for _, tt := range []struct {
+		name  string
+		scope *scopeVal
+		want  errProp
+	}{
+		{"of a scope without an error", emptyScope(), errProp{t: some}},
+		{"of a scope with one", &scopeVal{err: setErr("a limit of -1 rows", at)}, setErr("a limit of -1 rows", at)},
+	} {
+		v, _ := ops["scope.Raw.Where"](opCall{args: []value{tt.scope, unknown{}}, at: at})
+		s := v.(*scopeVal) //nolint:forcetypeassert // Where returns a scope
+		if s.err != tt.want || s.conds.t != every {
+			t.Errorf("Where %s = %+v, %+v; want %+v and a condition", tt.name, s.err, s.conds, tt.want)
+		}
+	}
+}
