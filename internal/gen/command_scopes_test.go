@@ -236,3 +236,64 @@ package scopes
 		t.Errorf("kanna-orm -check = %d\n%s", code, errOut)
 	}
 }
+
+// describeUUIDShop writes the snapshot of the tables of orders and their lines, keyed by a uuid, into the module at
+// dir.
+func describeUUIDShop(t *testing.T, dir string) {
+	t.Helper()
+
+	s := snapshot.Snapshot{
+		Dialect: snapshot.PostgreSQL,
+		Tables: map[string]snapshot.Table{
+			"orders": {
+				Columns:    []snapshot.Column{{Name: "id", Type: "uuid", NotNull: true, Default: true}},
+				PrimaryKey: []string{"id"},
+			},
+			"order_lines": {
+				Columns: []snapshot.Column{
+					{Name: "order_id", Type: "uuid", NotNull: true},
+					{Name: "sku", Type: "text", NotNull: true},
+				},
+				PrimaryKey: []string{"order_id", "sku"},
+				ForeignKeys: []snapshot.ForeignKey{{Columns: []string{"order_id"}, References: "orders",
+					ReferencedColumns: []string{"id"}}},
+			},
+		},
+	}
+	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCommand_UUIDArraysBeforeGo127 reports a uuid held in a type of [16]byte by a module of Go 1.26, whose
+// database/sql cannot read one into it.
+func TestCommand_UUIDArraysBeforeGo127(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, `
+-- model/model.go --
+package model
+
+type OrderID [16]byte
+
+type Order struct {
+	ID OrderID
+}
+
+type OrderLine struct {
+	OrderID OrderID
+	SKU     string
+}
+-- scopes/scopes.go --
+package scopes
+
+//kanna:scopes model-package=../model
+`)
+	describeUUIDShop(t, dir)
+	code, _, errOut := run(t, filepath.Join(dir, "scopes"))
+	want := "../model/model.go:6:2: error: Order.ID: database/sql reads a uuid into model.OrderID from Go 1.27 on, " +
+		"and the module declares an earlier go version\n  declare go 1.27 or later in go.mod\n"
+	if code != cli.ExitFailure || !strings.Contains(errOut, want) {
+		t.Errorf("kanna-orm in scopes = %d\n%s\nwant it to report\n%s", code, errOut, want)
+	}
+}

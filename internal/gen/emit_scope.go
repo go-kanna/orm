@@ -61,6 +61,7 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 	for _, sc := range scopes {
 		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
 		ds = append(ds, fds...)
+		ds = append(ds, uuidsBeforeGo127(pkg, sc, f.columns)...)
 		links, lds := l.link(sc, f.columns, f.relations)
 		ds = append(ds, lds...)
 		ds = append(ds, sameNames(sc, f.columns, links)...)
@@ -319,8 +320,11 @@ func (e emitter) paging(model string) {
 	e.printf("func (%s) values(%s %s) map[string]any {\nreturn map[string]any{\n", p.name, row, model)
 	for _, c := range p.columns {
 		v := row + "." + strings.Join(c.path, ".")
-		if !c.col.NotNull {
+		switch {
+		case !c.col.NotNull:
 			v = e.ref("MayBeNull")
+		case uuidOf(c.typ):
+			v = e.f.Import("uuid", "uuid") + ".UUID(" + v + ")"
 		}
 		e.printf("%s: %s,\n", goString(sqlName(e.d, c.col.Name)), v)
 	}
@@ -345,11 +349,22 @@ func (e emitter) paging(model string) {
 		s, p.name, cursor)
 	e.printf("var %s %s\nif %s := %s.DecodeCursor(%s, %s, map[string]any{\n", row, model, err, e.q(s), cursor, key)
 	for _, c := range p.columns {
-		if c.col.NotNull {
-			e.printf("%s: &%s.%s,\n", goString(sqlName(e.d, c.col.Name)), row, strings.Join(c.path, "."))
+		if !c.col.NotNull {
+			continue
 		}
+		dest := "&" + row + "." + strings.Join(c.path, ".")
+		if uuidOf(c.typ) {
+			dest = "(*" + e.f.Import("uuid", "uuid") + ".UUID)(" + dest + ")"
+		}
+		e.printf("%s: %s,\n", goString(sqlName(e.d, c.col.Name)), dest)
 	}
 	e.printf("}); %[1]s != nil {\nreturn %[2]s{}, %[1]s\n}\nreturn %[3]s.After(%[4]s), nil\n}\n\n", err, p.name, s, row)
+}
+
+// uuidOf reports whether a cursor holds a value of type t as a uuid.UUID, converted to one so that it encodes as text,
+// as a uuid.UUID does and the type declared of [16]byte does not.
+func uuidOf(t types.Type) bool {
+	return isUUID(t) && !isStdUUID(t)
 }
 
 // method writes a method of the scope type, as fn does, with doc after its name as its doc.
