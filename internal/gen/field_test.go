@@ -138,12 +138,13 @@ func TestFields_Mistakes(t *testing.T) {
 			`model.go:8:1: error: Order.Audit: orm:"audit" is on an embedded struct, whose fields hold the columns` + "\n" +
 				"  tag those fields instead"},
 		{"a field misspelled", "\tCustmerID int64\n", "",
-			"model.go:8:1: error: Order.CustmerID: orders has no column custmer_id\n  did you mean customer_id?"},
+			"model.go:8:1: error: Order.CustmerID: the snapshot has no column orders.custmer_id\n  did you mean customer_id?"},
 		{"a field named otherwise", "\tMemo *string\n", "",
-			"model.go:8:1: error: Order.Memo: orders has no column memo\n" +
-				`  name the column with orm:"<column>", or leave the field out with orm:"-"`},
+			"model.go:8:1: error: Order.Memo: the snapshot has no column orders.memo\n" +
+				"  if it is new, describe the database again: go tool kanna-orm describe\n" +
+				`  or name the column with orm:"<column>", or leave the field out with orm:"-"`},
 		{"a column misspelled", "\tMemo *string `orm:\"notes\"`\n", "",
-			"model.go:8:1: error: Order.Memo: orders has no column notes\n  did you mean note?"},
+			"model.go:8:1: error: Order.Memo: the snapshot has no column orders.notes\n  did you mean note?"},
 		{"a column held twice", "\tMemo *string `orm:\"note\"`\n\tNote *string\n", "",
 			"model.go:9:1: error: Order.Note: orders.note is held by Order.Memo already\n" +
 				`  leave one of them out with orm:"-"`},

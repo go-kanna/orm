@@ -17,7 +17,7 @@ func TestCommand_WriteOptionsMistakes(t *testing.T) {
 		dialect                   snapshot.Dialect
 	}{
 		{name: "unknown column", before: "//kanna:conflict record_key\n", after: "//kanna:conflict missing\n",
-			want: "has no column missing"},
+			want: "the snapshot has no column records.missing"},
 		{name: "conflict option", before: "//kanna:conflict record_key\n", after: "//kanna:conflict record_key keep=stamp\n",
 			want: `//kanna:conflict takes <columns>, not "keep=stamp"`},
 		{name: "conflict of two words", before: "//kanna:conflict record_key\n",

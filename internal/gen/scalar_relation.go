@@ -36,7 +36,7 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 	}
 	table, ok := l.tables[r.table]
 	if !ok {
-		return fail("the snapshot has no table %s", r.table)
+		return link{}, []diag.Diag{errorf("the snapshot has no table %s", r.table).WithHints(describeAgain)}, false
 	}
 	value := r.value
 	if value == "" {
@@ -58,7 +58,8 @@ func (l linker) scalarLink(sc scope, columns []column, r relation) (link, []diag
 	}
 	i := slices.IndexFunc(table.Columns, func(c snapshot.Column) bool { return c.Name == value })
 	if i < 0 {
-		return fail("%s has no column %s", r.table, value)
+		return link{}, []diag.Diag{errorf("the snapshot has no column %s.%s", r.table, value).WithHints(describeAgain)},
+			false
 	}
 	c := table.Columns[i]
 	if _, ok := readable(valueType, c.Type, l.driver); !ok || !c.NotNull && !nilable(valueType) {

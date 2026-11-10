@@ -12,6 +12,7 @@ import (
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/packages"
 
+	"github.com/go-kanna/orm/internal/decl"
 	"github.com/go-kanna/orm/internal/snapshot"
 )
 
@@ -108,9 +109,15 @@ func (l linker) linkOne(sc scope, columns []column, r relation) (link, []diag.Di
 
 	target, ok := l.scopeOf(model)
 	if !ok {
-		hint := "declare one where its rows are queried: //kanna:scope table=<table>"
 		if t := l.referenced(sc.table, field); t != "" {
-			hint = fmt.Sprintf("declare one where %s are queried: //kanna:scope table=%[1]s", t)
+			return link{}, []diag.Diag{errorf("no scope type is declared for %s", modelName).
+				WithHints(fmt.Sprintf("declare one where %s are queried: //kanna:scope table=%[1]s", t))}, false
+		}
+		hint := "declare one where its rows are queried: //kanna:scope table=<table>"
+		if t := decl.Plural(model.Obj().Name()); !l.has(t) {
+			// A table added since the snapshot was taken implies no scope type of the model named after it yet.
+			return link{}, []diag.Diag{errorf("no scope type is declared for %s, and the snapshot has no table %s, "+
+				"which it is named after", modelName, t).WithHints(describeAgain, "or "+hint)}, false
 		}
 		return link{}, []diag.Diag{errorf("no scope type is declared for %s", modelName).WithHints(hint)}, false
 	}
@@ -181,6 +188,11 @@ func (l linker) scopeOf(model *types.Named) (indexed, bool) {
 		}
 	}
 	return indexed{}, false
+}
+
+func (l linker) has(table string) bool {
+	_, ok := l.tables[table]
+	return ok
 }
 
 // loadedScopes returns the scope types of pkgs as the index has them, for a linker to look them up in.

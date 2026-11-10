@@ -34,7 +34,7 @@ func TestCommand_ScalarRelationDiagnostics(t *testing.T) {
 		change                    func(*snapshot.Table)
 	}{
 		{name: "missing table", before: "relation=record_states", after: "relation=missing", want: "no table missing"},
-		{name: "missing column", before: "column=state", after: "column=missing", want: "has no column missing"},
+		{name: "missing column", before: "column=state", after: "column=missing", want: "the snapshot has no column record_states.missing"},
 		{name: "missing inferred column", before: ",column=state", want: "has no column whose plural is Topics"},
 		{name: "ambiguous inferred column", before: "Topics []string `orm:\"relation=record_states,column=state\"`",
 			after: "Leaves []string `orm:\"relation=record_states\"`",

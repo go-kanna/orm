@@ -826,7 +826,7 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	m.conflict = strings.Split(args[0].Name, ",")
 	for _, c := range m.conflict {
 		if !slices.ContainsFunc(m.table.Columns, func(col snapshot.Column) bool { return col.Name == c }) {
-			return []diag.Diag{errorf("%s has no column %s", m.target.table, c)}
+			return []diag.Diag{errorf("the snapshot has no column %s.%s", m.target.table, c).WithHints(describeAgain)}
 		}
 	}
 	if !unique(m.table, m.conflict) {

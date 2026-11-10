@@ -158,7 +158,7 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 	nullzero, insertDefault := tag.nullzero, tag.insertDefault
 	i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
 	if i < 0 {
-		d := diag.Errorf(pos, "%s: %s has no column %s", label, m.sc.table, name)
+		d := diag.Errorf(pos, "%s: the snapshot has no column %s.%s", label, m.sc.table, name)
 		names := make([]string, 0, len(m.table.Columns))
 		for _, c := range m.table.Columns {
 			names = append(names, c.Name)
@@ -166,7 +166,8 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		if near, ok := suggest.Closest(name, names); ok {
 			d = d.WithHints(fmt.Sprintf("did you mean %s?", near))
 		} else {
-			d = d.WithHints(`name the column with orm:"<column>", or leave the field out with orm:"-"`)
+			d = d.WithHints(describeAgain,
+				`or name the column with orm:"<column>", or leave the field out with orm:"-"`)
 		}
 		m.ds = append(m.ds, d)
 		return
