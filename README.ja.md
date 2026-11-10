@@ -777,6 +777,8 @@ func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
 }
 ```
 
+kanna-orm は、時計がどのゾーンで時刻を返しても、UTC にしてから書きます。`r.db.Now(ctx)` も UTC の時刻を返します。`timestamptz` のカラムは、どちらでも同じ瞬間を保存します。PostgreSQL の `timestamp` のカラムはゾーンを保存せず、pgx は時刻を見た目の数字のまま書くので、Rails が `created_at` を保存するのと同じく UTC の時刻が入り、UTC として読めます。MySQL の `datetime` もゾーンを保存しません。go-sql-driver/mysql は、`loc` が指すゾーン（DSN で指定しなければ UTC）で書いて読むので、同じテーブルを使うプログラムは同じ `loc` を指定してください。読み戻した時刻のロケーションは、ドライバが読むロケーションです。pgx は `timestamptz` をローカルのゾーンで、`timestamp` を UTC で読み、go-sql-driver/mysql は `loc` で読みます。表示するゾーンには `In` で変えられます。
+
 データベースは、時刻を Go より粗く保存することがあります。PostgreSQL はマイクロ秒まで、MySQL はカラムの小数秒の桁まで（`datetime(6)` は 6 桁、`datetime` は 0 桁）保存します。メソッドが返すモデルは、PostgreSQL では RETURNING で、MySQL では読み戻しで、保存された時刻を保持するので、時計が与えた時刻と違うことがあります。カラムが保存する精度で比べるか、テストの時計にはその精度で割り切れる時刻を与えてください。
 
 両 DB の example は、顧客が登録し変更した時刻を、自分で設定する時計で書きます。

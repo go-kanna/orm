@@ -1048,6 +1048,14 @@ func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
 }
 ```
 
+kanna-orm writes the clock's time in UTC, whatever zone the clock tells it in, and `r.db.Now(ctx)` gives it in UTC too.
+A `timestamptz` column keeps the same instant either way. A PostgreSQL `timestamp` column keeps no zone, and pgx writes
+the time to it as its clock reads, so it keeps the time in UTC, as Rails keeps its `created_at`, and is read as UTC. A
+MySQL `datetime` keeps no zone either: go-sql-driver/mysql writes and reads it in the zone its `loc` names, UTC unless
+the DSN names another, so programs sharing a table give the same `loc`. A time read back is in the location the driver
+reads it in, as pgx reads a `timestamptz` in the local zone and a `timestamp` in UTC, and go-sql-driver/mysql reads in
+`loc`; `In` turns it into the zone you show it in.
+
 A database may keep less of a time than Go does: PostgreSQL keeps microseconds, and MySQL the fractional digits of
 its column, as `datetime(6)` keeps six and `datetime` none. A model a method returns holds the time as stored, read by
 RETURNING on PostgreSQL and read back on MySQL, so it may differ from the time the clock gave. Compare them at the

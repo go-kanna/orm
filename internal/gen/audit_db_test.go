@@ -103,7 +103,8 @@ func (r Notes) Bump(ctx context.Context, name string) error {
 `
 
 // auditRuntime writes the rows of auditShop through database/sql into a namespace of its own in the database of
-// DIALECT, by a clock an hour later at each call.
+// DIALECT, by a clock telling Japan time an hour later at each call. On PostgreSQL, the update time of a note is a
+// timestamp without time zone.
 const auditRuntime = `package impl
 
 import (
@@ -111,6 +112,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,7 +159,7 @@ func TestAudit(t *testing.T) {
 	namespace := fmt.Sprintf("kanna_audit_%d", time.Now().UnixNano())
 	schema := []string{
 		"CREATE TABLE notes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text NOT NULL UNIQUE, " +
-			"body text NOT NULL, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)",
+			"body text NOT NULL, created_at timestamptz NOT NULL, updated_at timestamp NOT NULL)",
 		"CREATE TABLE events (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, kind text NOT NULL UNIQUE, " +
 			"body text NOT NULL, inserted_at timestamptz NOT NULL, modified_at timestamptz NOT NULL)",
 		"CREATE FUNCTION assign_modified_at() RETURNS trigger LANGUAGE plpgsql AS " +
@@ -195,7 +197,7 @@ func TestAudit(t *testing.T) {
 		}
 	}
 
-	c := &clock{start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	c := &clock{start: time.Date(2026, 1, 1, 9, 0, 0, 0, time.FixedZone("JST", 9*60*60))}
 	old := time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
 	notes := NewNotes(conn, option.WithClock(c))
 	// check reads the note named name, and checks it was created and updated at the nth calls of the clock.
@@ -220,6 +222,24 @@ func TestAudit(t *testing.T) {
 		t.Fatalf("Insert returned %+v, %v; want both times %v", inserted, err, c.at(1))
 	}
 	calls(1)
+	// stored checks the update time of the note named name is stored as the nth call of the clock tells it in loc.
+	stored := func(db interface {
+		QueryRowContext(context.Context, string, ...any) *sql.Row
+	}, name string, n int, loc *time.Location) {
+		t.Helper()
+		query := "SELECT updated_at::text FROM notes WHERE name = $1"
+		if dialect == "mysql" {
+			query = "SELECT CAST(updated_at AS CHAR) FROM notes WHERE name = ?"
+		}
+		var text string
+		if err := db.QueryRowContext(ctx, query, name).Scan(&text); err != nil {
+			t.Fatal(err)
+		}
+		if want := c.at(n).In(loc).Format("2006-01-02 15:04:05"); !strings.HasPrefix(text, want) {
+			t.Fatalf("the update time of note %s is stored as %s, want %s", name, text, want)
+		}
+	}
+	stored(conn, "a", 1, time.UTC)
 	if err := notes.InsertAll(ctx, []model.Note{{Name: "b", CreatedAt: old}, {Name: "c"}, {Name: "d"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -291,6 +311,7 @@ func TestAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("b", 2, 14)
+	stored(conn, "b", 14, time.UTC)
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -345,20 +366,43 @@ func TestAudit(t *testing.T) {
 	if ec.calls != 3 {
 		t.Fatalf("the clock of events was read %d times, want 3, by the writes that insert", ec.calls)
 	}
+
+	if dialect != "mysql" {
+		return
+	}
+	// go-sql-driver/mysql writes and reads a datetime in the zone its loc names.
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inTokyo, err := sql.Open(driver, strings.Replace(dsn, "/?", "/"+namespace+"?", 1)+"&loc=Asia%2FTokyo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = inTokyo.Close() })
+	if _, err := NewNotes(inTokyo, option.WithClock(c)).Insert(ctx, model.Note{Name: "tokyo"}); err != nil {
+		t.Fatal(err)
+	}
+	stored(conn, "tokyo", 16, tokyo)
+	got, err := NewNotes(inTokyo).GetByName(ctx, "tokyo")
+	if err != nil || !got.UpdatedAt.Equal(c.at(16)) || got.UpdatedAt.Location().String() != "Asia/Tokyo" {
+		t.Fatalf("note tokyo read through loc=Asia/Tokyo = %+v, %v; want updated at %v in Asia/Tokyo", got, err,
+			c.at(16))
+	}
 }
 `
 
 // auditTables describes the tables of auditShop on the database of d.
 func auditTables(d snapshot.Dialect) map[string]snapshot.Table {
-	text, at := "text", "timestamptz"
+	text, at, noteUpdated := "text", "timestamptz", "timestamp"
 	if d == snapshot.MySQL {
-		text, at = "varchar(64)", "datetime(6)"
+		text, at, noteUpdated = "varchar(64)", "datetime(6)", "datetime(6)"
 	}
 	id := snapshot.Column{Name: "id", Type: "bigint", NotNull: true, Assigned: true}
 	return map[string]snapshot.Table{
 		"notes": {Columns: []snapshot.Column{id, {Name: "name", Type: text, NotNull: true},
 			{Name: "body", Type: "text", NotNull: true}, {Name: "created_at", Type: at, NotNull: true},
-			{Name: "updated_at", Type: at, NotNull: true},
+			{Name: "updated_at", Type: noteUpdated, NotNull: true},
 		}, PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"name"}}},
 		"events": {Columns: []snapshot.Column{id, {Name: "kind", Type: text, NotNull: true},
 			{Name: "body", Type: "text", NotNull: true}, {Name: "inserted_at", Type: at, NotNull: true},
