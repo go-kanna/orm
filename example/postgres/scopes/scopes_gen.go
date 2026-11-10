@@ -274,7 +274,7 @@ func (s Customer) PhoneEq(v string) Customer {
 	return Customer{kScope(kRuntime(s.q).Where(`phone = `, v))}
 }
 
-// PhoneNe narrows to the rows whose phone is not v.
+// PhoneNe narrows to the rows whose phone is not v, leaving out those whose phone is NULL.
 func (s Customer) PhoneNe(v string) Customer {
 	return Customer{kScope(kRuntime(s.q).Where(`phone <> `, v))}
 }
@@ -287,7 +287,7 @@ func (s Customer) PhoneIn(vs ...string) Customer {
 	return Customer{kScope(kRuntime(s.q).Where(`phone = ANY(`, vs, `)`))}
 }
 
-// PhoneNotIn narrows to the rows whose phone is none of vs.
+// PhoneNotIn narrows to the rows whose phone is none of vs, leaving out those whose phone is NULL unless vs is empty.
 func (s Customer) PhoneNotIn(vs ...string) Customer {
 	if len(vs) == 0 {
 		return s
@@ -501,7 +501,7 @@ func (s Customer) Or(alternatives ...Customer) Customer {
 	return Customer{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Customer) Not(other Customer) Customer {
 	return Customer{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -907,7 +907,7 @@ func (s Product) Or(alternatives ...Product) Product {
 	return Product{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Product) Not(other Product) Product {
 	return Product{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1260,7 +1260,7 @@ func (s Order) MemoEq(v string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note = `, v))}
 }
 
-// MemoNe narrows to the rows whose note is not v.
+// MemoNe narrows to the rows whose note is not v, leaving out those whose note is NULL.
 func (s Order) MemoNe(v string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note <> `, v))}
 }
@@ -1273,7 +1273,7 @@ func (s Order) MemoIn(vs ...string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note = ANY(`, vs, `)`))}
 }
 
-// MemoNotIn narrows to the rows whose note is none of vs.
+// MemoNotIn narrows to the rows whose note is none of vs, leaving out those whose note is NULL unless vs is empty.
 func (s Order) MemoNotIn(vs ...string) Order {
 	if len(vs) == 0 {
 		return s
@@ -1415,7 +1415,7 @@ func (s Order) Or(alternatives ...Order) Order {
 	return Order{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Order) Not(other Order) Order {
 	return Order{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1784,7 +1784,7 @@ func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
 	return OrderLine{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s OrderLine) Not(other OrderLine) OrderLine {
 	return OrderLine{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -2098,7 +2098,7 @@ func (s Shipment) Or(alternatives ...Shipment) Shipment {
 	return Shipment{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Shipment) Not(other Shipment) Shipment {
 	return Shipment{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -2260,7 +2260,7 @@ func (s Tag) Or(alternatives ...Tag) Tag {
 	return Tag{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Tag) Not(other Tag) Tag {
 	return Tag{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -2676,7 +2676,7 @@ func (s Approval) RevokedAtEq(v time.Time) Approval {
 	return Approval{kScope(kRuntime(s.q).Where(`revoked_at = `, v))}
 }
 
-// RevokedAtNe narrows to the rows whose revoked_at is not v.
+// RevokedAtNe narrows to the rows whose revoked_at is not v, leaving out those whose revoked_at is NULL.
 func (s Approval) RevokedAtNe(v time.Time) Approval {
 	return Approval{kScope(kRuntime(s.q).Where(`revoked_at <> `, v))}
 }
@@ -2689,7 +2689,7 @@ func (s Approval) RevokedAtIn(vs ...time.Time) Approval {
 	return Approval{kScope(kRuntime(s.q).Where(`revoked_at = ANY(`, vs, `)`))}
 }
 
-// RevokedAtNotIn narrows to the rows whose revoked_at is none of vs.
+// RevokedAtNotIn narrows to the rows whose revoked_at is none of vs, leaving out those whose revoked_at is NULL unless vs is empty.
 func (s Approval) RevokedAtNotIn(vs ...time.Time) Approval {
 	if len(vs) == 0 {
 		return s
@@ -2761,7 +2761,7 @@ func (s Approval) Or(alternatives ...Approval) Approval {
 	return Approval{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Approval) Not(other Approval) Approval {
 	return Approval{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }

@@ -327,7 +327,7 @@ func (s Order) MemoEq(v string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note = `, v))}
 }
 
-// MemoNe narrows to the rows whose note is not v.
+// MemoNe narrows to the rows whose note is not v, leaving out those whose note is NULL.
 func (s Order) MemoNe(v string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note <> `, v))}
 }
@@ -337,7 +337,7 @@ func (s Order) MemoIn(vs ...string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`note IN (`, impl.InList(vs), `)`))}
 }
 
-// MemoNotIn narrows to the rows whose note is none of vs.
+// MemoNotIn narrows to the rows whose note is none of vs, leaving out those whose note is NULL unless vs is empty.
 func (s Order) MemoNotIn(vs ...string) Order {
 	if len(vs) == 0 {
 		return s
@@ -501,7 +501,7 @@ func (s Order) ContactEq(v model.Email) Order {
 	return Order{kScope(kRuntime(s.q).Where(`contact = `, v))}
 }
 
-// ContactNe narrows to the rows whose contact is not v.
+// ContactNe narrows to the rows whose contact is not v, leaving out those whose contact is NULL.
 func (s Order) ContactNe(v model.Email) Order {
 	return Order{kScope(kRuntime(s.q).Where(`contact <> `, v))}
 }
@@ -511,7 +511,7 @@ func (s Order) ContactIn(vs ...model.Email) Order {
 	return Order{kScope(kRuntime(s.q).Where(`contact IN (`, impl.InList(vs), `)`))}
 }
 
-// ContactNotIn narrows to the rows whose contact is none of vs.
+// ContactNotIn narrows to the rows whose contact is none of vs, leaving out those whose contact is NULL unless vs is empty.
 func (s Order) ContactNotIn(vs ...model.Email) Order {
 	if len(vs) == 0 {
 		return s
@@ -584,7 +584,7 @@ func (s Order) ReceiptEq(v []byte) Order {
 	return Order{kScope(kRuntime(s.q).Where(`receipt = `, v))}
 }
 
-// ReceiptNe narrows to the rows whose receipt is not v.
+// ReceiptNe narrows to the rows whose receipt is not v, leaving out those whose receipt is NULL.
 func (s Order) ReceiptNe(v []byte) Order {
 	return Order{kScope(kRuntime(s.q).Where(`receipt <> `, v))}
 }
@@ -594,7 +594,7 @@ func (s Order) ReceiptIn(vs ...[]byte) Order {
 	return Order{kScope(kRuntime(s.q).Where(`receipt IN (`, impl.InList(vs), `)`))}
 }
 
-// ReceiptNotIn narrows to the rows whose receipt is none of vs.
+// ReceiptNotIn narrows to the rows whose receipt is none of vs, leaving out those whose receipt is NULL unless vs is empty.
 func (s Order) ReceiptNotIn(vs ...[]byte) Order {
 	if len(vs) == 0 {
 		return s
@@ -741,7 +741,7 @@ func (s Order) Or(alternatives ...Order) Order {
 	return Order{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Order) Not(other Order) Order {
 	return Order{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -952,7 +952,7 @@ func (s Customer) NicknameEq(v string) Customer {
 	return Customer{kScope(kRuntime(s.q).Where(`nickname = `, v))}
 }
 
-// NicknameNe narrows to the rows whose nickname is not v.
+// NicknameNe narrows to the rows whose nickname is not v, leaving out those whose nickname is NULL.
 func (s Customer) NicknameNe(v string) Customer {
 	return Customer{kScope(kRuntime(s.q).Where(`nickname <> `, v))}
 }
@@ -962,7 +962,7 @@ func (s Customer) NicknameIn(vs ...string) Customer {
 	return Customer{kScope(kRuntime(s.q).Where(`nickname IN (`, impl.InList(vs), `)`))}
 }
 
-// NicknameNotIn narrows to the rows whose nickname is none of vs.
+// NicknameNotIn narrows to the rows whose nickname is none of vs, leaving out those whose nickname is NULL unless vs is empty.
 func (s Customer) NicknameNotIn(vs ...string) Customer {
 	if len(vs) == 0 {
 		return s
@@ -1049,7 +1049,7 @@ func (s Customer) Or(alternatives ...Customer) Customer {
 	return Customer{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Customer) Not(other Customer) Customer {
 	return Customer{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1343,7 +1343,7 @@ func (s OrderLine) Or(alternatives ...OrderLine) OrderLine {
 	return OrderLine{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s OrderLine) Not(other OrderLine) OrderLine {
 	return OrderLine{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1498,7 +1498,7 @@ func (s Tag) Or(alternatives ...Tag) Tag {
 	return Tag{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s Tag) Not(other Tag) Tag {
 	return Tag{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1753,7 +1753,7 @@ func (s LineNote) Or(alternatives ...LineNote) LineNote {
 	return LineNote{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s LineNote) Not(other LineNote) LineNote {
 	return LineNote{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }
@@ -1985,7 +1985,7 @@ func (s LineTag) Or(alternatives ...LineTag) LineTag {
 	return LineTag{kScope(kRuntime(s.q).Or(qs...))}
 }
 
-// Not narrows to the rows other, holding conditions alone, does not match.
+// Not narrows to the rows for which other, holding conditions alone, is false, not unknown as by a NULL.
 func (s LineTag) Not(other LineTag) LineTag {
 	return LineTag{kScope(kRuntime(s.q).Not(kRuntime(other.q)))}
 }

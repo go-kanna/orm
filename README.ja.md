@@ -157,13 +157,15 @@ $ go generate ./...
   did you mean orders?
 ../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
   declare it as *string
-./order_repository.go:12:2: error: ListByCustomer: orders has no column for the parameter custmerID
-  did you mean customerID (customer_id)?
+./order_repository.go:12:2: error: ListByCustomer: model.Order has no field for the parameter custmerID
+  did you mean customerID?
 ./order_repository.go:14:2: error: GetByStatus: status is not a unique key of orders, so Get cannot return one row
   use List, or add a unique index on orders (status)
 ```
 
 repository のインターフェースが参照する `scopes.Order` は `//kanna:scopes` が生成するまで存在しないので、初回の実行前にはコンパイルが通りません。それでも実行は止まりません。kanna-orm はこのディレクティブから型を判断するので、`go generate` が 2 つのパッケージをどちらの順で処理しても構いません。コードが生成前のメソッドを呼び出していても構いません。その実行で生成されるメソッドがないと述べるだけのエラーでは、実行は止まりません。
+
+kanna の生成器を 2 つ以上使うなら、必要な順に動かす [`go tool kanna gen`](https://github.com/go-kanna/kanna) で動かしてください。
 
 ## スナップショット
 
@@ -302,6 +304,13 @@ Memo string `orm:"note,nullzero"`
 
 メソッドはフィールドの型を受け取ります。`StatusEq` は `model.OrderStatus` を受け取り、値オブジェクトは、database/sql が送るのと同じように `Value` メソッドを通してデータベースに渡ります。パターンで照合するメソッドは string を受け取ります。パターンはその型の値でなくてよいからです。`[]byte` 以外のスライスで保持されるカラム、つまり配列には、`In` も `NotIn` もありません。NULL になりうるカラムの比較メソッドは、ポインタではなく値を受け取ります。何にもマッチしない `= NULL` を書けないようにするためです。そう書いて表したかったことは `StatusIsNull` で表せます。
 
+SQL と同じく、NULL との比較は真にも偽にもならないので、カラムが NULL の行は `IsNull` 以外の比較に一致しません。`MemoNe(v)`、`MemoNotIn(vs...)`、`MemoEq(v)` の `Not` は、どれも NULL の行を含みません。含めるなら `Or` を使います:
+
+```go
+// WHERE ... AND ((note <> $1) OR (note IS NULL))
+s := scopes.Orders().Or(scopes.Orders().MemoNe(v), scopes.Orders().MemoIsNull())
+```
+
 ### 独自のスコープ
 
 名前を付けたスコープは、生成されたメソッドを使ってスコープ型に自分で書くメソッドです。生成されたメソッドと同じようにチェーンできます:
@@ -345,7 +354,7 @@ s := scopes.Orders().Or(
 )
 ```
 
-`Not` は、渡したスコープにマッチしない行にマッチします。`Or` や `Not` に渡すスコープは条件だけを持ちます。並び順、limit、読み込むリレーションを持つスコープを渡すと、クエリはエラーを返します。どの選択肢も 1 つのカラムの値である場合は、`StatusIn` のほうが同じことを簡潔に表せます。
+`Not` は、渡したスコープが偽になる行にマッチします。SQL と同じく、NULL を比べる条件は偽ではなく不明になるので、その行はスコープにもその `Not` にもマッチしません（[カラムのメソッド](#カラムのメソッド)を参照）。`Or` や `Not` に渡すスコープは条件だけを持ちます。並び順、limit、読み込むリレーションを持つスコープを渡すと、クエリはエラーを返します。どの選択肢も 1 つのカラムの値である場合は、`StatusIn` のほうが同じことを簡潔に表せます。
 
 ### リレーション
 
@@ -665,7 +674,7 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 ### 書き込み
 
-行は、モデルが保持するとおりに書き込まれます。値を与えなければデータベースが割り当てるカラム（serial、identity の `BY DEFAULT`、AUTO_INCREMENT）は、gorm や Rails と同じく、モデルの値がゼロなら INSERT から外してデータベースに任せ、ゼロでなければ書き込みます。採番の値に 0 は使われないので、0 を「値なし」と読めます。そのため、fixture は ID を与えられ、そのようなキーで行を突き合わせる `Upsert` も書けます（ID のない行は挿入し、ID のある行はその行を更新します）。値を書き込んでもシーケンスは進まないので、後からデータベースが割り当てる行が同じ値を取ることがあります。シーケンスが届かない値を与えるか、後でシーケンスを進めてください。identity の `ALWAYS` や生成カラムのように、データベースがいつも割り当てるカラムは、`default` を指定したフィールドと同じく、いつも INSERT から除外します。それ以外のゼロ値はそのまま書き込み、デフォルトが `true` のカラムに対する `false` も `false` のままです。行を作成した時刻と更新した時刻は、時計で書きます。[作成と更新の時刻](#作成と更新の時刻)を参照してください。
+行は、モデルが保持するとおりに書き込まれます。値を与えなければデータベースが割り当てるカラム（serial、identity の `BY DEFAULT`、AUTO_INCREMENT）は、gorm や Rails と同じく、モデルの値がゼロなら INSERT から外してデータベースに任せ、ゼロでなければ書き込みます。採番の値に 0 は使われないので、0 を「値なし」と読めます。そのため、fixture は ID を与えられ、そのようなキーで行を突き合わせる `Upsert` も書けます（ID のない行は挿入し、ID のある行はその行を更新します）。PostgreSQL では、値を書き込んでもシーケンスは進まないので、後からデータベースが割り当てる行が同じ値を取ることがあります。シーケンスが届かない値を与えるか、後でシーケンスを進めてください。MySQL の AUTO_INCREMENT は、書き込んだ値の先へ進みます。identity の `ALWAYS` や生成カラムのように、データベースがいつも割り当てるカラムは、`default` を指定したフィールドと同じく、いつも INSERT から除外します。それ以外のゼロ値はそのまま書き込み、デフォルトが `true` のカラムに対する `false` も `false` のままです。行を作成した時刻と更新した時刻は、時計で書きます。[作成と更新の時刻](#作成と更新の時刻)を参照してください。
 
 モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。1 行は、値に応じてカラムのある文とない文の 2 つの定数のどちらかで書き込みます。複数行の Insert は、カラムを渡す行と渡さない行が混ざっていても 1 つの文で書き込みます。PostgreSQL では、値がゼロの行には、`describe` が記録した、データベースがそのカラムを割り当てる式（`nextval('orders_id_seq'::regclass)` など）の値を書きます。MySQL では `NULL` を渡し、AUTO_INCREMENT に割り当てさせます。MySQL では、データベースが主キーを割り当てた行は `LAST_INSERT_ID()` で、そうでなければ主キー（Upsert では衝突キー）で読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
 
@@ -1227,7 +1236,7 @@ type MonthCount struct {
 ```sql
 -- PlacedInMonth narrows to the orders placed in the month of at.
 -- scope: Order.PlacedInMonth(at time.Time)
-date_trunc('month', placed_at) = date_trunc('month', :at)
+date_trunc('month', placed_at) = date_trunc('month', :at::timestamptz)
 ```
 
 生成コードはそれぞれをリテラルとして保持し、パラメータはデータベースに合わせて番号付けされます:
@@ -1249,7 +1258,7 @@ ORDER BY 1`
 - フィールドは名前で結果カラムを受け取るので、結果カラムにはそれぞれ固有の名前が必要です。MySQL では、カラム名が重複するクエリは情報を取得することすらできません。`SELECT o.id, c.id AS customer_id` のようにエイリアスを付けてください。
 - NULL になりうる結果カラムには、nil になれるフィールドか `nullzero` を指定した文字列フィールドが必要です。データベースがカラムは NULL になりうると答えた場合、nil になれないフィールドは生成を止めます。データベースが判断できない場合は、フィールドの型をそのまま信用します。MySQL はすべてのカラムについて答えます。PostgreSQL が答えるのはテーブルから直接読み取るカラムだけで、その答えはテーブルの宣言どおりであり、外部結合によって NULL になる場合でも変わりません。`LEFT JOIN customers c` の `c.email` のようなカラムは、ポインタで保持してください。kanna-orm 自身のクエリは、結合ではなく専用のクエリでリレーションを読み込むので、これは手書きのクエリだけの問題です。
 - スコープには宣言されたメソッドがないので、シグネチャを `-- scope:` の行に書きます。その行のすぐ上のコメント行は、メソッドのドキュメントになります。MySQL は文のパラメータの型を教えませんが、この方法ならその必要がありません。別のパッケージの型は、スコープ型のパッケージの Go ファイルが import している名前で書きます。そこで import していない名前は、そのスコープ型のテーブルのモデルを宣言したファイルの import で解決し、`model.Status` のようにモデル自身のパッケージの名前でも解決します。そのため、`//kanna:scopes` が宣言するスコープ型のパッケージは、モデルやモデルが使う型のために import を書く必要がありません。Go と同じくパッケージ自身の import が先なので、モデルのファイルやパッケージとは別のパッケージを同じ名前で使いたいときは、パッケージの Go ファイルで import します。どれにも当たらないパッケージは、`import _ "time"` のように、スコープ型のパッケージの Go ファイルでこのためだけに import します。
-- スコープは、上のものなら `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at);` のように、そのテーブルに対する文としても書けます。条件だけでは SQL の linter が解析できないので、クエリと同じように linter にかけられるようにするためです。kanna-orm は条件だけを取り出して自分の文に入れるので、文の形はこれ 1 つに限ります。`1` を選び、テーブルに別名は付けません。条件を入れる先では、別名は意味を持たないからです。条件の後には `;` しか置けません。テーブルの名前は、データベースと同じように読みます。引用符で囲んだ名前は書いたとおりに比べます。囲まない名前は、PostgreSQL では小文字にして比べ（PostgreSQL がそう読むため）、MySQL では大文字と小文字を区別せずに比べます（MySQL の規則はサーバーの設定で変わるため）。`SELECT` で始まるそれ以外の文は生成を止めます。`id IN (SELECT ...)` のような条件は、これまでどおり条件です。
+- スコープは、上のものなら `SELECT 1 FROM orders WHERE date_trunc('month', placed_at) = date_trunc('month', :at::timestamptz);` のように、そのテーブルに対する文としても書けます。条件だけでは SQL の linter が解析できないので、クエリと同じように linter にかけられるようにするためです。kanna-orm は条件だけを取り出して自分の文に入れるので、文の形はこれ 1 つに限ります。`1` を選び、テーブルに別名は付けません。条件を入れる先では、別名は意味を持たないからです。条件の後には `;` しか置けません。テーブルの名前は、データベースと同じように読みます。引用符で囲んだ名前は書いたとおりに比べます。囲まない名前は、PostgreSQL では小文字にして比べ（PostgreSQL がそう読むため）、MySQL では大文字と小文字を区別せずに比べます（MySQL の規則はサーバーの設定で変わるため）。`SELECT` で始まるそれ以外の文は生成を止めます。`id IN (SELECT ...)` のような条件は、これまでどおり条件です。
 - 文は、その `-- query:` や `-- scope:` の行から、次の文のコメントまたはその行までです。文の終わりにある空行とコメント行は文に含まれず、文の一番最後に付いたコメントも含まれません。そのため、スコープはコメントで終えられます。
 - MySQL では、2 回使うパラメータは `?` ごとに 1 回ずつ渡します。
 - `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取ります。MySQL では、メソッドの実行時に値ごとの `?` に展開します。値がないとき、`IN` の括弧のすぐ内側なら、行のないサブクエリ（空の集合）にします。`IN (:ids)` はどの行にも一致せず、`NOT IN (:ids)` はすべての行に一致します。PostgreSQL の `= ANY` と `<> ALL` と同じです。`FIELD(id, :ids)` のようにそれ以外の場所では `NULL` にします。
