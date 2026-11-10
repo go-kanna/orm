@@ -104,6 +104,17 @@ func TestExec(t *testing.T) {
 				t.Errorf("describe -check = %d, %q, %q", code, out, errs)
 			}
 
+			// A pattern matching no package fails, and leaves the snapshot as it is, rather than dropping its statements.
+			for _, args := range [][]string{{"-v", "./nope"}, {"-check", "./nope"}} {
+				code, out, errs := exec(t, dir, env, args...)
+				if code != 1 || out != "" || !strings.Contains(errs, "nope: directory not found") {
+					t.Errorf("describe %v = %d, %q, %q", args, code, out, errs)
+				}
+			}
+			if after, err := fs.ReadFile(os.DirFS(dir), "kanna-orm.snapshot.json"); err != nil || !bytes.Equal(after, data) {
+				t.Errorf("the snapshot changed on a pattern matching no package:\n%s", after)
+			}
+
 			addColumn()
 			want := "./kanna-orm.snapshot.json: error: out of date with the database\n" +
 				"  " + tt.added + " is in the database but not in the snapshot\n" +
@@ -146,6 +157,64 @@ func TestDescribeAndClose(t *testing.T) {
 				t.Errorf("diagnostics = %v; a warning about closing: %t, want %t", ds, warned, closeErr != nil)
 			}
 		})
+	}
+}
+
+// A pattern describe cannot read the packages of stops it, as the statements of those packages would be left out of
+// the snapshot, but a type error does not: code calling what is still to be generated may well not compile.
+func TestDescribeAndClose_Patterns(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, shopSQL+`
+-- calls/calls.go --
+package calls
+
+func f() { notGeneratedYet() }
+-- notes/notes.txt --
+neither a package nor a .sql file
+`)
+	tests := []struct {
+		patterns []string
+		want     string // an error the report holds, or nothing when describe goes on
+	}{
+		{[]string{"./..."}, ""},
+		{[]string{"./ledger"}, ""}, // .sql files, and no package yet
+		{[]string{"./scopes", "./ledger"}, ""},
+		{[]string{"./calls"}, ""},
+		{[]string{"./nope"}, "nope: directory not found"},
+		{[]string{"./ledger", "./nope"}, "nope: directory not found"},
+		{[]string{"./nomatch/..."}, "./nomatch/: no such file or directory"},
+		{[]string{"./notes"}, "no Go files in"},
+		{[]string{"./notes/..."}, "error: ./notes/... matched no packages"},
+		{[]string{"example.com/elsewhere/..."}, "error: example.com/elsewhere/... matched no packages"},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.patterns, " "), func(t *testing.T) {
+			t.Parallel()
+
+			db := &fake{tables: map[string]snapshot.Table{"orders": {}}}
+			_, ds := describe.DescribeAndClose(t.Context(), db, func() error { return nil }, tt.patterns,
+				packages.Config{Dir: dir})
+			got := report(ds)
+			if tt.want == "" && len(ds) > 0 || tt.want != "" && (!diag.HasErrors(ds) || !strings.Contains(got, tt.want)) {
+				t.Errorf("DescribeAndClose reports\n%s\nwant %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A database of no tables is most likely not the one meant, as a mistaken search_path makes.
+func TestDescribeAndClose_NoTables(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, shop)
+	db := &fake{tables: map[string]snapshot.Table{}}
+	_, ds := describe.DescribeAndClose(t.Context(), db, func() error { return nil }, []string{"./..."},
+		packages.Config{Dir: dir})
+	want := "warning: the database has no tables\n" +
+		"  describe reads the tables of the current schema, which ?search_path= chooses"
+	if len(ds) != 1 || ds[0].String() != want {
+		t.Errorf("DescribeAndClose reports %v, want\n%s", ds, want)
 	}
 }
 

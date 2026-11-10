@@ -134,17 +134,63 @@ func describeAndClose(
 		}
 	}()
 
-	set, err := packages.Load(patterns, cfg)
-	if err != nil {
-		return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
+	var set packages.Set
+	if load := goPatterns(cfg.Dir, patterns); len(load) > 0 {
+		var err error
+		if set, err = packages.Load(load, cfg); err != nil {
+			return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
+		}
+		// Code calling what is still to be generated may well not compile, but a pattern naming no directory, or any
+		// other error, would leave out the statements of the packages it is in.
+		if blocking, _ := set.Split(); diag.HasErrors(blocking) {
+			return snapshot.Snapshot{}, append(blocking, set.SetAsideWarnings()...)
+		}
 	}
 	dirs, err := sqlDirs(cfg.Dir, patterns, set.Packages)
 	if err != nil {
 		return snapshot.Snapshot{}, []diag.Diag{diag.Errorf(token.Position{}, "%v", err)}
 	}
-	// Only the declarations matter here: code calling what is still to be generated may well not compile, and
-	// set.Diags would say so.
-	return Describe(ctx, db, set.Packages, dirs)
+	if len(set.Packages) == 0 && len(dirs) == 0 {
+		return snapshot.Snapshot{}, []diag.Diag{
+			diag.Errorf(token.Position{}, "%s matched no packages", strings.Join(patterns, " ")),
+		}
+	}
+	s, ds = Describe(ctx, db, set.Packages, dirs)
+	// Tables is nil only when they could not be read.
+	if s.Tables != nil && len(s.Tables) == 0 {
+		ds = append([]diag.Diag{noTables(s.Dialect)}, ds...)
+	}
+	return s, ds
+}
+
+// noTables warns that a database of dialect has no tables, as one a URL names by mistake may not.
+func noTables(dialect snapshot.Dialect) diag.Diag {
+	where := "the tables of the database the URL names"
+	if dialect == snapshot.PostgreSQL {
+		where = "the tables of the current schema, which ?search_path= chooses"
+	}
+	return diag.Warningf(token.Position{}, "the database has no tables").WithHints("describe reads " + where)
+}
+
+// goPatterns leaves out of patterns those naming a directory that holds .sql files and no .go file, whose statements
+// sqlDirs finds, but in which the go command would find no package.
+func goPatterns(dir string, patterns []string) []string {
+	var load []string
+	for _, p := range patterns {
+		if (build.IsLocalImport(p) || filepath.IsAbs(p)) && !strings.HasSuffix(filepath.ToSlash(p), "/...") {
+			d := p
+			if !filepath.IsAbs(d) {
+				d = filepath.Join(dir, d)
+			}
+			sql, _ := filepath.Glob(filepath.Join(d, "*.sql"))
+			goFiles, _ := filepath.Glob(filepath.Join(d, "*.go"))
+			if len(sql) > 0 && len(goFiles) == 0 {
+				continue
+			}
+		}
+		load = append(load, p)
+	}
+	return load
 }
 
 // sqlDirs finds the directories that patterns naming directories, as ./... does, match, but that hold .sql files and
