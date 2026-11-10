@@ -242,6 +242,8 @@ func TestProjections(t *testing.T) {
  if card, err := r.FindCard(ctx, 7); err != nil || card == nil { t.Fatalf("FindCard = %+v, %v", card, err) }
  if _, err := r.FirstCard(ctx, scopes.Record{}.IDAsc()); err != nil { t.Fatal(err) }
  if !strings.Contains(projectionQuery, "LIMIT 1") { t.Fatal(projectionQuery) }
+ if _, err := r.FirstCard(ctx, scopes.Record{}.IDAsc().Before(model.Record{ID: 99})); err == nil ||
+  !strings.Contains(err.Error(), "goes the other way") { t.Fatalf("FirstCard before a row: %v", err) }
  projectionMode = "reverse"
  cards, err = r.ListCards(ctx, scopes.Record{}.IDAsc().Before(model.Record{ID: 99}).Limit(2))
  if err != nil || len(cards) != 2 || cards[0].Caption != "earlier" { t.Fatalf("reverse = %+v, %v", cards, err) }
