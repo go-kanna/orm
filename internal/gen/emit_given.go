@@ -147,9 +147,7 @@ func (e repoEmitter) insertGivenMySQL(m repoMethod, sc gofile.Scope, recv string
 		e.readClock(recv, sig)
 		// The packages come first, so that they keep their names and the locals, one named after a field, yield.
 		chunks, repeat := e.f.Import("slices", "slices"), e.f.Import("strings", "strings")
-		for _, c := range withCols {
-			e.storageType(c)
-		}
+		e.importStorage(withCols)
 		inner := e.f.Scope()
 		chunk, args, row, value := inner.Name("chunk"), inner.Name("args"), inner.Name("row"),
 			inner.Name(lowerFirst(given.path[len(given.path)-1]))

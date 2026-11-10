@@ -17,9 +17,7 @@ func (e repoEmitter) copyRows(m repoMethod, sc gofile.Scope, recv string, sig si
 	// The packages come first, so that they keep their names and the locals yield.
 	pgx, fmtPkg := e.f.Import("github.com/jackc/pgx/v5", "pgx"), e.fmtPkg()
 	cols := m.inserted()
-	for _, c := range cols {
-		e.storageType(c)
-	}
+	e.importStorage(cols)
 	n, err, i := sc.Name("n"), sc.Name("err"), sc.Name("i")
 	e.printf("if len(%s) == 0 {\nreturn 0, nil\n}\n", sig.row)
 	names := make([]string, 0, len(cols)+1)
