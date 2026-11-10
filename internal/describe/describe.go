@@ -182,8 +182,10 @@ func inDir(dir, pkgPath string, scopes map[string]string, declares bool) ([]foun
 				continue
 			}
 			if at, ok := seen[f.key]; ok {
-				ds = append(ds, diag.Errorf(st.Header, "-- %s: %s is written a second time", st.Kind, qualified(st)).
-					WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Filename), at.Line)))
+				if at.Filename != st.Header.Filename { // sqlfile.Parse reports one written twice in a file
+					ds = append(ds, diag.Errorf(st.Header, "-- %s: %s is written a second time", st.Kind,
+						qualified(st)).WithHints(fmt.Sprintf("it is also at %s:%d", filepath.Base(at.Filename), at.Line)))
+				}
 				continue
 			}
 			seen[f.key] = st.Header

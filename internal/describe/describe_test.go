@@ -280,6 +280,14 @@ SELECT 1
 -- query: CountOpen
 SELECT 2
 `, "b.sql:1:1: error: -- query: CountOpen is written a second time\n  it is also at a.sql:1"},
+		{"a statement written twice in a file", `
+-- store/a.sql --
+-- query: CountOpen
+SELECT 1
+
+-- query: CountOpen
+SELECT 2
+`, "a.sql:4:1: error: -- query: CountOpen is written a second time"},
 		{"a placeholder of the database's own in a query", `
 -- store/order_queries.sql --
 -- query: CountOpen
