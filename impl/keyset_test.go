@@ -251,8 +251,7 @@ func TestCursor_Errors(t *testing.T) {
 		!errors.Is(err, orm.ErrInvalidCursor) {
 		t.Errorf("DecodeCursor error = %v, want orm.ErrInvalidCursor about decoding status", err)
 	}
-	var typeErr *json.UnmarshalTypeError
-	if !errors.As(err, &typeErr) {
+	if _, ok := errors.AsType[*json.UnmarshalTypeError](err); !ok {
 		t.Errorf("DecodeCursor error = %v, want it to wrap the error of decoding status", err)
 	}
 }
