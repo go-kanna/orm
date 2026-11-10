@@ -179,8 +179,10 @@ kanna の生成器を 2 つ以上使うなら、必要な順に動かす [`go to
 
 データベースは `-database-url` で指定したもの、指定がなければ `$DATABASE_URL` です:
 
-- `postgres://user:password@host:5432/database` は pgx 経由の PostgreSQL です。テーブルはカレントスキーマのもので、カレントスキーマは `?search_path=` で選びます。
+- `postgres://user:password@host:5432/database` は pgx 経由の PostgreSQL です。テーブルはカレントスキーマのもので、カレントスキーマは `?search_path=` で選びます。生成する SQL はテーブルをスキーマで修飾しないので、アプリの接続も同じ search_path を使ってください。
 - `mysql://user:password@host:3306/database` は go-sql-driver/mysql 経由の MySQL で、`?` の後にこのドライバのオプションを指定できます。テーブルは URL で指定したデータベースのものです。
+
+ビューとマテリアライズドビューは記録しません。これらは[手書きのクエリ](#手書きの-sql)で読んでください。`describe` はそのクエリも、ほかのクエリと同じくプリペアします。
 
 型はデータベース自身が答えたものなので、kanna-orm にはデータベースと食い違いうる独自の SQL パーサがありません。MySQL はプリペアした文の結果の情報を返さないので、MySQL では `describe` は文を `SELECT t.* FROM (...) AS t LIMIT 0` で包んでカラムを読み取ります。この文は行を返しません。PostgreSQL では、型を SQL に書ける名前で記録します。`pg_catalog` の型は `int8` のように名前だけで、それ以外の型は `public."OrderState"` のようにスキーマと名前で、必要なところは引用して書きます。生成する SQL が、search_path に関係なくその型を指せるようにするためです。domain は基底型の名前で記録します。
 
@@ -293,7 +295,7 @@ Memo string `orm:"note,nullzero"`
 
 `nullzero` の代償は、NULL と `''` を区別できなくなることです。空文字は NULL として書き込まれ、読み込むときは NULL もテーブルにすでにある `''` も空文字になります。そのため、読み込んだ値で行を検索しても見つかるとは限りません。`MemoEq("")` は `= ''` で比べるので、NULL の行には一致しません。NULL の行は `MemoIsNull()` で絞り込み、NULL と `''` が別の意味を持つなら、カラムを `*string` で保持してください。
 
-フィールドの型は、ドライバがカラムの型を読み込める型でなければなりません。`bigint` には整数型、`text` や `citext` には string、`timestamptz` や `datetime` には `time.Time`、`bytea` や `blob` には `[]byte`、`uuid` には Go 1.27 の `uuid.UUID`、それを元に宣言した型、string のいずれか、PostgreSQL の配列にはそれらのスライスです（MySQL に配列はありません）。database/sql はバイナリのカラムを string にも読み込みますが、pgx は `bytea` を string に読み込めないので、pgx では `bytea` を持つ string のフィールドで生成が止まります。`Scan` メソッドと `Value` メソッドを持つ型は自分で変換するので、どのカラムにも使えます。enum や `json` のように kanna-orm が知らないデータベースの型については、フィールドの型をそのまま信用します。
+フィールドの型は、ドライバがカラムの型を読み込める型でなければなりません。`bigint` には整数型、`text` や `citext` には string、`timestamptz` や `datetime` には `time.Time`、`bytea` や `blob` には `[]byte`、`uuid` には Go 1.27 の `uuid.UUID`、それを元に宣言した型、string のいずれか、PostgreSQL の配列にはそれらのスライスです（MySQL に配列はありません）。database/sql はバイナリのカラムを string にも読み込みますが、pgx は `bytea` を string に読み込めないので、pgx では `bytea` を持つ string のフィールドで生成が止まります。`Scan` メソッドと `Value` メソッドを持つ型は自分で変換するので、どのカラムにも使えます。enum や `json` のように kanna-orm が知らないデータベースの型については、フィールドの型をそのまま信用します。ただし、そのフィールドもカラムを保持できる型でなければなりません。`json` や `jsonb` のカラムは、string、`json.RawMessage` などの `[]byte`、JSON を読み書きする `Scan` メソッドと `Value` メソッドを持つ型のいずれかで保持します。それらのメソッドを持たない struct や map は、カラムでもリレーションでもないので、生成が止まります。
 
 カラムから読み込むフィールドは、カラムが持ちうるすべての値も保持できなければなりません。フィールドの範囲を超える値を持つ行はスキャンに失敗し、`float8` や `double` から読み込んだ `float32` は黙って精度を失います。そのため、整数フィールドの幅はカラム以上にします。`bigint` には `int64`、`integer` には `int32` です。符号付きのカラムには符号付きの型を、符号なしのカラムには符号なしの型か少し幅の広い型を使います。`bigint unsigned` には `uint64`、`int unsigned` には `int64` です。`int` と `uint` は、amd64 と同じく 64 ビット幅として扱います。書き込みには、このような幅は必要ありません。データベースは、カラムの範囲を超える値を別の値にして保存せず、拒否するからです。そのため、`integer` に対する `int` のようにカラムより幅の広いフィールドでも問題なく、パラメータの幅も問いません。`numeric` や `decimal` のカラムは、string か、`Scan` メソッドと `Value` メソッドを持つ型に読み込みます。浮動小数点数のフィールドは、正確に表せない値を丸めるので、生成が止まります。整数のフィールドが読み込めるのは、位取りが 0 で、すべての値を保持できるカラムだけです。`int64` なら `numeric(18,0)` まで、`int32` なら `numeric(9,0)` までです。精度を宣言していない `numeric` と、`sum` の結果のように手書きのクエリが返すカラムは、位取りが記録されないので、string にしか読み込めません。クエリの中でキャストしてもかまいません。`numeric` に書き込むパラメータは、どの数値型でもかまいません。
 
@@ -702,6 +704,8 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 
 モデルを返す `Insert` は、データベースが保存した行を読み戻します。`error` だけを返す `Insert` は書き込むだけです。1 行は、値に応じてカラムのある文とない文の 2 つの定数のどちらかで書き込みます。複数行の Insert は、カラムを渡す行と渡さない行が混ざっていても 1 つの文で書き込みます。PostgreSQL では、値がゼロの行には、`describe` が記録した、データベースがそのカラムを割り当てる式（`nextval('orders_id_seq'::regclass)` など）の値を書きます。MySQL では `NULL` を渡し、AUTO_INCREMENT に割り当てさせます。MySQL では、データベースが主キーを割り当てた行は `LAST_INSERT_ID()` で、そうでなければ主キー（Upsert では衝突キー）で読み戻します。MySQL が数えるのは `Update` が変更した行で、見つけた行ではありません。そのため、1 行も変更されなかった場合、kanna-orm は行が存在するかを確認してから `orm.ErrNotFound` を返します。
 
+モデルを返す `Insert`、`Update`、`Upsert` のように、書き込んだものを読み戻すメソッドは、読む前に書き込みを終えています。[`parseTime=true`](#ドライバと方言) のない MySQL で時刻を読むときのように読み戻しが失敗すると、メソッドはエラーを返しますが、行は書き込まれたままです。トランザクションの外では、再試行で行を 2 回書き込むことがあります。繰り返してはいけない書き込みはトランザクションの中で行い、エラーならロールバックしてください。
+
 ### DB のデフォルト値
 
 `orm:",default"` を指定したフィールドは、生成する INSERT のカラムから常に省略します。カラム名が異なる場合は `orm:"currency_code,default"` のように指定できます。スナップショットに DB の DEFAULT または自動採番の情報がないカラムに指定すると、生成を止めます。ただし、トリガーが値を入れうる[作成と更新の時刻](#作成と更新の時刻)は除きます。`default` と `nullzero` は併用できます。
@@ -717,7 +721,7 @@ type Product struct {
 
 [PostgreSQL](example/postgres) と [MySQL](example/mysql) の example では、`products.currency` に `DEFAULT 'JPY'` を定義しています。モデルに `Currency: "USD"` を渡しても INSERT では省略され、DB に保存された値が `JPY` であることを読み戻して確認します。タグがないフィールドはゼロ値も書き込みます。一括 INSERT、Upsert、[Copy](#複数行の-copy) にも適用し、手書き SQL は変更しません。
 
-PostgreSQL では、モデルを返すメソッドが RETURNING で DB の値を読み戻します。例えば `ID uuid.UUID` に `orm:",default"` を指定すると、Go 側で採番せず `DEFAULT uuidv7()` の主キーを使えます。全カラムを省略する単一行の INSERT は DEFAULT VALUES を使います。一括書き込みには、少なくとも一つ入力カラムが必要です。
+PostgreSQL では、モデルを返すメソッドが RETURNING で DB の値を読み戻します。例えば `ID uuid.UUID` に `orm:",default"` を指定すると、Go 側で採番せず `DEFAULT uuidv7()` の主キーを使えます。タグがなければ、そのキーもほかのカラムと同じく書き込まれ、ID を与えないモデルではゼロの UUID を書くので、2 行目は 1 行目と衝突します。値がゼロのときにデータベースに任せるのは、[書き込み](#書き込み)のとおり、serial、identity、AUTO_INCREMENT のカラムだけです。全カラムを省略する単一行の INSERT は DEFAULT VALUES を使います。一括書き込みには、少なくとも一つ入力カラムが必要です。
 
 UPDATE では、タグを指定した非キーのフィールドもモデルの値を書き込みます。Upsert は競合時に、タグを指定したカラムの保存済みの値を DB のデフォルト値に戻さずに保持します。行を更新した時刻は、`default` でそれもデータベースに任せない限り、競合時にも時計で書きます。[作成と更新の時刻](#作成と更新の時刻)を参照してください。
 
@@ -821,6 +825,8 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 ```
 
 カラムはテーブルの主キーか一意キーと完全に一致しなければならず、データベースがいつも値を割り当てるカラムは含められません。insert はそのカラムの値を渡さないので、行を突き合わせる材料にならないからです。突き合わせた行では、そのキーのカラム、主キー、`insertonly` を指定したカラム、[作成の時刻](#作成と更新の時刻)を除くすべてのカラムを更新します。更新するカラムが残らない場合は、キーに自分自身を設定するので、行はやはり読み戻されます。
+
+キーには NULL になりうるカラムも含められますが、SQL は 2 つの NULL を等しいとみなさないので、そこが NULL の行はどの行とも突き合いません。そのような行の Upsert は毎回行を挿入し、NULL として書き込む `nullzero` のフィールドのゼロ値でも同じです。PostgreSQL では、`NULLS NOT DISTINCT` で宣言した一意キーなら行と突き合います。それ以外では、行と突き合わせるキーのカラムを NOT NULL にしてください。
 
 MySQL は、Upsert が行を突き合わせるキーに限らず、どの一意キーの競合でも行を更新します。そのため、ほかにも一意キーを持つテーブルの Upsert には、キーを指定していても、主キーで突き合わせていても、警告が出ます。insert が主キーを書くとき（`ID` が 0 でない行の AUTO_INCREMENT の `id` など）は、主キーもほかの一意キーに数えます。突き合わせるキーのカラムをすべて含むキーは、別の行と競合しないので数えません。PostgreSQL では、ほかのキーで競合すると一意制約の違反のエラーになり、何も書きません。
 
@@ -1378,6 +1384,8 @@ vet は、関数の中の変数、スコープを組み立てる分岐、スコ�
 | PostgreSQL | `pgx`（デフォルト） | `pgx.Rows`, `$1`, `= ANY($1)`, `RETURNING` |
 | PostgreSQL | `database/sql`（pgx/stdlib 経由） | `*sql.Rows`, `$1`, `= ANY($1)`, `RETURNING` |
 | MySQL 8.4 以上 | `database/sql`（デフォルト、go-sql-driver/mysql 経由） | `*sql.Rows`, `?`, `IN (?, ...)`, `LAST_INSERT_ID()` |
+
+go-sql-driver/mysql が `DATETIME` や `TIMESTAMP` を `time.Time` に読み込むのは、DSN に `parseTime=true` があるときだけなので、アプリが開く DSN にはこれが必要です。ないと、時刻を読むときにそう伝えるエラーを返し、モデルを返す `Insert` は[行を書き込んだあとで](#書き込み)それを返します。さらにドライバは、`loc` で指定したロケーション（指定がなければ UTC）で時刻を書き込み、ゾーンを持たない `DATETIME` をそのロケーションの時刻として読み込みます。データベースを読み書きするすべてのプログラムで同じ `loc` を使い、セッションの `time_zone` で MySQL が変換する `TIMESTAMP` では、`time_zone` も同じゾーンにしてください。
 
 コードはそれぞれ異なり、どれもデータベースを抽象化の裏に隠しません。PostgreSQL と MySQL の違いは、コードを生成する時点で解決されます。
 
