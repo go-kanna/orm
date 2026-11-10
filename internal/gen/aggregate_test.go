@@ -32,7 +32,7 @@ type Sale struct {
 	Amount   Cents
 	Discount *int64
 	Rate     float64
-	Price    float64
+	Price    int64
 	Note     *string
 	SoldAt   time.Time
 }
@@ -116,10 +116,10 @@ type NoteCount struct {
 
 // aggregateTables describes the table of aggregateShop on the database of d.
 func aggregateTables(d snapshot.Dialect) map[string]snapshot.Table {
-	types := map[string]string{"int": "int4", "bigint": "int8", "float": "float8", "decimal": "numeric(10,2)",
+	types := map[string]string{"int": "int4", "bigint": "int8", "float": "float8", "decimal": "numeric(10,0)",
 		"text": "text", "time": "timestamptz"}
 	if d == snapshot.MySQL {
-		types = map[string]string{"int": "int", "bigint": "bigint", "float": "double", "decimal": "decimal(10,2)",
+		types = map[string]string{"int": "int", "bigint": "bigint", "float": "double", "decimal": "decimal(10,0)",
 			"text": "varchar(64)", "time": "datetime(6)"}
 	}
 	return map[string]snapshot.Table{

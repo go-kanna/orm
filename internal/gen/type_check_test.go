@@ -15,46 +15,73 @@ func TestReadable(t *testing.T) {
 	tests := []struct {
 		kind   types.BasicKind
 		dbType string
+		driver string // the driver the repositories run on, or "" for any
 		want   string // the type to declare instead, or "" when it reads the column
 	}{
-		{types.Int16, "int2", ""},
-		{types.Int8, "int2", "int64"},
-		{types.Int32, "int4", ""},
-		{types.Int64, "int8", ""},
-		{types.Int, "int8", ""},
-		{types.Uint32, "int4", "int64"},
-		{types.Int8, "tinyint", ""},
-		{types.Uint8, "tinyint", "int64"},
-		{types.Uint8, "tinyint unsigned", ""},
-		{types.Int8, "tinyint unsigned", "int64"},
-		{types.Int16, "tinyint unsigned", ""},
-		{types.Int16, "mediumint", "int64"},
-		{types.Int32, "mediumint", ""},
-		{types.Int32, "int unsigned", "int64"},
-		{types.Int64, "int(11) unsigned", ""},
-		{types.Int64, "bigint unsigned", "uint64"},
-		{types.Uint64, "bigint unsigned", ""},
-		{types.Int32, "oid", "int64"},
-		{types.Uint32, "oid", ""},
-		{types.Uint8, "year", "int64"},
-		{types.Int16, "year", ""},
+		{types.Int16, "int2", "", ""},
+		{types.Int8, "int2", "", "int64"},
+		{types.Int32, "int4", "", ""},
+		{types.Int64, "int8", "", ""},
+		{types.Int, "int8", "", ""},
+		{types.Uint32, "int4", "", "int64"},
+		{types.Int8, "tinyint", "", ""},
+		{types.Uint8, "tinyint", "", "int64"},
+		{types.Uint8, "tinyint unsigned", "", ""},
+		{types.Int8, "tinyint unsigned", "", "int64"},
+		{types.Int16, "tinyint unsigned", "", ""},
+		{types.Int16, "mediumint", "", "int64"},
+		{types.Int32, "mediumint", "", ""},
+		{types.Int32, "int unsigned", "", "int64"},
+		{types.Int64, "int(11) unsigned", "", ""},
+		{types.Int64, "bigint unsigned", "", "uint64"},
+		{types.Uint64, "bigint unsigned", "", ""},
+		{types.Int32, "oid", "", "int64"},
+		{types.Uint32, "oid", "", ""},
+		{types.Uint8, "year", "", "int64"},
+		{types.Int16, "year", "", ""},
 		// tinyint(1), which MySQL takes for a boolean, holds a tinyint.
-		{types.Int8, "tinyint(1)", ""},
-		{types.Uint8, "tinyint(1)", "int64"},
-		{types.Float32, "float4", ""},
-		{types.Float32, "float8", "float64"},
-		{types.Float32, "double", "float64"},
-		{types.Float32, "real", "float64"},
-		{types.Float64, "float4", ""},
-		// The range of numeric is not recorded, so any number reads it.
-		{types.Int16, "numeric", ""},
+		{types.Int8, "tinyint(1)", "", ""},
+		{types.Uint8, "tinyint(1)", "", "int64"},
+		{types.Float32, "float4", "", ""},
+		{types.Float32, "float8", "", "float64"},
+		{types.Float32, "double", "", "float64"},
+		{types.Float32, "real", "", "float64"},
+		{types.Float64, "float4", "", ""},
+		// An integer reads a numeric of scale 0 that has no more digits than it holds, and a floating-point number
+		// none, nor anything a numeric of no recorded scale.
+		{types.Int64, "numeric(18,0)", "", ""},
+		{types.Int64, "numeric(19,0)", "", "string"},
+		{types.Int, "decimal(10,0)", "", ""},
+		{types.Int32, "numeric(9,0)", "", ""},
+		{types.Int32, "numeric(10,0)", "", "int64"},
+		{types.Int16, "numeric(4,0)", "", ""},
+		{types.Int8, "numeric(3,0)", "", "int64"},
+		{types.Uint32, "numeric(9,0)", "", "int64"},
+		{types.Uint64, "decimal(19,0) unsigned", "", ""},
+		{types.Int64, "numeric(10,2)", "", "string"},
+		{types.Int64, "numeric", "", "string"},
+		{types.Int64, "decimal", "", "string"},
+		{types.Float64, "numeric(10,2)", "", "string"},
+		{types.Float64, "numeric(10,0)", "", "string"},
+		{types.Float64, "decimal(10,2)", "", "string"},
+		{types.String, "numeric(10,2)", "", ""},
+		{types.String, "numeric", "", ""},
+		// pgx reads a bytea into no string, while database/sql does.
+		{types.String, "bytea", "pgx", "[]byte"},
+		{types.String, "bytea", "database/sql", ""},
+		{types.String, "bytea", "", ""},
+		{types.String, "varbinary(16)", "database/sql", ""},
+		// citext is named with the schema of its extension.
+		{types.String, "public.citext", "pgx", ""},
+		{types.Int64, "public.citext", "pgx", "string"},
+		{types.Int64, "public.mood", "pgx", ""},
 	}
 
 	for _, tt := range tests {
-		t.Run(types.Typ[tt.kind].Name()+" from "+tt.dbType, func(t *testing.T) {
+		t.Run(types.Typ[tt.kind].Name()+" from "+tt.dbType+" on "+tt.driver, func(t *testing.T) {
 			t.Parallel()
 
-			want, ok := gen.Readable(tt.kind, tt.dbType)
+			want, ok := gen.Readable(tt.kind, tt.dbType, tt.driver)
 			if ok != (tt.want == "") || want != tt.want {
 				t.Errorf("Readable = %q, %t; want %q", want, ok, tt.want)
 			}

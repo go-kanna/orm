@@ -73,6 +73,8 @@ type linker struct {
 	loaded []indexed
 	tables map[string]snapshot.Table
 	idx    []indexed
+	// driver is the one the repositories run on, empty in a run that generates none.
+	driver driver
 }
 
 // link finds the foreign key each of relations, fields of the model of sc, follows, and the fields holding the keys

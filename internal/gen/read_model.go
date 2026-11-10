@@ -1,7 +1,9 @@
 package gen
 
 import (
+	"go/token"
 	"go/types"
+	"maps"
 	"slices"
 	"strings"
 
@@ -102,4 +104,48 @@ func readNames(models map[string]readModel) map[string]string {
 		names[table] = name
 	}
 	return names
+}
+
+// driverReads reports each field of a model repos write or read, or of models, or of a projection, that the driver of
+// the run cannot read its column into, though another driver can, as the run generating the scope types, which knows
+// no driver, lets it pass.
+func (r repoReader) driverReads(repos []repository, models map[string]readModel) []diag.Diag {
+	var ds []diag.Diag
+	reported := map[token.Position]bool{}
+	check := func(model *types.Named, columns []column) {
+		for _, c := range columns {
+			if reported[c.pos] {
+				continue
+			}
+			if _, ok := readable(c.typ, c.col.Type, ""); !ok {
+				continue
+			}
+			want, ok := readable(c.typ, c.col.Type, r.driver)
+			if ok {
+				continue
+			}
+			reported[c.pos] = true
+			typ := typeName(c.typ)
+			if isPointer(c.typ) {
+				want = "*" + want
+			}
+			ds = append(ds, diag.Errorf(c.pos, "%s.%s: the column %s is %s, which %s reads into no %s",
+				model.Obj().Name(), strings.Join(c.path, "."), c.col.Name, c.col.Type, r.driver, typ).WithHints(
+				"declare it as "+want+", or as a type of your own with Scan and Value methods"))
+		}
+	}
+	for _, repo := range repos {
+		for _, m := range repo.methods {
+			if m.model != nil {
+				check(m.model, m.columns)
+			}
+			if m.projection != nil {
+				check(m.projection.model, m.projection.columns)
+			}
+		}
+	}
+	for _, table := range slices.Sorted(maps.Keys(models)) {
+		check(models[table].model, models[table].columns)
+	}
+	return ds
 }

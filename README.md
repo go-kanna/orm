@@ -345,11 +345,12 @@ What `nullzero` costs is the difference between NULL and `''`: an empty string i
 compares by `= ''`, which matches no NULL. Narrow to the absent ones with `MemoIsNull()`, and hold the column in a
 `*string` when NULL and `''` say different things.
 
-A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text`,
-`time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a string for
-`uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of. A type with `Scan` and `Value` methods
-converts itself, and fits any column, and a type of the database kanna-orm does not know, such as an enum or `json`, is
-taken at the field's word.
+A field's type must be one the driver reads the column's type into: an integer type for `bigint`, a string for `text` or
+`citext`, `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27 or a
+string for `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of. database/sql reads a binary
+column into a string too, but pgx reads a `bytea` into no string, so a string holding one stops generation on pgx. A
+type with `Scan` and `Value` methods converts itself, and fits any column, and a type of the database kanna-orm does not
+know, such as an enum or `json`, is taken at the field's word.
 
 A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
 scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least
@@ -357,7 +358,12 @@ as wide as the column, `int64` for `bigint` and `int32` for `integer`, signed fo
 bit wider for an unsigned one: `uint64` for `bigint unsigned`, `int64` for `int unsigned`. `int` and `uint` are taken
 to be 64 bits wide, as on amd64. Writing needs no such width, as the database rejects a value beyond its column rather
 than store another, so a field wider than its column, as an `int` for an `integer`, is fine, and so is a parameter of
-any width. The range of `numeric` is not recorded, so any number reads it.
+any width. A `numeric` or `decimal` column is read into a string, or a type with `Scan` and `Value` methods: a
+floating-point field stops generation, as it rounds the values it holds no exact form of, and an integer field reads
+only a column of scale 0 every value of which it holds, an `int64` one up to `numeric(18,0)` and an `int32` one up to
+`numeric(9,0)`. The scale of a `numeric` declared with no precision, and that of a column a query written by hand
+returns, as of a `sum`, is not recorded, so such a column is read into a string alone, or cast in the query. A parameter
+written to a `numeric` may be any number.
 
 ### Methods for columns
 
