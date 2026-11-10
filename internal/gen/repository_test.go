@@ -413,6 +413,10 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"\t//kanna:conflict email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:24:2: error: UpsertUser: (email) is neither the primary key of users nor one of its unique " +
 				"keys"},
+		{"a conflict of columns spaced out", snapshot.PostgreSQL,
+			"\t//kanna:conflict tenant_id, email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
+			"repository.go:24:2: error: UpsertUser: //kanna:conflict names the columns of a key by commas alone, " +
+				"with no spaces\n  as in //kanna:conflict tenant_id,email"},
 		{"a conflict on what is no upsert", snapshot.PostgreSQL,
 			"\t//kanna:conflict id\n\tInsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:24:2: error: InsertUser: //kanna:conflict is for an Upsert"},

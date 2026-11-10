@@ -820,9 +820,17 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	args, ds := d.Parse(directive.Spec{Any: "<columns>", AnyWord: true, Needed: true})
 	switch {
 	case len(ds) > 0 && len(strings.Fields(d.Args)) == 0:
-		return hinted(methodDiags(m.name, ds), "as in //kanna:conflict tenant_id,email")
+		example := "tenant_id,email"
+		if len(m.table.UniqueKeys) > 0 {
+			example = strings.Join(m.table.UniqueKeys[0], ",")
+		}
+		return hinted(methodDiags(m.name, ds), "as in //kanna:conflict "+example)
 	case len(ds) > 0:
 		return hinted(methodDiags(m.name, ds), alone...)
+	case len(args) > 1 && strings.Contains(d.Args, ","):
+		joined := strings.Join(strings.Fields(strings.ReplaceAll(d.Args, ",", " ")), ",")
+		return []diag.Diag{errorf("//kanna:conflict names the columns of a key by commas alone, with no spaces").
+			WithHints("as in //kanna:conflict " + joined)}
 	case len(args) > 1:
 		return []diag.Diag{errorf("//kanna:conflict names the columns of a key alone, not %q", args[1].Name).
 			WithHints(alone...)}
