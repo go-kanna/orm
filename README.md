@@ -890,12 +890,12 @@ device, err := devices.GetByToken(ctx, platform, token, scopes.Devices().WithTop
 A row is written as the model holds it. A column the database assigns unless given, as a serial, an identity
 `BY DEFAULT`, or an AUTO_INCREMENT one, is left to the database when the model's value is zero, and written when it is
 not, as gorm and Rails do: an id is never 0, so 0 reads as none. So a fixture can give its ids, and an `Upsert` can meet
-its row by such a key, inserting a row of no id and updating the one of its id. Writing a value does not move the
-sequence, so a later row the database assigns may take the same one: give values the sequence will not reach, or set
-it after. A column the database always assigns, as an identity `ALWAYS` or a generated one, is left out always, as is a
-field tagged `default`. Otherwise a zero value is written as a zero value: a `false` for a column defaulting to `true`
-stays `false`. The times a row is created and updated at are written by a clock: see
-[Creation and update times](#creation-and-update-times).
+its row by such a key, inserting a row of no id and updating the one of its id. On PostgreSQL, writing a value does not
+move the sequence, so a later row the database assigns may take the same one: give values the sequence will not reach,
+or set it after. MySQL moves its AUTO_INCREMENT past a value written. A column the database always assigns, as an
+identity `ALWAYS` or a generated one, is left out always, as is a field tagged `default`. Otherwise a zero value is
+written as a zero value: a `false` for a column defaulting to `true` stays `false`. The times a row is created and
+updated at are written by a clock: see [Creation and update times](#creation-and-update-times).
 
 An `Insert` returning the model reads the row back as the database stored it; one returning `error` alone writes and is
 done. A row goes by one of two constant statements, with the column and without, as its value says. The rows of a bulk
