@@ -167,7 +167,7 @@ var ops = map[string]op{
 	"impl.Changes.RenderUpdateSelected": renders(3, renderUpdateSelected),
 	"impl.Changes.UpsertValues":         renders(2, upsertValues),
 	"scope.Of.Raw":                      func(c opCall) (value, *failed) { return c.scope(0), nil },
-	"scope.Raw.Where":                   adds(func(s *scopeVal) *prop { return &s.conds }),
+	"scope.Raw.Where":                   opRawWhere,
 	"scope.Raw.OrderBy":                 adds(func(s *scopeVal) *prop { return &s.orders }),
 }
 
@@ -208,6 +208,14 @@ func adds(field func(s *scopeVal) *prop) op {
 		*p = p.or(set(c.at))
 		return s, nil
 	}
+}
+
+// opRawWhere is adds of Raw's Where, which parts of a shape vet does not read may make an error of.
+func opRawWhere(c opCall) (value, *failed) {
+	v, _ := adds(func(s *scopeVal) *prop { return &s.conds })(c)
+	s := v.(*scopeVal) //nolint:forcetypeassert // adds returns a scope
+	s.err = s.err.then(errProp{t: some})
+	return s, nil
 }
 
 // pages is adds of Limit or Offset, which a negative number makes an error of.

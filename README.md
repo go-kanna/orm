@@ -270,13 +270,15 @@ in a package of their own. Methods of your own are written on the type as on any
 One narrows the scope by the methods kanna-orm writes, as `Open` below does; by SQL of a shape of its own in a `.sql`
 file, which `describe` checks (see [Hand-written SQL](#hand-written-sql)); or, for SQL whose shape the program chooses
 as it runs, by `Raw`, as `InMonths` does, which nothing checks before it runs. `Raw` has `Where` and `OrderBy` alone,
-each returning the scope with all it held before.
+each returning the scope with all it held before. `Where` takes the SQL of its condition in pieces marked as
+`scope.SQL`, and every other part, a string too, as a value it binds to a placeholder, so that no value becomes SQL. A
+condition without SQL, or with two values and no SQL between them, is an error, which every query of the scope returns.
 
 ```go
 func (s Order) Open() Order { return s.StatusNe("closed") }
 
 func (s Order) InMonths(months []int) Order {
-	return Order{s.q.Raw().Where("EXTRACT(MONTH FROM placed_at) = ANY(", months, ")")}
+	return Order{s.q.Raw().Where(scope.SQL("EXTRACT(MONTH FROM placed_at) = ANY("), months, scope.SQL(")"))}
 }
 ```
 
