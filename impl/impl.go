@@ -94,6 +94,12 @@ func (q Of[M]) Offset(n int) Of[M] {
 	return q
 }
 
+// Fail makes err the error of the scope, which every query of it returns, unless it holds one already.
+func (q Of[M]) Fail(err error) Of[M] {
+	q.err = cmp.Or(q.err, err)
+	return q
+}
+
 // Or narrows to the rows any of alternatives matches, each holding conditions alone. Without alternatives, it
 // matches no row.
 func (q Of[M]) Or(alternatives ...Of[M]) Of[M] {
