@@ -104,10 +104,34 @@ func (d destination) receiverCalls() map[string]map[string]bool {
 	return calls
 }
 
-// functions names the functions the files of d other than the output and tests declare at their top level.
-func (d destination) functions() map[string]bool {
+// handFunc is a function declared by hand: its first result, if any, and the paths of the packages its file imports,
+// by their names.
+type handFunc struct {
+	result  ast.Expr
+	imports map[string]string
+}
+
+// returns reports whether f returns repo first: the interface, or its implementation, or a pointer to one.
+func (f handFunc) returns(repo repository) bool {
+	t := f.result
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	switch x := t.(type) {
+	case *ast.Ident:
+		return x.Name == repo.name || x.Name == repo.implementation()
+	case *ast.SelectorExpr:
+		pkg, ok := x.X.(*ast.Ident)
+		return ok && x.Sel.Name == repo.name && f.imports[pkg.Name] == repo.iface.Path()
+	}
+	return false
+}
+
+// functions finds the functions the files of d other than the output and tests declare at their top level, by their
+// names.
+func (d destination) functions() map[string]handFunc {
 	names, _ := filepath.Glob(filepath.Join(d.dir, "*.go"))
-	funcs := map[string]bool{}
+	funcs := map[string]handFunc{}
 	fset := token.NewFileSet()
 	for _, name := range names {
 		if filepath.Base(name) == repositoryOutputName || strings.HasSuffix(name, "_test.go") {
@@ -117,9 +141,14 @@ func (d destination) functions() map[string]bool {
 		if err != nil || f.Name.Name != d.name {
 			continue
 		}
+		imports := importNames(f)
 		for _, decl := range f.Decls {
 			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil {
-				funcs[fn.Name.Name] = true
+				h := handFunc{imports: imports}
+				if fn.Type.Results != nil && len(fn.Type.Results.List) > 0 {
+					h.result = fn.Type.Results.List[0].Type
+				}
+				funcs[fn.Name.Name] = h
 			}
 		}
 	}

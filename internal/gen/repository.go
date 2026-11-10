@@ -48,27 +48,6 @@ var verbs = []verb{
 	verbCopy, verbSum, verbMin, verbMax, verbAvg,
 }
 
-// shapes are the forms a method of each verb is declared in, for a hint.
-var shapes = map[verb]string{
-	verbGet:    "Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)",
-	verbFind:   "Find(ctx context.Context, id model.OrderID, s ...scopes.Order) (*model.Order, error)",
-	verbFirst:  "First(ctx context.Context, s ...scopes.Order) (model.Order, error)",
-	verbList:   "List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)",
-	verbCount:  "Count(ctx context.Context, s ...scopes.Order) (int64, error)",
-	verbExists: "Exists(ctx context.Context, s ...scopes.Order) (bool, error)",
-	verbInsert: "Insert(ctx context.Context, o model.Order) (model.Order, error), or with error alone",
-	verbUpdate: "Update(ctx context.Context, o model.Order, s ...scopes.Order) error, or " +
-		"Update(ctx context.Context, id model.OrderID, c scopes.OrderChangeSet, s ...scopes.Order) (model.Order, error)",
-	verbUpsert: "Upsert(ctx context.Context, o model.Order) error",
-	verbDelete: "Delete(ctx context.Context, id model.OrderID) error, or DeleteStale(ctx context.Context, " +
-		"s ...scopes.Order) (int64, error) or ([]model.Order, error)",
-	verbCopy: "Copy(ctx context.Context, rows []model.Order) (int64, error)",
-	verbSum:  "SumTotal(ctx context.Context, s ...scopes.Order) (int64, error)",
-	verbMin:  "MinPlacedAt(ctx context.Context, s ...scopes.Order) (time.Time, error)",
-	verbMax:  "MaxPlacedAt(ctx context.Context, s ...scopes.Order) (*time.Time, error)",
-	verbAvg:  "AvgTotal(ctx context.Context, s ...scopes.Order) (float64, error)",
-}
-
 // verbOf tells the verb name starts with: a verb, followed by nothing or by a word of its own, as in GetByNumber, but
 // not in Getaway.
 func verbOf(name string) (verb, bool) {
@@ -258,9 +237,9 @@ type repoReader struct {
 	local    bool
 	driver   driver
 	declared map[string]token.Position
-	// funcs names the functions the destination declares at its top level: a New of a repository among them is the
-	// repository's own constructor.
-	funcs map[string]bool
+	// funcs are the functions the destination declares at its top level: a New of a repository among them returning
+	// the repository is the repository's own constructor.
+	funcs map[string]handFunc
 	// calls are what the methods written by hand select on their receiver, by the type they are declared on: the
 	// helpers they call.
 	calls map[string]map[string]bool
@@ -337,7 +316,9 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
-	repo.publicConstructor = !r.funcs["New"+repo.name]
+	// A New of the repository's name that does not return it is told as any other name declared already.
+	own, ok := r.funcs["New"+repo.name]
+	repo.publicConstructor = !ok || !own.returns(repo)
 	names := []string{repo.implementation(), repo.constructor()}
 	if repo.publicConstructor {
 		names = append(names, "New"+repo.name)
@@ -450,7 +431,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	cds = append(cds, pds...)
 	if pluck.Found {
 		return m, append(cds, diag.Errorf(pluck.Pos, "%s: //kanna:pluck is no more: a List of a column's values is "+
-			"named after its field", m.name).WithHints("as in "+pluckShape+", which reads ID"))
+			"named after its field", m.name).WithHints("as in "+r.shapeNames(fallback.model).fill(pluckShape)))
 	}
 	if st, ok := r.queries[m.name]; ok {
 		if conflict.Found {
@@ -476,21 +457,26 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	}
 	m.verb = v
 	if v == verbCopy {
-		if ds := r.copyDriver(m); ds != nil {
+		if ds := r.copyDriver(m, r.signatureModel(fn.Signature(), field, ts, fallback)); ds != nil {
 			return m, ds
 		}
 	}
-	shapeError := func() []diag.Diag {
-		return []diag.Diag{diag.Errorf(m.pos, "%s: kanna-orm cannot implement it as declared", m.name).
-			WithHints(fmt.Sprintf("declare it in a form of %s, as in %s", v, shapes[v]))}
+	// shapeError tells that m is of no form of its verb, and why if it can, in the names of model.
+	shapeError := func(model *types.Named, why func(shapeNames) string) []diag.Diag {
+		names := r.shapeNames(model)
+		msg := "kanna-orm cannot implement it as declared"
+		if w := why(names); w != "" {
+			msg += ": " + w
+		}
+		return []diag.Diag{diag.Errorf(m.pos, "%s: %s", m.name, msg).
+			WithHints(fmt.Sprintf("declare it in a form of %s, as in %s", v, names.fill(shapes[v])))}
 	}
 
 	if params.Len() == 0 || !isNamed(params.At(0).Type(), "context", "Context") {
 		return m, errorf("its first parameter is no context.Context")
 	}
-	if results.Len() == 0 || results.Len() > 2 || !types.Identical(results.At(results.Len()-1).Type(),
-		types.Universe.Lookup("error").Type()) {
-		return m, shapeError()
+	if why := resultsMismatch(v, results); why != "" {
+		return m, shapeError(r.signatureModel(sig, field, ts, fallback), func(shapeNames) string { return why })
 	}
 
 	models, keyParams, parameterDiags := r.methodParameters(&m, sig, field, ts)
@@ -500,6 +486,7 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 
 	ofColumn := false
 	if results.Len() == 2 {
+		taken := models
 		var ok bool
 		if models, ofColumn, ok = r.result(&m, results.At(0).Type(), models); !ok {
 			row := results.At(0).Type()
@@ -509,7 +496,14 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 			if model, unscoped := r.unscoped(row); unscoped {
 				return m, noScopeType(m, model)
 			}
-			return m, shapeError()
+			model := fallback.model
+			if len(taken) > 0 {
+				model = taken[0]
+			}
+			return m, shapeError(model, func(n shapeNames) string {
+				return fmt.Sprintf("it returns %s, and %s %s returns %s", typeName(results.At(0).Type()), v.article(),
+					v, n.fill(returnShapes[v]))
+			})
 		}
 	}
 
@@ -520,7 +514,11 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 		return m, ds
 	}
 	if !m.shaped() {
-		return m, shapeError()
+		result := "error alone"
+		if results.Len() == 2 {
+			result = typeName(results.At(0).Type())
+		}
+		return m, shapeError(m.model, func(n shapeNames) string { return m.mismatch(result, n) })
 	}
 	if ofColumn {
 		if ds := r.resultColumn(&m, results.At(0).Type()); ds != nil {
@@ -559,7 +557,7 @@ func (r repoReader) target(m *repoMethod, models []*types.Named, fallback tableM
 			return fallback.ds
 		case fallback.model == nil:
 			return []diag.Diag{diag.Errorf(m.pos, "%s: nothing tells the table it reads or writes", m.name).
-				WithHints("give it the scopes of the table, as in "+shapes[m.verb],
+				WithHints("give it the scopes of the table, as in "+r.shape(m.verb, nil),
 					"or name the repository after the model of the table, as OrderRepository is after Order of orders",
 					"or name the table of the methods that tell none: //kanna:repository table=<table>")}
 		}
@@ -688,33 +686,44 @@ func elemOf(t types.Type) types.Type {
 
 // shaped reports whether the parameters and the result of m are those its verb takes.
 func (m repoMethod) shaped() bool {
-	writes := m.verb == verbInsert || m.verb == verbUpdate || m.verb == verbUpsert || m.verb == verbCopy
-	var ok bool
-	switch m.verb {
-	case verbFind:
-		ok = m.returns == returnsRow && m.optional
-	case verbGet, verbFirst, verbSum, verbMin, verbMax, verbAvg:
-		ok = m.returns == returnsRow && !m.optional
-	case verbList:
-		ok = m.returns == returnsRows
-	case verbCount:
-		ok = m.returns == returnsCount
-	case verbExists:
-		ok = m.returns == returnsBool
-	case verbInsert, verbUpsert:
-		ok = m.returns == returnsNone || m.returns == returnsRow && !m.many || m.returns == returnsRows && m.many
-	case verbUpdate:
+	if m.verb == verbUpdate {
 		return m.updateShaped()
-	case verbDelete:
-		ok = m.returns == returnsNone && !m.scoped ||
-			(m.returns == returnsCount || m.returns == returnsRows) && (m.scoped || len(m.keys) > 0)
-	case verbCopy:
-		ok = m.returns == returnsCount && m.many
 	}
-	if writes {
-		return ok && m.row != "" && len(m.keys) == 0 && !m.scoped
+	ok := m.returnsFit()
+	switch m.verb { //nolint:exhaustive // the verbs whose parameters tell more
+	case verbInsert, verbUpsert, verbCopy:
+		return ok && m.row != "" && len(m.keys) == 0 && !m.scoped && (m.verb != verbCopy || m.many)
+	case verbDelete:
+		// A Delete returning error alone deletes the row of its key, and one returning more the rows its scopes or keys
+		// select.
+		selects := m.returns == returnsNone && !m.scoped || m.returns != returnsNone && (m.scoped || len(m.keys) > 0)
+		return ok && selects && m.row == ""
 	}
 	return ok && m.row == ""
+}
+
+// returnsFit reports whether what m returns is what its verb returns, whatever its parameters.
+func (m repoMethod) returnsFit() bool {
+	switch m.verb {
+	case verbFind:
+		return m.returns == returnsRow && m.optional
+	case verbGet, verbFirst, verbSum, verbMin, verbMax, verbAvg:
+		return m.returns == returnsRow && !m.optional
+	case verbList:
+		return m.returns == returnsRows
+	case verbCount, verbCopy:
+		return m.returns == returnsCount
+	case verbExists:
+		return m.returns == returnsBool
+	case verbInsert, verbUpsert:
+		return m.returns == returnsNone || m.returns == returnsRow && !m.many || m.returns == returnsRows && m.many
+	case verbUpdate:
+		return m.returns == returnsNone || m.returns == returnsRow ||
+			m.changes != "" && (m.returns == returnsCount || m.returns == returnsRows)
+	case verbDelete:
+		return m.returns == returnsNone || m.returns == returnsCount || m.returns == returnsRows
+	}
+	return false
 }
 
 // oneRowKey reports why names, the key columns of m, a Get or a Find, read no one row, if they do not.
@@ -813,9 +822,17 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 	args, ds := d.Parse(directive.Spec{Any: "<columns>", AnyWord: true, Needed: true})
 	switch {
 	case len(ds) > 0 && len(strings.Fields(d.Args)) == 0:
-		return hinted(methodDiags(m.name, ds), "as in //kanna:conflict tenant_id,email")
+		example := "tenant_id,email"
+		if len(m.table.UniqueKeys) > 0 {
+			example = strings.Join(m.table.UniqueKeys[0], ",")
+		}
+		return hinted(methodDiags(m.name, ds), "as in //kanna:conflict "+example)
 	case len(ds) > 0:
 		return hinted(methodDiags(m.name, ds), alone...)
+	case len(args) > 1 && strings.Contains(d.Args, ","):
+		joined := strings.Join(strings.Fields(strings.ReplaceAll(d.Args, ",", " ")), ",")
+		return []diag.Diag{errorf("//kanna:conflict names the columns of a key by commas alone, with no spaces").
+			WithHints("as in //kanna:conflict " + joined)}
 	case len(args) > 1:
 		return []diag.Diag{errorf("//kanna:conflict names the columns of a key alone, not %q", args[1].Name).
 			WithHints(alone...)}
@@ -1079,9 +1096,6 @@ func lowerFirst(s string) string {
 	return string(runes)
 }
 
-// pluckShape is the form of a method reading the values of one column, for a hint.
-const pluckShape = "ListIDs(ctx context.Context, s ...scopes.Order) ([]model.OrderID, error)"
-
 // plucks reports whether t, the result of a method of verb v, is the value of a column rather than a row: a value of
 // a Get or a First, a pointer to one of a Find, or a slice of them of a List.
 func plucks(v verb, t types.Type) bool {
@@ -1158,17 +1172,15 @@ func (r repoReader) pluckColumn(m *repoMethod, t types.Type) []diag.Diag {
 	case m.verb == verbList:
 		missing = fmt.Sprintf("%s has no field whose plural is %s", typeName(m.model), rest)
 	}
-	hint := "name it after a field, as in " + pluckShape + ", which reads ID"
+	names := r.shapeNames(m.model)
+	hint := "name it after a field, as in " + names.fill(pluckShape)
 	if lock != "" {
-		hint = "name it after a field, then its lock, as ListIDs" + lock + " reads ID"
+		hint = "name it after a field, then its lock, as List{plural}" + lock + " reads {key}"
+		hint = names.fill(hint)
 	}
 	if misspelled != "" {
-		var plural strings.Builder
-		for word := range strings.SplitSeq(decl.Plural(misspelled), "_") {
-			plural.WriteString(strings.ToUpper(word[:1]) + word[1:])
-		}
-		hint = fmt.Sprintf("name it List%s%s: the plural of %s is made as that of a table's name", plural.String(),
-			lock, misspelled)
+		hint = fmt.Sprintf("name it List%s%s: the plural of %s is made as that of a table's name",
+			camelCase(decl.Plural(misspelled)), lock, misspelled)
 	}
 	return []diag.Diag{diag.Errorf(m.pos, "%s: it returns the values of a column, but %s", m.name, missing).
 		WithHints(hint)}
@@ -1292,6 +1304,12 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 		if model, ok := r.unscoped(p.Type()); ok {
 			return nil, nil, noScopeType(*m, model)
 		}
+		if value, ok := valueOfPointers(p.Type()); ok {
+			if _, _, ok := r.rowModel(value); ok {
+				return nil, nil, []diag.Diag{diag.Errorf(m.pos, "%s: it takes %s, %s, and rows to write are taken "+
+					"by their values", m.name, p.Name(), typeName(p.Type())).WithHints("declare it as " + typeName(value))}
+			}
+		}
 		if p.Name() == "" || p.Name() == "_" {
 			return nil, nil, errorf("its parameter %d has no name, which tells the column it stands for", i+1)
 		}
@@ -1303,6 +1321,19 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			`row: take no change set, and tag the columns an upsert leaves as they were orm:",insertonly"`)}
 	}
 	return models, keyParams, nil
+}
+
+// valueOfPointers is t, a pointer or a slice of pointers, of the values they point to.
+func valueOfPointers(t types.Type) (types.Type, bool) {
+	if s, ok := t.Underlying().(*types.Slice); ok {
+		if p, ok := s.Elem().Underlying().(*types.Pointer); ok {
+			return types.NewSlice(p.Elem()), true
+		}
+	}
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		return p.Elem(), true
+	}
+	return nil, false
 }
 
 // keyColumns are the columns the key parameters of m name, in their order.

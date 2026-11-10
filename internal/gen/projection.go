@@ -107,7 +107,7 @@ func (r repoReader) projectionFields(m *repoMethod) []diag.Diag {
 	case len(p.aggregates) > 0 && len(p.columns) == 0:
 		ds = append(ds, diag.Errorf(m.pos, "%s: a projection of aggregates groups the rows by its other fields, and "+
 			"%s has none", m.name, typeName(p.model)).WithHints("give it a field to group the rows by",
-			"or read an aggregate of all the rows by its verb, as in "+shapes[verbSum]))
+			"or read an aggregate of all the rows by its verb, as in "+r.shape(verbSum, m.model)))
 	case len(p.columns) == 0 && len(p.joins) == 0 && len(p.aggregates) == 0:
 		errorf(m.pos, "a projection must select at least one model column")
 	}

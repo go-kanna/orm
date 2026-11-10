@@ -441,7 +441,7 @@ func renderUpdateSelected(c opCall) *failed {
 func updateSelected(c opCall, s *scopeVal, key []string, known bool) *failed {
 	ch := c.change()
 	if ch.empty() == every {
-		return fail("Update requires at least one assigned column", cause{}, "")
+		return fail("Update of an empty change set returns orm.ErrEmptyChangeSet", cause{}, "")
 	}
 	if allowed, ok := c.strs(3); ok {
 		if a := firstAssigned(ch, func(column string) bool { return !slices.Contains(allowed, column) }); a != nil {

@@ -23,7 +23,7 @@ func TestCommand_WriteOptionsMistakes(t *testing.T) {
 		{name: "conflict of two words", before: "//kanna:conflict record_key\n",
 			after: "//kanna:conflict record_key owner_id\n", want: `names the columns of a key alone, not "owner_id"`},
 		{name: "insertonly default", before: `orm:",default"`, after: `orm:",default,insertonly"`,
-			want: "so it would never be written"},
+			want: "so kanna-orm would never write it\n  if a trigger writes it after the insert, tag it insertonly alone"},
 		{name: "change set of many rows", before: "UpsertAll(ctx context.Context, records []model.Record) error",
 			after: "UpsertAll(ctx context.Context, records []model.Record, changes scopes.RecordChangeSet) error",
 			want:  "an Upsert of many rows takes no change set"},

@@ -299,8 +299,37 @@ func TestRepositories_Mistakes(t *testing.T) {
 			at + "error: Get: its first parameter is no context.Context"},
 		{"a result the verb does not take", snapshot.PostgreSQL,
 			"\tList(ctx context.Context, s ...scopes.Order) (model.Order, error)\n",
-			at + "error: List: kanna-orm cannot implement it as declared\n" +
+			at + "error: List: kanna-orm cannot implement it as declared: it returns model.Order, and a List returns " +
+				"[]model.Order\n" +
 				"  declare it in a form of List, as in List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)"},
+		{"a result of another type than the verb's, of another model", snapshot.PostgreSQL,
+			"\tCountUsers(ctx context.Context, s ...scopes.User) (int, error)\n",
+			at + "error: CountUsers: kanna-orm cannot implement it as declared: it returns int, and a Count returns " +
+				"int64\n  declare it in a form of Count, as in Count(ctx context.Context, s ...scopes.User) (int64, error)"},
+		{"a last result that is no error", snapshot.PostgreSQL,
+			"\tGetUser(ctx context.Context, id int64) (model.User, int)\n",
+			at + "error: GetUser: kanna-orm cannot implement it as declared: its last result is int, not error\n" +
+				"  declare it in a form of Get, as in Get(ctx context.Context, id int64, s ...scopes.User) " +
+				"(model.User, error)"},
+		{"a Delete of one row taking scopes, of a key of two columns", snapshot.PostgreSQL,
+			"\tDeleteLines(ctx context.Context, s ...scopes.OrderLine) error\n",
+			at + "error: DeleteLines: kanna-orm cannot implement it as declared: it takes scopes, and a Delete " +
+				"returning error alone deletes the one row of its key\n" +
+				"  declare it in a form of Delete, as in Delete(ctx context.Context, orderID model.OrderID, lineNo int) " +
+				"error, or DeleteStale(ctx context.Context, s ...scopes.OrderLine) (int64, error) or " +
+				"([]model.OrderLine, error)"},
+		{"a row taken by a pointer", snapshot.PostgreSQL, "\tUpdatePtr(ctx context.Context, l *model.Log) error\n",
+			at + "error: UpdatePtr: it takes l, *model.Log, and rows to write are taken by their values\n" +
+				"  declare it as model.Log"},
+		{"rows taken by pointers", snapshot.PostgreSQL,
+			"\tInsertUsers(ctx context.Context, us []*model.User) error\n",
+			at + "error: InsertUsers: it takes us, []*model.User, and rows to write are taken by their values\n" +
+				"  declare it as []model.User"},
+		{"a column of another model misspelled", snapshot.PostgreSQL,
+			"\tListNamez(ctx context.Context, s ...scopes.User) ([]string, error)\n",
+			at + "error: ListNamez: it returns the values of a column, but model.User has no field whose plural is " +
+				"Namez\n  name it after a field, as in ListIDs(ctx context.Context, s ...scopes.User) ([]int64, error), " +
+				"which reads ID"},
 		{"a result of no scope type", snapshot.PostgreSQL,
 			"\tGetForUpdate(ctx context.Context, id model.OrderID) (MonthCount, error)\n",
 			at + "error: GetForUpdate: no scope type is declared for repository.MonthCount\n" +
@@ -365,11 +394,13 @@ func TestRepositories_Mistakes(t *testing.T) {
 				"  write the rows one by one\n" +
 				"  or copy them: Copy(ctx context.Context, rows []model.Note) (int64, error)"},
 		{"a Copy of one row", snapshot.PostgreSQL, "\tCopy(ctx context.Context, o model.Order) (int64, error)\n",
-			at + "error: Copy: kanna-orm cannot implement it as declared\n" +
+			at + "error: Copy: kanna-orm cannot implement it as declared: it takes o, one row, and a Copy takes a " +
+				"slice of them\n" +
 				"  declare it in a form of Copy, as in Copy(ctx context.Context, rows []model.Order) (int64, error)"},
 		{"a Copy returning error alone", snapshot.PostgreSQL,
 			"\tCopy(ctx context.Context, orders []model.Order) error\n",
-			at + "error: Copy: kanna-orm cannot implement it as declared\n" +
+			at + "error: Copy: kanna-orm cannot implement it as declared: it returns error alone, and a Copy returns " +
+				"int64\n" +
 				"  declare it in a form of Copy, as in Copy(ctx context.Context, rows []model.Order) (int64, error)"},
 		{"a Copy of a column the table requires and the model has no field for", snapshot.PostgreSQL,
 			"\tCopyLogs(ctx context.Context, logs []model.Log) (int64, error)\n",
@@ -382,6 +413,10 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"\t//kanna:conflict email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:24:2: error: UpsertUser: (email) is neither the primary key of users nor one of its unique " +
 				"keys"},
+		{"a conflict of columns spaced out", snapshot.PostgreSQL,
+			"\t//kanna:conflict tenant_id, email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
+			"repository.go:24:2: error: UpsertUser: //kanna:conflict names the columns of a key by commas alone, " +
+				"with no spaces\n  as in //kanna:conflict tenant_id,email"},
 		{"a conflict on what is no upsert", snapshot.PostgreSQL,
 			"\t//kanna:conflict id\n\tInsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:24:2: error: InsertUser: //kanna:conflict is for an Upsert"},

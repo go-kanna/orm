@@ -42,10 +42,10 @@ func (r repoReader) aggregateColumn(m *repoMethod, t types.Type) []diag.Diag {
 	switch {
 	case rest == "":
 		return []diag.Diag{diag.Errorf(m.pos, "%s: it names no field after %[1]s, whose column it reads the %s of",
-			m.name, word).WithHints("name it after a field, as in " + shapes[m.verb])}
+			m.name, word).WithHints("name it after a field, as in " + r.shape(m.verb, m.model))}
 	case i < 0:
 		return []diag.Diag{diag.Errorf(m.pos, "%s: it reads the %s of a column, but %s has no field named %s", m.name,
-			word, typeName(m.model), rest).WithHints("name it after a field, as in " + shapes[m.verb] +
+			word, typeName(m.model), rest).WithHints("name it after a field, as in " + r.shape(m.verb, m.model) +
 			", whose keys and scopes tell the rows")}
 	}
 	a := aggregate{fn: m.verb, col: m.columns[i], typ: t, coalesce: m.verb == verbSum && !isPointer(t)}
