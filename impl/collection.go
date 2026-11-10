@@ -74,9 +74,9 @@ func NewEach(d Dialect, b Batch, key, columns []string) Each {
 		e.keys = alias
 	}
 
-	child := " JOIN " + quoted(d, b.Table) + " AS " + quoted(d, "orm_child") + " ON "
+	child := " JOIN " + quoted(d, b.Table) + " ON "
 	if b.Through == "" {
-		e.joins = child + matching(d, "orm_child", matched, prefix)
+		e.joins = child + matching(d, b.Table, matched, prefix)
 	} else {
 		junction, on := b.throughSQL(d)
 		e.joins = " JOIN (" + junction + ") AS " + quoted(d, "orm_link") + " ON " + matching(d, "orm_link", matched, prefix) +
@@ -84,7 +84,7 @@ func NewEach(d Dialect, b Batch, key, columns []string) Each {
 	}
 	selects, outputs := []string{qualified(d, "orm_key", "orm_n")}, []string{quoted(d, "orm_n")}
 	for _, name := range columns {
-		selects = append(selects, qualified(d, "orm_child", name))
+		selects = append(selects, qualified(d, b.Table, name))
 		outputs = append(outputs, quoted(d, name))
 	}
 	e.selects, e.outputs = strings.Join(selects, ", "), strings.Join(outputs, ", ")
@@ -275,7 +275,7 @@ func (b Batch) throughSQL(d Dialect) (string, string) {
 	}
 	joins := make([]string, 0, len(b.ThroughChild))
 	for i, name := range b.ThroughChild {
-		joins = append(joins, qualified(d, "orm_link", "orm_l_"+name)+" = "+qualified(d, "orm_child", b.TargetKeys[i]))
+		joins = append(joins, qualified(d, "orm_link", "orm_l_"+name)+" = "+qualified(d, b.Table, b.TargetKeys[i]))
 	}
 	return "SELECT " + strings.Join(selects, ", ") + " FROM " + quoted(d, b.Through), strings.Join(joins, " AND ")
 }
