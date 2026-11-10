@@ -425,10 +425,16 @@ func TestEmitRepositories(t *testing.T) {
 		scopes, repo string
 		d            snapshot.Dialect
 		drv, dest    string
+		ds           string
 	}{
-		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "pgx", "postgres/pgx"},
-		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "database/sql", "postgres/stdlib"},
-		{"mysql/scopes", "mysql/repository", snapshot.MySQL, "database/sql", "mysql/stdlib"},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "pgx", "postgres/pgx", ""},
+		{"postgres/scopes", "postgres/repository", snapshot.PostgreSQL, "database/sql", "postgres/stdlib", ""},
+		{"mysql/scopes", "mysql/repository", snapshot.MySQL, "database/sql", "mysql/stdlib",
+			"repository.go:53:2: warning: UpsertOrder: on MySQL, a conflict on (order) also updates the row\n" +
+				"  orders has unique keys other than (id)\n" +
+				"repository.go:64:2: warning: UpsertByPosition: on MySQL, a conflict on (id) also updates the row\n" +
+				"  orders has unique keys other than (order)\n" +
+				"  an insert writes id of a row whose ID is not zero"},
 	} {
 		t.Run(tt.dest, func(t *testing.T) {
 			t.Parallel()
@@ -447,8 +453,8 @@ func TestEmitRepositories(t *testing.T) {
 				s.Statements[testdata+tt.dest+"."+name] = st
 			}
 			got, ds, err := gen.EmitRepositories(set.Packages, testdata+tt.repo, s, tt.drv, filepath.Join("testdata", tt.dest))
-			if len(ds) > 0 {
-				t.Fatalf("EmitRepositories:\n%s", report(ds))
+			if report(ds) != tt.ds {
+				t.Fatalf("EmitRepositories reports\n%s\nwant\n%s", report(ds), tt.ds)
 			}
 			if err != nil {
 				t.Fatalf("EmitRepositories: %v\n%s", err, got)

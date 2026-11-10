@@ -58,6 +58,13 @@ type Note struct {
 type Ticket struct{ ID int64 }
 
 type Session struct{ UserID int64 }
+
+type Account struct {
+	ID       int64
+	TenantID int64
+	Email    string
+	Login    string
+}
 -- scopes/scopes.go --
 package scopes
 
@@ -86,6 +93,9 @@ type Ticket struct{ q scope.Of[model.Ticket] }
 
 //kanna:scope table=sessions
 type Session struct{ q scope.Of[model.Session] }
+
+//kanna:scope table=accounts
+type Account struct{ q scope.Of[model.Account] }
 `
 
 // repositoryTables are the tables of repositoryModule.
@@ -116,6 +126,12 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 				{Name: "user_id", Type: "bigint", NotNull: true},
 			},
 			PrimaryKey: []string{"token"},
+		},
+		// accounts has an AUTO_INCREMENT id, which an insert writes when the row gives it.
+		"accounts": {
+			Columns: append([]snapshot.Column{{Name: "id", Type: "bigint", NotNull: true, Assigned: true,
+				Writable: true}}, columns("tenant_id", "email", "login")...),
+			PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"tenant_id", "email"}, {"login"}, {"tenant_id", "id"}},
 		},
 		// audits has no scope type.
 		"audits": {Columns: columns("message")},
@@ -373,6 +389,19 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"\t//kanna:conflict tenant_id,email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
 			"repository.go:25:2: warning: UpsertUser: on MySQL, a conflict on (tenant_id, login) also updates the row\n" +
 				"  users has unique keys other than (tenant_id, email)"},
+		// (tenant_id, id) holds the primary key, so a conflict on it meets the row the primary key does.
+		{"an upsert MySQL meets by its primary key and on other keys too", snapshot.MySQL,
+			"\tUpsertAccount(ctx context.Context, a model.Account) error\n",
+			at + "warning: UpsertAccount: on MySQL, a conflict on (tenant_id, email) or (login) also updates the row\n" +
+				"  accounts has unique keys other than (id)"},
+		{"a conflict MySQL meets on the primary key the row gives too", snapshot.MySQL,
+			"\t//kanna:conflict tenant_id,email\n\tUpsertAccounts(ctx context.Context, as []model.Account) error\n",
+			"repository.go:25:2: warning: UpsertAccounts: on MySQL, a conflict on (id) or (login) or (tenant_id, id) " +
+				"also updates the row\n" +
+				"  accounts has unique keys other than (tenant_id, email)\n" +
+				"  an insert writes id of a row whose ID is not zero"},
+		{"an upsert PostgreSQL meets by its key alone", snapshot.PostgreSQL,
+			"\tUpsertAccount(ctx context.Context, a model.Account) error\n", ""},
 		{"rows read back on MySQL", snapshot.MySQL,
 			"\tUpsertLines(ctx context.Context, lines []model.OrderLine) ([]model.OrderLine, error)\n",
 			at + "error: UpsertLines: MySQL has no RETURNING, so the rows of one statement cannot be read back\n" +

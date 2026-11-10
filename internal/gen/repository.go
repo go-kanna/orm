@@ -536,6 +536,9 @@ func (r repoReader) method(fn *types.Func, field *ast.Field, ts *ast.TypeSpec, f
 	if !diag.HasErrors(ds) {
 		ds = append(ds, r.writeRules(m)...)
 	}
+	if !diag.HasErrors(ds) {
+		ds = append(ds, r.otherKeys(m)...)
+	}
 	return m, append(cds, ds...)
 }
 
@@ -824,23 +827,42 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 		return []diag.Diag{errorf("(%s) is neither the primary key of %s nor one of its unique keys",
 			strings.Join(m.conflict, ", "), m.target.table)}
 	}
-	// MySQL updates on a conflict over any unique key, but for one the database assigns every column of.
-	var others []string
-	for _, k := range append([][]string{m.table.PrimaryKey}, m.table.UniqueKeys...) {
-		assigned := !slices.ContainsFunc(k, func(c string) bool {
-			i := slices.IndexFunc(m.table.Columns, func(col snapshot.Column) bool { return col.Name == c })
-			return i < 0 || !m.table.Columns[i].Assigned
-		})
-		if len(k) > 0 && !assigned && !sameColumns(k, m.conflict) {
-			others = append(others, "("+strings.Join(k, ", ")+")")
-		}
-	}
-	if r.s.Dialect == snapshot.MySQL && len(others) > 0 {
-		return []diag.Diag{diag.Warningf(m.pos, "%s: on MySQL, a conflict on %s also updates the row", m.name,
-			strings.Join(others, " or ")).WithHints(fmt.Sprintf("%s has unique keys other than (%s)", m.target.table,
-			strings.Join(m.conflict, ", ")))}
-	}
 	return nil
+}
+
+// otherKeys warns of m, an upsert on MySQL, which updates a row on a conflict over any unique key, of the keys besides
+// the one it meets its row by that its insert may conflict over: all but one holding that key, which meets the same
+// row, and one the database assigns every column of, as it does not a column the insert writes when the row gives it.
+func (r repoReader) otherKeys(m repoMethod) []diag.Diag {
+	if m.verb != verbUpsert || r.s.Dialect != snapshot.MySQL {
+		return nil
+	}
+	met := m.rowKey()
+	assigned := func(name string) bool {
+		i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
+		return i >= 0 && m.table.Columns[i].Assigned && !m.gives(name)
+	}
+	var others []string
+	written := false
+	for _, k := range append([][]string{m.table.PrimaryKey}, m.table.UniqueKeys...) {
+		holds := !slices.ContainsFunc(met, func(c string) bool { return !slices.Contains(k, c) })
+		if len(k) == 0 || holds || !slices.ContainsFunc(k, func(c string) bool { return !assigned(c) }) {
+			continue
+		}
+		others = append(others, "("+strings.Join(k, ", ")+")")
+		written = written || slices.ContainsFunc(k, m.gives)
+	}
+	if len(others) == 0 {
+		return nil
+	}
+	d := diag.Warningf(m.pos, "%s: on MySQL, a conflict on %s also updates the row", m.name,
+		strings.Join(others, " or ")).WithHints(fmt.Sprintf("%s has unique keys other than (%s)", m.target.table,
+		strings.Join(met, ", ")))
+	if given, _ := m.given(); written {
+		d = d.WithHints(fmt.Sprintf("an insert writes %s of a row whose %s is not zero", given.col.Name,
+			fieldPath(given)))
+	}
+	return []diag.Diag{d}
 }
 
 func sameColumns(a, b []string) bool {
