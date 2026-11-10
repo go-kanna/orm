@@ -1,6 +1,8 @@
 package stdlib_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/go-kanna/orm/stdlib"
@@ -33,5 +35,23 @@ func TestInTransaction(t *testing.T) {
 		if got := stdlib.InTransaction(tt.db); got != tt.want {
 			t.Errorf("InTransaction(%s) = %t, want %t", name, got, tt.want)
 		}
+	}
+}
+
+func TestMySQLScanError(t *testing.T) {
+	t.Parallel()
+
+	withoutParseTime := errors.New(`sql: Scan error on column index 3, name "placed_at": unsupported Scan, ` +
+		"storing driver.Value type []uint8 into type *time.Time")
+	if err := stdlib.MySQLScanError(withoutParseTime); !errors.Is(err, withoutParseTime) ||
+		!strings.Contains(err.Error(), "parseTime=true") {
+		t.Errorf("MySQLScanError(%v) = %v, want it told of parseTime=true", withoutParseTime, err)
+	}
+	other := errors.New("sql: no rows in result set")
+	if err := stdlib.MySQLScanError(other); err != other { //nolint:errorlint // the very error, unchanged
+		t.Errorf("MySQLScanError(%v) = %v, want it as it is", other, err)
+	}
+	if err := stdlib.MySQLScanError(nil); err != nil {
+		t.Errorf("MySQLScanError(nil) = %v", err)
 	}
 }
