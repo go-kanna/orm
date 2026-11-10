@@ -204,6 +204,40 @@ func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order
 	moduleCommand(t, dir, "vet", "-mod=mod", "./...")
 }
 
+// A function of the name of New written by hand that returns no repository is no constructor of it, and is told as a
+// name kanna-orm writes, as a type of that name is.
+func TestCommand_RepositoriesElsewhereNewOfAnotherResult(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct{ name, imports, fn, want string }{
+		{"another result", "", "func NewOrderRepository(s string) int { return len(s) }",
+			"NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
+		{"the interface", "import \"example.com/shop/repository\"\n\n",
+			"func NewOrderRepository(db DBTX) repository.OrderRepository { return newOrderRepository(db) }", ""},
+		{"an interface of the name elsewhere", "import repository \"example.com/shop/model\"\n\n",
+			"func NewOrderRepository(db DBTX) repository.OrderRepository { return nil }",
+			"NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, repositoryShop+"\n-- postgres/custom.go --\npackage postgres\n\n"+tt.imports+tt.fn+"\n")
+			describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+			args := []string{"-destination", "../postgres", "-driver", "database/sql"}
+			code, _, errOut := run(t, filepath.Join(dir, "repository"), args...)
+			if tt.want == "" {
+				if code != cli.ExitOK {
+					t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+				}
+				return
+			}
+			if code != cli.ExitFailure || !strings.Contains(errOut, tt.want) {
+				t.Fatalf("kanna-orm = %d, want %q\n%s", code, tt.want, errOut)
+			}
+		})
+	}
+}
+
 func TestCommand_RepositoriesWithoutRowReads(t *testing.T) {
 	t.Parallel()
 

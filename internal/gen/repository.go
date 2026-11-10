@@ -237,9 +237,9 @@ type repoReader struct {
 	local    bool
 	driver   driver
 	declared map[string]token.Position
-	// funcs names the functions the destination declares at its top level: a New of a repository among them is the
-	// repository's own constructor.
-	funcs map[string]bool
+	// funcs are the functions the destination declares at its top level: a New of a repository among them returning
+	// the repository is the repository's own constructor.
+	funcs map[string]handFunc
 	// calls are what the methods written by hand select on their receiver, by the type they are declared on: the
 	// helpers they call.
 	calls map[string]map[string]bool
@@ -316,7 +316,9 @@ func (r repoReader) repository(d decl.Repository) (repository, []diag.Diag) {
 	ts := d.Spec
 	pos := r.pkg.Fset.Position(ts.Name.Pos())
 	repo := repository{name: ts.Name.Name, pos: pos, iface: r.pkg.Types, local: r.local}
-	repo.publicConstructor = !r.funcs["New"+repo.name]
+	// A New of the repository's name that does not return it is told as any other name declared already.
+	own, ok := r.funcs["New"+repo.name]
+	repo.publicConstructor = !ok || !own.returns(repo)
 	names := []string{repo.implementation(), repo.constructor()}
 	if repo.publicConstructor {
 		names = append(names, "New"+repo.name)

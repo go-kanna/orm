@@ -210,6 +210,13 @@ func TestCommand_FlatNames(t *testing.T) {
 		{name: "a type of the constructor's name", archive: flatShopWithout() + "-- store/new.go --\npackage store\n\n" +
 			"type NewOrderRepository struct{}\n",
 			want: "NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
+		{name: "a function of the constructor's name returning something else", archive: flatShopWithout() +
+			"-- store/new.go --\npackage store\n\nfunc NewOrderRepository(s string) int { return len(s) }\n",
+			want: "NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
+		{name: "a constructor written by hand returning a pointer and an error", archive: flatShopWithout() +
+			"-- store/new.go --\npackage store\n\n" +
+			"func NewOrderRepository(db DBTX) (*OrderRepository, error) {\n\tvar r OrderRepository = newOrderRepository(db)\n" +
+			"\treturn &r, nil\n}\n"},
 		{name: "a constructor written in a test", archive: flatShopWithout() + "-- store/new_test.go --\npackage store\n\n" +
 			"func NewOrderRepository(db DBTX) OrderRepository { return newOrderRepository(db) }\n",
 			want: "NewOrderRepository is declared already, and kanna-orm writes it for OrderRepository"},
