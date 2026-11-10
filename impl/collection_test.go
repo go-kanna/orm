@@ -30,29 +30,29 @@ func TestRenderEach(t *testing.T) {
 	}{
 		{"has many", l.Where("quantity > ", 0).OrderBy("sku", false), impl.Postgres, byOrder,
 			[]string{"order_id", "line_no"}, []string{"sku"}, 1000,
-			`SELECT "orm_key"."orm_n", "orm_child"."sku" FROM unnest($1::int8[], $2::int8[]) AS "orm_key" ("orm_n", ` +
-				`"orm_k0") JOIN "order_lines" AS "orm_child" ON "orm_child"."order_id" = "orm_key"."orm_k0" ` +
+			`SELECT "orm_key"."orm_n", "order_lines"."sku" FROM unnest($1::int8[], $2::int8[]) AS "orm_key" ("orm_n", ` +
+				`"orm_k0") JOIN "order_lines" ON "order_lines"."order_id" = "orm_key"."orm_k0" ` +
 				`WHERE (quantity > $3) ORDER BY sku, order_id, line_no`,
 			[]any{[]int64{1000, 1001}, []int64{7, 8}, 0}},
 		{"a key of a type of a schema", l, impl.Postgres, impl.Batch{Table: "order_lines", ChildKeys: []string{"state"},
 			KeyTypes: []string{`public."State"`}}, nil, []string{"sku"}, 0,
-			`SELECT "orm_key"."orm_n", "orm_child"."sku" FROM unnest($1::int8[], $2::text[]::public."State"[]) AS ` +
-				`"orm_key" ("orm_n", "orm_k0") JOIN "order_lines" AS "orm_child" ON "orm_child"."state" = "orm_key"."orm_k0"`,
+			`SELECT "orm_key"."orm_n", "order_lines"."sku" FROM unnest($1::int8[], $2::text[]::public."State"[]) AS ` +
+				`"orm_key" ("orm_n", "orm_k0") JOIN "order_lines" ON "order_lines"."state" = "orm_key"."orm_k0"`,
 			[]any{[]int64{0, 1}, []int64{7, 8}}},
 		{"a page of has many", paged, impl.Postgres, byOrder, []string{"order_id", "line_no"},
 			[]string{"order_id", "line_no", "sku"}, 0,
-			`SELECT "orm_n", "order_id", "line_no", "sku" FROM (SELECT "orm_key"."orm_n", "orm_child"."order_id", ` +
-				`"orm_child"."line_no", "orm_child"."sku", ROW_NUMBER() OVER (PARTITION BY "orm_key"."orm_n" ORDER BY ` +
+			`SELECT "orm_n", "order_id", "line_no", "sku" FROM (SELECT "orm_key"."orm_n", "order_lines"."order_id", ` +
+				`"order_lines"."line_no", "order_lines"."sku", ROW_NUMBER() OVER (PARTITION BY "orm_key"."orm_n" ORDER BY ` +
 				`sku, order_id, line_no) AS "orm_rank" FROM unnest($1::int8[], $2::int8[]) AS "orm_key" ("orm_n", ` +
-				`"orm_k0") JOIN "order_lines" AS "orm_child" ON "orm_child"."order_id" = "orm_key"."orm_k0" ` +
+				`"orm_k0") JOIN "order_lines" ON "order_lines"."order_id" = "orm_key"."orm_k0" ` +
 				`WHERE (quantity > $3)) AS "orm_ranked" WHERE "orm_rank" > 1 AND "orm_rank" <= 3 ORDER BY "orm_rank"`,
 			[]any{[]int64{0, 1}, []int64{7, 8}, 0}},
 		{"a page of many to many on MySQL", paged, impl.MySQL, throughTags, []string{"name"}, []string{"name"}, 0,
-			"SELECT `orm_n`, `name` FROM (SELECT `orm_key`.`orm_n`, `orm_child`.`name`, ROW_NUMBER() OVER " +
+			"SELECT `orm_n`, `name` FROM (SELECT `orm_key`.`orm_n`, `tags`.`name`, ROW_NUMBER() OVER " +
 				"(PARTITION BY `orm_key`.`orm_n` ORDER BY sku, name) AS `orm_rank` FROM (VALUES ROW(?, ?), ROW(?, ?)) " +
 				"AS `orm_key` (`orm_n`, `orm_k0`) JOIN (SELECT `order_id` AS `orm_l_order_id`, `tag` AS `orm_l_tag` " +
-				"FROM `order_tags`) AS `orm_link` ON `orm_link`.`orm_l_order_id` = `orm_key`.`orm_k0` JOIN `tags` AS " +
-				"`orm_child` ON `orm_link`.`orm_l_tag` = `orm_child`.`name` WHERE (quantity > ?)) AS `orm_ranked` " +
+				"FROM `order_tags`) AS `orm_link` ON `orm_link`.`orm_l_order_id` = `orm_key`.`orm_k0` JOIN `tags` " +
+				"ON `orm_link`.`orm_l_tag` = `tags`.`name` WHERE (quantity > ?)) AS `orm_ranked` " +
 				"WHERE `orm_rank` > 1 AND `orm_rank` <= 3 ORDER BY `orm_rank`",
 			[]any{0, int64(7), 1, int64(8), 0}},
 	}
