@@ -176,6 +176,9 @@ does not compile before the first run. That does not stop the run: kanna-orm kno
 `go generate` can reach the two packages in either order. Code may also call a method that is generated before it is:
 errors saying only that a method the run generates is missing do not stop it.
 
+With two or more kanna generators, run them with [`go tool kanna gen`](https://github.com/go-kanna/kanna), which runs
+them in the order they need.
+
 ## The snapshot
 
 `describe` connects to the database and records, for each table, its columns, with their types, whether they may be
