@@ -62,16 +62,16 @@ func TestCommand_ChainedMistakes(t *testing.T) {
 	t.Parallel()
 
 	// The model is read from export data, which keeps the line of a field but not its column.
-	fieldOfNoColumn := "../model/model.go:4:1: error: Order.ID: [16]byte is neither a column nor a relation\n" +
+	fieldOfNoColumn := "../model/model.go:4:1: error: Order.ID: [8]byte is neither a column nor a relation\n" +
 		`  hold the column in a type with a Scan method, or leave the field out with orm:"-"` + "\n"
 	_, queries, _ := strings.Cut(chainedShop, "-- postgres/queries.sql --\n")
 	closeQuery, _ := sqlfile.Parse("queries.sql", []byte(queries))
 	for _, tt := range []struct {
 		name, before, after, dir, want string
 	}{
-		{name: "a field of no column, which a relation is loaded by", before: "ID    int64", after: "ID    [16]byte",
+		{name: "a field of no column, which a relation is loaded by", before: "ID    int64", after: "ID    [8]byte",
 			dir: "scopes", want: fieldOfNoColumn},
-		{name: "a field of no column, which a parameter stands for", before: "ID    int64", after: "ID    [16]byte",
+		{name: "a field of no column, which a parameter stands for", before: "ID    int64", after: "ID    [8]byte",
 			dir: "repository", want: fieldOfNoColumn},
 		{name: "a constructor of the repository declared already", before: "-- postgres/queries.sql --",
 			after: "-- postgres/new.go --\npackage postgres\n\ntype NewOrderRepository struct{}\n" +

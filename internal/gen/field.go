@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"go/version"
 	"reflect"
 	"slices"
 	"strings"
@@ -284,10 +285,47 @@ func isTime(t types.Type) bool {
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "time" && n.Obj().Name() == "Time"
 }
 
-// isUUID reports whether t is the uuid.UUID of the standard library, from Go 1.27 on, which pgx and database/sql read
-// a uuid into, though it has no Scan method.
+// isUUID reports whether t is made of [16]byte, as the uuid.UUID of the standard library is, which pgx and
+// database/sql read a uuid into, though it has no Scan method: uuid.UUID itself, or a type declared of it, such as
+// type OrderID uuid.UUID, which go/types cannot tell from one declared of [16]byte.
 func isUUID(t types.Type) bool {
+	a, ok := t.Underlying().(*types.Array)
+	return ok && a.Len() == 16 && isBasic(a.Elem(), types.Byte)
+}
+
+// isStdUUID reports whether t is the uuid.UUID of the standard library itself.
+func isStdUUID(t types.Type) bool {
 	return isNamed(t, "uuid", "UUID")
+}
+
+// uuidsBeforeGo127 reports each column of the model of sc held in a type made of [16]byte but uuid.UUID, when the
+// module of pkg declares a go version before 1.27: database/sql reads a uuid into such a type from Go 1.27 on, and a
+// module of an earlier version may be built by an earlier toolchain. uuid.UUID itself is there from Go 1.27 on alone.
+func uuidsBeforeGo127(pkg *packages.Package, sc scope, columns []column) []diag.Diag {
+	if pkg.Module != nil && pkg.Module.GoVersion != "" && version.Compare("go"+pkg.Module.GoVersion, "go1.27") >= 0 {
+		return nil
+	}
+	var ds []diag.Diag
+	for _, c := range columns {
+		t := c.typ
+		if p, ok := t.Underlying().(*types.Pointer); ok {
+			t = p.Elem()
+		}
+		if s, ok := t.Underlying().(*types.Slice); ok {
+			t = s.Elem()
+			if p, ok := t.Underlying().(*types.Pointer); ok {
+				t = p.Elem()
+			}
+		}
+		if !isUUID(t) || isStdUUID(t) {
+			continue
+		}
+		typ := types.TypeString(t, relativeTo(pkg.Types))
+		ds = append(ds, diag.Errorf(c.pos, "%s.%s: database/sql reads a uuid into %s from Go 1.27 on, and the module "+
+			"declares an earlier go version", sc.model.Obj().Name(), strings.Join(c.path, "."), typ).
+			WithHints("declare go 1.27 or later in go.mod"))
+	}
+	return ds
 }
 
 // scanner reports whether a *t is a sql.Scanner.

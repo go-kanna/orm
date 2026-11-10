@@ -43,6 +43,12 @@ func TestMain(m *testing.M) {
 // requires this module as it is checked out, and returns its directory.
 func writeModule(t *testing.T, archive string) string {
 	t.Helper()
+	return writeModuleGo(t, archive, "1.26.0")
+}
+
+// writeModuleGo is writeModule of a module declaring the go version goVersion.
+func writeModuleGo(t *testing.T, archive, goVersion string) string {
+	t.Helper()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -50,7 +56,7 @@ func writeModule(t *testing.T, archive string) string {
 	}
 	dir := t.TempDir()
 	files := txtar.Parse([]byte(archive)).Files
-	files = append(files, txtar.File{Name: "go.mod", Data: []byte("module example.com/shop\n\ngo 1.26.0\n\n" +
+	files = append(files, txtar.File{Name: "go.mod", Data: []byte("module example.com/shop\n\ngo " + goVersion + "\n\n" +
 		"require github.com/go-kanna/orm v0.0.0\n\nreplace github.com/go-kanna/orm => " + root + "\n")})
 	for _, f := range files {
 		path := filepath.Join(dir, filepath.FromSlash(f.Name))

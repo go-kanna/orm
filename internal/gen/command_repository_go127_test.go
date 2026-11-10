@@ -10,25 +10,25 @@ import (
 
 	"github.com/go-kanna/internal/cli"
 	"github.com/go-kanna/internal/packages"
-
-	"github.com/go-kanna/orm/internal/snapshot"
 )
 
-// uuidShop declares orders and their lines, keyed by the uuid.UUID of the standard library, the scope types
-// //kanna:scopes implies of them, and a repository of them, whose Delete tells its table by table= alone.
+// uuidShop declares orders and their lines, keyed by a type declared of the uuid.UUID of the standard library, the
+// scope types //kanna:scopes implies of them, and a repository of them, whose Delete tells its table by table= alone.
 const uuidShop = `
 -- model/model.go --
 package model
 
 import "uuid"
 
+type OrderID uuid.UUID
+
 type Order struct {
-	ID    uuid.UUID
+	ID    OrderID
 	Lines []OrderLine
 }
 
 type OrderLine struct {
-	OrderID uuid.UUID
+	OrderID OrderID
 	SKU     string
 }
 -- scopes/scopes.go --
@@ -40,7 +40,6 @@ package repository
 
 import (
 	"context"
-	"uuid"
 
 	"example.com/shop/model"
 	"example.com/shop/scopes"
@@ -48,45 +47,18 @@ import (
 
 //kanna:repository table=orders
 type OrderRepository interface {
-	Get(ctx context.Context, id uuid.UUID, s ...scopes.Order) (model.Order, error)
+	Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (model.Order, error)
 	List(ctx context.Context, s ...scopes.Order) ([]model.Order, error)
 	Insert(ctx context.Context, o model.Order) error
 	InsertLines(ctx context.Context, lines []model.OrderLine) error
-	Delete(ctx context.Context, id uuid.UUID) error
+	Delete(ctx context.Context, id model.OrderID) error
 }
 `
-
-// describeUUIDShop writes the snapshot of the tables uuidShop reads into the module at dir.
-func describeUUIDShop(t *testing.T, dir string) {
-	t.Helper()
-
-	s := snapshot.Snapshot{
-		Dialect: snapshot.PostgreSQL,
-		Tables: map[string]snapshot.Table{
-			"orders": {
-				Columns:    []snapshot.Column{{Name: "id", Type: "uuid", NotNull: true, Default: true}},
-				PrimaryKey: []string{"id"},
-			},
-			"order_lines": {
-				Columns: []snapshot.Column{
-					{Name: "order_id", Type: "uuid", NotNull: true},
-					{Name: "sku", Type: "text", NotNull: true},
-				},
-				PrimaryKey: []string{"order_id", "sku"},
-				ForeignKeys: []snapshot.ForeignKey{{Columns: []string{"order_id"}, References: "orders",
-					ReferencedColumns: []string{"id"}}},
-			},
-		},
-	}
-	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestCommand_RepositoriesOfUUIDs(t *testing.T) {
 	t.Parallel()
 
-	dir := writeModule(t, uuidShop)
+	dir := writeModuleGo(t, uuidShop, "1.27.0")
 	describeUUIDShop(t, dir)
 	if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
 		t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
@@ -115,5 +87,24 @@ func TestCommand_RepositoriesOfUUIDs(t *testing.T) {
 	}
 	if strings.Contains(string(src), ") IDLt(") {
 		t.Error("the scope types have the method IDLt")
+	}
+	// A cursor holds an OrderID as a uuid.UUID, so that it encodes as text.
+	for _, conv := range []string{"`id`: uuid.UUID(row.ID),", "`id`: (*uuid.UUID)(&row.ID),"} {
+		if !strings.Contains(string(src), conv) {
+			t.Errorf("the scope types do not convert the key of a cursor: no %s", conv)
+		}
+	}
+}
+
+func TestCommand_UUIDsBeforeGo127(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, uuidShop)
+	describeUUIDShop(t, dir)
+	code, _, errOut := run(t, filepath.Join(dir, "scopes"))
+	want := "../model/model.go:8:2: error: Order.ID: database/sql reads a uuid into model.OrderID from Go 1.27 on, " +
+		"and the module declares an earlier go version\n  declare go 1.27 or later in go.mod\n"
+	if code != cli.ExitFailure || !strings.Contains(errOut, want) {
+		t.Errorf("kanna-orm in scopes = %d\n%s\nwant it to report\n%s", code, errOut, want)
 	}
 }
