@@ -479,6 +479,10 @@ type need be, and a column held in a slice other than `[]byte`, an array, has no
 column that may be NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written;
 `StatusIsNull` says what it would have meant.
 
+On PostgreSQL, `StatusIn` and `StatusNotIn` send their values as one array, as in `status = ANY($1)`. pgx cannot write
+an array of a type it does not know, so for a column of a type outside `pg_catalog`, such as an enum type, the array
+goes as `text[]` and is cast to the column's type: `status = ANY($1::text[]::public.order_status[])`.
+
 A comparison with NULL is neither true nor false, as in SQL, so a row whose column is NULL matches no comparison but
 `IsNull`: `MemoNe(v)`, `MemoNotIn(vs...)`, and `Not` of `MemoEq(v)` all leave it out. Keep it with `Or`:
 
@@ -1300,6 +1304,8 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
   placeholders than one can take. Give the constructor a transaction to have them stand or fall together.
 - MySQL has no `RETURNING`, so there a result other than `error` alone stops generation.
 - PostgreSQL rejects an upsert in which two rows have the same key.
+- On PostgreSQL, each array is cast to the type of its column. For a column of a type outside `pg_catalog`, such as an
+  enum type, the array goes as `text[]` first, as in `$1::text[]::public.order_status[]`, so pgx need not know the type.
 - `unnest` flattens an array of arrays, so on PostgreSQL a table with an array column stops generation; write its rows
   one by one, or [copy them](#copying-many-rows).
 
@@ -1328,8 +1334,10 @@ own, which an `Insert` of many rows never turns into.
 - Of no rows, it runs nothing and returns 0.
 - Its error goes through [`mapError`](#mapping-errors), with the method's operation, and the hooks see the COPY
   statement with no `Args`.
-- pgx writes each value in the binary format, so a column of a type pgx does not know, as an enum type of PostgreSQL,
-  needs the type registered on the connection first, by `Conn.LoadType` and `pgtype.Map.RegisterType`.
+- pgx writes each value in the binary format. A string of a type pgx does not know goes as its text, which is also
+  the binary format of an enum type, so an enum held as a string needs no type registered. A column of another type
+  pgx does not know, whose binary format differs from its text, needs the type registered on the connection first, by
+  `Conn.LoadType` and `pgtype.Map.RegisterType`.
 - It needs pgx: on MySQL, or with `-driver database/sql`, generation stops at it. Write the rows by an `Insert` of many
   rows there.
 
@@ -1890,6 +1898,8 @@ ORDER BY 1`
   `NULL`. On MySQL, it is written with a `?` for each of its values when the method runs. With none, right between the
   parentheses of `IN`, it is the empty set, a subquery of no rows: `IN (:ids)` matches no row, and `NOT IN (:ids)`
   every row, as PostgreSQL's `= ANY` and `<> ALL` do. Anywhere else, as in `FIELD(id, :ids)`, it is `NULL`.
+- pgx cannot write an array of a type it does not know, such as an enum type, and kanna-orm does not rewrite your SQL,
+  so cast the parameter from `text[]` yourself: `state = ANY(:states::text[]::ticket_state[])`.
 
 ### Scopes on a query
 

@@ -428,8 +428,12 @@ func (e emitter) column(c column) {
 	if !k.array {
 		sc = e.f.Scope()
 		s, vs := sc.Name("s"), sc.Name("vs")
-		in, notIn := e.where(s, goString(sql+" = ANY("), vs, goString(")")),
-			e.where(s, goString(sql+" <> ALL("), vs, goString(")"))
+		closing := ")"
+		if outsideCatalog(c.col.Type) {
+			closing = "::" + arrayCast(c.col.Type) + ")"
+		}
+		in, notIn := e.where(s, goString(sql+" = ANY("), vs, goString(closing)),
+			e.where(s, goString(sql+" <> ALL("), vs, goString(closing))
 		// In of no values is the empty set, which matches no row, so that Not of it matches every row: PostgreSQL
 		// is given an empty array, as a nil slice would go as NULL, and MySQL a subquery of no rows.
 		none := fmt.Sprintf("if %[1]s == nil {\n%[1]s = []%[2]s{}\n}\n", vs, typ)

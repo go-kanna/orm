@@ -406,3 +406,19 @@ func castType(dbType string) string {
 	}
 	return dbType
 }
+
+// arrayCast is the cast of a parameter holding the values of a column of dbType as an array on PostgreSQL. A type
+// outside pg_catalog, which describe names by its schema, may be one pgx cannot write, as an enum: its values go as
+// text, which PostgreSQL reads as the type, as the keys a relation is loaded by do.
+func arrayCast(dbType string) string {
+	cast := castType(dbType) + "[]"
+	if outsideCatalog(dbType) {
+		cast = "text[]::" + cast
+	}
+	return cast
+}
+
+// outsideCatalog reports whether dbType, a type of PostgreSQL, is one outside pg_catalog, named by its schema.
+func outsideCatalog(dbType string) bool {
+	return strings.Contains(dbType, ".")
+}

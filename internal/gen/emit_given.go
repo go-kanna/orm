@@ -46,7 +46,7 @@ func (e repoEmitter) insertText(m repoMethod, cols []column) string {
 	case len(cols) > 0 && m.many:
 		casts := make([]string, 0, len(cols))
 		for _, c := range cols {
-			casts = append(casts, fmt.Sprintf("$%d::%s[]", len(casts)+1, castType(c.col.Type)))
+			casts = append(casts, fmt.Sprintf("$%d::%s", len(casts)+1, arrayCast(c.col.Type)))
 		}
 		fmt.Fprintf(&b, "SELECT * FROM unnest(%s)", //nolint:unqueryvet // unnest gives the columns listed
 			strings.Join(casts, ", "))
