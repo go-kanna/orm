@@ -828,7 +828,7 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(users.id), name = new.name
 
 キーには NULL になりうるカラムも含められますが、SQL は 2 つの NULL を等しいとみなさないので、そこが NULL の行はどの行とも突き合いません。そのような行の Upsert は毎回行を挿入し、NULL として書き込む `nullzero` のフィールドのゼロ値でも同じです。PostgreSQL では、`NULLS NOT DISTINCT` で宣言した一意キーなら行と突き合います。それ以外では、行と突き合わせるキーのカラムを NOT NULL にしてください。
 
-MySQL は、Upsert が行を突き合わせるキーに限らず、どの一意キーの競合でも行を更新します。そのため、ほかにも一意キーを持つテーブルの Upsert には、キーを指定していても、主キーで突き合わせていても、警告が出ます。insert が主キーを書くとき（`ID` が 0 でない行の AUTO_INCREMENT の `id` など）は、主キーもほかの一意キーに数えます。突き合わせるキーのカラムをすべて含むキーは、別の行と競合しないので数えません。PostgreSQL では、ほかのキーで競合すると一意制約の違反のエラーになり、何も書きません。
+MySQL は、Upsert が行を突き合わせるキーに限らず、どの一意キーの競合でも行を更新します。そのため、ほかにも一意キーを持つテーブルの Upsert には、キーを指定していても、主キーで突き合わせていても、警告が出ます。insert が主キーを書くとき（`ID` が 0 でない行の AUTO_INCREMENT の `id` など）は、主キーもほかの一意キーに数えます。突き合わせるキーのカラムをすべて含むキーは、別の行と競合しないので数えません。生成カラム（`GENERATED ALWAYS AS`）を含むキーは数えます。その値は insert が書くカラムから計算されるからです。PostgreSQL では、ほかのキーで競合すると一意制約の違反のエラーになり、何も書きません。
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (id) or (tenant_id, login) also updates the row

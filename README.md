@@ -1135,8 +1135,9 @@ key, hold its columns NOT NULL.
 MySQL updates a row on a conflict over any unique key, not only the one an upsert meets its row by, so an upsert of a
 table with other unique keys gets a warning, whether it names its key or meets the row by the primary key. The primary
 key is among them when the insert writes it, as it writes the AUTO_INCREMENT `id` of a row whose `ID` is not zero; a key
-holding every column of the one met is not, as it meets no other row. On PostgreSQL, a conflict over another key returns
-a unique violation and writes nothing.
+holding every column of the one met is not, as it meets no other row. A key of a generated column is among them, as the
+column's value comes of those the insert writes. On PostgreSQL, a conflict over another key returns a unique violation
+and writes nothing.
 
 ```console
 ./user_repository.go:14:2: warning: UpsertByEmail: on MySQL, a conflict on (id) or (tenant_id, login) also updates the row

@@ -856,7 +856,8 @@ func (r repoReader) conflict(m *repoMethod, d directive.Directive) []diag.Diag {
 
 // otherKeys warns of m, an upsert on MySQL, which updates a row on a conflict over any unique key, of the keys besides
 // the one it meets its row by that its insert may conflict over: all but one holding that key, which meets the same
-// row, and one the database assigns every column of, as it does not a column the insert writes when the row gives it.
+// row, and one of AUTO_INCREMENT columns alone, as the database assigns them a value no other row has, but for one the
+// insert writes when the row gives it. A generated column counts, as its value comes of those the insert writes.
 func (r repoReader) otherKeys(m repoMethod) []diag.Diag {
 	if m.verb != verbUpsert || r.s.Dialect != snapshot.MySQL {
 		return nil
@@ -864,7 +865,7 @@ func (r repoReader) otherKeys(m repoMethod) []diag.Diag {
 	met := m.rowKey()
 	assigned := func(name string) bool {
 		i := slices.IndexFunc(m.table.Columns, func(c snapshot.Column) bool { return c.Name == name })
-		return i >= 0 && m.table.Columns[i].Assigned && !m.gives(name)
+		return i >= 0 && m.table.Columns[i].Assigned && m.table.Columns[i].Writable && !m.gives(name)
 	}
 	var others []string
 	written := false
