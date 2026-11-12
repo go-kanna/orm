@@ -22,7 +22,7 @@ const findMethods = `
 `
 
 const findQuery = `-- query: FindCustom
-SELECT id, record_key, owner_id, note, stamp, origin FROM records WHERE record_key = :recordKey;
+SELECT id, record_key, owner_id, note, stamp, origin, version FROM records WHERE record_key = :recordKey;
 
 -- query: FindKeyOf
 SELECT record_key FROM records WHERE id = :id;
@@ -110,6 +110,7 @@ func describeFind(t *testing.T, dir string, dialect snapshot.Dialect) {
 				{Name: "note", Type: "text", Nullable: true},
 				{Name: "stamp", Type: "bigint", NotNull: true},
 				{Name: "origin", Type: "text", NotNull: true},
+				{Name: "version", Type: "bigint", NotNull: true},
 			},
 		},
 		"example.com/shop/impl.FindKeyOf": {
