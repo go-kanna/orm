@@ -722,6 +722,11 @@ func (s Order) Tagged(tags ...string) Order {
 	return Order{kScope(kRuntime(s.q).Where(`id IN (SELECT order_id FROM order_tags WHERE tag_id IN (`, impl.InList(tags), `))`))}
 }
 
+// Except narrows the scope as order_scopes.sql writes it.
+func (s Order) Except(ids ...int64) Order {
+	return Order{kScope(kRuntime(s.q).Where(`id NOT IN (`, impl.InList(ids), `)`))}
+}
+
 // Limit keeps the first n rows.
 func (s Order) Limit(n int) Order {
 	return Order{kScope(kRuntime(s.q).Limit(n))}

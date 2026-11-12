@@ -32,3 +32,14 @@ WHERE o.placed_at >= :since;
 SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
 FROM orders o
 CROSS JOIN (WITH RECURSIVE n (i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 10) SELECT a.i FROM n a, n b, n c) AS r;
+
+-- query: CustomersOf
+SELECT customer_id FROM orders WHERE id = ANY(:ids) ORDER BY id;
+
+-- query: CustomersNotOf
+SELECT customer_id FROM orders WHERE id <> ALL(:ids) ORDER BY id;
+
+-- query: ListOthers
+SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
+FROM orders o
+WHERE o.id <> ALL(:ids);

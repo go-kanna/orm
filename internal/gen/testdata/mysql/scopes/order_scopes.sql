@@ -6,3 +6,6 @@ status <> 'closed';
 
 -- scope: Order.Tagged(tags ...string)
 id IN (SELECT order_id FROM order_tags WHERE tag_id IN (:tags))
+
+-- scope: Order.Except(ids ...int64)
+id NOT IN (:ids)
