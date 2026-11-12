@@ -467,9 +467,9 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		e.printf("%[1]s, %[2]s := %[3]s\nif %[2]s != nil {\nreturn nil, %[4]s\n}\nreturn %[1]s, nil\n", rows, err, read,
 			sig.mapped(err))
 	case verbCount, verbExists:
-		query, typ, zero := "`SELECT count(*) FROM "+table+"`+"+rd+".Where()", "int64", "0"
+		query, typ, zero := goString("SELECT count(*) FROM "+table)+"+"+rd+".Where()", "int64", "0"
 		if m.verb == verbExists {
-			query, typ, zero = "`SELECT EXISTS (SELECT 1 FROM "+table+"`+"+rd+".Where()+`)`", "bool", "false"
+			query, typ, zero = goString("SELECT EXISTS (SELECT 1 FROM "+table)+"+"+rd+".Where()+`)`", "bool", "false"
 		}
 		conditionsOnly(zero + ", ")
 		render(zero + ", ")
@@ -492,8 +492,9 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 		res := e.execResult(sc)
 		wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " +
 			err + ")")
-		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, `DELETE FROM %[6]s`+%[7]s.Where(), %[7]s.Args()...)\n"+
-			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, table, rd, "", wrap)
+		e.printf("%[1]s, %[2]s := %[3]s.db.%[4]s(%[5]s, %[6]s+%[7]s.Where(), %[7]s.Args()...)\n"+
+			"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", res, err, recv, e.exec, sig.ctx, goString("DELETE FROM "+table), rd, "",
+			wrap)
 		affected := e.rowsAffected(sc, res, err, "", wrap)
 		e.printf("if %s == 0 {\nreturn %s\n}\nreturn nil\n", affected, notFound())
 	case verbInsert, verbUpdate, verbUpsert, verbCopy: // method writes them
