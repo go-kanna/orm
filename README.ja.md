@@ -718,7 +718,7 @@ type TodoRepository interface {
 - uuid しか受け取らないメソッドからはテーブルが決まりません。`Delete` は `TodoRepository` の名前の `todos` を、`Get` は戻り値のテーブルを読み書きします。
 - uuid には比較できる順序がないので、そのカラムには `Eq`、`Ne`、`In`、`NotIn`、`Asc`、`Desc` は生成されますが、`Lt` も `Between` も生成されません。それでもページは uuid を基準に行の続きから読み込めて、カーソルは uuid をテキストとして保持します。
 - デフォルトが `uuidv7()` のカラムを、自動採番の対象として自動判定はしません。`orm:",default"` がなければ、insert はゼロの UUID もそのまま書き込みます。Go 側で `uuid.NewV7()` を使って ID を与えるか、フィールドに `orm:",default"` を指定して DB のデフォルト値を使ってください。
-- MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` も、それを元に宣言した型も受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。
+- MySQL に `uuid` 型はなく、kanna-orm は `binary(16)` や `char(36)` に対する `uuid.UUID` も、それを元に宣言した型も受け付けません。`[]byte`、string、`Scan` メソッドと `Value` メソッドを持つ独自の型のいずれかで保持してください。kanna-value の値オブジェクトは中に持つ値の型で列と照らすので、`uuid.UUID` を持つ値オブジェクトもこれらの列には使えません。
 
 `uuid.UUID` を元に宣言した型でも uuid を保持できます。あるテーブルのキーを、別のテーブルのキーの代わりに渡すことを型で防げます:
 

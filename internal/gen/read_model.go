@@ -131,7 +131,8 @@ func (r repoReader) driverReads(repos []repository, models map[string]readModel)
 			}
 			ds = append(ds, diag.Errorf(c.pos, "%s.%s: the column %s is %s, which %s reads into no %s",
 				model.Obj().Name(), strings.Join(c.path, "."), c.col.Name, c.col.Type, r.driver, typ).WithHints(
-				"declare it as "+want+", or as a type of your own with Scan and Value methods"))
+				"declare it as "+want+", or as a type of your own with Scan and Value methods").
+				WithHints(valueHints(c.typ, (*types.Package).Name)...))
 		}
 	}
 	for _, repo := range repos {

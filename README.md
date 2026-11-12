@@ -946,7 +946,8 @@ type TodoRepository interface {
   writes the model's ID, the zero UUID included. Either give each row its ID in Go with `uuid.NewV7()`, or tag the
   field with `orm:",default"` to use the database's default.
 - MySQL has no `uuid` type, and kanna-orm does not take `uuid.UUID`, or a type declared of it, for a `binary(16)` or a
-  `char(36)`: hold one in a `[]byte`, a string, or a type of your own with `Scan` and `Value` methods.
+  `char(36)`: hold one in a `[]byte`, a string, or a type of your own with `Scan` and `Value` methods. A value type of
+  kanna-value is checked by the value it holds, so one holding a `uuid.UUID` is not taken for these columns either.
 
 A type declared of `uuid.UUID` holds a uuid as well, so that the key of one table is not passed for that of another:
 
