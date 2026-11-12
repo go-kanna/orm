@@ -152,11 +152,13 @@ func TestFields_Mistakes(t *testing.T) {
 			"model.go:11:1: error: Order.Base.ID: orders.id is held by Order.ID already\n" +
 				`  leave one of them out with orm:"-"`},
 		{"a column that may be NULL in a string", "\tNote string\n", "",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a string cannot hold\n  declare it as *string, or tag it orm:\",nullzero\" to read NULL as the empty string"},
+			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a string cannot hold\n" +
+				"  declare it as *string, or tag it orm:\",nullzero\" to read NULL as the empty string"},
 		{"a column that may be NULL in an int64", "\tNote int64\n", "",
 			"model.go:8:1: error: Order.Note: orders.note may be NULL, which an int64 cannot hold\n  declare it as *int64"},
 		{"a column that may be NULL in a type of the model's package", "\tNote Note\n", "type Note string\n",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a Note cannot hold\n  declare it as *Note, or tag it orm:\",nullzero\" to read NULL as the empty string"},
+			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a Note cannot hold\n" +
+				"  declare it as *Note, or tag it orm:\",nullzero\" to read NULL as the empty string"},
 		{"a column that may be NULL in a type of another package", "\tNote time.Time\n", "",
 			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a time.Time cannot hold\n" +
 				"  declare it as *time.Time"},
