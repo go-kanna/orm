@@ -65,6 +65,11 @@ type Account struct {
 	Email    string
 	Login    string
 }
+
+type Member struct {
+	Code  string
+	Email string
+}
 -- scopes/scopes.go --
 package scopes
 
@@ -96,11 +101,16 @@ type Session struct{ q scope.Of[model.Session] }
 
 //kanna:scope table=accounts
 type Account struct{ q scope.Of[model.Account] }
+
+//kanna:scope table=members
+type Member struct{ q scope.Of[model.Member] }
 `
 
 // repositoryTables are the tables of repositoryModule.
 func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 	assigned := snapshot.Column{Name: "id", Type: "int8", NotNull: true, Assigned: true}
+	// On MySQL, a column the database assigns that is not generated is AUTO_INCREMENT, which an insert may write.
+	assigned.Writable = d == snapshot.MySQL
 	return snapshot.Snapshot{Dialect: d, Tables: map[string]snapshot.Table{
 		"orders": {
 			Columns:    append([]snapshot.Column{assigned}, columns("customer_id", "number", "status", "placed_at")...),
@@ -132,6 +142,13 @@ func repositoryTables(d snapshot.Dialect) snapshot.Snapshot {
 			Columns: append([]snapshot.Column{{Name: "id", Type: "bigint", NotNull: true, Assigned: true,
 				Writable: true}}, columns("tenant_id", "email", "login")...),
 			PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"tenant_id", "email"}, {"login"}, {"tenant_id", "id"}},
+		},
+		// members has a generated email_lower, which comes of the email an insert writes.
+		"members": {
+			Columns: []snapshot.Column{{Name: "id", Type: "bigint", NotNull: true, Assigned: true, Writable: true},
+				{Name: "code", Type: "varchar(64)", NotNull: true}, {Name: "email", Type: "varchar(255)", NotNull: true},
+				{Name: "email_lower", Type: "varchar(255)", Assigned: true}},
+			PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"code"}, {"email_lower"}},
 		},
 		// audits has no scope type.
 		"audits": {Columns: columns("message")},
@@ -422,8 +439,15 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"repository.go:24:2: error: InsertUser: //kanna:conflict is for an Upsert"},
 		{"a conflict MySQL meets on another key too", snapshot.MySQL,
 			"\t//kanna:conflict tenant_id,email\n\tUpsertUser(ctx context.Context, u model.User) error\n",
-			"repository.go:25:2: warning: UpsertUser: on MySQL, a conflict on (tenant_id, login) also updates the row\n" +
-				"  users has unique keys other than (tenant_id, email)"},
+			"repository.go:25:2: warning: UpsertUser: on MySQL, a conflict on (id) or (tenant_id, login) also updates " +
+				"the row\n" +
+				"  users has unique keys other than (tenant_id, email)\n" +
+				"  an insert writes id of a row whose ID is not zero"},
+		// The insert never writes id, which model.Member has no field for, but writes the email email_lower comes of.
+		{"a conflict MySQL meets on a key of a generated column too", snapshot.MySQL,
+			"\t//kanna:conflict code\n\tUpsertMember(ctx context.Context, m model.Member) error\n",
+			"repository.go:25:2: warning: UpsertMember: on MySQL, a conflict on (email_lower) also updates the row\n" +
+				"  members has unique keys other than (code)"},
 		// (tenant_id, id) holds the primary key, so a conflict on it meets the row the primary key does.
 		{"an upsert MySQL meets by its primary key and on other keys too", snapshot.MySQL,
 			"\tUpsertAccount(ctx context.Context, a model.Account) error\n",
