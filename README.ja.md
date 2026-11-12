@@ -375,6 +375,8 @@ Memo string `orm:"note,nullzero"`
 
 メソッドはフィールドの型を受け取ります。`StatusEq` は `model.OrderStatus` を受け取り、値オブジェクトは、database/sql が送るのと同じように `Value` メソッドを通してデータベースに渡ります。パターンで照合するメソッドは string を受け取ります。パターンはその型の値でなくてよいからです。`[]byte` 以外のスライスで保持されるカラム、つまり配列には、`In` も `NotIn` もありません。NULL になりうるカラムの比較メソッドは、ポインタではなく値を受け取ります。何にもマッチしない `= NULL` を書けないようにするためです。そう書いて表したかったことは `StatusIsNull` で表せます。
 
+PostgreSQL では、`StatusIn` と `StatusNotIn` は値を 1 つの配列で送ります（`status = ANY($1)`）。pgx は知らない型の配列を書けないので、enum 型のように `pg_catalog` の外の型のカラムでは、配列を `text[]` として送り、カラムの型にキャストします（`status = ANY($1::text[]::public.order_status[])`）。
+
 SQL と同じく、NULL との比較は真にも偽にもならないので、カラムが NULL の行は `IsNull` 以外の比較に一致しません。`MemoNe(v)`、`MemoNotIn(vs...)`、`MemoEq(v)` の `Not` は、どれも NULL の行を含みません。含めるなら `Or` を使います:
 
 ```go
@@ -960,6 +962,7 @@ SELECT * FROM unnest($1::uuid[], $2::text[], $3::int[])
 - MySQL では、行を `VALUES (?, ?, ?), (?, ?, ?), ...` で送り、1 つの文に入るプレースホルダの数を超える場合は複数の文に分割します。すべて成功するかすべて失敗するかにしたい場合は、コンストラクタにトランザクションを渡してください。
 - MySQL には `RETURNING` がないので、MySQL では `error` だけを返す形以外は生成を止めます。
 - PostgreSQL は、2 つの行が同じキーを持つ upsert を拒否します。
+- PostgreSQL では、各配列をそのカラムの型にキャストします。enum 型のように `pg_catalog` の外の型のカラムでは、`$1::text[]::public.order_status[]` のように配列をいったん `text[]` として送るので、pgx がその型を知らなくても書けます。
 - `unnest` は配列の配列を平坦にするので、PostgreSQL では配列カラムを持つテーブルは生成を止めます。行を 1 つずつ書き込むか、[COPY](#複数行の-copy) してください。
 
 ### 複数行の COPY
@@ -981,7 +984,7 @@ COPY には `RETURNING` も `ON CONFLICT` もなく、行単位のセキュリ�
 - `unnest` では書けない配列も、ほかの値と同じように書き込みます。
 - 行がなければ何も実行せず、0 を返します。
 - エラーは、そのメソッドの操作とともに [`mapError`](#エラーの対応づけ) を通ります。フックには、`Args` のない COPY の文として見えます。
-- pgx は値をバイナリ形式で書くので、PostgreSQL の enum 型のように pgx が知らない型のカラムは、`Conn.LoadType` と `pgtype.Map.RegisterType` で先に接続へ型を登録する必要があります。
+- pgx は値をバイナリ形式で書きます。pgx が知らない型でも、string で持つ値はそのテキストのまま送り、enum 型のバイナリ形式はテキストと同じなので、string で持つ enum は型を登録しなくても書けます。pgx が知らない型のうち、バイナリ形式がテキストと違う型のカラムは、`Conn.LoadType` と `pgtype.Map.RegisterType` で先に接続へ型を登録する必要があります。
 - pgx が必要です。MySQL や `-driver database/sql` では、生成を止めます。そこでは複数行の `Insert` で書き込んでください。
 
 kanna-orm が `Copy` か、手で書いた `Copy` が呼ぶヘルパーを書くパッケージは、`DBTX` を `kpgx.CopyDBTX` として宣言します。`CopyFrom` を持つランタイムの `DBTX` で、`*pgxpool.Pool`、`*pgx.Conn`、`pgx.Tx` はどれも持っているので、COPY できない接続はコンパイルで止まります。注文を複製する `CopyOrder` のように、自分で書いてヘルパーを呼ばない `Copy...` のメソッドは `DBTX` を変えません。`r.db.CopyFrom` を自分で呼ぶには、kanna-orm が書く `Copy` を宣言してください。そのようなパッケージの各 repository の `Bind` は、`Bind(db kpgx.CopyDBTX) Order` のようにそれを受け取るか、`DBTX()` がそれを返すトランザクションを受け取ります。COPY できないものを受け取る `Bind` では、生成を止めます。DI では、`DBTX` に加えて `CopyDBTX` も渡します:
@@ -1357,6 +1360,7 @@ ORDER BY 1`
 - 文は、その `-- query:` や `-- scope:` の行から、次の文のコメントまたはその行までです。文の終わりにある空行とコメント行は文に含まれず、文の一番最後に付いたコメントも含まれません。そのため、スコープはコメントで終えられます。
 - MySQL では、2 回使うパラメータは `?` ごとに 1 回ずつ渡します。
 - `[]byte` と `Value` メソッドを持つ型を除くスライスの引数は、値の並びです。nil のスライスは、空のスライスと同じく値のない並びです。PostgreSQL では `= ANY(:ids)` のように配列として受け取り、nil は `NULL` ではなく空の配列として渡します。MySQL では、メソッドの実行時に値ごとの `?` に展開します。値がないとき、`IN` の括弧のすぐ内側なら、行のないサブクエリ（空の集合）にします。`IN (:ids)` はどの行にも一致せず、`NOT IN (:ids)` はすべての行に一致します。PostgreSQL の `= ANY` と `<> ALL` と同じです。`FIELD(id, :ids)` のようにそれ以外の場所では `NULL` にします。
+- pgx は、enum 型のように知らない型の配列を書けません。kanna-orm は手書きの SQL を書き換えないので、パラメータを `text[]` からキャストしてください（`state = ANY(:states::text[]::ticket_state[])`）。
 
 ### クエリにスコープを渡す
 
