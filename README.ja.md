@@ -224,7 +224,7 @@ func listRecent(ctx context.Context, pool *pgxpool.Pool) ([]model.Order, error) 
 $ go generate ./...
 ./scopes.go:6:1: error: Order: the snapshot has no table order
   did you mean orders?
-../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
+../model/order.go:12:2: error: Order.Memo: orders.note may be NULL, which a string cannot hold
   declare it as *string, or tag it orm:",nullzero" to read NULL as the empty string
 ./order_repository.go:12:2: error: ListByCustomer: model.Order has no field for the parameter custmerID
   did you mean customerID?
@@ -314,7 +314,7 @@ func People() Person { return Person{} }
 リレーションがたどり着くモデルのうち、どのスコープ型にも指定されていないものがあると、生成が止まります:
 
 ```console
-../model/order_line.go:9:1: error: OrderLine.Product: no scope type is declared for model.Product
+../model/order_line.go:9:2: error: OrderLine.Product: no scope type is declared for model.Product
   declare one where products are queried: //kanna:scope table=products
 ```
 
@@ -459,7 +459,7 @@ type Category struct {
 生成時のエラーは、何を探したかと、スナップショットのどの外部キーなら 1 つに決まるかを示します:
 
 ```console
-../model/order.go:16:1: error: Order.Buyer: no foreign key of orders.buyer_id to customers reads it, nor a unique one of customers.order_id to orders
+../model/order.go:16:2: error: Order.Buyer: no foreign key of orders.buyer_id to customers reads it, nor a unique one of customers.order_id to orders
   orders.customer_id to customers reads it: tag the field orm:"fk=customer_id"
 ```
 
