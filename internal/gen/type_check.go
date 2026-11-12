@@ -55,27 +55,23 @@ func classOf(dbType string) dbClass {
 	return dbClasses[base]
 }
 
-// fits reports whether a Go value of type t is what drv reads a value of dbType, a type of d, into, and writes it from,
-// and if not, the type to declare instead; drv is empty when the run does not know it, and any driver will do. A type
-// with a Scan method converts itself, and a database type kanna-orm does not know, or does not tell, is taken at the Go
-// type's word.
-func fits(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
+// fits reports whether a Go value of type t is what drv reads a value of dbType into, and writes it from, and if not,
+// the type to declare instead; drv is empty when the run does not know it, and any driver will do. A type with a Scan
+// method converts itself, and a database type kanna-orm does not know, or does not tell, is taken at the Go type's
+// word.
+func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		t = p.Elem()
 	}
 	if scanner(t) {
 		return "", true
 	}
-	if mysqlBit(d, dbType) {
-		// go-sql-driver/mysql reads a bit as bytes, which it converts to no number or bool.
-		return "[]byte", isBytes(t)
-	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		s, isSlice := t.Underlying().(*types.Slice)
 		if !isSlice || isBytes(t) {
 			return "a slice", false
 		}
-		if want, ok := fits(s.Elem(), elem, d, drv); !ok {
+		if want, ok := fits(s.Elem(), elem, drv); !ok {
 			return "[]" + want, false
 		}
 		return "", true
@@ -115,11 +111,12 @@ func fits(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want str
 	return "", true
 }
 
-// readable is fits for a value read from a column: the Go type also has to hold every value of dbType, so that no row
-// fails to scan for the number it holds, or loses precision in a float. A value written needs only fits, as a database
-// rejects one beyond its column's range rather than store another.
+// readable is fits for a value read from a column of dbType, a type of d: the Go type also has to hold every value of
+// dbType, so that no row fails to scan for the number it holds, or loses precision in a float, and a bit of MySQL is
+// read into bytes alone. A value written needs only fits, as a database rejects one beyond its column's range rather
+// than store another.
 func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
-	if want, ok := fits(t, dbType, d, drv); !ok {
+	if want, ok := fits(t, dbType, drv); !ok {
 		return want, false
 	}
 	if p, ok := t.Underlying().(*types.Pointer); ok {
@@ -127,6 +124,10 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 	}
 	if scanner(t) {
 		return "", true
+	}
+	if mysqlBit(d, dbType) {
+		// go-sql-driver/mysql reads a bit as bytes, which it converts to no number or bool, though it writes one.
+		return "[]byte", isBytes(t)
 	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		if s, ok := t.Underlying().(*types.Slice); ok {

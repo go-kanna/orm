@@ -166,11 +166,10 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement, f
 			if r.s.Dialect == snapshot.MySQL && expands(typ) {
 				typ = typ.Underlying().(*types.Slice).Elem() //nolint:forcetypeassert // expands sees a slice
 			}
-			if want, ok := fits(typ, p.Type, r.s.Dialect, r.driver); !ok {
+			if want, ok := fits(typ, p.Type, r.driver); !ok {
 				typ := typeName(arg.typ)
 				ds = append(ds, diag.Errorf(st.Header, "-- query: %s: :%s is %s, which %s, %s %s, is not", st.Name,
-					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want).
-					WithHints(bitHints(r.s.Dialect, p.Type)...))
+					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want))
 			}
 		}
 	}

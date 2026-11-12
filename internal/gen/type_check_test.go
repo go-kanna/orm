@@ -117,6 +117,17 @@ func TestReadable_Bit(t *testing.T) {
 	}
 }
 
+// go-sql-driver/mysql writes a bool or a number to a bit, which a parameter may be.
+func TestFits_BitParameter(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []types.BasicKind{types.Bool, types.Int64} {
+		if want, ok := gen.Fits(kind, "bit(1)"); !ok {
+			t.Errorf("Fits(%s, bit(1)) = %q, false; want true", types.Typ[kind].Name(), want)
+		}
+	}
+}
+
 // A cast in SQL names the type without the length or precision the column
 // declares, as a cast to varchar(2) would cut a longer value short.
 func TestCastType(t *testing.T) {

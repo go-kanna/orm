@@ -23,6 +23,11 @@ var OuterOrderWithoutLimit = outerOrderWithoutLimit
 
 var ListOf = listOf
 
+// Fits is fits, for a Go type named by its basic kind, through any driver.
+func Fits(kind types.BasicKind, dbType string) (string, bool) {
+	return fits(types.Typ[kind], dbType, "")
+}
+
 // Readable is readable, for a Go type named by its basic kind, from a database of dialect, through the driver named,
 // or any for "".
 func Readable(kind types.BasicKind, dbType, dialect, drv string) (string, bool) {

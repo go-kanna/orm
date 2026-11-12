@@ -366,11 +366,12 @@ A field's type must be one the driver reads the column's type into: an integer t
 declared of it, or a string for `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of.
 database/sql reads a binary column into a string too, but pgx reads a `bytea` into no string, so a string holding one
 stops generation on pgx. MySQL's driver reads a `bit(n)` column as bytes, so hold one in a `[]byte`: a bool, an integer,
-or a string holding one stops generation. For a boolean, declare the column `tinyint(1)`, which a bool holds. A type
-with `Scan` and `Value` methods converts itself, and fits any column, and a type of the database kanna-orm does not
-know, such as an enum or `json`, is taken at the field's word. That word is still one of a column: hold a `json` or
-`jsonb` column in a string, a `[]byte` such as `json.RawMessage`, or a type with `Scan` and `Value` methods that decode
-and encode the JSON. A struct or a map without them is neither a column nor a relation, and stops generation.
+or a string holding one stops generation. For a boolean, declare the column `tinyint(1)`, which a bool holds. A
+parameter written to a `bit(n)` may be a bool or a number. A type with `Scan` and `Value` methods converts itself, and
+fits any column, and a type of the database kanna-orm does not know, such as an enum or `json`, is taken at the field's
+word. That word is still one of a column: hold a `json` or `jsonb` column in a string, a `[]byte` such as
+`json.RawMessage`, or a type with `Scan` and `Value` methods that decode and encode the JSON. A struct or a map without
+them is neither a column nor a relation, and stops generation.
 
 A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
 scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least
