@@ -2,9 +2,13 @@ package gen_test
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/internal/gen/testdata/model"
 	mstdlib "github.com/go-kanna/orm/internal/gen/testdata/mysql/stdlib"
 	prepository "github.com/go-kanna/orm/internal/gen/testdata/postgres/repository"
@@ -75,6 +79,32 @@ func TestGivenID_MySQL(t *testing.T) {
 	}
 	if o, err := repo.UpsertOrder(ctx, givenOrder(0, 106)); err != nil || o.ID == 0 || o.Position != 106 {
 		t.Errorf("UpsertOrder of no id = %+v, %v; want one inserted", o, err)
+	}
+}
+
+// TestReadBackMissing_MySQL checks that a row written but not there to read back, as a trigger moved its id, is told
+// so through mapError, rather than as no row of a Get.
+func TestReadBackMissing_MySQL(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	db := mysqlDB(t)
+	if _, err := db.ExecContext(ctx, "CREATE TRIGGER move_id BEFORE INSERT ON orders FOR EACH ROW "+
+		"SET NEW.id = NEW.id + 1000"); err != nil {
+		t.Fatal(err)
+	}
+	repo := mstdlib.NewOrderRepository(db)
+	for name, write := range map[string]func(model.Order) (model.Order, error){
+		"Insert":      func(o model.Order) (model.Order, error) { return repo.Insert(ctx, o) },
+		"UpsertOrder": func(o model.Order) (model.Order, error) { return repo.UpsertOrder(ctx, o) },
+	} {
+		position := 201 + len(name)
+		_, err := write(givenOrder(500+model.OrderID(position), position))
+		var mapped mstdlib.MappedError
+		if err == nil || !strings.Contains(err.Error(), "wrote the row, but no row with id") ||
+			errors.Is(err, sql.ErrNoRows) || errors.Is(err, orm.ErrNotFound) || !errors.As(err, &mapped) {
+			t.Errorf("%s of an order whose id the trigger moves = %v; want it told not read back, through mapError",
+				name, err)
+		}
 	}
 }
 

@@ -124,13 +124,21 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, custo
 			return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 		}
 		var row model.Customer
-		if err := r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE id = ?`, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt); err != nil {
+		err = r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE id = ?`, id).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Customer{}, fmt.Errorf("upsert into customers: wrote the row, but no row with id %v was there to read back", id)
+		}
+		if err != nil {
 			return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 		}
 		return row, nil
 	}
 	var row model.Customer
-	if err := r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE email = ?`, c.Email).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt); err != nil {
+	err = r.db.queryRow(ctx, `SELECT id, email, name, phone, created_at, updated_at FROM customers WHERE email = ?`, c.Email).Scan(&row.ID, &row.Email, &row.Name, &row.Phone, &row.CreatedAt, &row.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Customer{}, fmt.Errorf("upsert into customers: wrote the row, but no row with email %v was there to read back", c.Email)
+	}
+	if err != nil {
 		return model.Customer{}, fmt.Errorf("upsert into customers: %w", err)
 	}
 	return row, nil
@@ -542,7 +550,11 @@ VALUES (?, ?, ?, ?, ?)`
 		}
 		var row model.Order
 		var nullableMemo sql.Null[string]
-		if err := r.db.queryRow(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
+		err = r.db.queryRow(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Order{}, r.mapError(orderOperationInsert, fmt.Errorf("insert into orders: wrote the row, but no row with id %v was there to read back", id))
+		}
+		if err != nil {
 			return model.Order{}, r.mapError(orderOperationInsert, fmt.Errorf("insert into orders: %w", err))
 		}
 		row.Memo = nullableMemo.V
@@ -550,7 +562,11 @@ VALUES (?, ?, ?, ?, ?)`
 	}
 	var row model.Order
 	var nullableMemo sql.Null[string]
-	if err := r.db.queryRow(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo); err != nil {
+	err = r.db.queryRow(ctx, `SELECT id, customer_id, status, placed_at, note FROM orders WHERE id = ?`, o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &nullableMemo)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Order{}, r.mapError(orderOperationInsert, fmt.Errorf("insert into orders: wrote the row, but no row with id %v was there to read back", o.ID))
+	}
+	if err != nil {
 		return model.Order{}, r.mapError(orderOperationInsert, fmt.Errorf("insert into orders: %w", err))
 	}
 	row.Memo = nullableMemo.V
