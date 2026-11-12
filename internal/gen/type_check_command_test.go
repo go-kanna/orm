@@ -90,7 +90,7 @@ func TestCommand_BytesOnPgx(t *testing.T) {
 	}
 }
 
-// flagShop declares flags, whose enabled, a bit of MySQL, a field of type FIELD holds, and a repository reading them.
+// flagShop declares flags, whose enabled, a bit, a field of type FIELD holds, and a repository reading them.
 const flagShop = `
 -- model/model.go --
 package model
@@ -169,6 +169,55 @@ func TestCommand_BitOnMySQL(t *testing.T) {
 			}
 			if code == cli.ExitOK || !strings.Contains(errOut, tt.want) {
 				t.Errorf("kanna-orm in scopes = %d\n%s\nwant it to report\n%s", code, errOut, tt.want)
+			}
+		})
+	}
+}
+
+// pgx reads PostgreSQL's bit and varbit into no type but one with a Scan method, and database/sql reads them as text,
+// into a string or a []byte: a bool or an integer, which reads text as another value, stops generation on either.
+func TestCommand_BitOnPostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		driver, field, column string
+		want                  string
+	}{
+		{"pgx", "bool", "bit(1)", "model.go:9:1: error: Flag.Enabled: flags.enabled is bit(1), which a bool cannot hold\n" +
+			"  declare it as string, or as a type of your own with Scan and Value methods\n" +
+			"  pgx reads it into no string or []byte, but into a type with a Scan method, such as pgtype.Bits"},
+		{"pgx", "string", "varbit", "model.go:9:1: error: Flag.Enabled: the column enabled is varbit, which pgx reads " +
+			"into no string\n  declare it as pgtype.Bits, or as a type of your own with Scan and Value methods"},
+		{"pgx", "sql.NullString", "bit(8)", ""},
+		{"database/sql", "int64", "bit(8)", "flags.enabled is bit(8), which an int64 cannot hold"},
+		{"database/sql", "string", "bit(8)", ""},
+		{"database/sql", "[]byte", "varbit", ""},
+	} {
+		t.Run(tt.driver+" "+tt.field+" "+tt.column, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, strings.Replace(flagShop, "FIELD", tt.field, 1))
+			s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
+				"flags": {Columns: []snapshot.Column{
+					{Name: "id", Type: "int8", NotNull: true},
+					{Name: "enabled", Type: tt.column, NotNull: true},
+				}, PrimaryKey: []string{"id"}},
+			}}
+			if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, _, errOut := run(t, filepath.Join(dir, "scopes"))
+			if code == cli.ExitOK {
+				code, _, errOut = run(t, filepath.Join(dir, "repository"), "-destination", "../impl", "-driver", tt.driver)
+			}
+			if tt.want == "" {
+				if code != cli.ExitOK {
+					t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+				}
+				return
+			}
+			if code == cli.ExitOK || !strings.Contains(errOut, tt.want) {
+				t.Errorf("kanna-orm = %d\n%s\nwant it to report\n%s", code, errOut, tt.want)
 			}
 		})
 	}
