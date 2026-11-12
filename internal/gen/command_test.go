@@ -229,8 +229,8 @@ func TestCommand_DirectiveDeclaringNothing(t *testing.T) {
 				"into the package -destination names\n  as in //go:generate go tool kanna-orm -destination ../postgres\n",
 			cli.ExitFailure},
 		{"scope of a string type", "scopes", "package scopes\n\n//kanna:scope table=orders\ntype Order string\n",
-			"./scopes.go:3:1: error: //kanna:scope marks a struct type, not a type other than a struct or an " +
-				"interface, so nothing reads it\n  write it right above a struct type\n", cli.ExitFailure},
+			"./scopes.go:3:1: error: //kanna:scope marks a struct type, not a string type, so nothing reads it\n" +
+				"  write it right above a struct type\n", cli.ExitFailure},
 		// one warning, though scope is a typo away from scopes, which the comment is read for
 		{"loose scope", "scopes", "package scopes\n\n//kanna:scope\n\ntype Order struct{}\n",
 			"./scopes.go:3:1: warning: //kanna:scope is not attached to a declaration, so nothing reads it\n" +
