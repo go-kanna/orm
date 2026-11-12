@@ -124,71 +124,71 @@ func TestFields_Mistakes(t *testing.T) {
 		name, fields, decls, want string
 	}{
 		{"a tag it cannot read", "\tMemo *string `orm:\"note,omitempty\"`\n", "",
-			`model.go:8:1: error: Order.Memo: unknown or duplicate orm option "omitempty"`},
+			`model.go:8:2: error: Order.Memo: unknown or duplicate orm option "omitempty"`},
 		{"an unexported field", "\tmemo *string\n", "",
-			"model.go:8:1: error: Order.memo: the code kanna-orm writes cannot reach an unexported field\n" +
+			"model.go:8:2: error: Order.memo: the code kanna-orm writes cannot reach an unexported field\n" +
 				`  export it, or leave it out with orm:"-"`},
 		{"an unexported struct embedded", "\taudit\n", "type audit struct{ Note *string }\n",
-			"model.go:8:1: error: Order.audit: the code kanna-orm writes cannot reach an unexported field\n" +
+			"model.go:8:2: error: Order.audit: the code kanna-orm writes cannot reach an unexported field\n" +
 				`  export it, or leave it out with orm:"-"`},
 		{"a pointer embedded", "\t*Audit\n", "type Audit struct{ Note *string }\n",
-			"model.go:8:1: error: Order.Audit: an embedded pointer may be nil, and so cannot be read into\n" +
+			"model.go:8:3: error: Order.Audit: an embedded pointer may be nil, and so cannot be read into\n" +
 				`  embed Audit itself, or leave it out with orm:"-"`},
 		{"a tag on an embedded struct", "\tAudit `orm:\"audit\"`\n", "type Audit struct{ Note *string }\n",
-			`model.go:8:1: error: Order.Audit: orm:"audit" is on an embedded struct, whose fields hold the columns` + "\n" +
+			`model.go:8:2: error: Order.Audit: orm:"audit" is on an embedded struct, whose fields hold the columns` + "\n" +
 				"  tag those fields instead"},
 		{"a field misspelled", "\tCustmerID int64\n", "",
-			"model.go:8:1: error: Order.CustmerID: the snapshot has no column orders.custmer_id\n  did you mean customer_id?"},
+			"model.go:8:2: error: Order.CustmerID: the snapshot has no column orders.custmer_id\n  did you mean customer_id?"},
 		{"a field named otherwise", "\tMemo *string\n", "",
-			"model.go:8:1: error: Order.Memo: the snapshot has no column orders.memo\n" +
+			"model.go:8:2: error: Order.Memo: the snapshot has no column orders.memo\n" +
 				"  if it is new, describe the database again: go tool kanna-orm describe\n" +
 				`  or name the column with orm:"<column>", or leave the field out with orm:"-"`},
 		{"a column misspelled", "\tMemo *string `orm:\"notes\"`\n", "",
-			"model.go:8:1: error: Order.Memo: the snapshot has no column orders.notes\n  did you mean note?"},
+			"model.go:8:2: error: Order.Memo: the snapshot has no column orders.notes\n  did you mean note?"},
 		{"a column held twice", "\tMemo *string `orm:\"note\"`\n\tNote *string\n", "",
-			"model.go:9:1: error: Order.Note: orders.note is held by Order.Memo already\n" +
+			"model.go:9:2: error: Order.Note: orders.note is held by Order.Memo already\n" +
 				`  leave one of them out with orm:"-"`},
 		{"a column held again by a struct embedded", "\tBase\n", "type Base struct{ ID int64 }\n",
-			"model.go:11:1: error: Order.Base.ID: orders.id is held by Order.ID already\n" +
+			"model.go:11:19: error: Order.Base.ID: orders.id is held by Order.ID already\n" +
 				`  leave one of them out with orm:"-"`},
 		{"a column that may be NULL in a string", "\tNote string\n", "",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a string cannot hold\n" +
+			"model.go:8:2: error: Order.Note: orders.note may be NULL, which a string cannot hold\n" +
 				"  declare it as *string, or tag it orm:\",nullzero\" to read NULL as the empty string"},
 		{"a column that may be NULL in an int64", "\tNote int64\n", "",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which an int64 cannot hold\n  declare it as *int64"},
+			"model.go:8:2: error: Order.Note: orders.note may be NULL, which an int64 cannot hold\n  declare it as *int64"},
 		{"a column that may be NULL in a type of the model's package", "\tNote Note\n", "type Note string\n",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a Note cannot hold\n" +
+			"model.go:8:2: error: Order.Note: orders.note may be NULL, which a Note cannot hold\n" +
 				"  declare it as *Note, or tag it orm:\",nullzero\" to read NULL as the empty string"},
 		{"a column that may be NULL in a type of another package", "\tNote time.Time\n", "",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a time.Time cannot hold\n" +
+			"model.go:8:2: error: Order.Note: orders.note may be NULL, which a time.Time cannot hold\n" +
 				"  declare it as *time.Time"},
 		{"a column that may be NULL in a value type", "\tNote Text\n",
 			"type Text struct{ s string }\n\nfunc (t *Text) Scan(any) error { return nil }\n",
-			"model.go:8:1: error: Order.Note: orders.note may be NULL, which a Text cannot hold\n  declare it as *Text"},
+			"model.go:8:2: error: Order.Note: orders.note may be NULL, which a Text cannot hold\n  declare it as *Text"},
 		{"a string for an integer", "\tCustomerID string\n", "",
-			"model.go:8:1: error: Order.CustomerID: orders.customer_id is int8, which a string cannot hold\n" +
+			"model.go:8:2: error: Order.CustomerID: orders.customer_id is int8, which a string cannot hold\n" +
 				"  declare it as int64, or as a type of your own with Scan and Value methods"},
 		{"a time for text", "\tNote *time.Time\n", "",
-			"model.go:8:1: error: Order.Note: orders.note is text, which a *time.Time cannot hold\n" +
+			"model.go:8:2: error: Order.Note: orders.note is text, which a *time.Time cannot hold\n" +
 				"  declare it as *string, or as a type of your own with Scan and Value methods"},
 		{"a slice for text", "\tNote []string\n", "",
-			"model.go:8:1: error: Order.Note: orders.note is text, which a []string cannot hold\n" +
+			"model.go:8:2: error: Order.Note: orders.note is text, which a []string cannot hold\n" +
 				"  declare it as string, or as a type of your own with Scan and Value methods"},
 		{"an integer for a uuid", "\tToken int64\n", "",
-			"model.go:8:1: error: Order.Token: orders.token is uuid, which an int64 cannot hold\n" +
+			"model.go:8:2: error: Order.Token: orders.token is uuid, which an int64 cannot hold\n" +
 				"  declare it as string, or as a type of your own with Scan and Value methods"},
 		{"an integer narrower than the column", "\tCustomerID int32\n", "",
-			"model.go:8:1: error: Order.CustomerID: orders.customer_id is int8, which an int32 cannot hold\n" +
+			"model.go:8:2: error: Order.CustomerID: orders.customer_id is int8, which an int32 cannot hold\n" +
 				"  declare it as int64, or as a type of your own with Scan and Value methods"},
 		{"an unsigned integer for a signed column", "\tCustomerID uint64\n", "",
-			"model.go:8:1: error: Order.CustomerID: orders.customer_id is int8, which a uint64 cannot hold\n" +
+			"model.go:8:2: error: Order.CustomerID: orders.customer_id is int8, which a uint64 cannot hold\n" +
 				"  declare it as int64, or as a type of your own with Scan and Value methods"},
 		{"an int, taken to be 64 bits wide", "\tCustomerID int\n", "", ""},
 		{"a float32 for a float8", "\tWeight float32\n", "",
-			"model.go:8:1: error: Order.Weight: orders.weight is float8, which a float32 cannot hold\n" +
+			"model.go:8:2: error: Order.Weight: orders.weight is float8, which a float32 cannot hold\n" +
 				"  declare it as float64, or as a type of your own with Scan and Value methods"},
 		{"a slice of integers narrower than the array's", "\tScores []int16\n", "",
-			"model.go:8:1: error: Order.Scores: orders.scores is int4[], which a []int16 cannot hold\n" +
+			"model.go:8:2: error: Order.Scores: orders.scores is int4[], which a []int16 cannot hold\n" +
 				"  declare it as []int64, or as a type of your own with Scan and Value methods"},
 		{"a type of its own for an integer", "\tCustomerID Customer\n",
 			"type Customer struct{ id int64 }\n\nfunc (c *Customer) Scan(any) error { return nil }\n", ""},
@@ -197,28 +197,28 @@ func TestFields_Mistakes(t *testing.T) {
 		{"a type of its own whose Scan is no sql.Scanner's", "\tCustomerID Customer\n",
 			"type Input interface{}\n\ntype Customer struct{ id int64 }\n\n" +
 				"func (c *Customer) Scan(Input) error { return nil }\n",
-			"model.go:8:1: error: Order.CustomerID: a relation of one row is held by a pointer, nil when its row is " +
+			"model.go:8:2: error: Order.CustomerID: a relation of one row is held by a pointer, nil when its row is " +
 				"not loaded or not there\n  declare it as *Customer, or, for a column, give Customer a Scan method"},
 		{"a foreign key on a column", "\tCustomerID int64 `orm:\"fk=customer_id\"`\n", "",
-			`model.go:8:1: error: Order.CustomerID: orm:"fk=customer_id" is for a relation, and CustomerID holds a column`},
+			`model.go:8:2: error: Order.CustomerID: orm:"fk=customer_id" is for a relation, and CustomerID holds a column`},
 		{"a column on a relation", "\tLines []OrderLine `orm:\"lines\"`\n", "type OrderLine struct{ ID int64 }\n",
-			`model.go:8:1: error: Order.Lines: orm:"lines" names a column, but Lines is a relation` + "\n" +
+			`model.go:8:2: error: Order.Lines: orm:"lines" names a column, but Lines is a relation` + "\n" +
 				`  name the foreign key it follows with orm:"fk=<column>"`},
 		{"nullzero on a relation", "\tLines []OrderLine `orm:\",nullzero\"`\n", "type OrderLine struct{ ID int64 }\n",
-			`model.go:8:1: error: Order.Lines: orm:",nullzero" is for a column, and Lines is a relation`},
+			`model.go:8:2: error: Order.Lines: orm:",nullzero" is for a column, and Lines is a relation`},
 		{"default on a relation", "\tCoupon *Coupon `orm:\",default\"`\n", "type Coupon struct{ ID int64 }\n",
-			`model.go:8:1: error: Order.Coupon: orm:",default" is for a column, and Coupon is a relation`},
+			`model.go:8:2: error: Order.Coupon: orm:",default" is for a column, and Coupon is a relation`},
 		{"a relation of one row in a value", "\tProfile Profile\n", "type Profile struct{ ID int64 }\n",
-			"model.go:8:1: error: Order.Profile: a relation of one row is held by a pointer, nil when its row is not " +
+			"model.go:8:2: error: Order.Profile: a relation of one row is held by a pointer, nil when its row is not " +
 				"loaded or not there\n  declare it as *Profile, or, for a column, give Profile a Scan method"},
 		{"a map", "\tMeta map[string]string\n", "",
-			"model.go:8:1: error: Order.Meta: map[string]string is neither a column nor a relation\n" +
+			"model.go:8:2: error: Order.Meta: map[string]string is neither a column nor a relation\n" +
 				`  hold the column in a type with a Scan method, or leave the field out with orm:"-"`},
 		{"a struct of no name", "\tAddress struct{ City string }\n", "",
-			"model.go:8:1: error: Order.Address: struct{City string} is neither a column nor a relation\n" +
+			"model.go:8:2: error: Order.Address: struct{City string} is neither a column nor a relation\n" +
 				`  hold the column in a type with a Scan method, or leave the field out with orm:"-"`},
 		{"an interface", "\tAny any\n", "",
-			"model.go:8:1: error: Order.Any: any is neither a column nor a relation\n" +
+			"model.go:8:2: error: Order.Any: any is neither a column nor a relation\n" +
 				`  hold the column in a type with a Scan method, or leave the field out with orm:"-"`},
 	}
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{
@@ -273,7 +273,7 @@ type Order struct {
 		}},
 	}}
 	_, ds := gen.Fields(pkg, s)
-	if got, want := report(ds), "model.go:5:1: error: Order.Tags: orders.tags is varchar(255), which a []string "+
+	if got, want := report(ds), "model.go:5:2: error: Order.Tags: orders.tags is varchar(255), which a []string "+
 		"cannot hold\n  declare it as string, or as a type of your own with Scan and Value methods"; got != want {
 		t.Errorf("Fields reports\n%s\nwant\n%s", got, want)
 	}

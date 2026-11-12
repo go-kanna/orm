@@ -177,7 +177,8 @@ func TestCommand_TypedQueryMistakes(t *testing.T) {
 			"Save(ctx context.Context, state int64, record model.Record)", ":state matches multiple arguments or struct fields"},
 		{"explicit note parameter and field", "Save(ctx context.Context, record model.Record)",
 			"Save(ctx context.Context, record model.Record, note string)", ":note matches multiple arguments or struct fields"},
-		{"nullzero on number", "Note string", "Note int64", "nullzero requires a string field"},
+		{"nullzero on number", "Note string", "Note int64",
+			"../model/model.go:13:2: error: Note: nullzero requires a string field"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

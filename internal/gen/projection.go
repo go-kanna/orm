@@ -129,7 +129,7 @@ func (r repoReader) projectionStructFields(t types.Type, path []string,
 		if f.Name() == "_" {
 			continue
 		}
-		pos := r.pkg.Fset.Position(f.Pos())
+		pos := fieldPosition(r.pkg.Fset, f)
 		tag, err := parseTag(st.Tag(i))
 		switch {
 		case err != nil:

@@ -109,7 +109,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 		}
 		fpath := append(slices.Clip(path), f.Name())
 		label := m.sc.model.Obj().Name() + "." + strings.Join(fpath, ".")
-		pos := m.fset.Position(f.Pos())
+		pos := fieldPosition(m.fset, f)
 		written := reflect.StructTag(st.Tag(i)).Get("orm")
 
 		tag, err := parseTag(st.Tag(i))

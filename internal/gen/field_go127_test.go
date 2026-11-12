@@ -54,10 +54,10 @@ func TestFields_UUIDMistakes(t *testing.T) {
 		name, field, want string
 	}{
 		{"a column that may be NULL in a uuid.UUID", "\tCustomerID uuid.UUID\n",
-			"model.go:7:1: error: Order.CustomerID: orders.customer_id may be NULL, which a uuid.UUID cannot hold\n" +
+			"model.go:7:2: error: Order.CustomerID: orders.customer_id may be NULL, which a uuid.UUID cannot hold\n" +
 				"  declare it as *uuid.UUID"},
 		{"a uuid.UUID for text", "\tNote *uuid.UUID\n",
-			"model.go:7:1: error: Order.Note: orders.note is text, which a *uuid.UUID cannot hold\n" +
+			"model.go:7:2: error: Order.Note: orders.note is text, which a *uuid.UUID cannot hold\n" +
 				"  declare it as *string, or as a type of your own with Scan and Value methods"},
 	}
 	s := snapshot.Snapshot{Dialect: snapshot.PostgreSQL, Tables: map[string]snapshot.Table{

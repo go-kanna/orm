@@ -91,7 +91,8 @@ func TestCommand_ReadProjections(t *testing.T) {
 func TestCommand_ReadProjectionMistakes(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct{ name, before, after, want string }{
-		{"unknown field", "Caption string\n}", "Missing string\n}", "the model of records has no field Missing"},
+		{"unknown field", "Caption string\n}", "Missing string\n}",
+			"../model/model.go:13:2: error: ListCards: the model of records has no field Missing"},
 		{"field named as the column", "Caption string\n}", "Note string\n}", "the model of records has no field Note"},
 		{"type mismatch", "Caption string\n}", "Caption *string\n}", "model field has type"},
 		{"relation", "Caption string\n}", "Caption string\nOwners []Record\n}", "cannot contain relations"},
