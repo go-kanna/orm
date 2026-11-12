@@ -9,6 +9,7 @@ import (
 	"github.com/go-kanna/internal/cli"
 
 	"github.com/go-kanna/orm/internal/snapshot"
+	"github.com/go-kanna/orm/internal/sqlfile"
 )
 
 // docShop declares docs, whose body, a bytea, a string holds, and a repository reading them.
@@ -223,14 +224,41 @@ func TestCommand_BitOnPostgreSQL(t *testing.T) {
 	}
 }
 
-// jsonShop declares notes, whose tags, a json, a field of type FIELD holds, and a repository reading them.
+// jsonShop declares notes, whose tags, a json, a field of type FIELD holds; Status, a type of string, and Count, a
+// value type shaped as kanna-value writes it holding an int64; and a repository reading the notes, and the tags alone
+// into ROW by tagsQuery.
 const jsonShop = `
 -- model/model.go --
 package model
 
-import "encoding/json"
+import (
+	"database/sql"
+	"database/sql/driver"
+	"encoding/json"
+	"time"
+)
 
-var _ json.RawMessage
+var (
+	_ json.RawMessage
+	_ time.Time
+)
+
+type Status string
+
+type Count struct{ n int64 }
+
+func (x Count) Int64() int64 { return x.n }
+
+func (x Count) Value() (driver.Value, error) { return x.n, nil }
+
+func (x *Count) Scan(src any) error {
+	var v sql.Null[int64]
+	if err := v.Scan(src); err != nil {
+		return err
+	}
+	x.n = v.V
+	return nil
+}
 
 type Note struct {
 	ID   int64
@@ -251,53 +279,95 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"example.com/shop/model"
+)
+
+var (
+	_ json.RawMessage
+	_ time.Time
+	_ model.Status
 )
 
 //kanna:repository
 type Note interface {
 	Get(ctx context.Context, id int64) (model.Note, error)
 	Insert(ctx context.Context, n model.Note) error
+	Tags(ctx context.Context) ([]ROW, error)
 }
+-- impl/queries.sql --
+` + tagsQuery
+
+const tagsQuery = `-- query: Tags
+SELECT tags FROM notes
 `
 
-// go-sql-driver/mysql writes json from no slice but a []byte, and database/sql reads it into none, so a slice holding
-// a json of MySQL stops generation. pgx, on its own or under database/sql, writes and reads any slice as JSON.
-func TestCommand_JSONSlice(t *testing.T) {
+// go-sql-driver/mysql writes json from a string or a []byte alone, and database/sql reads it into no slice and no
+// time.Time, so a field of a model holding a json of MySQL in another type, or in a value type holding one, stops
+// generation. A number or a bool still holds the json a query written by hand reads, as database/sql reads a json
+// holding one into it. pgx, on its own or under database/sql, writes and reads a slice, a number and a bool as JSON.
+func TestCommand_JSON(t *testing.T) {
 	t.Parallel()
 
+	const hint = "  go-sql-driver/mysql writes json from a string or a []byte, such as json.RawMessage, alone"
 	for _, tt := range []struct {
-		dialect      snapshot.Dialect
-		driver       string
-		field, dbCol string
-		want         string
+		dialect    snapshot.Dialect
+		driver     string
+		field, row string
+		dbCol      string
+		want       string
 	}{
-		{snapshot.MySQL, "", "[]int64", "json", "model.go:9:2: error: Note.Tags: notes.tags is json, which a []int64 " +
-			"cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value methods\n" +
-			"  go-sql-driver/mysql writes json from no slice but a []byte, such as json.RawMessage"},
-		{snapshot.MySQL, "", "[]string", "json", "notes.tags is json, which a []string cannot hold"},
-		{snapshot.MySQL, "", "json.RawMessage", "json", ""},
-		{snapshot.MySQL, "", "[]byte", "json", ""},
-		{snapshot.MySQL, "", "string", "json", ""},
-		{snapshot.MySQL, "", "[]string", "text", "notes.tags is text, which a []string cannot hold"},
-		{snapshot.PostgreSQL, "pgx", "[]int64", "jsonb", ""},
-		{snapshot.PostgreSQL, "database/sql", "[]int64", "jsonb", ""},
-		{snapshot.PostgreSQL, "database/sql", "[]string", "json", ""},
+		{snapshot.MySQL, "", "[]int64", "[]byte", "json", "model.go:34:2: error: Note.Tags: notes.tags is json, " +
+			"which a []int64 cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value " +
+			"methods\n" + hint},
+		{snapshot.MySQL, "", "[]string", "[]byte", "json", "notes.tags is json, which a []string cannot hold"},
+		{snapshot.MySQL, "", "int64", "int64", "json", "model.go:34:2: error: Note.Tags: notes.tags is json, " +
+			"which an int64 cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value " +
+			"methods\n" + hint},
+		{snapshot.MySQL, "", "*float64", "float64", "json", "notes.tags is json, which a *float64 cannot hold\n" +
+			"  declare it as *[]byte"},
+		{snapshot.MySQL, "", "bool", "bool", "json", "notes.tags is json, which a bool cannot hold"},
+		{snapshot.MySQL, "", "Count", "[]byte", "json", "notes.tags is json, which a Count cannot hold\n" +
+			"  declare it as []byte, or as a type of your own with Scan and Value methods\n" + hint + "\n" +
+			"  Count is a value type of kanna-value, which writes and reads its column as the int64 it holds"},
+		{snapshot.MySQL, "", "time.Time", "[]byte", "json", "notes.tags is json, which a time.Time cannot hold"},
+		{snapshot.MySQL, "", "string", "time.Time", "json", "queries.sql:1:1: error: Tags: the scalar result cannot " +
+			"hold column tags (json)"},
+		{snapshot.MySQL, "", "json.RawMessage", "json.RawMessage", "json", ""},
+		{snapshot.MySQL, "", "[]byte", "[]byte", "json", ""},
+		{snapshot.MySQL, "", "string", "string", "json", ""},
+		{snapshot.MySQL, "", "Status", "model.Status", "json", ""},
+		{snapshot.MySQL, "", "string", "int64", "json", ""},
+		{snapshot.MySQL, "", "string", "bool", "json", ""},
+		{snapshot.MySQL, "", "int64", "int64", "bigint", ""},
+		{snapshot.MySQL, "", "[]string", "[]byte", "text", "notes.tags is text, which a []string cannot hold"},
+		{snapshot.PostgreSQL, "pgx", "[]int64", "[]int64", "jsonb", ""},
+		{snapshot.PostgreSQL, "pgx", "int64", "float64", "jsonb", ""},
+		{snapshot.PostgreSQL, "database/sql", "bool", "bool", "json", ""},
+		{snapshot.PostgreSQL, "database/sql", "[]int64", "[]int64", "jsonb", ""},
+		{snapshot.PostgreSQL, "database/sql", "[]string", "[]string", "json", ""},
 	} {
-		t.Run(string(tt.dialect)+" "+tt.driver+" "+tt.field+" "+tt.dbCol, func(t *testing.T) {
+		t.Run(string(tt.dialect)+" "+tt.driver+" "+tt.field+" "+tt.row+" "+tt.dbCol, func(t *testing.T) {
 			t.Parallel()
 
-			dir := writeModule(t, strings.Replace(jsonShop, "FIELD", tt.field, 1))
+			dir := writeModule(t, strings.NewReplacer("FIELD", tt.field, "ROW", tt.row).Replace(jsonShop))
 			id := "int8"
 			if tt.dialect == snapshot.MySQL {
 				id = "bigint"
 			}
+			stmts, _ := sqlfile.Parse("queries.sql", []byte(tagsQuery))
 			s := snapshot.Snapshot{Dialect: tt.dialect, Tables: map[string]snapshot.Table{
 				"notes": {Columns: []snapshot.Column{
 					{Name: "id", Type: id, NotNull: true},
 					{Name: "tags", Type: tt.dbCol, NotNull: true},
 				}, PrimaryKey: []string{"id"}},
+			}, Statements: map[string]snapshot.Statement{
+				"example.com/shop/impl.Tags": {
+					Digest:  snapshot.Digest(stmts[0].Text),
+					Columns: []snapshot.OutputColumn{{Name: "tags", Type: tt.dbCol, NotNull: true}},
+				},
 			}}
 			if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
 				t.Fatal(err)

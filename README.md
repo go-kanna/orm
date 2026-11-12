@@ -437,8 +437,10 @@ may be a bool or a number. A type with `Scan` and `Value` methods converts itsel
 the database kanna-orm does not know, such as an enum or `json`, is taken at the field's word. That word is still one of
 a column: hold a `json` or `jsonb` column in a string, a `[]byte` such as `json.RawMessage`, or a type with `Scan` and
 `Value` methods that decode and encode the JSON. A struct or a map without them is neither a column nor a relation, and
-stops generation. pgx, on its own or under database/sql, writes and reads a slice as JSON too, but go-sql-driver/mysql
-writes none but a `[]byte`, so on MySQL a slice of another type stops generation.
+stops generation. pgx, on its own or under database/sql, writes and reads a slice, a number and a bool as JSON too.
+go-sql-driver/mysql writes json from a string or a `[]byte` alone, and database/sql reads it into no other slice and no
+`time.Time`, so on MySQL a slice of another type or a `time.Time` stops generation, and so does a number or a bool in a
+field of a model. A query written by hand may still read a json holding a number or a bool into one.
 
 A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
 scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least

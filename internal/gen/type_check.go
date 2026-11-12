@@ -150,8 +150,9 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 		}
 		return "", true
 	case mysqlJSON(d, dbType):
-		// go-sql-driver/mysql writes no slice but a []byte, and database/sql reads json into none.
-		if _, ok := t.Underlying().(*types.Slice); ok && !isBytes(t) {
+		// go-sql-driver/mysql writes no slice but a []byte, nor a time.Time as JSON, and database/sql reads json into
+		// neither.
+		if _, ok := t.Underlying().(*types.Slice); ok && !isBytes(t) || isTime(t) {
 			return "[]byte", false
 		}
 		return "", true
@@ -168,6 +169,23 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 	}
 	if classOf(dbType) == classNumeric && b.Info()&(types.IsInteger|types.IsFloat) != 0 {
 		return numericWant(b, dbType)
+	}
+	return "", true
+}
+
+// writable is readable for a value written to a column of dbType, a type of d, as well as read from it, as a field of
+// a model is. go-sql-driver/mysql writes a number or a bool as itself, which MySQL takes for no JSON text in a json,
+// though database/sql reads a json holding one into it.
+func writable(t types.Type, dbType string, d snapshot.Dialect) (want string, ok bool) {
+	if want, ok := readable(t, dbType, d, ""); !ok {
+		return want, false
+	}
+	t = driverType(t)
+	if !mysqlJSON(d, dbType) || scanner(t) {
+		return "", true
+	}
+	if b, ok := t.Underlying().(*types.Basic); ok && b.Info()&(types.IsNumeric|types.IsBoolean) != 0 {
+		return "[]byte", false
 	}
 	return "", true
 }
@@ -216,14 +234,14 @@ func postgresBit(d snapshot.Dialect, dbType string) bool {
 }
 
 // typeHints are the hints for a Go type that cannot hold dbType, a type of d, read through drv: for MySQL's bit, the
-// boolean MySQL has instead, for MySQL's json, the slice it writes, and for PostgreSQL's bits, read through any
+// boolean MySQL has instead, for MySQL's json, the types it writes, and for PostgreSQL's bits, read through any
 // driver, the type pgx reads them into.
 func typeHints(d snapshot.Dialect, dbType string, drv driver) []string {
 	switch {
 	case mysqlBit(d, dbType):
 		return []string{"for a boolean, make the column tinyint(1), which a bool holds"}
 	case mysqlJSON(d, dbType):
-		return []string{"go-sql-driver/mysql writes json from no slice but a []byte, such as json.RawMessage"}
+		return []string{"go-sql-driver/mysql writes json from a string or a []byte, such as json.RawMessage, alone"}
 	case postgresBit(d, dbType) && drv == "":
 		return []string{"pgx reads it into no string or []byte, but into a type with a Scan method, such as pgtype.Bits"}
 	}
