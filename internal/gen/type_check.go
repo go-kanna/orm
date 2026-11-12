@@ -120,6 +120,7 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 	if want, ok := fits(t, dbType, drv); !ok {
 		return want, false
 	}
+	value := isValueType(t)
 	t = driverType(t)
 	if scanner(t) {
 		return "", true
@@ -153,6 +154,13 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 		// go-sql-driver/mysql writes no slice but a []byte, nor a time.Time as JSON, and database/sql reads json into
 		// neither.
 		if _, ok := t.Underlying().(*types.Slice); ok && !isBytes(t) || isTime(t) {
+			return "[]byte", false
+		}
+		return "", true
+	case postgresJSON(d, dbType):
+		// pgx decodes json into a time.Time, but hands its text to a Scan method, as of a value type, and pgx/stdlib
+		// hands it to database/sql, which converts text into no time.Time.
+		if isTime(t) && (drv == driverSQL || value) {
 			return "[]byte", false
 		}
 		return "", true
@@ -208,14 +216,23 @@ func driverType(t types.Type) types.Type {
 // valueHints are the hints for t, or what it points to, that cannot hold a column, when it is a value type of
 // kanna-value: the value it holds is what cannot. q qualifies the names of types, as the report does.
 func valueHints(t types.Type, q types.Qualifier) []string {
+	if !isValueType(t) {
+		return nil
+	}
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		t = p.Elem()
 	}
-	if _, ok := valuetype.Of(t); !ok {
-		return nil
-	}
 	return []string{fmt.Sprintf("%s is a value type of kanna-value, which writes and reads its column as the %s it "+
 		"holds", types.TypeString(t, q), types.TypeString(driverType(t), q))}
+}
+
+// isValueType reports whether t, or what it points to, is a value type of kanna-value.
+func isValueType(t types.Type) bool {
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	_, ok := valuetype.Of(t)
+	return ok
 }
 
 // mysqlBit reports whether dbType, a type of d, is MySQL's bit.
@@ -226,6 +243,11 @@ func mysqlBit(d snapshot.Dialect, dbType string) bool {
 // mysqlJSON reports whether dbType, a type of d, is MySQL's json.
 func mysqlJSON(d snapshot.Dialect, dbType string) bool {
 	return d == snapshot.MySQL && baseType(dbType) == "json"
+}
+
+// postgresJSON reports whether dbType, a type of d, is PostgreSQL's json or jsonb.
+func postgresJSON(d snapshot.Dialect, dbType string) bool {
+	return d == snapshot.PostgreSQL && (baseType(dbType) == "json" || baseType(dbType) == "jsonb")
 }
 
 // postgresBit reports whether dbType, a type of d, is PostgreSQL's bit or varbit.
