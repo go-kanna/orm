@@ -22,11 +22,7 @@ func methodsOf(p scopePlan, d snapshot.Dialect) []generated {
 	ms := []generated{{"Of", "for every scope type"}}
 	for _, c := range p.columns {
 		name := c.path[len(c.path)-1]
-		t := c.typ
-		if ptr, ok := t.Underlying().(*types.Pointer); ok {
-			t = ptr.Elem()
-		}
-		for _, suffix := range columnMethods(kindOf(t), !c.col.NotNull, d) {
+		for _, suffix := range columnMethods(columnKind(c, d), !c.col.NotNull, d) {
 			ms = append(ms, generated{name + suffix, "for the column " + c.col.Name})
 		}
 	}
