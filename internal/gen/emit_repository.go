@@ -918,10 +918,9 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	query := "SELECT " + e.columnList(m.columns) + " FROM " + table + " WHERE " + strings.Join(conds, " AND ")
 	e.printf("var %s %s\n", row, model)
 	dests, assignments := e.scanTargets(sc, row, m.columns)
-	e.printf("%[1]s %[2]s %[3]s.db.%[4]s(%[5]s, %[6]s, %[7]s).\nScan(%[8]s)\n"+
-		"if %[1]s != nil {\nreturn %[9]s%[10]s\n}\n",
-		err, assign, recv, e.queryRow, sig.ctx, goString(query), strings.Join(keyArgs, ", "),
-		strings.Join(dests, ", "), zero, wrap)
+	e.printf("%s %s %s.db.%s(%s, %s, %s).\nScan(%s)\n", err, assign, recv, e.queryRow, sig.ctx, goString(query),
+		strings.Join(keyArgs, ", "), strings.Join(dests, ", "))
+	e.readBackError(m, sig, key, keyArgs, zero, err, wrap)
 	e.assignScanned(assignments)
 	e.printf("return %s, nil\n", row)
 }

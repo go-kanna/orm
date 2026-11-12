@@ -226,9 +226,24 @@ func (e repoEmitter) readBack(m repoMethod, recv string, sig signature, key, arg
 		strings.Join(conds, " AND ")
 	e.printf("var %s %s\n", row, types.TypeString(m.model, e.f.Qualifier))
 	dests, assignments := e.scanTargets(inner, row, m.columns)
-	e.printf("if %[1]s := %[2]s.db.%[3]s(%[4]s, %[5]s, %[6]s).Scan(%[7]s); %[1]s != nil {\nreturn %[8]s%[9]s\n}\n",
-		err, recv, e.queryRow, sig.ctx, goString(query), strings.Join(args, ", "), strings.Join(dests, ", "), zero,
-		wrap)
+	e.printf("%s = %s.db.%s(%s, %s, %s).Scan(%s)\n", err, recv, e.queryRow, sig.ctx, goString(query),
+		strings.Join(args, ", "), strings.Join(dests, ", "))
+	e.readBackError(m, sig, key, args, zero, err, wrap)
 	e.assignScanned(assignments)
 	e.printf("return %s, nil\n", row)
+}
+
+// readBackError writes the return of err, the error of the read back of the row of m whose key columns hold args:
+// wrapped by wrap, or, when the row is not there, an error saying so, which is not orm.ErrNotFound, as the row was
+// written.
+func (e repoEmitter) readBackError(m repoMethod, sig signature, key, args []string, zero, err, wrap string) {
+	format := make([]string, 0, len(key))
+	for _, name := range key {
+		format = append(format, name+" %v")
+	}
+	missing := sig.mapped(fmt.Sprintf("%s.Errorf(%q, %s)", e.fmtPkg(),
+		m.action()+": wrote the row, but no row with "+strings.Join(format, " and ")+" was there to read back",
+		strings.Join(args, ", ")))
+	e.printf("if %s.Is(%s, %s.ErrNoRows) {\nreturn %s%s\n}\nif %s != nil {\nreturn %s%s\n}\n",
+		e.f.Import("errors", "errors"), err, e.driverPkg(), zero, missing, err, zero, wrap)
 }

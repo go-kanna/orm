@@ -959,7 +959,9 @@ not those it finds, so when it changes none, kanna-orm asks whether the row is t
 A method reading back what it writes, as an `Insert`, an `Update`, or an `Upsert` returning the model does, has written
 it before it reads: when the read fails, as a time does on MySQL without [`parseTime=true`](#drivers-and-dialects), the
 method returns the error, and the row stays written. Outside a transaction, a retry may write the row twice: run a write
-that must not be repeated in a transaction, and roll it back on the error.
+that must not be repeated in a transaction, and roll it back on the error. On MySQL, a row written but not found by
+its key when read back, as when a trigger changes the key, returns an error saying so, which is not `orm.ErrNotFound`,
+since the row was written.
 
 ### Database defaults
 

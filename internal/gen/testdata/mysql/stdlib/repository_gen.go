@@ -833,13 +833,21 @@ func (r OrderRepository) Insert(ctx context.Context, o model.Order) (model.Order
 			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 		}
 		var row model.Order
-		if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		err = r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: wrote the row, but no row with id %v was there to read back", id))
+		}
+		if err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 		}
 		return row, nil
 	}
 	var row model.Order
-	if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+	err = r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: wrote the row, but no row with id %v was there to read back", o.ID))
+	}
+	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("insert into orders: %w", err))
 	}
 	return row, nil
@@ -883,13 +891,21 @@ func (r OrderRepository) UpsertOrder(ctx context.Context, o model.Order) (model.
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		var row model.Order
-		if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		err = r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: wrote the row, but no row with id %v was there to read back", id))
+		}
+		if err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		return row, nil
 	}
 	var row model.Order
-	if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+	err = r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", o.ID).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: wrote the row, but no row with id %v was there to read back", o.ID))
+	}
+	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
 	return row, nil
@@ -904,6 +920,9 @@ VALUES (?, ?, ?)`
 	var row model.OrderLine
 	err := r.db.queryRow(ctx, `SELECT order_id, line_no, sku FROM order_lines WHERE order_id = ? AND line_no = ?`, line.OrderID, line.LineNo).
 		Scan(&row.OrderID, &row.LineNo, &row.SKU)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.OrderLine{}, r.mapError(fmt.Errorf("insert into order_lines: wrote the row, but no row with order_id %v and line_no %v was there to read back", line.OrderID, line.LineNo))
+	}
 	if err != nil {
 		return model.OrderLine{}, r.mapError(fmt.Errorf("insert into order_lines: %w", err))
 	}
@@ -1060,6 +1079,9 @@ ON DUPLICATE KEY UPDATE name = new.name, nickname = new.nickname`
 	var row model.Customer
 	err := r.db.queryRow(ctx, `SELECT id, name, nickname FROM customers WHERE id = ?`, c.ID).
 		Scan(&row.ID, &row.Name, &row.Nickname)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Customer{}, r.mapError(fmt.Errorf("upsert into customers: wrote the row, but no row with id %v was there to read back", c.ID))
+	}
 	if err != nil {
 		return model.Customer{}, r.mapError(fmt.Errorf("upsert into customers: %w", err))
 	}
@@ -1088,13 +1110,21 @@ func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c 
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		var row model.Order
-		if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+		err = r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE id = ?", id).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: wrote the row, but no row with id %v was there to read back", id))
+		}
+		if err != nil {
 			return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 		}
 		return row, nil
 	}
 	var row model.Order
-	if err := r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE `order` = ?", o.Position).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position); err != nil {
+	err = r.db.queryRow(ctx, "SELECT id, customer_id, status, placed_at, note, total, paid, contact, receipt, `order` FROM orders WHERE `order` = ?", o.Position).Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: wrote the row, but no row with order %v was there to read back", o.Position))
+	}
+	if err != nil {
 		return model.Order{}, r.mapError(fmt.Errorf("upsert into orders: %w", err))
 	}
 	return row, nil
@@ -1129,6 +1159,9 @@ ON DUPLICATE KEY UPDATE name = new.name`
 	var row model.Tag
 	err := r.db.queryRow(ctx, `SELECT name FROM tags WHERE name = ?`, tag.Name).
 		Scan(&row.Name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Tag{}, r.mapError(fmt.Errorf("upsert into tags: wrote the row, but no row with name %v was there to read back", tag.Name))
+	}
 	if err != nil {
 		return model.Tag{}, r.mapError(fmt.Errorf("upsert into tags: %w", err))
 	}
