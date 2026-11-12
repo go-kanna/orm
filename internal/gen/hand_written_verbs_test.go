@@ -117,25 +117,6 @@ func TestCommand_ScopedQueries(t *testing.T) {
 	}
 }
 
-func TestOuterOrderWithoutLimit(t *testing.T) {
-	t.Parallel()
-	for sql, want := range map[string]bool{
-		"SELECT id FROM orders":                                     false,
-		"SELECT id FROM orders ORDER BY id":                         true,
-		"SELECT id FROM orders ORDER BY id LIMIT 5":                 false,
-		"SELECT id FROM orders ORDER BY id FETCH FIRST 5 ROWS ONLY": false,
-		"SELECT id FROM (SELECT id FROM orders ORDER BY id) AS o":   false,
-		"SELECT id FROM orders WHERE note = 'ORDER BY'":             false,
-		"SELECT id FROM orders -- ORDER BY id\nWHERE id > 0":        false,
-		"SELECT max(id) OVER (ORDER BY placed_at) FROM orders":      false,
-		"SELECT id FROM orders ORDER BY (SELECT 1 LIMIT 1)":         true,
-	} {
-		if got := gen.OuterOrderWithoutLimit(sql); got != want {
-			t.Errorf("OuterOrderWithoutLimit(%q) = %t, want %t", sql, got, want)
-		}
-	}
-}
-
 func TestListOf(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct{ before, after, want string }{
@@ -181,6 +162,34 @@ func TestCommand_ScopedQueryLocks(t *testing.T) {
 			code, errOut := generateRewrittenQuery(t, archive, lookup, declared, sql, tt.sql)
 			if (code == cli.ExitOK) != tt.ok || !strings.Contains(errOut, tt.want) ||
 				tt.want == "" && strings.Contains(errOut, "lock") {
+				t.Fatalf("generate = %d, want %q\n%s", code, tt.want, errOut)
+			}
+		})
+	}
+}
+
+func TestCommand_ScopedQueryOrder(t *testing.T) {
+	t.Parallel()
+	const (
+		lookup   = "Lookup(ctx context.Context, id int64) (model.Record, error)"
+		declared = "ListRecords(ctx context.Context, id int64, s ...scopes.Record) ([]model.Record, error)"
+		sql      = "SELECT id, state, note FROM records WHERE id = :id;"
+		warning  = "queries.sql:3:1: warning: -- query: ListRecords: its ORDER BY orders no rows the scopes read\n" +
+			"  order them by the scopes, or keep the ORDER BY with a LIMIT"
+	)
+	for _, tt := range []struct{ name, sql, want string }{
+		{"an ORDER BY", "SELECT id, state, note FROM records WHERE id = :id ORDER BY note;", warning},
+		{"an ORDER BY with a LIMIT", "SELECT id, state, note FROM records WHERE id = :id ORDER BY note LIMIT 5;", ""},
+		{"a name holding order", "SELECT sort_order.id, state, note FROM records AS sort_order WHERE id = :id;", ""},
+		{"an ORDER BY a name holding limit",
+			"SELECT id, state, note FROM records AS limit_count WHERE id = :id ORDER BY limit_count.note;", warning},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			archive := strings.Replace(typedQueryShop, sql, tt.sql, 1)
+			code, errOut := generateRewrittenQuery(t, archive, lookup, declared, sql, tt.sql)
+			if code != cli.ExitOK || !strings.Contains(errOut, tt.want) ||
+				tt.want == "" && strings.Contains(errOut, "ORDER BY") {
 				t.Fatalf("generate = %d, want %q\n%s", code, tt.want, errOut)
 			}
 		})

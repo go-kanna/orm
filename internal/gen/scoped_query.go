@@ -3,8 +3,6 @@ package gen
 import (
 	"go/ast"
 	"go/types"
-	"strings"
-	"unicode"
 
 	"github.com/go-kanna/internal/diag"
 
@@ -60,7 +58,7 @@ func (r repoReader) scopedResult(m *repoMethod, q *query, st sqlfile.Statement) 
 	}
 	q.cte = r.cteName(m.name, m.target.table)
 	var ds []diag.Diag
-	if outerOrderWithoutLimit(q.sql) {
+	if st.OrderWithoutLimit(r.s.Dialect) {
 		ds = append(ds, diag.Warningf(st.Header, "-- query: %s: its ORDER BY orders no rows the scopes read", m.name).
 			WithHints("order them by the scopes, or keep the ORDER BY with a LIMIT"))
 	}
@@ -94,48 +92,4 @@ func (r repoReader) cteName(name, table string) string {
 	}
 	const most = 63 // the longest name PostgreSQL keeps
 	return cte[:min(len(cte), most)]
-}
-
-// outerOrderWithoutLimit reports whether sql, a statement, ends in an ORDER BY of its own that no LIMIT or FETCH
-// follows: an order which a statement reading its rows does not keep. It looks at the words of the statement outside
-// parentheses, strings, quoted names, and comments.
-func outerOrderWithoutLimit(sql string) bool {
-	order, depth := false, 0
-	for i := 0; i < len(sql); i++ {
-		c := sql[i]
-		switch {
-		case c == '(':
-			depth++
-		case c == ')':
-			depth--
-		case c == '\'' || c == '"' || c == '`':
-			if j := strings.IndexByte(sql[i+1:], c); j >= 0 {
-				i += j + 1
-			}
-		case strings.HasPrefix(sql[i:], "--"):
-			if j := strings.IndexByte(sql[i:], '\n'); j >= 0 {
-				i += j
-			} else {
-				i = len(sql)
-			}
-		case strings.HasPrefix(sql[i:], "/*"):
-			if j := strings.Index(sql[i:], "*/"); j >= 0 {
-				i += j + 1
-			}
-		case depth == 0 && (i == 0 || !unicode.IsLetter(rune(sql[i-1]))) && unicode.IsLetter(rune(c)):
-			word := sql[i:]
-			end := strings.IndexFunc(word, func(r rune) bool { return !unicode.IsLetter(r) })
-			if end >= 0 {
-				word = word[:end]
-			}
-			switch strings.ToUpper(word) {
-			case "ORDER":
-				order = true
-			case "LIMIT", "FETCH":
-				order = false
-			}
-			i += len(word) - 1
-		}
-	}
-	return order
 }

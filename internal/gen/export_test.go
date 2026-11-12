@@ -19,8 +19,6 @@ var ColumnName = columnName
 
 var CastType = castType
 
-var OuterOrderWithoutLimit = outerOrderWithoutLimit
-
 var ListOf = listOf
 
 // Fits is fits, for a Go type named by its basic kind, through any driver.
