@@ -2,6 +2,7 @@ package gen
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 	"maps"
 	"path/filepath"
@@ -29,7 +30,7 @@ func Fits(kind types.BasicKind, dbType string) (string, bool) {
 // Readable is readable, for a Go type named by its basic kind, from a database of dialect, through the driver named,
 // or any for "".
 func Readable(kind types.BasicKind, dbType, dialect, drv string) (string, bool) {
-	return readable(types.Typ[kind], dbType, snapshot.Dialect(dialect), driver(drv))
+	return readable(token.NewFileSet(), types.Typ[kind], dbType, snapshot.Dialect(dialect), driver(drv))
 }
 
 // ParseTag is parseTag, with what the tag says spread out, the columns of fk= and those a scalar relation reads by

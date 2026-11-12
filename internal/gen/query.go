@@ -166,11 +166,16 @@ func (r repoReader) query(m *repoMethod, fn *types.Func, st sqlfile.Statement, f
 			if r.s.Dialect == snapshot.MySQL && expands(typ) {
 				typ = typ.Underlying().(*types.Slice).Elem() //nolint:forcetypeassert // expands sees a slice
 			}
-			if want, ok := fits(typ, p.Type, r.driver); !ok {
+			want, ok := fits(typ, p.Type, r.driver)
+			if _, enum := jsonEnum(r.pkg.Fset, arg.typ, p.Type, r.s.Dialect); enum {
+				want, ok = "[]byte", false
+			}
+			if !ok {
 				typ := typeName(arg.typ)
 				ds = append(ds, diag.Errorf(st.Header, "-- query: %s: :%s is %s, which %s, %s %s, is not", st.Name,
 					p.Name, p.Type, p.Name, article(typ), typ).WithHints("declare it as "+want).
-					WithHints(valueHints(arg.typ, (*types.Package).Name)...))
+					WithHints(valueHints(arg.typ, (*types.Package).Name)...).
+					WithHints(enumHints(r.pkg.Fset, arg.typ, p.Type, r.s.Dialect, (*types.Package).Name)...))
 			}
 		}
 	}
@@ -245,9 +250,10 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 				if m.optional && c.Nullable && !nilable(q.row) {
 					return []diag.Diag{findOfNull(st.Header, m.name, c.Name, q.row)}
 				}
-				if _, ok := readable(q.row, c.Type, r.s.Dialect, r.driver); !ok || c.Nullable && !nilable(q.row) {
+				if _, ok := readable(r.pkg.Fset, q.row, c.Type, r.s.Dialect, r.driver); !ok || c.Nullable && !nilable(q.row) {
 					return []diag.Diag{diag.Errorf(st.Header, "%s: the scalar result cannot hold column %s (%s)",
-						m.name, c.Name, c.Type).WithHints(valueHints(q.row, (*types.Package).Name)...)}
+						m.name, c.Name, c.Type).WithHints(valueHints(q.row, (*types.Package).Name)...).
+						WithHints(enumHints(r.pkg.Fset, q.row, c.Type, r.s.Dialect, (*types.Package).Name)...)}
 				}
 				q.scalar = true
 				if m.returns == returnsRow {
@@ -319,10 +325,11 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Output
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as *"+typ))
 			continue
 		}
-		if want, ok := readable(f.typ, c.Type, d, drv); !ok {
+		if want, ok := readable(fset, f.typ, c.Type, d, drv); !ok {
 			ds = append(ds, errorf("the column %s is %s, which %s.%s, %s %s, cannot hold", c.Name, c.Type,
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want).
-				WithHints(typeHints(d, c.Type, drv)...).WithHints(valueHints(f.typ, (*types.Package).Name)...))
+				WithHints(typeHints(d, c.Type, drv)...).WithHints(valueHints(f.typ, (*types.Package).Name)...).
+				WithHints(enumHints(fset, f.typ, c.Type, d, (*types.Package).Name)...))
 			continue
 		}
 		matched = append(matched, column{path: f.path, typ: f.typ, col: snapshot.Column{Name: c.Name},

@@ -443,7 +443,10 @@ database/sql converts into no `time.Time`, so there a `time.Time` stops generati
 a `time.Time` stops generation on either driver, as its `Scan` method gets the text too.
 go-sql-driver/mysql writes json from a string or a `[]byte` alone, and database/sql reads it into no other slice and no
 `time.Time`, so on MySQL a slice of another type or a `time.Time` stops generation, and so does a number or a bool in a
-field of a model. A query written by hand may still read a json holding a number or a bool into one.
+field of a model. A query written by hand may still read a json holding a number or a bool into one. On either
+database, an enum of kanna-value, a pointer to one, or a value type holding one stops generation on a `json` or `jsonb`
+column: none of its values is JSON text, and its `Scan` method rejects the JSON text it reads. Hold it in a `text` or
+`varchar` column instead.
 
 A field read from a column must also hold every value the column can: a row holding a value beyond the field fails to
 scan, and a `float32` read from a `float8` or `double` loses precision without a word. So an integer field is at least

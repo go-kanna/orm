@@ -433,3 +433,190 @@ func TestCommand_JSON(t *testing.T) {
 		})
 	}
 }
+
+// jsonEnumShop declares notes, whose tags, a json, a field of type FIELD holds; Level, an enum of kanna-value; Status,
+// a type of string unmarked; Grade, a value type holding a Level; and a repository reading the tags alone into ROW by
+// a query, into NoteTags, a projection, and writing them from a parameter of type PARAM.
+const jsonEnumShop = `
+-- model/model.go --
+package model
+
+import (
+	"database/sql"
+	"database/sql/driver"
+)
+
+// Level is an enum.
+//
+//kanna:enum
+type Level string
+
+const LevelLow Level = "low"
+
+func (x Level) Value() (driver.Value, error) { return string(x), nil }
+
+func (x *Level) Scan(src any) error {
+	var v sql.Null[string]
+	if err := v.Scan(src); err != nil {
+		return err
+	}
+	*x = Level(v.V)
+	return nil
+}
+
+type (
+	Status string
+
+	//kanna:enum
+	Kind string
+)
+
+const KindA Kind = "a"
+
+type Grade struct{ l Level }
+
+func NewGrade(l Level) (Grade, error) { return Grade{l: l}, nil }
+
+func (x Grade) Level() Level { return x.l }
+
+func (x Grade) Value() (driver.Value, error) { return string(x.l), nil }
+
+func (x *Grade) Scan(src any) error { return x.l.Scan(src) }
+
+type Note struct {
+	ID   int64
+	Tags FIELD
+}
+
+type NoteTags struct{ Tags FIELD }
+-- scopes/scopes.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scope table=notes
+type Note struct{ q scope.Of[model.Note] }
+-- repository/repository.go --
+package repository
+
+import (
+	"context"
+
+	"example.com/shop/model"
+	"example.com/shop/scopes"
+)
+
+var _ model.Status
+
+//kanna:repository
+type Note interface {
+	Get(ctx context.Context, id int64) (model.Note, error)
+	Tags(ctx context.Context) ([]ROW, error)
+	SetTags(ctx context.Context, id int64, tags PARAM) error
+	ListTags(ctx context.Context, s ...scopes.Note) ([]model.NoteTags, error)
+}
+-- impl/queries.sql --
+` + enumTagsQuery + setTagsQuery
+
+const (
+	enumTagsQuery = `-- query: Tags
+SELECT tags FROM notes
+`
+	setTagsQuery = `-- query: SetTags
+UPDATE notes SET tags = :tags WHERE id = :id
+`
+)
+
+// No value of an enum of kanna-value is JSON text, which MySQL and PostgreSQL reject in a json, nor is JSON text one,
+// which its Scan rejects, so an enum, a pointer to one, or a value type holding one, stops generation wherever it holds
+// a json, written or read alone. A type of string unmarked, which may hold JSON text, does not, nor does an enum
+// holding text.
+func TestCommand_JSONEnum(t *testing.T) {
+	t.Parallel()
+
+	hint := "  Level is an enum of kanna-value, none of whose values is JSON text: hold it in a column of text, such " +
+		"as text or varchar"
+	for _, tt := range []struct {
+		dialect         snapshot.Dialect
+		driver          string
+		field, row, prm string
+		dbCol           string
+		want            string
+	}{
+		{snapshot.MySQL, "", "Level", "string", "string", "json", "model.go:47:2: error: Note.Tags: notes.tags " +
+			"is json, which a Level cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value " +
+			"methods\n  go-sql-driver/mysql writes json from a string or a []byte, such as json.RawMessage, alone\n" +
+			hint},
+		{snapshot.PostgreSQL, "pgx", "*Level", "string", "string", "jsonb", "Note.Tags: notes.tags is jsonb, " +
+			"which a *Level cannot hold\n  declare it as *[]byte, or as a type of your own with Scan and Value " +
+			"methods\n" + hint},
+		{snapshot.PostgreSQL, "database/sql", "Grade", "string", "string", "json", "Note.Tags: notes.tags is json, " +
+			"which a Grade cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value methods\n" +
+			"  Grade is a value type of kanna-value, which writes and reads its column as the Level it holds\n" + hint},
+		{snapshot.PostgreSQL, "pgx", "Kind", "string", "string", "json", "notes.tags is json, which a Kind cannot " +
+			"hold"},
+		{snapshot.PostgreSQL, "pgx", "string", "model.Level", "string", "json", "queries.sql:1:1: error: Tags: the " +
+			"scalar result cannot hold column tags (json)\n  model.Level is an enum of kanna-value"},
+		{snapshot.PostgreSQL, "database/sql", "string", "struct{ Tags model.Level }", "string", "jsonb",
+			"queries.sql:1:1: error: -- query: Tags: the column tags is jsonb, which struct{Tags model.Level}.Tags, a " +
+				"model.Level, cannot hold\n  declare it as []byte\n  model.Level is an enum of kanna-value"},
+		{snapshot.PostgreSQL, "pgx", "string", "string", "*model.Level", "jsonb", "queries.sql:3:1: error: " +
+			"-- query: SetTags: :tags is jsonb, which tags, a *model.Level, is not\n  declare it as []byte\n  " +
+			"model.Level is an enum of kanna-value"},
+		{snapshot.PostgreSQL, "pgx", "Status", "model.Status", "model.Status", "jsonb", ""},
+		{snapshot.MySQL, "", "Status", "model.Status", "model.Status", "json", ""},
+		{snapshot.PostgreSQL, "pgx", "Level", "model.Level", "model.Grade", "text", ""},
+		{snapshot.MySQL, "", "Grade", "model.Kind", "model.Level", "varchar(16)", ""},
+	} {
+		t.Run(string(tt.dialect)+" "+tt.driver+" "+tt.field+" "+tt.row+" "+tt.prm+" "+tt.dbCol,
+			func(t *testing.T) {
+				t.Parallel()
+
+				dir := writeModule(t, strings.NewReplacer("FIELD", tt.field, "ROW", tt.row,
+					"PARAM", tt.prm).Replace(jsonEnumShop))
+				id := "int8"
+				if tt.dialect == snapshot.MySQL {
+					id = "bigint"
+				}
+				stmts, _ := sqlfile.Parse("queries.sql", []byte(enumTagsQuery+setTagsQuery))
+				s := snapshot.Snapshot{Dialect: tt.dialect, Tables: map[string]snapshot.Table{
+					"notes": {Columns: []snapshot.Column{
+						{Name: "id", Type: id, NotNull: true},
+						{Name: "tags", Type: tt.dbCol, NotNull: true},
+					}, PrimaryKey: []string{"id"}},
+				}, Statements: map[string]snapshot.Statement{
+					"example.com/shop/impl.Tags": {
+						Digest:  snapshot.Digest(stmts[0].Text),
+						Columns: []snapshot.OutputColumn{{Name: "tags", Type: tt.dbCol, NotNull: true}},
+					},
+					"example.com/shop/impl.SetTags": {
+						Digest: snapshot.Digest(stmts[1].Text),
+						Params: []snapshot.Param{{Name: "tags", Type: tt.dbCol}, {Name: "id", Type: id}},
+					},
+				}}
+				if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				code, _, errOut := run(t, filepath.Join(dir, "scopes"))
+				if code == cli.ExitOK {
+					args := []string{"-destination", "../impl"}
+					if tt.driver != "" {
+						args = append(args, "-driver", tt.driver)
+					}
+					code, _, errOut = run(t, filepath.Join(dir, "repository"), args...)
+				}
+				if tt.want == "" {
+					if code != cli.ExitOK {
+						t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+					}
+					return
+				}
+				if code == cli.ExitOK || !strings.Contains(errOut, tt.want) {
+					t.Errorf("kanna-orm = %d\n%s\nwant it to report\n%s", code, errOut, tt.want)
+				}
+			})
+	}
+}

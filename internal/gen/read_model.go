@@ -117,10 +117,10 @@ func (r repoReader) driverReads(repos []repository, models map[string]readModel)
 			if reported[c.pos] {
 				continue
 			}
-			if _, ok := readable(c.typ, c.col.Type, r.s.Dialect, ""); !ok {
+			if _, ok := readable(r.pkg.Fset, c.typ, c.col.Type, r.s.Dialect, ""); !ok {
 				continue
 			}
-			want, ok := readable(c.typ, c.col.Type, r.s.Dialect, r.driver)
+			want, ok := readable(r.pkg.Fset, c.typ, c.col.Type, r.s.Dialect, r.driver)
 			if ok {
 				continue
 			}
