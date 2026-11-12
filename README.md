@@ -38,8 +38,28 @@ nothing outside the standard library; the driver is yours. Code written by hand 
 
 ## Use
 
-kanna-orm reads the schema from a database, not from your migrations. Migrate one, and describe it into a snapshot at
-the root of your module:
+kanna-orm reads the schema from a database, not from your migrations. The examples below take a module named
+`example.com/shop` on PostgreSQL through pgx, with these tables:
+
+```sql
+CREATE TABLE orders (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    customer_id bigint NOT NULL,
+    status      text NOT NULL,
+    placed_at   timestamptz NOT NULL,
+    note        text
+);
+
+CREATE TABLE order_lines (
+    order_id bigint NOT NULL REFERENCES orders ON DELETE CASCADE,
+    line_no  integer NOT NULL,
+    sku      text NOT NULL,
+    quantity integer NOT NULL,
+    PRIMARY KEY (order_id, line_no)
+);
+```
+
+Migrate a database to them, and describe it into a snapshot at the root of your module:
 
 ```sh
 go tool kanna-orm describe -database-url "$DATABASE_URL" ./...
@@ -63,6 +83,13 @@ and the repository the rest of your code depends on:
 ```go
 package repository
 
+import (
+	"context"
+
+	"example.com/shop/model"
+	"example.com/shop/scopes"
+)
+
 //go:generate go tool kanna-orm -destination ../postgres
 
 //kanna:repository
@@ -74,14 +101,24 @@ type Order interface {
 }
 ```
 
-With the model as your domain has it:
+With the models as your domain has them:
 
 ```go
 package model
 
-type OrderID uuid.UUID
+import "time"
 
-type CustomerID uuid.UUID
+type OrderID int64
+
+type CustomerID int64
+
+type OrderStatus string
+
+const (
+	OrderStatusOpen     OrderStatus = "open"
+	OrderStatusShipped  OrderStatus = "shipped"
+	OrderStatusCanceled OrderStatus = "canceled"
+)
 
 type Order struct {
 	ID         OrderID
@@ -91,10 +128,17 @@ type Order struct {
 	Memo       *string `orm:"note"`
 	Lines      []OrderLine
 }
+
+type OrderLine struct {
+	OrderID  OrderID
+	LineNo   int
+	SKU      string
+	Quantity int
+}
 ```
 
-`OrderID` and `CustomerID` hold `uuid` columns, declared of `uuid.UUID` so that one is not passed for the other: see
-[Keyed by a uuid](#keyed-by-a-uuid).
+`OrderID` and `CustomerID` are types of their own, so that one is not passed for the other. A table keyed by a `uuid`
+is declared the same way: see [Keyed by a uuid](#keyed-by-a-uuid).
 
 `go generate ./...` writes `scopes_gen.go` next to the scope types:
 
@@ -138,11 +182,11 @@ func newOrder(db DBTX, opts ...option.Option) Order {
 func NewOrder(db DBTX, opts ...option.Option) Order { return newOrder(db, opts...) }
 
 func (r Order) Insert(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (id, customer_id, status, placed_at, note)
-VALUES ($1, $2, $3, $4, $5)
+	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
+VALUES ($1, $2, $3, $4)
 RETURNING id, customer_id, status, placed_at, note`
 	var row model.Order
-	err := r.db.QueryRow(ctx, q, o.ID, o.CustomerID, o.Status, o.PlacedAt, o.Memo).
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
@@ -153,15 +197,34 @@ RETURNING id, customer_id, status, placed_at, note`
 // ...
 ```
 
-Callers chain the scope:
+A `*pgxpool.Pool` is the `DBTX` the constructor takes, and callers chain the scope:
 
 ```go
-orders, err := repo.List(ctx, scopes.Orders().
-	StatusNe(model.OrderCanceled).
-	PlacedAtGte(lastMonth).
-	WithLines().
-	PlacedAtDesc().
-	Limit(20))
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"example.com/shop/model"
+	"example.com/shop/postgres"
+	"example.com/shop/repository"
+	"example.com/shop/scopes"
+)
+
+func listRecent(ctx context.Context, pool *pgxpool.Pool) ([]model.Order, error) {
+	var repo repository.Order = postgres.NewOrder(pool)
+
+	lastMonth := time.Now().AddDate(0, -1, 0)
+	return repo.List(ctx, scopes.Orders().
+		StatusNe(model.OrderStatusCanceled).
+		PlacedAtGte(lastMonth).
+		WithLines().
+		PlacedAtDesc().
+		Limit(20))
+}
 ```
 
 A declaration that does not match the schema stops generation, rather than the first request that meets it:
@@ -423,7 +486,7 @@ A scope you name is a method you write on the scope type, out of the generated o
 ```go
 // Open narrows to the orders that are not canceled.
 func (s Order) Open() Order {
-	return s.StatusNe(model.OrderCanceled)
+	return s.StatusNe(model.OrderStatusCanceled)
 }
 
 // Recent orders by placed_at, latest first, and keeps the first n.
@@ -454,7 +517,7 @@ A method of yours named as one kanna-orm would generate stops generation instead
 ```go
 // WHERE ... AND ((status = $1) OR (placed_at < $2))
 s := scopes.Orders().Or(
-	scopes.Orders().StatusEq(model.OrderPending),
+	scopes.Orders().StatusEq(model.OrderStatusPending),
 	scopes.Orders().PlacedAtLt(cutoff),
 )
 ```
@@ -1450,10 +1513,10 @@ o, err := orders.GetForUpdate(ctx, id)
 if err != nil {
 	return err
 }
-if o.Status != model.OrderOpen {
+if o.Status != model.OrderStatusOpen {
 	return ErrNotOpen
 }
-o.Status = model.OrderCanceled
+o.Status = model.OrderStatusCanceled
 if err := orders.Update(ctx, o); err != nil {
 	return err
 }
@@ -1479,7 +1542,7 @@ the lock is on the subquery, so that the rows it waits for, fails on, or passes 
 //kanna:lock update skip-locked
 UpdateFree(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
 
-n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderShipped),
+n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderStatusShipped),
     scopes.Orders().Open().PlacedAtAsc().IDAsc().Limit(batch))
 ```
 
