@@ -91,7 +91,7 @@ func (r repoReader) shapeNames(model *types.Named) shapeNames {
 	if !ok {
 		return n
 	}
-	f, _ := fields(r.pkg.Fset, scope{name: sc.name, model: model, table: sc.table}, table)
+	f, _ := fields(r.pkg.Fset, scope{name: sc.name, model: model, table: sc.table}, table, r.s.Dialect)
 	byName := func(name string) (column, bool) {
 		i := slices.IndexFunc(f.columns, func(c column) bool { return c.col.Name == name })
 		if i < 0 {

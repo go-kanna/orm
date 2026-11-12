@@ -57,8 +57,8 @@ type matched struct {
 // NULL held by a field that cannot be nil. A field whose type does not type-check is neither, but unchecked: it
 // reports packages.NotTypeChecked of it, as the type error behind it says more. It settles which columns are the
 // times a row is created and updated at, as audits does, and then reports a default the database has none for.
-func fields(fset *token.FileSet, sc scope, t snapshot.Table) (matched, []diag.Diag) {
-	m := matcher{fset: fset, sc: sc, table: t, held: map[string]string{}}
+func fields(fset *token.FileSet, sc scope, t snapshot.Table, d snapshot.Dialect) (matched, []diag.Diag) {
+	m := matcher{fset: fset, sc: sc, table: t, dialect: d, held: map[string]string{}}
 	m.match(sc.model.Underlying().(*types.Struct), nil) //nolint:forcetypeassert // findScopes takes structs alone
 	m.audits()
 	m.defaults()
@@ -93,6 +93,8 @@ type matcher struct {
 	fset  *token.FileSet
 	sc    scope
 	table snapshot.Table
+	// dialect is the database of table.
+	dialect snapshot.Dialect
 	// held names the field holding each column matched so far.
 	held map[string]string
 	ds   []diag.Diag
@@ -232,13 +234,13 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 			label, m.sc.table, name, article(typ), typ).WithHints(nullHint(f.Type(), typ)))
 		return
 	}
-	if want, ok := readable(f.Type(), col.Type, ""); !ok {
+	if want, ok := readable(f.Type(), col.Type, m.dialect, ""); !ok {
 		if isPointer(f.Type()) {
 			want = "*" + want
 		}
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: %s.%s is %s, which %s %s cannot hold", label, m.sc.table, name,
 			col.Type, article(typ), typ).WithHints("declare it as "+want+", or as a type of your own with Scan and "+
-			"Value methods"))
+			"Value methods").WithHints(bitHints(m.dialect, col.Type, "")...))
 		return
 	}
 	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos,

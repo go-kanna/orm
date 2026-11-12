@@ -81,11 +81,60 @@ func TestReadable(t *testing.T) {
 		t.Run(types.Typ[tt.kind].Name()+" from "+tt.dbType+" on "+tt.driver, func(t *testing.T) {
 			t.Parallel()
 
-			want, ok := gen.Readable(tt.kind, tt.dbType, tt.driver)
+			want, ok := gen.Readable(tt.kind, tt.dbType, "", tt.driver)
 			if ok != (tt.want == "") || want != tt.want {
 				t.Errorf("Readable = %q, %t; want %q", want, ok, tt.want)
 			}
 		})
+	}
+}
+
+// go-sql-driver/mysql reads MySQL's bit as bytes, which it converts to no number, bool or string. pgx reads
+// PostgreSQL's bit and varbit into no type but one with a Scan method, and database/sql reads them as text, which a
+// number reads as another value, and a bool only from a bit(1).
+func TestReadable_Bit(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		kind    types.BasicKind
+		dbType  string
+		dialect string
+		driver  string
+		want    string
+	}{
+		{types.Bool, "bit(1)", "mysql", "", "[]byte"},
+		{types.Uint64, "bit(64)", "mysql", "", "[]byte"},
+		{types.String, "bit(8)", "mysql", "database/sql", "[]byte"},
+		{types.String, "bit(1)", "postgresql", "pgx", "pgtype.Bits"},
+		{types.String, "varbit", "postgresql", "pgx", "pgtype.Bits"},
+		{types.Bool, "bit(1)", "postgresql", "pgx", "pgtype.Bits"},
+		{types.String, "bit(1)", "postgresql", "database/sql", ""},
+		{types.String, "bit(8)", "postgresql", "database/sql", ""},
+		{types.String, "varbit(8)", "postgresql", "", ""},
+		{types.Bool, "bit(1)", "postgresql", "database/sql", "string"},
+		{types.Bool, "bit(1)", "postgresql", "", "string"},
+		{types.Int64, "bit(8)", "postgresql", "database/sql", "string"},
+		{types.Int64, "varbit", "postgresql", "", "string"},
+	} {
+		t.Run(types.Typ[tt.kind].Name()+" from "+tt.dbType+" on "+tt.dialect+" "+tt.driver, func(t *testing.T) {
+			t.Parallel()
+
+			want, ok := gen.Readable(tt.kind, tt.dbType, tt.dialect, tt.driver)
+			if ok != (tt.want == "") || want != tt.want {
+				t.Errorf("Readable = %q, %t; want %q", want, ok, tt.want)
+			}
+		})
+	}
+}
+
+// go-sql-driver/mysql writes a bool or a number to a bit, which a parameter may be.
+func TestFits_BitParameter(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []types.BasicKind{types.Bool, types.Int64} {
+		if want, ok := gen.Fits(kind, "bit(1)"); !ok {
+			t.Errorf("Fits(%s, bit(1)) = %q, false; want true", types.Typ[kind].Name(), want)
+		}
 	}
 }
 

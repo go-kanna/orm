@@ -47,7 +47,7 @@ func (r repoReader) readModels(repos []repository) (map[string]readModel, []diag
 			continue
 		}
 		sc := scope{name: rm.target.name, model: rm.model, table: rm.target.table}
-		f, _ := fields(r.pkg.Fset, sc, rm.table) // the run generating for the scope type reports what is wrong
+		f, _ := fields(r.pkg.Fset, sc, rm.table, r.s.Dialect) // the run generating for the scope type reports what is wrong
 		rm.columns = f.columns
 		links, _ := r.l.link(sc, f)
 		for _, lk := range links {
@@ -117,10 +117,10 @@ func (r repoReader) driverReads(repos []repository, models map[string]readModel)
 			if reported[c.pos] {
 				continue
 			}
-			if _, ok := readable(c.typ, c.col.Type, ""); !ok {
+			if _, ok := readable(c.typ, c.col.Type, r.s.Dialect, ""); !ok {
 				continue
 			}
-			want, ok := readable(c.typ, c.col.Type, r.driver)
+			want, ok := readable(c.typ, c.col.Type, r.s.Dialect, r.driver)
 			if ok {
 				continue
 			}

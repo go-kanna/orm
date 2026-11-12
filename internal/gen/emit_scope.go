@@ -42,7 +42,8 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 ) {
 	scopes, ds := findScopes(pkg, s, idx)
 	ds = append(ds, checkUnique(pkg, scopes, idx)...)
-	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
+	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
+		dialect: s.Dialect}
 	plans := make([]scopePlan, 0, len(scopes))
 	changeSets := map[string]string{}
 	for _, sc := range scopes {
@@ -59,7 +60,7 @@ func plan(pkg *packages.Package, s snapshot.Snapshot, idx []indexed, stmts []sql
 		}
 	}
 	for _, sc := range scopes {
-		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table], s.Dialect)
 		ds = append(ds, fds...)
 		ds = append(ds, uuidsBeforeGo127(pkg, sc, f.columns)...)
 		links, lds := l.link(sc, f)

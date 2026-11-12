@@ -4,6 +4,8 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
+
+	"github.com/go-kanna/orm/internal/snapshot"
 )
 
 // dbClass is what a column of a database type holds, as far as which Go types the drivers read it into goes.
@@ -109,10 +111,11 @@ func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
 	return "", true
 }
 
-// readable is fits for a value read from a column: the Go type also has to hold every value of dbType, so that no row
-// fails to scan for the number it holds, or loses precision in a float. A value written needs only fits, as a database
-// rejects one beyond its column's range rather than store another.
-func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
+// readable is fits for a value read from a column of dbType, a type of d: the Go type also has to hold every value of
+// dbType, so that no row fails to scan for the number it holds, or loses precision in a float, and a bit of MySQL is
+// read into bytes alone. A value written needs only fits, as a database rejects one beyond its column's range rather
+// than store another.
+func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
 	if want, ok := fits(t, dbType, drv); !ok {
 		return want, false
 	}
@@ -124,9 +127,27 @@ func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
 	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		if s, ok := t.Underlying().(*types.Slice); ok {
-			if want, ok := readable(s.Elem(), elem, drv); !ok {
+			if want, ok := readable(s.Elem(), elem, d, drv); !ok {
 				return "[]" + want, false
 			}
+		}
+		return "", true
+	}
+	switch {
+	case mysqlBit(d, dbType):
+		// go-sql-driver/mysql reads a bit as bytes, which it converts to no number or bool, though it writes one.
+		if !isBytes(t) {
+			return "[]byte", false
+		}
+		return "", true
+	case postgresBit(d, dbType):
+		// pgx reads a bit in binary, which it scans into no type but one with a Scan method. database/sql reads it as
+		// text, as 101, which a number would read as another value, and a bool only in a bit(1).
+		if drv == driverPgx {
+			return "pgtype.Bits", false
+		}
+		if !isBytes(t) && !isBasic(t.Underlying(), types.String) {
+			return "string", false
 		}
 		return "", true
 	}
@@ -144,6 +165,28 @@ func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
 		return numericWant(b, dbType)
 	}
 	return "", true
+}
+
+// mysqlBit reports whether dbType, a type of d, is MySQL's bit.
+func mysqlBit(d snapshot.Dialect, dbType string) bool {
+	return d == snapshot.MySQL && baseType(dbType) == "bit"
+}
+
+// postgresBit reports whether dbType, a type of d, is PostgreSQL's bit or varbit.
+func postgresBit(d snapshot.Dialect, dbType string) bool {
+	return d == snapshot.PostgreSQL && (baseType(dbType) == "bit" || baseType(dbType) == "varbit")
+}
+
+// bitHints are the hints for a Go type that cannot hold dbType, a type of d, read through drv: for MySQL's bit, the
+// boolean MySQL has instead, and for PostgreSQL's bits, read through any driver, the type pgx reads them into.
+func bitHints(d snapshot.Dialect, dbType string, drv driver) []string {
+	switch {
+	case mysqlBit(d, dbType):
+		return []string{"for a boolean, make the column tinyint(1), which a bool holds"}
+	case postgresBit(d, dbType) && drv == "":
+		return []string{"pgx reads it into no string or []byte, but into a type with a Scan method, such as pgtype.Bits"}
+	}
+	return nil
 }
 
 // numericWant reports whether b, a Go number, holds every value of dbType, a numeric or decimal, and if not, the type

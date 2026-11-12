@@ -244,7 +244,7 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 				if m.optional && c.Nullable && !nilable(q.row) {
 					return []diag.Diag{findOfNull(st.Header, m.name, c.Name, q.row)}
 				}
-				if _, ok := readable(q.row, c.Type, r.driver); !ok || c.Nullable && !nilable(q.row) {
+				if _, ok := readable(q.row, c.Type, r.s.Dialect, r.driver); !ok || c.Nullable && !nilable(q.row) {
 					return []diag.Diag{diag.Errorf(st.Header, "%s: the scalar result cannot hold column %s (%s)",
 						m.name, c.Name, c.Type)}
 				}
@@ -264,7 +264,7 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 		return []diag.Diag{diag.Errorf(m.pos, "%s: the query returns columns, but (int64, error) is the number of "+
 			"rows it affects", m.name).WithHints(rowsHint)}
 	case !q.scalar && (m.returns == returnsRow || m.returns == returnsRows):
-		fields, fds := resultFields(r.pkg.Fset, q.row, described.Columns, st.Header, m.name, r.driver)
+		fields, fds := resultFields(r.pkg.Fset, q.row, described.Columns, st.Header, m.name, r.s.Dialect, r.driver)
 		if diag.HasErrors(fds) {
 			return fds
 		}
@@ -274,9 +274,10 @@ func (r repoReader) queryResult(m *repoMethod, q *query, results *types.Tuple, d
 }
 
 // resultFields matches the fields of row, a struct, to columns, the result of a query written by hand at header, for
-// the method name, read through drv: one for each column, by its name or its tag, in the order of the columns.
+// the method name, read through drv from a database of d: one for each column, by its name or its tag, in the order
+// of the columns.
 func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.OutputColumn, header token.Position,
-	name string, drv driver,
+	name string, d snapshot.Dialect, drv driver,
 ) ([]column, []diag.Diag) {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(header, "-- query: %s: %s", name, fmt.Sprintf(format, args...))
@@ -317,9 +318,10 @@ func resultFields(fset *token.FileSet, row types.Type, columns []snapshot.Output
 				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as *"+typ))
 			continue
 		}
-		if want, ok := readable(f.typ, c.Type, drv); !ok {
+		if want, ok := readable(f.typ, c.Type, d, drv); !ok {
 			ds = append(ds, errorf("the column %s is %s, which %s.%s, %s %s, cannot hold", c.Name, c.Type,
-				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want))
+				typeName(row), strings.Join(f.path, "."), article(typ), typ).WithHints("declare it as "+want).
+				WithHints(bitHints(d, c.Type, drv)...))
 			continue
 		}
 		matched = append(matched, column{path: f.path, typ: f.typ, col: snapshot.Column{Name: c.Name},

@@ -365,9 +365,14 @@ A field's type must be one the driver reads the column's type into: an integer t
 `citext`, `time.Time` for `timestamptz` or `datetime`, `[]byte` for `bytea` or `blob`, `uuid.UUID` of Go 1.27, a type
 declared of it, or a string for `uuid`, and a slice of those for an array of PostgreSQL, which MySQL has none of.
 database/sql reads a binary column into a string too, but pgx reads a `bytea` into no string, so a string holding one
-stops generation on pgx. A type with `Scan` and `Value` methods converts itself, and fits any column, and a type of the
-database kanna-orm does not know, such as an enum or `json`, is taken at the field's word. That word is still one of a
-column: hold a `json` or `jsonb` column in a string, a `[]byte` such as `json.RawMessage`, or a type with `Scan` and
+stops generation on pgx. MySQL's driver reads a `bit(n)` column as bytes, so hold one in a `[]byte`: a bool, an integer,
+or a string holding one stops generation. For a boolean, declare the column `tinyint(1)`, which a bool holds.
+PostgreSQL's `bit(n)` and `varbit` are read into a type with a `Scan` method, such as `pgtype.Bits`, on pgx, and into a
+string or a `[]byte` too on database/sql, which reads them as text such as `101`: a bool or an integer holding one stops
+generation on either, as an integer would read `101` as a hundred and one. On MySQL, a parameter written to a `bit(n)`
+may be a bool or a number. A type with `Scan` and `Value` methods converts itself, and fits any column, and a type of
+the database kanna-orm does not know, such as an enum or `json`, is taken at the field's word. That word is still one of
+a column: hold a `json` or `jsonb` column in a string, a `[]byte` such as `json.RawMessage`, or a type with `Scan` and
 `Value` methods that decode and encode the JSON. A struct or a map without them is neither a column nor a relation, and
 stops generation.
 

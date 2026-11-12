@@ -579,7 +579,7 @@ func (r repoReader) target(m *repoMethod, models []*types.Named, fallback tableM
 			target.name)
 	}
 	m.target, m.table = target, table
-	f, fds := fields(r.pkg.Fset, scope{name: target.name, model: m.model, table: target.table}, table)
+	f, fds := fields(r.pkg.Fset, scope{name: target.name, model: m.model, table: target.table}, table, r.s.Dialect)
 	if wrong := mistakes(fds); wrong != nil {
 		return wrong // what the method says of the fields would follow from them
 	}
