@@ -229,7 +229,7 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 	}
 	if !col.NotNull && !nilable(f.Type()) && !nullzero {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: %s.%s may be NULL, which %s %s cannot hold",
-			label, m.sc.table, name, article(typ), typ).WithHints("declare it as *"+typ))
+			label, m.sc.table, name, article(typ), typ).WithHints(nullHint(f.Type(), typ)))
 		return
 	}
 	if want, ok := readable(f.Type(), col.Type, ""); !ok {
@@ -388,4 +388,12 @@ func article(typ string) string {
 		return "an"
 	}
 	return "a"
+}
+
+func nullHint(t types.Type, typ string) string {
+	hint := "declare it as *" + typ
+	if isBasic(t.Underlying(), types.String) {
+		hint += `, or tag it orm:",nullzero" to read NULL as the empty string`
+	}
+	return hint
 }

@@ -43,7 +43,7 @@ type order struct {
 }
 
 // Where narrows to the rows a condition holds for. The condition is SQL with its arguments in between, as in
-// Where("status <> ", v) or Where("date_trunc('month', placed_at) = date_trunc('month', ", at, ")").
+// Where("status <> ", v) or Where("date_trunc('month', placed_at) = date_trunc('month', ", at, "::timestamptz)").
 func (q Of[M]) Where(parts ...any) Of[M] {
 	if len(parts) == 0 {
 		panic("orm: Where without a condition")
@@ -123,7 +123,8 @@ func (q Of[M]) Or(alternatives ...Of[M]) Of[M] {
 	return q
 }
 
-// Not narrows to the rows s, which holds conditions alone, does not match.
+// Not narrows to the rows s, which holds conditions alone, does not match. A condition on a NULL is unknown, not
+// false, so its row is in neither s nor Not(s).
 func (q Of[M]) Not(s Of[M]) Of[M] {
 	if err := s.ConditionsOnly("Not"); err != nil {
 		q.err = cmp.Or(q.err, err)
