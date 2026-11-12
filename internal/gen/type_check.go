@@ -150,6 +150,12 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 			return "string", false
 		}
 		return "", true
+	case mysqlJSON(d, dbType):
+		// go-sql-driver/mysql writes no slice but a []byte, and database/sql reads json into none.
+		if _, ok := t.Underlying().(*types.Slice); ok && !isBytes(t) {
+			return "[]byte", false
+		}
+		return "", true
 	}
 	b, ok := t.Underlying().(*types.Basic)
 	if !ok {
@@ -172,17 +178,25 @@ func mysqlBit(d snapshot.Dialect, dbType string) bool {
 	return d == snapshot.MySQL && baseType(dbType) == "bit"
 }
 
+// mysqlJSON reports whether dbType, a type of d, is MySQL's json.
+func mysqlJSON(d snapshot.Dialect, dbType string) bool {
+	return d == snapshot.MySQL && baseType(dbType) == "json"
+}
+
 // postgresBit reports whether dbType, a type of d, is PostgreSQL's bit or varbit.
 func postgresBit(d snapshot.Dialect, dbType string) bool {
 	return d == snapshot.PostgreSQL && (baseType(dbType) == "bit" || baseType(dbType) == "varbit")
 }
 
-// bitHints are the hints for a Go type that cannot hold dbType, a type of d, read through drv: for MySQL's bit, the
-// boolean MySQL has instead, and for PostgreSQL's bits, read through any driver, the type pgx reads them into.
-func bitHints(d snapshot.Dialect, dbType string, drv driver) []string {
+// typeHints are the hints for a Go type that cannot hold dbType, a type of d, read through drv: for MySQL's bit, the
+// boolean MySQL has instead, for MySQL's json, the slice it writes, and for PostgreSQL's bits, read through any
+// driver, the type pgx reads them into.
+func typeHints(d snapshot.Dialect, dbType string, drv driver) []string {
 	switch {
 	case mysqlBit(d, dbType):
 		return []string{"for a boolean, make the column tinyint(1), which a bool holds"}
+	case mysqlJSON(d, dbType):
+		return []string{"go-sql-driver/mysql writes json from no slice but a []byte, such as json.RawMessage"}
 	case postgresBit(d, dbType) && drv == "":
 		return []string{"pgx reads it into no string or []byte, but into a type with a Scan method, such as pgtype.Bits"}
 	}
