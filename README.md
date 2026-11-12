@@ -475,9 +475,11 @@ methods its type allows:
 
 A method takes the field's type: `StatusEq` takes a `model.OrderStatus`, and a value type goes to the database through
 its `Value` method, as database/sql would send it. The methods matching a pattern take a string, which no value of the
-type need be, and a column held in a slice other than `[]byte`, an array, has no `In` or `NotIn`. The comparisons of a
-column that may be NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written;
-`StatusIsNull` says what it would have meant.
+type need be, and a column held in a slice other than `[]byte`, an array, has no `In` or `NotIn`. On PostgreSQL, a
+string column gets the methods matching a pattern only if its type is a text type, such as `text`, `varchar`, or
+`citext`, or a domain over one: an enum type, `uuid`, or `jsonb` has no `LIKE`. The comparisons of a column that may be
+NULL take the value, not a pointer, so that `= NULL`, which matches nothing, cannot be written; `StatusIsNull` says what
+it would have meant.
 
 On PostgreSQL, `StatusIn` and `StatusNotIn` send their values as one array, as in `status = ANY($1)`. pgx cannot write
 an array of a type it does not know, so for a column of a type outside `pg_catalog`, such as an enum type, the array

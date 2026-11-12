@@ -407,12 +407,9 @@ func (e emitter) column(c column) {
 	name := c.path[len(c.path)-1]
 	col := c.col.Name
 	sql := sqlName(e.d, col)
-	t := c.typ
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		t = p.Elem()
-	}
+	t := elemOf(c.typ)
 	typ := types.TypeString(t, e.f.Qualifier)
-	k := kindOf(t)
+	k := columnKind(c, e.d)
 
 	sc := e.f.Scope()
 	s, v := sc.Name("s"), sc.Name("v")
@@ -540,6 +537,15 @@ func kindOf(t types.Type) kind {
 		return kind{ordered: true, number: true}
 	}
 	return kind{}
+}
+
+// columnKind is the kind of c in a database of dialect d. A string is text only if d matches the column's type by
+// LIKE: on PostgreSQL, a type of text, as an enum, uuid, or jsonb has no LIKE, and on MySQL, any type, as it matches
+// the value as a string.
+func columnKind(c column, d snapshot.Dialect) kind {
+	k := kindOf(elemOf(c.typ))
+	k.text = k.text && (d != snapshot.PostgreSQL || classOf(c.col.Type) == classText)
+	return k
 }
 
 // goString writes s as a Go string literal: a raw one, as SQL reads best, unless s holds a backquote.

@@ -373,7 +373,7 @@ Memo string `orm:"note,nullzero"`
 | 文字列 | 加えて `StatusLike`、`%` と `_` をエスケープする `StatusHasPrefix` と `StatusContains`、PostgreSQL では `StatusILike` |
 | NULL になりうる | 加えて `StatusIsNull`, `StatusIsNotNull` |
 
-メソッドはフィールドの型を受け取ります。`StatusEq` は `model.OrderStatus` を受け取り、値オブジェクトは、database/sql が送るのと同じように `Value` メソッドを通してデータベースに渡ります。パターンで照合するメソッドは string を受け取ります。パターンはその型の値でなくてよいからです。`[]byte` 以外のスライスで保持されるカラム、つまり配列には、`In` も `NotIn` もありません。NULL になりうるカラムの比較メソッドは、ポインタではなく値を受け取ります。何にもマッチしない `= NULL` を書けないようにするためです。そう書いて表したかったことは `StatusIsNull` で表せます。
+メソッドはフィールドの型を受け取ります。`StatusEq` は `model.OrderStatus` を受け取り、値オブジェクトは、database/sql が送るのと同じように `Value` メソッドを通してデータベースに渡ります。パターンで照合するメソッドは string を受け取ります。パターンはその型の値でなくてよいからです。`[]byte` 以外のスライスで保持されるカラム、つまり配列には、`In` も `NotIn` もありません。PostgreSQL では、パターンで照合するメソッドは、`text`、`varchar`、`citext` のような文字列の型か、それを元にしたドメインのカラムにだけ生成されます。enum 型、`uuid`、`jsonb` には `LIKE` がないからです。NULL になりうるカラムの比較メソッドは、ポインタではなく値を受け取ります。何にもマッチしない `= NULL` を書けないようにするためです。そう書いて表したかったことは `StatusIsNull` で表せます。
 
 PostgreSQL では、`StatusIn` と `StatusNotIn` は値を 1 つの配列で送ります（`status = ANY($1)`）。pgx は知らない型の配列を書けないので、enum 型のように `pg_catalog` の外の型のカラムでは、配列を `text[]` として送り、カラムの型にキャストします（`status = ANY($1::text[]::public.order_status[])`）。
 

@@ -293,6 +293,72 @@ type Order struct {
 	}
 }
 
+func TestEmit_TextMatchedByLike(t *testing.T) {
+	t.Parallel()
+
+	pkg := module(t, orderScope+`
+-- model/model.go --
+package model
+
+type Order struct {
+	ID      int64
+	Note    string
+	Code    string
+	Region  string
+	Kana    string
+	Email   string
+	Tag     *string
+	State   string
+	Token   string
+	Payload string
+	Addr    string
+}
+`)
+	text := []string{"Note", "Code", "Region", "Kana", "Email", "Tag"}
+	others := []string{"State", "Token", "Payload", "Addr"}
+	fields := append(slices.Clone(text), others...)
+	for _, tt := range []struct {
+		d      snapshot.Dialect
+		types  []string
+		ilike  bool
+		others bool
+	}{
+		// PostgreSQL has LIKE on its types of text alone: a domain is described as its base type.
+		{snapshot.PostgreSQL, []string{"text", "varchar(20)", "bpchar(2)", "name", "ext.citext", "text",
+			"public.ticket_state", "uuid", "jsonb", "inet"}, true, false},
+		// MySQL matches a value of any type as a string.
+		{snapshot.MySQL, []string{"text", "varchar(20)", "char(2)", "tinytext", "longtext", "mediumtext",
+			"enum('open','closed')", "binary(16)", "json", "varbinary(16)"}, false, true},
+	} {
+		cols := make([]snapshot.Column, 0, len(fields)+1)
+		cols = append(cols, snapshot.Column{Name: "id", Type: "bigint", NotNull: true})
+		for i, field := range fields {
+			cols = append(cols, snapshot.Column{Name: strings.ToLower(field), Type: tt.types[i], NotNull: field != "Tag"})
+		}
+		s := snapshot.Snapshot{Dialect: tt.d, Tables: map[string]snapshot.Table{
+			"orders": {Columns: cols, PrimaryKey: []string{"id"}},
+		}}
+		src, ds, err := gen.Emit(pkg, s)
+		if err != nil || len(ds) > 0 {
+			t.Fatalf("Emit on %s: %v\n%s", tt.d, err, report(ds))
+		}
+		for _, field := range fields {
+			want := slices.Contains(text, field) || tt.others
+			for _, m := range []string{"Like", "HasPrefix", "Contains"} {
+				if got := strings.Contains(string(src), ") "+field+m+"("); got != want {
+					t.Errorf("Emit on %s writes %s%s: %t, want %t", tt.d, field, m, got, want)
+				}
+			}
+			if got := strings.Contains(string(src), ") "+field+"ILike("); got != (want && tt.ilike) {
+				t.Errorf("Emit on %s writes %sILike: %t, want %t", tt.d, field, got, want && tt.ilike)
+			}
+			if !strings.Contains(string(src), ") "+field+"Gt(") {
+				t.Errorf("Emit on %s wrote no %sGt", tt.d, field)
+			}
+		}
+	}
+}
+
 func TestEmit_RelatedScopeTypeElsewhere(t *testing.T) {
 	t.Parallel()
 
