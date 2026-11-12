@@ -1,9 +1,12 @@
 package gen
 
 import (
+	"fmt"
 	"go/types"
 	"strconv"
 	"strings"
+
+	"github.com/go-kanna/internal/valuetype"
 
 	"github.com/go-kanna/orm/internal/snapshot"
 )
@@ -60,9 +63,7 @@ func classOf(dbType string) dbClass {
 // method converts itself, and a database type kanna-orm does not know, or does not tell, is taken at the Go type's
 // word.
 func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		t = p.Elem()
-	}
+	t = driverType(t)
 	if scanner(t) {
 		return "", true
 	}
@@ -119,9 +120,7 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 	if want, ok := fits(t, dbType, drv); !ok {
 		return want, false
 	}
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		t = p.Elem()
-	}
+	t = driverType(t)
 	if scanner(t) {
 		return "", true
 	}
@@ -171,6 +170,34 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 		return numericWant(b, dbType)
 	}
 	return "", true
+}
+
+// driverType returns t, or what it points to, as its column is written and read: a value type of kanna-value as the
+// value it holds, which its Value and Scan pass to the driver and take from it.
+func driverType(t types.Type) types.Type {
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	for {
+		v, ok := valuetype.Of(t)
+		if !ok {
+			return t
+		}
+		t = v.Held
+	}
+}
+
+// valueHints are the hints for t, or what it points to, that cannot hold a column, when it is a value type of
+// kanna-value: the value it holds is what cannot. q qualifies the names of types, as the report does.
+func valueHints(t types.Type, q types.Qualifier) []string {
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	if _, ok := valuetype.Of(t); !ok {
+		return nil
+	}
+	return []string{fmt.Sprintf("%s is a value type of kanna-value, which writes and reads its column as the %s it "+
+		"holds", types.TypeString(t, q), types.TypeString(driverType(t), q))}
 }
 
 // mysqlBit reports whether dbType, a type of d, is MySQL's bit.
