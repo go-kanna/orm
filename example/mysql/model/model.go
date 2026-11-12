@@ -16,9 +16,9 @@ type (
 )
 
 const (
-	OrderOpen     OrderStatus = "open"
-	OrderShipped  OrderStatus = "shipped"
-	OrderCanceled OrderStatus = "canceled"
+	OrderStatusOpen     OrderStatus = "open"
+	OrderStatusShipped  OrderStatus = "shipped"
+	OrderStatusCanceled OrderStatus = "canceled"
 )
 
 type Customer struct {

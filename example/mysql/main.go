@@ -197,7 +197,7 @@ func (ex *example) placeOrders(ctx context.Context) error {
 			memo = "Leave at reception"
 		}
 		o, err := ex.orders.Insert(ctx, model.Order{
-			CustomerID: p.customer, Status: model.OrderOpen, PlacedAt: p.placed, Memo: memo,
+			CustomerID: p.customer, Status: model.OrderStatusOpen, PlacedAt: p.placed, Memo: memo,
 		})
 		if err != nil {
 			return fmt.Errorf("an order: %w", err)
@@ -231,7 +231,7 @@ func (ex *example) ship(ctx context.Context, fulfillment mysql.Fulfillment, o mo
 	if err := fulfillment.InsertShipment(ctx, s); err != nil {
 		return fmt.Errorf("the shipment: %w", err)
 	}
-	o.Status = model.OrderShipped
+	o.Status = model.OrderStatusShipped
 	if err := fulfillment.Update(ctx, o); err != nil {
 		return fmt.Errorf("the status: %w", err)
 	}
@@ -327,10 +327,10 @@ func (ex *example) report(ctx context.Context) error {
 	for _, c := range counts {
 		byStatus[c.Status] = c.Count
 	}
-	if len(counts) != 2 || byStatus[model.OrderOpen] != 3 || byStatus[model.OrderShipped] != 1 {
+	if len(counts) != 2 || byStatus[model.OrderStatusOpen] != 3 || byStatus[model.OrderStatusShipped] != 1 {
 		return fmt.Errorf("orders of each status: got %+v", counts)
 	}
-	fmt.Fprintf(ex.w, "open: %d, shipped: %d\n", byStatus[model.OrderOpen], byStatus[model.OrderShipped])
+	fmt.Fprintf(ex.w, "open: %d, shipped: %d\n", byStatus[model.OrderStatusOpen], byStatus[model.OrderStatusShipped])
 	sales, err := ex.orders.MonthlySales(ctx, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		return fmt.Errorf("the sales: %w", err)
@@ -353,10 +353,10 @@ func (ex *example) cancel(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("order 3: %w", err)
 	}
-	if o.Status != model.OrderOpen {
+	if o.Status != model.OrderStatusOpen {
 		return fmt.Errorf("order 3 is %s", o.Status)
 	}
-	o.Status = model.OrderCanceled
+	o.Status = model.OrderStatusCanceled
 	if err := fulfillment.Update(ctx, o); err != nil {
 		return fmt.Errorf("order 3: %w", err)
 	}

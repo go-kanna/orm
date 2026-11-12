@@ -32,7 +32,27 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 
 ## 使い方
 
-kanna-orm はスキーマを、マイグレーションではなくデータベースから読み取ります。データベースをマイグレーションし、`describe` でモジュールのルートにスナップショットを書き出します:
+kanna-orm はスキーマを、マイグレーションではなくデータベースから読み取ります。以下の例では、PostgreSQL に pgx でつなぐ `example.com/shop` というモジュールを想定し、テーブルは次のとおりとします:
+
+```sql
+CREATE TABLE orders (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    customer_id bigint NOT NULL,
+    status      text NOT NULL,
+    placed_at   timestamptz NOT NULL,
+    note        text
+);
+
+CREATE TABLE order_lines (
+    order_id bigint NOT NULL REFERENCES orders ON DELETE CASCADE,
+    line_no  integer NOT NULL,
+    sku      text NOT NULL,
+    quantity integer NOT NULL,
+    PRIMARY KEY (order_id, line_no)
+);
+```
+
+データベースをこのテーブルまでマイグレーションし、`describe` でモジュールのルートにスナップショットを書き出します:
 
 ```sh
 go tool kanna-orm describe -database-url "$DATABASE_URL" ./...
@@ -55,6 +75,13 @@ package scopes
 ```go
 package repository
 
+import (
+	"context"
+
+	"example.com/shop/model"
+	"example.com/shop/scopes"
+)
+
 //go:generate go tool kanna-orm -destination ../postgres
 
 //kanna:repository
@@ -71,9 +98,19 @@ type Order interface {
 ```go
 package model
 
-type OrderID uuid.UUID
+import "time"
 
-type CustomerID uuid.UUID
+type OrderID int64
+
+type CustomerID int64
+
+type OrderStatus string
+
+const (
+	OrderStatusOpen     OrderStatus = "open"
+	OrderStatusShipped  OrderStatus = "shipped"
+	OrderStatusCanceled OrderStatus = "canceled"
+)
 
 type Order struct {
 	ID         OrderID
@@ -83,9 +120,16 @@ type Order struct {
 	Memo       *string `orm:"note"`
 	Lines      []OrderLine
 }
+
+type OrderLine struct {
+	OrderID  OrderID
+	LineNo   int
+	SKU      string
+	Quantity int
+}
 ```
 
-`OrderID` と `CustomerID` は `uuid` カラムを保持します。`uuid.UUID` を元に宣言しているので、片方の値をもう片方の代わりに渡すとコンパイルエラーになります（[uuid をキーにする](#uuid-をキーにする)）。
+`OrderID` と `CustomerID` は別々の型なので、片方の値をもう片方の代わりに渡すとコンパイルエラーになります。`uuid` をキーにするテーブルも同じように宣言します（[uuid をキーにする](#uuid-をキーにする)）。
 
 `go generate ./...` を実行すると、スコープ型と同じディレクトリに `scopes_gen.go` が書き出されます:
 
@@ -129,11 +173,11 @@ func newOrder(db DBTX, opts ...option.Option) Order {
 func NewOrder(db DBTX, opts ...option.Option) Order { return newOrder(db, opts...) }
 
 func (r Order) Insert(ctx context.Context, o model.Order) (model.Order, error) {
-	const q = `INSERT INTO orders (id, customer_id, status, placed_at, note)
-VALUES ($1, $2, $3, $4, $5)
+	const q = `INSERT INTO orders (customer_id, status, placed_at, note)
+VALUES ($1, $2, $3, $4)
 RETURNING id, customer_id, status, placed_at, note`
 	var row model.Order
-	err := r.db.QueryRow(ctx, q, o.ID, o.CustomerID, o.Status, o.PlacedAt, o.Memo).
+	err := r.db.QueryRow(ctx, q, o.CustomerID, o.Status, o.PlacedAt, o.Memo).
 		Scan(&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo)
 	if err != nil {
 		return model.Order{}, fmt.Errorf("insert into orders: %w", err)
@@ -144,15 +188,34 @@ RETURNING id, customer_id, status, placed_at, note`
 // ...
 ```
 
-呼び出し側はスコープをチェーンします:
+コンストラクタが受け取る `DBTX` には `*pgxpool.Pool` をそのまま渡せます。呼び出し側はスコープをチェーンします:
 
 ```go
-orders, err := repo.List(ctx, scopes.Orders().
-	StatusNe(model.OrderCanceled).
-	PlacedAtGte(lastMonth).
-	WithLines().
-	PlacedAtDesc().
-	Limit(20))
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"example.com/shop/model"
+	"example.com/shop/postgres"
+	"example.com/shop/repository"
+	"example.com/shop/scopes"
+)
+
+func listRecent(ctx context.Context, pool *pgxpool.Pool) ([]model.Order, error) {
+	var repo repository.Order = postgres.NewOrder(pool)
+
+	lastMonth := time.Now().AddDate(0, -1, 0)
+	return repo.List(ctx, scopes.Orders().
+		StatusNe(model.OrderStatusCanceled).
+		PlacedAtGte(lastMonth).
+		WithLines().
+		PlacedAtDesc().
+		Limit(20))
+}
 ```
 
 スキーマと合わない宣言は、最初にそれに当たるリクエストまで持ち越さず、生成の時点で止まります:
@@ -326,7 +389,7 @@ s := scopes.Orders().Or(scopes.Orders().MemoNe(v), scopes.Orders().MemoIsNull())
 ```go
 // Open narrows to the orders that are not canceled.
 func (s Order) Open() Order {
-	return s.StatusNe(model.OrderCanceled)
+	return s.StatusNe(model.OrderStatusCanceled)
 }
 
 // Recent orders by placed_at, latest first, and keeps the first n.
@@ -357,7 +420,7 @@ kanna-orm が生成するメソッドと同じ名前のメソッドを自分で�
 ```go
 // WHERE ... AND ((status = $1) OR (placed_at < $2))
 s := scopes.Orders().Or(
-	scopes.Orders().StatusEq(model.OrderPending),
+	scopes.Orders().StatusEq(model.OrderStatusPending),
 	scopes.Orders().PlacedAtLt(cutoff),
 )
 ```
@@ -1059,10 +1122,10 @@ o, err := orders.GetForUpdate(ctx, id)
 if err != nil {
 	return err
 }
-if o.Status != model.OrderOpen {
+if o.Status != model.OrderStatusOpen {
 	return ErrNotOpen
 }
-o.Status = model.OrderCanceled
+o.Status = model.OrderStatusCanceled
 if err := orders.Update(ctx, o); err != nil {
 	return err
 }
@@ -1085,7 +1148,7 @@ return tx.Commit(ctx)
 //kanna:lock update skip-locked
 UpdateFree(ctx context.Context, c scopes.OrderChangeSet, s ...scopes.Order) (int64, error)
 
-n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderShipped),
+n, err := orders.UpdateFree(ctx, scopes.OrderChanges().SetStatus(model.OrderStatusShipped),
     scopes.Orders().Open().PlacedAtAsc().IDAsc().Limit(batch))
 ```
 
