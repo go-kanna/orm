@@ -85,47 +85,47 @@ func TestFields_AuditMistakes(t *testing.T) {
 		name, fields, decls, want string
 	}{
 		{"a pointer by name", "\tUpdatedAt *time.Time\n", "",
-			"model.go:7:1: error: Order.UpdatedAt: updated_at, the time a row is updated, is a time.Time, not a " +
+			"model.go:7:2: error: Order.UpdatedAt: updated_at, the time a row is updated, is a time.Time, not a " +
 				"*time.Time\n  declare it as time.Time\n" +
 				`  or, for a column kanna-orm leaves to you, name the field otherwise, holding the column by ` +
 				`orm:"updated_at"`},
 		{"a pointer by tag", "\tDeletedAt *time.Time `orm:\",updated\"`\n", "",
-			"model.go:7:1: error: Order.DeletedAt: deleted_at, the time a row is updated, is a time.Time, not a " +
+			"model.go:7:2: error: Order.DeletedAt: deleted_at, the time a row is updated, is a time.Time, not a " +
 				"*time.Time\n  declare it as time.Time"},
 		{"a type of its own", "\tCreatedAt Stamp\n", "type Stamp time.Time\n\nfunc (s *Stamp) Scan(any) error { " +
 			"return nil }\n",
-			"model.go:7:1: error: Order.CreatedAt: created_at, the time a row is created, is a time.Time, not a " +
+			"model.go:7:2: error: Order.CreatedAt: created_at, the time a row is created, is a time.Time, not a " +
 				"Stamp\n  declare it as time.Time\n" +
 				`  or, for a column kanna-orm leaves to you, name the field otherwise, holding the column by ` +
 				`orm:"created_at"`},
 		{"a string by tag", "\tNote string `orm:\",created\"`\n", "",
-			"model.go:7:1: error: Order.Note: note, the time a row is created, is a time.Time, not a string\n" +
+			"model.go:7:2: error: Order.Note: note, the time a row is created, is a time.Time, not a string\n" +
 				"  declare it as time.Time"},
 		{"insertonly on the creation time", "\tCreatedAt time.Time `orm:\",insertonly\"`\n", "",
-			"model.go:7:1: error: Order.CreatedAt: created_at is the time a row is created, and an insert alone " +
+			"model.go:7:2: error: Order.CreatedAt: created_at is the time a row is created, and an insert alone " +
 				"writes it already\n  remove insertonly"},
 		{"insertonly on the update time", "\tModifiedAt time.Time `orm:\",updated,insertonly\"`\n", "",
-			"model.go:7:1: error: Order.ModifiedAt: modified_at is the time a row is updated, and every write of its " +
+			"model.go:7:2: error: Order.ModifiedAt: modified_at is the time a row is updated, and every write of its " +
 				"row writes it, which insertonly would leave out\n  remove insertonly"},
 		{"two tagged", "\tInsertedAt time.Time `orm:\",created\"`\n\tModifiedAt time.Time `orm:\",created\"`\n", "",
-			"model.go:8:1: error: Order.ModifiedAt: Order.InsertedAt is the time a row of orders is created already\n" +
+			"model.go:8:2: error: Order.ModifiedAt: Order.InsertedAt is the time a row of orders is created already\n" +
 				"  tag one field alone created"},
 		{"two by name", "\tCreatedAt time.Time\n\tBase\n",
 			"type Base struct {\n\tCreatedAt time.Time `orm:\"base_created_at\"`\n}\n",
-			"model.go:14:1: error: Order.Base.CreatedAt: Order.CreatedAt is the time a row of orders is created " +
+			"model.go:14:2: error: Order.Base.CreatedAt: Order.CreatedAt is the time a row of orders is created " +
 				"already\n" + `  leave one of them out with orm:"-", or tag the one meant created`},
 		{"both tags", "\tInsertedAt time.Time `orm:\",created,updated\"`\n", "",
-			"model.go:7:1: error: Order.InsertedAt: a column is the time its row was created or the time it was " +
+			"model.go:7:2: error: Order.InsertedAt: a column is the time its row was created or the time it was " +
 				"updated, not both"},
 		{"a tag twice", "\tInsertedAt time.Time `orm:\",created,created\"`\n", "",
-			`model.go:7:1: error: Order.InsertedAt: unknown or duplicate orm option "created"`},
+			`model.go:7:2: error: Order.InsertedAt: unknown or duplicate orm option "created"`},
 		{"default of no database default", "\tNote string `orm:\",default\"`\n", "",
-			"model.go:7:1: error: Order.Note: default requires orders.note to have a database default"},
+			"model.go:7:2: error: Order.Note: default requires orders.note to have a database default"},
 		{"default of no database default, by a name a tag makes no audit column",
 			"\tCreatedAt time.Time `orm:\",default\"`\n\tInsertedAt time.Time `orm:\",created\"`\n", "",
-			"model.go:7:1: error: Order.CreatedAt: default requires orders.created_at to have a database default"},
+			"model.go:7:2: error: Order.CreatedAt: default requires orders.created_at to have a database default"},
 		{"a tag on a relation", "\tLines []OrderLine `orm:\",created\"`\n", "type OrderLine struct{ ID int64 }\n",
-			`model.go:7:1: error: Order.Lines: orm:",created" is for a column, and Lines is a relation`},
+			`model.go:7:2: error: Order.Lines: orm:",created" is for a column, and Lines is a relation`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

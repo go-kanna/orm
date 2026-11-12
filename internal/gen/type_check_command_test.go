@@ -55,7 +55,7 @@ func TestCommand_BytesOnPgx(t *testing.T) {
 		driver string
 		want   string
 	}{
-		{"pgx", "model.go:5:1: error: Doc.Body: the column body is bytea, which pgx reads into no string\n" +
+		{"pgx", "model.go:5:2: error: Doc.Body: the column body is bytea, which pgx reads into no string\n" +
 			"  declare it as []byte, or as a type of your own with Scan and Value methods"},
 		{"database/sql", ""},
 	} {
@@ -137,7 +137,7 @@ func TestCommand_BitOnMySQL(t *testing.T) {
 		field string
 		want  string
 	}{
-		{"bool", "model.go:9:1: error: Flag.Enabled: flags.enabled is bit(1), which a bool cannot hold\n" +
+		{"bool", "model.go:9:2: error: Flag.Enabled: flags.enabled is bit(1), which a bool cannot hold\n" +
 			"  declare it as []byte, or as a type of your own with Scan and Value methods\n" +
 			"  for a boolean, make the column tinyint(1), which a bool holds"},
 		{"[]byte", ""},
@@ -183,10 +183,10 @@ func TestCommand_BitOnPostgreSQL(t *testing.T) {
 		driver, field, column string
 		want                  string
 	}{
-		{"pgx", "bool", "bit(1)", "model.go:9:1: error: Flag.Enabled: flags.enabled is bit(1), which a bool cannot hold\n" +
+		{"pgx", "bool", "bit(1)", "model.go:9:2: error: Flag.Enabled: flags.enabled is bit(1), which a bool cannot hold\n" +
 			"  declare it as string, or as a type of your own with Scan and Value methods\n" +
 			"  pgx reads it into no string or []byte, but into a type with a Scan method, such as pgtype.Bits"},
-		{"pgx", "string", "varbit", "model.go:9:1: error: Flag.Enabled: the column enabled is varbit, which pgx reads " +
+		{"pgx", "string", "varbit", "model.go:9:2: error: Flag.Enabled: the column enabled is varbit, which pgx reads " +
 			"into no string\n  declare it as pgtype.Bits, or as a type of your own with Scan and Value methods"},
 		{"pgx", "sql.NullString", "bit(8)", ""},
 		{"database/sql", "int64", "bit(8)", "flags.enabled is bit(8), which an int64 cannot hold"},
@@ -273,7 +273,7 @@ func TestCommand_JSONSlice(t *testing.T) {
 		field, dbCol string
 		want         string
 	}{
-		{snapshot.MySQL, "", "[]int64", "json", "model.go:9:1: error: Note.Tags: notes.tags is json, which a []int64 " +
+		{snapshot.MySQL, "", "[]int64", "json", "model.go:9:2: error: Note.Tags: notes.tags is json, which a []int64 " +
 			"cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value methods\n" +
 			"  go-sql-driver/mysql writes json from no slice but a []byte, such as json.RawMessage"},
 		{snapshot.MySQL, "", "[]string", "json", "notes.tags is json, which a []string cannot hold"},

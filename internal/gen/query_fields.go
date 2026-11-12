@@ -20,7 +20,7 @@ func queryColumns(fset *token.FileSet, row types.Type) ([]column, []diag.Diag) {
 		for i := range st.NumFields() {
 			f := st.Field(i)
 			p := append(append([]string(nil), path...), f.Name())
-			pos := fset.Position(f.Pos())
+			pos := fieldPosition(fset, f)
 			tag, err := parseTag(st.Tag(i))
 			switch t := f.Type(); {
 			case err != nil:

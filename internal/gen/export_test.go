@@ -318,3 +318,6 @@ func EmitRepositories(pkgs []*packages.Package, repoPath string, s snapshot.Snap
 	src, _, err := emitRepositories(dest.pkgPath, dest.name, s.Dialect, driver(drv), repos, models, nil)
 	return src, ds, err
 }
+
+// FieldPosition exposes fieldPosition.
+var FieldPosition = fieldPosition

@@ -196,7 +196,7 @@ type Audit struct {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "model.go:9:1: error: Order.Audit.ID: its methods would be named as those of Order.ID, such as IDEq\n" +
+	want := "model.go:9:2: error: Order.Audit.ID: its methods would be named as those of Order.ID, such as IDEq\n" +
 		`  leave one of them out with orm:"-"`
 	if got := report(ds); got != want {
 		t.Errorf("Emit reports\n%s\nwant\n%s", got, want)
@@ -393,7 +393,7 @@ type Customer struct{ q scope.Of[model.Customer] }
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "model.go:11:1: error: Order.Extra.Customer: its method would be named as that of Order.Customer, " +
+	want := "model.go:11:2: error: Order.Extra.Customer: its method would be named as that of Order.Customer, " +
 		"WithCustomer\n" + `  leave one of them out with orm:"-"`
 	if got := report(ds); got != want {
 		t.Errorf("Emit reports\n%s\nwant\n%s", got, want)
