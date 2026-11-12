@@ -12,9 +12,11 @@ import (
 )
 
 // reportDeps tells what a run in dir reads and writes. A scope type reads its model,
-// which the package declaring it need not import. A snapshot that is not there
-// yet leaves what the run generates unknown, for the kanna command to report it
-// as an input that is missing.
+// which the package declaring it need not import. Where the run writes follows
+// from the directives and -destination alone, so it is told even when the models
+// do not resolve yet or the snapshot is not there, which the kanna command
+// reports as an input that is missing. So are the names of the implementations,
+// which the interfaces fix; those of the scope types wait for the snapshot.
 func reportDeps(dir string, cfg config, patterns []string) (deps.Report, error) {
 	dest, d := readDestination(dir, cfg)
 	if d != nil {
@@ -41,9 +43,22 @@ func reportDeps(dir string, cfg config, patterns []string) (deps.Report, error) 
 		return r, nil //nolint:nilerr // the run reports it
 	}
 	r.Inputs = []string{path}
+	for _, pkg := range l.roots {
+		if slices.Contains(l.scopePkgs, pkg) && len(pkg.GoFiles) > 0 {
+			r.Writes = append(r.Writes, filepath.Join(filepath.Dir(pkg.GoFiles[0]), scopesOutputName))
+		}
+	}
+	repos := map[string]bool{}
+	if len(l.repoPkgs) > 0 && dest != nil {
+		r.Writes = append(r.Writes, filepath.Join(dest.dir, repositoryOutputName))
+		for _, pkg := range l.repoPkgs {
+			maps.Copy(repos, repositoryNames(pkg, dest.pkgPath))
+		}
+	}
 
 	p, stop := planRun(dir, cfg, load, dest, l)
 	if stop != nil {
+		r.Declares = slices.Collect(maps.Keys(repos))
 		return r, nil // which the run reports
 	}
 
@@ -52,18 +67,8 @@ func reportDeps(dir string, cfg config, patterns []string) (deps.Report, error) 
 			r.Refs = append(r.Refs, deps.Ref{Package: e.modelPath, Via: "the scope type " + e.name})
 		}
 	}
-	for _, pkg := range p.roots {
-		if len(p.plans[pkg]) > 0 {
-			r.Writes = append(r.Writes, filepath.Join(filepath.Dir(pkg.GoFiles[0]), scopesOutputName))
-		}
-	}
 	declares := generatedNames(p.plans, p.s.Dialect)
-	if len(p.repo.repos) > 0 {
-		r.Writes = append(r.Writes, filepath.Join(dest.dir, repositoryOutputName))
-		for _, pkg := range p.repoPkgs {
-			maps.Copy(declares, repositoryNames(pkg, dest.pkgPath))
-		}
-	}
+	maps.Copy(declares, repos)
 	r.Declares = slices.Collect(maps.Keys(declares))
 	return r, nil
 }
