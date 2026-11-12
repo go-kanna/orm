@@ -14,7 +14,7 @@ import (
 
 // Open narrows to the orders neither shipped nor canceled.
 func (s Order) Open() Order {
-	return s.StatusEq(model.OrderOpen)
+	return s.StatusEq(model.OrderStatusOpen)
 }
 
 // Latest orders the orders latest first.
