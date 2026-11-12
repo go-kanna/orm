@@ -162,7 +162,7 @@ $ go generate ./...
 ./scopes.go:6:1: error: Order: the snapshot has no table order
   did you mean orders?
 ../model/order.go:12:1: error: Order.Memo: orders.note may be NULL, which a string cannot hold
-  declare it as *string
+  declare it as *string, or tag it orm:",nullzero" to read NULL as the empty string
 ./order_repository.go:12:2: error: ListByCustomer: model.Order has no field for the parameter custmerID
   did you mean customerID?
 ./order_repository.go:14:2: error: GetByStatus: status is not a unique key of orders, so Get cannot return one row
