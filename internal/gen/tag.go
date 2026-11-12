@@ -23,6 +23,8 @@ type fieldTag struct {
 	// insertOnly says the column is written by an insert alone, and left as it was by an update and by an upsert
 	// meeting its row.
 	insertOnly bool
+	// readOnly says the database writes the column on every write, as a trigger does: kanna-orm reads it alone.
+	readOnly bool
 	// audit says the column is the time its row was created, or last updated, whatever the field is named.
 	audit audit
 }
@@ -44,22 +46,8 @@ func parseTag(tag string) (fieldTag, error) {
 		!strings.ContainsAny(name, ",= ") {
 		tag := fieldTag{column: name}
 		for option := range strings.SplitSeq(options, ",") {
-			switch {
-			case option == "nullzero" && !tag.nullzero:
-				tag.nullzero = true
-			case option == "default" && !tag.insertDefault:
-				tag.insertDefault = true
-			case option == "insertonly" && !tag.insertOnly:
-				tag.insertOnly = true
-			case option == "created" && tag.audit == auditNone:
-				tag.audit = auditCreated
-			case option == "updated" && tag.audit == auditNone:
-				tag.audit = auditUpdated
-			case option == "created" && tag.audit == auditUpdated, option == "updated" && tag.audit == auditCreated:
-				return fieldTag{}, errors.New("a column is the time its row was created or the time it was " +
-					"updated, not both")
-			default:
-				return fieldTag{}, fmt.Errorf("unknown or duplicate orm option %q", option)
+			if err := tag.option(option); err != nil {
+				return fieldTag{}, err
 			}
 		}
 		return tag, nil
@@ -80,6 +68,29 @@ func parseTag(tag string) (fieldTag, error) {
 		return fieldTag{column: value}, nil
 	}
 	return fieldTag{}, fmt.Errorf(`orm:%q is neither a column, -, nor fk=<columns>`, value)
+}
+
+// option reads one option of the tag of a column, after its name.
+func (t *fieldTag) option(option string) error {
+	switch {
+	case option == "nullzero" && !t.nullzero:
+		t.nullzero = true
+	case option == "default" && !t.insertDefault:
+		t.insertDefault = true
+	case option == "insertonly" && !t.insertOnly:
+		t.insertOnly = true
+	case option == "readonly" && !t.readOnly:
+		t.readOnly = true
+	case option == "created" && t.audit == auditNone:
+		t.audit = auditCreated
+	case option == "updated" && t.audit == auditNone:
+		t.audit = auditUpdated
+	case option == "created" && t.audit == auditUpdated, option == "updated" && t.audit == auditCreated:
+		return errors.New("a column is the time its row was created or the time it was updated, not both")
+	default:
+		return fmt.Errorf("unknown or duplicate orm option %q", option)
+	}
+	return nil
 }
 
 // parseRelationTag reads the tag of a scalar relation: relation=, column=, and fk=, whose columns go on in the parts
