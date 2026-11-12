@@ -24,6 +24,8 @@ var shapes = map[verb]string{
 	verbInsert: "Insert(ctx context.Context, {row} {model}) ({model}, error), or with error alone",
 	verbUpdate: "Update(ctx context.Context, {row} {model}, s ...{scope}) error, or " +
 		"Update(ctx context.Context, {keys}, c {changes}, s ...{scope}) ({model}, error)",
+	verbTouch: "Touch(ctx context.Context, {keys}) error, or TouchStale(ctx context.Context, s ...{scope}) " +
+		"(int64, error)",
 	verbUpsert: "Upsert(ctx context.Context, {row} {model}) error",
 	verbDelete: "Delete(ctx context.Context, {keys}) error, or DeleteStale(ctx context.Context, " +
 		"s ...{scope}) (int64, error) or ([]{model}, error)",
@@ -165,6 +167,7 @@ var returnShapes = map[verb]string{
 	verbExists: "bool",
 	verbInsert: "{model} of one row, []{model} of many, or error alone",
 	verbUpdate: "{model} of one row, int64 or []{model} of the rows of a change set, or error alone",
+	verbTouch:  "int64 of the rows its scopes select, or error alone",
 	verbUpsert: "{model} of one row, []{model} of many, or error alone",
 	verbDelete: "int64 or []{model} of the rows its scopes select, or error alone of the row of a key",
 	verbCopy:   "int64",

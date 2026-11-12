@@ -50,7 +50,7 @@ func (m repoMethod) clocked() bool {
 	switch m.verb { //nolint:exhaustive // the others write no audit column by the clock
 	case verbInsert, verbUpsert:
 		return stamps(m.inserted())
-	case verbUpdate:
+	case verbUpdate, verbTouch:
 		return stamps(m.updated())
 	}
 	return false

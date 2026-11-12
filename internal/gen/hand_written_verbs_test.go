@@ -39,6 +39,9 @@ func TestCommand_HandWrittenVerbs(t *testing.T) {
 		{"an Insert returning a column as a count", save,
 			"InsertRecord(ctx context.Context, record model.Record) (int64, error)",
 			"InsertRecord: an Insert returns error alone, (int64, error) for the number of rows it affects"},
+		{"a Touch returning a column as a count", save,
+			"TouchRecord(ctx context.Context, record model.Record) (int64, error)",
+			"TouchRecord: a Touch returns error alone, (int64, error) for the number of rows it affects"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

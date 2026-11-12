@@ -419,7 +419,7 @@ func verbContract(m *repoMethod, q query) []diag.Diag {
 		if m.returns != returnsScalar || !isBasic(q.row, types.Bool) {
 			contract = "the one column of its result, as (bool, error)"
 		}
-	case verbInsert, verbUpdate, verbUpsert, verbDelete:
+	case verbInsert, verbUpdate, verbTouch, verbUpsert, verbDelete:
 		if m.returns == returnsScalar && isBasic(q.row, types.Int64) || m.optional {
 			contract = "error alone, (int64, error) for the number of rows it affects, or (T, error) or ([]T, error) " +
 				"for those it returns"

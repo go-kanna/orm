@@ -75,6 +75,8 @@ type Notes interface {
 	//kanna:conflict name
 	UpsertChanges(ctx context.Context, n model.Note, c scopes.NoteChangeSet) error
 	GetByName(ctx context.Context, name string) (model.Note, error)
+	TouchByName(ctx context.Context, name string, s ...scopes.Note) error
+	TouchStale(ctx context.Context, s ...scopes.Note) (int64, error)
 	Bump(ctx context.Context, name string) error
 	Bind(db stdlib.DBTX) Notes
 }
@@ -110,6 +112,7 @@ const auditRuntime = `package impl
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -118,6 +121,7 @@ import (
 
 	"example.com/shop/model"
 	"example.com/shop/scopes"
+	"github.com/go-kanna/orm"
 	"github.com/go-kanna/orm/option"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -325,6 +329,23 @@ func TestAudit(t *testing.T) {
 	check("h", 15, 15)
 	calls(15)
 
+	if err := notes.TouchByName(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if n := check("a", 1, 16); n.Body != "changed" {
+		t.Fatalf("Touch wrote %+v", n)
+	}
+	if err := notes.TouchByName(ctx, "missing"); !errors.Is(err, orm.ErrNotFound) {
+		t.Fatalf("Touch of no row = %v, want orm.ErrNotFound", err)
+	}
+	if n, err := notes.TouchStale(ctx, scopes.Note{}.NameIn("c", "d")); err != nil || n != 2 {
+		t.Fatalf("Touch of the rows of a scope = %d, %v, want 2", n, err)
+	}
+	check("c", 2, 18)
+	check("d", 2, 18)
+	check("e", 9, 10)
+	calls(18)
+
 	ec := &clock{start: c.start}
 	events := NewEvents(conn, option.WithClock(ec))
 	assigned := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -383,11 +404,11 @@ func TestAudit(t *testing.T) {
 	if _, err := NewNotes(inTokyo, option.WithClock(c)).Insert(ctx, model.Note{Name: "tokyo"}); err != nil {
 		t.Fatal(err)
 	}
-	stored(conn, "tokyo", 16, tokyo)
+	stored(conn, "tokyo", 19, tokyo)
 	got, err := NewNotes(inTokyo).GetByName(ctx, "tokyo")
-	if err != nil || !got.UpdatedAt.Equal(c.at(16)) || got.UpdatedAt.Location().String() != "Asia/Tokyo" {
+	if err != nil || !got.UpdatedAt.Equal(c.at(19)) || got.UpdatedAt.Location().String() != "Asia/Tokyo" {
 		t.Fatalf("note tokyo read through loc=Asia/Tokyo = %+v, %v; want updated at %v in Asia/Tokyo", got, err,
-			c.at(16))
+			c.at(19))
 	}
 }
 `
@@ -483,7 +504,8 @@ func TestCommand_AuditGenerated(t *testing.T) {
 			for name, want := range map[string]int{
 				"Notes.Insert": 1, "Notes.InsertAll": 1, "Notes.Update": 1, "Notes.UpdateWhere": 1,
 				"Notes.UpdateByName": 1, "Notes.UpdatePage": 1, "Notes.Upsert": 1, "Notes.UpsertAll": 1,
-				"Notes.UpsertChanges": 1, "Notes.GetByName": 0, "Events.Insert": 1, "Events.Update": 0,
+				"Notes.UpsertChanges": 1, "Notes.GetByName": 0, "Notes.TouchByName": 1, "Notes.TouchStale": 1,
+				"Events.Insert": 1, "Events.Update": 0,
 				"Events.UpdateByKind": 0, "Events.Upsert": 1, "Events.UpsertChanges": 1,
 			} {
 				if got := strings.Count(methods[name], "now := r.db.Now(ctx)"); got != want {
@@ -499,6 +521,11 @@ func TestCommand_AuditGenerated(t *testing.T) {
 			for _, name := range []string{"Notes.UpdateByName", "Notes.UpdatePage", "Notes.UpsertChanges"} {
 				if !strings.Contains(methods[name], `.Touch("updated_at", now)`) {
 					t.Errorf("%s does not touch updated_at:\n%s", name, methods[name])
+				}
+			}
+			for _, name := range []string{"Notes.TouchByName", "Notes.TouchStale"} {
+				if !strings.Contains(methods[name], `.Set("updated_at", now)`) {
+					t.Errorf("%s does not write updated_at:\n%s", name, methods[name])
 				}
 			}
 			for _, name := range []string{"Events.Insert", "Events.Update", "Events.UpdateByKind", "Events.Upsert",

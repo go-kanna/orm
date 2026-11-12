@@ -32,8 +32,13 @@ func (e repoEmitter) updateChanges(m repoMethod, sc gofile.Scope, recv string, s
 	} else {
 		e.printf("var %s %s[%s]\n", q, e.ref("Of"), model)
 	}
-	if m.changes != "" {
-		e.printf("%s := %s\n", changes, e.changesOf(m, sig.params[m.changes], sig.now))
+	if m.writesChanges() {
+		if m.verb == verbTouch {
+			touched, _ := m.touched()
+			e.printf("%s := %s[%s]{}.Set(%q, %s)\n", changes, e.ref("Changes"), model, touched.col.Name, sig.now)
+		} else {
+			e.printf("%s := %s\n", changes, e.changesOf(m, sig.params[m.changes], sig.now))
+		}
 		for _, k := range m.keys {
 			e.printf("%s = %s.Where(%s, %s)\n", q, q,
 				goString(sqlName(e.d, k.col.col.Name)+" = "), sig.params[k.param])

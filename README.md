@@ -864,6 +864,7 @@ in the field's column. The column's name, which a tag may give, as `orm:"note"` 
 | `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)`                                         | reports whether any row matches                                                       |
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`, or with `error` alone               | writes a row, or [many](#writing-many-rows)                                           |
 | `Update` | `Update(ctx, o model.Order) error`, or with a [change set](#updating-selected-columns) | writes every column but the key, or returns `orm.ErrNotFound` when no row has the key |
+| `Touch`  | `Touch(ctx, id model.OrderID) error`, or [with scopes](#touching-rows)                 | writes the [update time](#creation-and-update-times) alone, by the clock              |
 | `Upsert` | `Upsert(ctx, o model.Order) error`, or with a [change set](#writing-a-change-set-over-the-row-met) | inserts, or updates the row with the same key, or [another unique key](#upserting)    |
 | `Delete` | `Delete(ctx, id model.OrderID) error`, or [with scopes](#selecting-rows-to-delete)     | deletes the row with the key, or the rows the scopes match                            |
 | `Copy`   | `Copy(ctx, rows []model.Order) (int64, error)`                                         | writes the rows by [COPY](#copying-many-rows) through pgx, and returns how many       |
@@ -1452,6 +1453,26 @@ ordering, paging, or loading relations in one is an error, as paging a `Get` is.
 `//kanna:lock` on an Update of a change set taking scopes and no unique key locks its rows in that subquery, which the
 statement then has whether its scope pages them or not, so that workers updating batches pass over the rows another
 holds. See [Locking rows](#locking-rows).
+
+### Touching rows
+
+A `Touch` writes the update time of its rows by the clock and no other column, to mark a row changed when what changed
+is in another table. It selects its rows as an `Update` of a change set does: by a unique key, by scopes, or by both.
+Of one row it returns `error` alone, and `orm.ErrNotFound` when no row has the key. Of the rows its scopes select, a
+page of them too, it returns `(int64, error)`:
+
+```go
+Touch(ctx context.Context, id model.OrderID) error
+TouchOpen(ctx context.Context, s ...scopes.Order) (int64, error)
+```
+
+```sql
+UPDATE "orders" SET "updated_at" = $1 WHERE ...
+```
+
+A `Touch` of a model with no [update time](#creation-and-update-times) kanna-orm writes, such as one whose update time
+is tagged `default`, stops generation, since it would write nothing. An `Update` of an empty change set still returns
+`orm.ErrEmptyChangeSet` and leaves its rows alone.
 
 ### Selecting rows to delete
 
