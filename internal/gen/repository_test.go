@@ -359,6 +359,11 @@ func TestRepositories_Mistakes(t *testing.T) {
 			"\tInsertCounts(ctx context.Context, counts []MonthCount) error\n",
 			at + "error: InsertCounts: no scope type is declared for repository.MonthCount\n" +
 				"  declare one where its rows are queried: //kanna:scope table=<table>"},
+		{"a last result that is no error, for rows of no scope type", snapshot.PostgreSQL,
+			"\tInsertCounts(ctx context.Context, counts []MonthCount) (error, int)\n",
+			at + "error: InsertCounts: kanna-orm cannot implement it as declared: its last result is int, not error\n" +
+				"  declare it in a form of Insert, as in Insert(ctx context.Context, o model.Order) (model.Order, error), " +
+				"or with error alone"},
 		{"a variadic parameter of no scope type", snapshot.PostgreSQL,
 			"\tList(ctx context.Context, ids ...int64) ([]model.Order, error)\n",
 			at + "error: List: its last parameter, ids, takes no scope type"},
