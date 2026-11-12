@@ -15,3 +15,6 @@ placed_at >= :since
 
 -- scope: Order.Tagged(tags ...string)
 id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY(:tags))
+
+-- scope: Order.Except(ids ...int64)
+id <> ALL(:ids)

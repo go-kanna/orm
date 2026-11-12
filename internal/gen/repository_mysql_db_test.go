@@ -454,16 +454,38 @@ func TestGeneratedRepository_MySQLSliceArgument(t *testing.T) {
 	ctx := t.Context()
 	repo := mstdlib.NewOrderRepository(mysqlDB(t))
 	for _, tt := range []struct {
-		ids  []model.OrderID
-		want []int64
+		ids       []model.OrderID
+		of, notOf []int64
+		others    []model.OrderID
 	}{
-		{[]model.OrderID{1, 3}, []int64{10, 20}},
-		{[]model.OrderID{2}, []int64{10}},
-		{nil, []int64{}},
+		{[]model.OrderID{1, 3}, []int64{10, 20}, []int64{10}, []model.OrderID{2}},
+		{[]model.OrderID{2}, []int64{10}, []int64{10, 20}, []model.OrderID{1, 3}},
+		{[]model.OrderID{}, []int64{}, []int64{10, 10, 20}, []model.OrderID{1, 2, 3}},
+		{nil, []int64{}, []int64{10, 10, 20}, []model.OrderID{1, 2, 3}},
 	} {
-		got, err := repo.CustomersOf(ctx, tt.ids)
-		if err != nil || !slices.Equal(got, tt.want) {
-			t.Errorf("CustomersOf(%v) = %v, %v; want %v", tt.ids, got, err, tt.want)
+		if got, err := repo.CustomersOf(ctx, tt.ids); err != nil || !slices.Equal(got, tt.of) {
+			t.Errorf("CustomersOf(%#v) = %v, %v; want %v", tt.ids, got, err, tt.of)
+		}
+		if got, err := repo.CustomersNotOf(ctx, tt.ids); err != nil || !slices.Equal(got, tt.notOf) {
+			t.Errorf("CustomersNotOf(%#v) = %v, %v; want %v", tt.ids, got, err, tt.notOf)
+		}
+		got, err := repo.ListOthers(ctx, tt.ids, mscopes.Order{}.IDAsc())
+		if err != nil || !slices.Equal(ids(got), tt.others) {
+			t.Errorf("ListOthers(%#v) = %v, %v; want %v", tt.ids, ids(got), err, tt.others)
+		}
+	}
+	for _, tt := range []struct {
+		name  string
+		scope mscopes.Order
+		want  []model.OrderID
+	}{
+		{"Except of some", mscopes.Order{}.Except(1, 3), []model.OrderID{2}},
+		{"Except of none", mscopes.Order{}.Except(), []model.OrderID{1, 2, 3}},
+		{"Except of an empty slice", mscopes.Order{}.Except([]int64{}...), []model.OrderID{1, 2, 3}},
+	} {
+		got, err := repo.List(ctx, tt.scope.IDAsc())
+		if err != nil || !slices.Equal(ids(got), tt.want) {
+			t.Errorf("List, %s = %v, %v; want %v", tt.name, ids(got), err, tt.want)
 		}
 	}
 }

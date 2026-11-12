@@ -771,7 +771,18 @@ func (s Order) Busy(since time.Time, n int64) Order {
 
 // Tagged narrows the scope as order_scopes.sql writes it.
 func (s Order) Tagged(tags ...string) Order {
+	if tags == nil {
+		tags = []string{}
+	}
 	return Order{kScope(kRuntime(s.q).Where(`id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY(`, tags, `))`))}
+}
+
+// Except narrows the scope as order_scopes.sql writes it.
+func (s Order) Except(ids ...int64) Order {
+	if ids == nil {
+		ids = []int64{}
+	}
+	return Order{kScope(kRuntime(s.q).Where(`id <> ALL(`, ids, `)`))}
 }
 
 // Limit keeps the first n rows.

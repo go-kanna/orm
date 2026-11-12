@@ -318,6 +318,50 @@ func TestGeneratedRepository_PostgresInOfNone(t *testing.T) {
 	})
 }
 
+// A slice of no values, nil or not, is the empty set to a query or a scope written by hand: = ANY of it matches no row,
+// and <> ALL of it every row.
+func TestGeneratedRepository_PostgresSliceArgument(t *testing.T) {
+	t.Parallel()
+
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		ctx := t.Context()
+		for _, tt := range []struct {
+			ids       []model.OrderID
+			of, notOf []int64
+			others    []model.OrderID
+		}{
+			{[]model.OrderID{1, 3}, []int64{10, 20}, []int64{10}, []model.OrderID{2}},
+			{[]model.OrderID{}, []int64{}, []int64{10, 10, 20}, []model.OrderID{1, 2, 3}},
+			{nil, []int64{}, []int64{10, 10, 20}, []model.OrderID{1, 2, 3}},
+		} {
+			if got, err := repo.CustomersOf(ctx, tt.ids); err != nil || !slices.Equal(got, tt.of) {
+				t.Errorf("CustomersOf(%#v) = %v, %v; want %v", tt.ids, got, err, tt.of)
+			}
+			if got, err := repo.CustomersNotOf(ctx, tt.ids); err != nil || !slices.Equal(got, tt.notOf) {
+				t.Errorf("CustomersNotOf(%#v) = %v, %v; want %v", tt.ids, got, err, tt.notOf)
+			}
+			got, err := repo.ListOthers(ctx, tt.ids, pscopes.Order{}.IDAsc())
+			if err != nil || !slices.Equal(ids(got), tt.others) {
+				t.Errorf("ListOthers(%#v) = %v, %v; want %v", tt.ids, ids(got), err, tt.others)
+			}
+		}
+		for _, tt := range []struct {
+			name  string
+			scope pscopes.Order
+			want  []model.OrderID
+		}{
+			{"Except of some", pscopes.Order{}.Except(1, 3), []model.OrderID{2}},
+			{"Except of none", pscopes.Order{}.Except(), []model.OrderID{1, 2, 3}},
+			{"Except of an empty slice", pscopes.Order{}.Except([]int64{}...), []model.OrderID{1, 2, 3}},
+		} {
+			got, err := repo.List(ctx, tt.scope.IDAsc())
+			if err != nil || !slices.Equal(ids(got), tt.want) {
+				t.Errorf("List, %s = %v, %v; want %v", tt.name, ids(got), err, tt.want)
+			}
+		}
+	})
+}
+
 func TestGeneratedRepository_PostgresPreloads(t *testing.T) {
 	t.Parallel()
 
