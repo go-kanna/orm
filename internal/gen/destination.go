@@ -213,7 +213,7 @@ func planRepositories(pkg *packages.Package, pkgs []*packages.Package, s snapsho
 		funcs:    dest.functions(),
 		l: linker{
 			fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx,
-			loaded: loadedScopes(others, s, idx), driver: drv,
+			loaded: loadedScopes(others, s, idx), driver: drv, dialect: s.Dialect,
 		},
 	}
 	repos, rds := r.findRepositories()

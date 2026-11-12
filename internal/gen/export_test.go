@@ -23,9 +23,10 @@ var OuterOrderWithoutLimit = outerOrderWithoutLimit
 
 var ListOf = listOf
 
-// Readable is readable, for a Go type named by its basic kind, through the driver named, or any for "".
-func Readable(kind types.BasicKind, dbType, drv string) (string, bool) {
-	return readable(types.Typ[kind], dbType, driver(drv))
+// Readable is readable, for a Go type named by its basic kind, from a database of dialect, through the driver named,
+// or any for "".
+func Readable(kind types.BasicKind, dbType, dialect, drv string) (string, bool) {
+	return readable(types.Typ[kind], dbType, snapshot.Dialect(dialect), driver(drv))
 }
 
 // ParseTag is parseTag, with what the tag says spread out, the columns of fk= and those a scalar relation reads by
@@ -67,7 +68,7 @@ func Fields(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag) 
 	scopes, ds := findScopes(pkg, s, index(pkg, s))
 	var got []string
 	for _, sc := range scopes {
-		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table], s.Dialect)
 		ds = append(ds, fds...)
 		prefix := sc.model.Obj().Name() + "."
 		for _, c := range f.columns {
@@ -128,7 +129,7 @@ func Links(pkg *packages.Package, s snapshot.Snapshot) ([]string, []diag.Diag, e
 	l := linker{fset: pkg.Fset, pkgPath: pkg.PkgPath, pkgName: pkg.Name, scopes: scopes, tables: s.Tables, idx: idx}
 	var got []string
 	for _, sc := range scopes {
-		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table])
+		f, fds := fields(pkg.Fset, sc, s.Tables[sc.table], s.Dialect)
 		ds = append(ds, fds...)
 		links, lds := l.link(sc, f)
 		ds = append(ds, lds...)

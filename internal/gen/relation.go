@@ -75,7 +75,8 @@ type linker struct {
 	tables map[string]snapshot.Table
 	idx    []indexed
 	// driver is the one the repositories run on, empty in a run that generates none.
-	driver driver
+	driver  driver
+	dialect snapshot.Dialect
 }
 
 // link finds the foreign key each relation of f, the fields of the model of sc, follows, and the fields holding the
@@ -153,7 +154,7 @@ func (l linker) linkOne(sc scope, f matched, r relation) (link, []diag.Diag, boo
 		return link{}, []diag.Diag{errorf("no field of %s holds %s.%s, which %s is loaded by",
 			sc.model.Obj().Name(), sc.table, missing, field)}, false
 	}
-	targetFields, tds := fields(l.fset, scope{name: target.name, model: model, table: target.table}, related)
+	targetFields, tds := fields(l.fset, scope{name: target.name, model: model, table: target.table}, related, l.dialect)
 	targetKeys, missing := held(targetFields.columns, other)
 	switch {
 	case slices.Contains(targetFields.failed, missing) && target.pkgPath == l.pkgPath:

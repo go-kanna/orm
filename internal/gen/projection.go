@@ -260,7 +260,7 @@ func (r repoReader) projectionJoin(m *repoMethod, pf projectionField, alias stri
 		return projectionJoin{}, []diag.Diag{errorf("%s are all models of %s, whose fields those of %s would be "+
 			"matched to", strings.Join(names, " and "), fk.References, pf.f.Name())}
 	}
-	matched, _ := fields(r.pkg.Fset, scope{model: models[0], table: fk.References}, r.s.Tables[fk.References])
+	matched, _ := fields(r.pkg.Fset, scope{model: models[0], table: fk.References}, r.s.Tables[fk.References], r.s.Dialect)
 
 	var ds []diag.Diag
 	collect := func(pos token.Position, format string, args ...any) {

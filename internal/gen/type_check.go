@@ -4,6 +4,8 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
+
+	"github.com/go-kanna/orm/internal/snapshot"
 )
 
 // dbClass is what a column of a database type holds, as far as which Go types the drivers read it into goes.
@@ -53,23 +55,27 @@ func classOf(dbType string) dbClass {
 	return dbClasses[base]
 }
 
-// fits reports whether a Go value of type t is what drv reads a value of dbType into, and writes it from, and if not,
-// the type to declare instead; drv is empty when the run does not know it, and any driver will do. A type with a Scan
-// method converts itself, and a database type kanna-orm does not know, or does not tell, is taken at the Go type's
-// word.
-func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
+// fits reports whether a Go value of type t is what drv reads a value of dbType, a type of d, into, and writes it from,
+// and if not, the type to declare instead; drv is empty when the run does not know it, and any driver will do. A type
+// with a Scan method converts itself, and a database type kanna-orm does not know, or does not tell, is taken at the Go
+// type's word.
+func fits(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		t = p.Elem()
 	}
 	if scanner(t) {
 		return "", true
 	}
+	if mysqlBit(d, dbType) {
+		// go-sql-driver/mysql reads a bit as bytes, which it converts to no number or bool.
+		return "[]byte", isBytes(t)
+	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		s, isSlice := t.Underlying().(*types.Slice)
 		if !isSlice || isBytes(t) {
 			return "a slice", false
 		}
-		if want, ok := fits(s.Elem(), elem, drv); !ok {
+		if want, ok := fits(s.Elem(), elem, d, drv); !ok {
 			return "[]" + want, false
 		}
 		return "", true
@@ -112,8 +118,8 @@ func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
 // readable is fits for a value read from a column: the Go type also has to hold every value of dbType, so that no row
 // fails to scan for the number it holds, or loses precision in a float. A value written needs only fits, as a database
 // rejects one beyond its column's range rather than store another.
-func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
-	if want, ok := fits(t, dbType, drv); !ok {
+func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
+	if want, ok := fits(t, dbType, d, drv); !ok {
 		return want, false
 	}
 	if p, ok := t.Underlying().(*types.Pointer); ok {
@@ -124,7 +130,7 @@ func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
 	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		if s, ok := t.Underlying().(*types.Slice); ok {
-			if want, ok := readable(s.Elem(), elem, drv); !ok {
+			if want, ok := readable(s.Elem(), elem, d, drv); !ok {
 				return "[]" + want, false
 			}
 		}
@@ -144,6 +150,20 @@ func readable(t types.Type, dbType string, drv driver) (want string, ok bool) {
 		return numericWant(b, dbType)
 	}
 	return "", true
+}
+
+// mysqlBit reports whether dbType, a type of d, is MySQL's bit.
+func mysqlBit(d snapshot.Dialect, dbType string) bool {
+	return d == snapshot.MySQL && baseType(dbType) == "bit"
+}
+
+// bitHints are the hints for a Go type that cannot hold dbType, a type of d: for MySQL's bit, the boolean MySQL has
+// instead.
+func bitHints(d snapshot.Dialect, dbType string) []string {
+	if !mysqlBit(d, dbType) {
+		return nil
+	}
+	return []string{"for a boolean, make the column tinyint(1), which a bool holds"}
 }
 
 // numericWant reports whether b, a Go number, holds every value of dbType, a numeric or decimal, and if not, the type

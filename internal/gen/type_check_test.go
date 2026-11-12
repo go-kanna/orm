@@ -81,7 +81,35 @@ func TestReadable(t *testing.T) {
 		t.Run(types.Typ[tt.kind].Name()+" from "+tt.dbType+" on "+tt.driver, func(t *testing.T) {
 			t.Parallel()
 
-			want, ok := gen.Readable(tt.kind, tt.dbType, tt.driver)
+			want, ok := gen.Readable(tt.kind, tt.dbType, "", tt.driver)
+			if ok != (tt.want == "") || want != tt.want {
+				t.Errorf("Readable = %q, %t; want %q", want, ok, tt.want)
+			}
+		})
+	}
+}
+
+// go-sql-driver/mysql reads MySQL's bit as bytes, which it converts to no number, bool or string, while PostgreSQL's
+// bit, which kanna-orm does not tell, is taken at the Go type's word.
+func TestReadable_Bit(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		kind    types.BasicKind
+		dbType  string
+		dialect string
+		want    string
+	}{
+		{types.Bool, "bit(1)", "mysql", "[]byte"},
+		{types.Uint64, "bit(64)", "mysql", "[]byte"},
+		{types.String, "bit(8)", "mysql", "[]byte"},
+		{types.Bool, "bit(1)", "postgresql", ""},
+		{types.String, "varbit(8)", "postgresql", ""},
+	} {
+		t.Run(types.Typ[tt.kind].Name()+" from "+tt.dbType+" on "+tt.dialect, func(t *testing.T) {
+			t.Parallel()
+
+			want, ok := gen.Readable(tt.kind, tt.dbType, tt.dialect, "")
 			if ok != (tt.want == "") || want != tt.want {
 				t.Errorf("Readable = %q, %t; want %q", want, ok, tt.want)
 			}
