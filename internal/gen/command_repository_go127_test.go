@@ -108,3 +108,47 @@ func TestCommand_UUIDsBeforeGo127(t *testing.T) {
 		t.Errorf("kanna-orm in scopes = %d\n%s\nwant it to report\n%s", code, errOut, want)
 	}
 }
+
+// TestCommand_UUIDKeysInErrors writes the key of a uuid column held in a type of [16]byte into an error message as a
+// uuid.UUID, which formats as the text of a uuid, unless the type has a String method of its own.
+func TestCommand_UUIDKeysInErrors(t *testing.T) {
+	t.Parallel()
+
+	stringer := strings.Replace(uuidShop, "type OrderID uuid.UUID\n",
+		"type OrderID uuid.UUID\n\nfunc (id OrderID) String() string { return uuid.UUID(id).String() }\n", 1)
+	for name, tc := range map[string]struct {
+		shop, want string
+	}{
+		"without String": {uuidShop, `"orders with id %v: %w", uuid.UUID(id), orm.ErrNotFound)`},
+		"with String":    {stringer, `"orders with id %v: %w", id, orm.ErrNotFound)`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModuleGo(t, tc.shop, "1.27.0")
+			describeUUIDShop(t, dir)
+			if code, _, errOut := run(t, filepath.Join(dir, "scopes")); code != cli.ExitOK {
+				t.Fatalf("kanna-orm in scopes = %d\n%s", code, errOut)
+			}
+			args := []string{"-destination", "../postgres", "-driver", "database/sql"}
+			if code, _, errOut := run(t, filepath.Join(dir, "repository"), args...); code != cli.ExitOK {
+				t.Fatalf("kanna-orm %s = %d\n%s", strings.Join(args, " "), code, errOut)
+			}
+			set, err := packages.Load([]string{"./..."}, packages.Config{Dir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(set.Diags) > 0 {
+				t.Fatalf("the module does not compile once generated: %v", set.Diags)
+			}
+			path := filepath.Join(dir, "postgres", "repository_gen.go")
+			src, err := os.ReadFile(path) //nolint:gosec // the file written above
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Count(string(src), tc.want); got != 2 {
+				t.Errorf("Get and Delete write %s %d times, not twice\n%s", tc.want, got, src)
+			}
+		})
+	}
+}

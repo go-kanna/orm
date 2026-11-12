@@ -237,13 +237,9 @@ func (e repoEmitter) readBack(m repoMethod, recv string, sig signature, key, arg
 // wrapped by wrap, or, when the row is not there, an error saying so, which is not orm.ErrNotFound, as the row was
 // written.
 func (e repoEmitter) readBackError(m repoMethod, sig signature, key, args []string, zero, err, wrap string) {
-	format := make([]string, 0, len(key))
-	for _, name := range key {
-		format = append(format, name+" %v")
-	}
+	format, shown := e.keyValues(m.fields(key), args)
 	missing := sig.mapped(fmt.Sprintf("%s.Errorf(%q, %s)", e.fmtPkg(),
-		m.action()+": wrote the row, but no row with "+strings.Join(format, " and ")+" was there to read back",
-		strings.Join(args, ", ")))
+		m.action()+": wrote the row, but no row with "+format+" was there to read back", shown))
 	e.printf("if %s.Is(%s, %s.ErrNoRows) {\nreturn %s%s\n}\nif %s != nil {\nreturn %s%s\n}\n",
 		e.f.Import("errors", "errors"), err, e.driverPkg(), zero, missing, err, zero, wrap)
 }

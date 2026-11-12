@@ -355,17 +355,30 @@ func (e repoEmitter) method(repo repository, m repoMethod) {
 	e.printf("}\n\n")
 }
 
-// notFound is the error saying no row of table has args, the values of the columns names.
-func (e repoEmitter) notFound(table string, names, args []string) string {
-	if len(names) == 0 {
+// notFound is the error saying no row of table has args, the values of the columns keys.
+func (e repoEmitter) notFound(table string, keys []column, args []string) string {
+	if len(keys) == 0 {
 		return fmt.Sprintf("%s.Errorf(%q, %s)", e.fmtPkg(), "no row of "+table+" matches: %w", e.ref("ErrNotFound"))
 	}
-	format := make([]string, 0, len(names))
-	for _, n := range names {
-		format = append(format, n+" %v")
-	}
+	format, shown := e.keyValues(keys, args)
 	return fmt.Sprintf("%s.Errorf(%q, %s, %s)", e.fmtPkg(),
-		table+" with "+strings.Join(format, " and ")+": %w", strings.Join(args, ", "), e.ref("ErrNotFound"))
+		table+" with "+format+": %w", shown, e.ref("ErrNotFound"))
+}
+
+// keyValues is the format of an error message telling args, the values of the columns keys, and the arguments it
+// formats: a value of a uuid column in a type made of [16]byte with no String method converted to a uuid.UUID, which
+// formats as the text of a uuid rather than as 16 bytes.
+func (e repoEmitter) keyValues(keys []column, args []string) (format, shown string) {
+	formats, values := make([]string, 0, len(keys)), make([]string, 0, len(keys))
+	for i, c := range keys {
+		formats = append(formats, c.col.Name+" %v")
+		v := args[i]
+		if classOf(c.col.Type) == classUUID && uuidOf(c.typ) && !stringer(c.typ) {
+			v = e.f.Import("uuid", "uuid") + ".UUID(" + v + ")"
+		}
+		values = append(values, v)
+	}
+	return strings.Join(formats, " and "), strings.Join(values, ", ")
 }
 
 // read writes the body of m, a method reading or deleting the rows its keys and its scopes match.
@@ -400,13 +413,13 @@ func (e repoEmitter) read(m repoMethod, sc gofile.Scope, recv string, sig signat
 			"", q, goString(sqlName(e.d, k.col.col.Name)+" = "), sig.params[k.param])
 	}
 
-	names, args := make([]string, 0, len(m.keys)), make([]string, 0, len(m.keys))
+	keys, args := make([]column, 0, len(m.keys)), make([]string, 0, len(m.keys))
 	for _, k := range m.keys {
-		names, args = append(names, k.col.col.Name), append(args, sig.params[k.param])
+		keys, args = append(keys, k.col), append(args, sig.params[k.param])
 	}
-	notFound := func() string { return sig.mapped(e.notFound(m.target.table, names, args)) }
+	notFound := func() string { return sig.mapped(e.notFound(m.target.table, keys, args)) }
 	if m.aggregate != nil {
-		e.aggregateRead(m, sc, recv, sig, q, names, args)
+		e.aggregateRead(m, sc, recv, sig, q, keys, args)
 		return
 	}
 	if m.pluck != nil {
@@ -763,7 +776,7 @@ func (e repoEmitter) update(m repoMethod, sc gofile.Scope, recv string, sig sign
 	}
 	where := strings.Join(conds, " AND ")
 	query := "UPDATE " + table + "\nSET " + strings.Join(sets, ", ") + "\nWHERE " + where
-	notFound := sig.mapped(e.notFound(m.target.table, key, keyArgs))
+	notFound := sig.mapped(e.notFound(m.target.table, m.fields(key), keyArgs))
 
 	if m.returns == returnsRow { // on PostgreSQL alone, as MySQL has no UPDATE RETURNING
 		model := types.TypeString(m.model, e.f.Qualifier)

@@ -10,10 +10,10 @@ import (
 )
 
 // aggregateRead writes the rest of the body of m, a Sum, a Min, a Max, or an Avg taking scopes, which reads the
-// aggregate of a column of the rows q matches by the conditions alone. names are the columns of its keys, and args
+// aggregate of a column of the rows q matches by the conditions alone. keys are the columns of its keys, and args
 // their values.
 func (e repoEmitter) aggregateRead(m repoMethod, sc gofile.Scope, recv string, sig signature, q string,
-	names, args []string,
+	keys []column, args []string,
 ) {
 	zero := e.zeroOf(m.aggregate.typ)
 	err, rd := sc.Name("err"), sc.Name("rd")
@@ -23,14 +23,14 @@ func (e repoEmitter) aggregateRead(m repoMethod, sc gofile.Scope, recv string, s
 		e.dialect(), zero, sig.mapped(err))
 	query := goString("SELECT "+aggregateSQL(e.d, *m.aggregate)+" FROM "+sqlName(e.d, m.target.table)) + "+" + rd +
 		".Where()"
-	e.aggregateRow(m, sc, recv, sig, err, sig.ctx+", "+query+", "+rd+".Args()...", names, args)
+	e.aggregateRow(m, sc, recv, sig, err, sig.ctx+", "+query+", "+rd+".Args()...", keys, args)
 }
 
 // aggregateRow writes the rest of the body of m, which reads an aggregate as the one column of the one row the query
 // call runs returns, its error into err: into a value, which is zero for no value of a Sum, and orm.ErrNotFound for
-// none of the others, or into a pointer, nil for no value. names are the columns of its keys, and args their values.
+// none of the others, or into a pointer, nil for no value. keys are the columns of its keys, and args their values.
 func (e repoEmitter) aggregateRow(m repoMethod, sc gofile.Scope, recv string, sig signature, err, call string,
-	names, args []string,
+	keys []column, args []string,
 ) {
 	a := m.aggregate
 	typ, zero := types.TypeString(a.typ, e.f.Qualifier), e.zeroOf(a.typ)
@@ -49,15 +49,13 @@ func (e repoEmitter) aggregateRow(m repoMethod, sc gofile.Scope, recv string, si
 		e.printf("return %s, nil\n", v)
 		return
 	}
-	format := make([]string, 0, len(names))
-	for _, n := range names {
-		format = append(format, n+" %v")
+	values := e.ref("ErrNotFound")
+	if len(keys) > 0 {
+		format, shown := e.keyValues(keys, args)
+		what += " with " + format
+		values = shown + ", " + values
 	}
-	if len(format) > 0 {
-		what += " with " + strings.Join(format, " and ")
-	}
-	notFound := fmt.Sprintf("%s.Errorf(%q, %s)", e.fmtPkg(), what+": %w",
-		strings.Join(append(slices.Clone(args), e.ref("ErrNotFound")), ", "))
+	notFound := fmt.Sprintf("%s.Errorf(%q, %s)", e.fmtPkg(), what+": %w", values)
 	e.printf("if %s == nil {\nreturn %s, %s\n}\nreturn *%s, nil\n", v, zero, sig.mapped(notFound), v)
 }
 
