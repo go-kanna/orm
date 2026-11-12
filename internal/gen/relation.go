@@ -181,8 +181,11 @@ func relatedModel(t types.Type) (*types.Named, bool) {
 }
 
 // scopeOf finds the scope type of model among those of the package first, as their types tell them, then among those
-// of the other packages loaded, and then in the index.
+// of the other packages loaded, and then in the index. A type of no package, as error, has none.
 func (l linker) scopeOf(model *types.Named) (indexed, bool) {
+	if model.Obj().Pkg() == nil {
+		return indexed{}, false
+	}
 	for _, sc := range l.scopes {
 		if types.Identical(sc.model, model) {
 			return indexed{

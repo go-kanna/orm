@@ -300,6 +300,10 @@ func (r Event) Copy(ctx context.Context, rows []model.Event) (int64, error) {
 }
 `
 		}, "pgx", "type DBTX = kpgx.DBTX\n"},
+		{"a Copy of rows of no scope type", func(a string) string {
+			return strings.Replace(a, "//kanna:scope table=tags\ntype Tag struct{ q scope.Of[model.Tag] }\n", "", 1)
+		}, "pgx", "repository.go:14:2: error: CopyTags: no scope type is declared for model.Tag\n" +
+			"  declare one where its rows are queried: //kanna:scope table=<table>"},
 		{"a query named after Copy", func(a string) string {
 			return strings.Replace(a, "\tList(", "\tCopyKinds(ctx context.Context) error\n\tList(", 1) +
 				"-- impl/queries.sql --\n-- query: CopyKinds\nINSERT INTO tags (name) SELECT kind FROM events;\n"
