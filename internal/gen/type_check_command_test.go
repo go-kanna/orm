@@ -222,3 +222,103 @@ func TestCommand_BitOnPostgreSQL(t *testing.T) {
 		})
 	}
 }
+
+// jsonShop declares notes, whose tags, a json, a field of type FIELD holds, and a repository reading them.
+const jsonShop = `
+-- model/model.go --
+package model
+
+import "encoding/json"
+
+var _ json.RawMessage
+
+type Note struct {
+	ID   int64
+	Tags FIELD
+}
+-- scopes/scopes.go --
+package scopes
+
+import (
+	"example.com/shop/model"
+	"github.com/go-kanna/orm/scope"
+)
+
+//kanna:scope table=notes
+type Note struct{ q scope.Of[model.Note] }
+-- repository/repository.go --
+package repository
+
+import (
+	"context"
+
+	"example.com/shop/model"
+)
+
+//kanna:repository
+type Note interface {
+	Get(ctx context.Context, id int64) (model.Note, error)
+	Insert(ctx context.Context, n model.Note) error
+}
+`
+
+// go-sql-driver/mysql writes json from no slice but a []byte, and database/sql reads it into none, so a slice holding
+// a json of MySQL stops generation. pgx, on its own or under database/sql, writes and reads any slice as JSON.
+func TestCommand_JSONSlice(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		dialect      snapshot.Dialect
+		driver       string
+		field, dbCol string
+		want         string
+	}{
+		{snapshot.MySQL, "", "[]int64", "json", "model.go:9:1: error: Note.Tags: notes.tags is json, which a []int64 " +
+			"cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value methods\n" +
+			"  go-sql-driver/mysql writes json from no slice but a []byte, such as json.RawMessage"},
+		{snapshot.MySQL, "", "[]string", "json", "notes.tags is json, which a []string cannot hold"},
+		{snapshot.MySQL, "", "json.RawMessage", "json", ""},
+		{snapshot.MySQL, "", "[]byte", "json", ""},
+		{snapshot.MySQL, "", "string", "json", ""},
+		{snapshot.MySQL, "", "[]string", "text", "notes.tags is text, which a []string cannot hold"},
+		{snapshot.PostgreSQL, "pgx", "[]int64", "jsonb", ""},
+		{snapshot.PostgreSQL, "database/sql", "[]int64", "jsonb", ""},
+		{snapshot.PostgreSQL, "database/sql", "[]string", "json", ""},
+	} {
+		t.Run(string(tt.dialect)+" "+tt.driver+" "+tt.field+" "+tt.dbCol, func(t *testing.T) {
+			t.Parallel()
+
+			dir := writeModule(t, strings.Replace(jsonShop, "FIELD", tt.field, 1))
+			id := "int8"
+			if tt.dialect == snapshot.MySQL {
+				id = "bigint"
+			}
+			s := snapshot.Snapshot{Dialect: tt.dialect, Tables: map[string]snapshot.Table{
+				"notes": {Columns: []snapshot.Column{
+					{Name: "id", Type: id, NotNull: true},
+					{Name: "tags", Type: tt.dbCol, NotNull: true},
+				}, PrimaryKey: []string{"id"}},
+			}}
+			if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, _, errOut := run(t, filepath.Join(dir, "scopes"))
+			if code == cli.ExitOK {
+				args := []string{"-destination", "../impl"}
+				if tt.driver != "" {
+					args = append(args, "-driver", tt.driver)
+				}
+				code, _, errOut = run(t, filepath.Join(dir, "repository"), args...)
+			}
+			if tt.want == "" {
+				if code != cli.ExitOK {
+					t.Fatalf("kanna-orm = %d\n%s", code, errOut)
+				}
+				return
+			}
+			if code == cli.ExitOK || !strings.Contains(errOut, tt.want) {
+				t.Errorf("kanna-orm = %d\n%s\nwant it to report\n%s", code, errOut, tt.want)
+			}
+		})
+	}
+}
