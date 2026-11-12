@@ -2,6 +2,7 @@ package gen
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 	"strconv"
 	"strings"
@@ -115,10 +116,14 @@ func fits(t types.Type, dbType string, drv driver) (want string, ok bool) {
 // readable is fits for a value read from a column of dbType, a type of d: the Go type also has to hold every value of
 // dbType, so that no row fails to scan for the number it holds, or loses precision in a float, and a bit of MySQL is
 // read into bytes alone. A value written needs only fits, as a database rejects one beyond its column's range rather
-// than store another.
-func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
+// than store another. fset is what the packages declaring t were loaded into, from which an enum of kanna-value, which
+// no json holds, is told.
+func readable(fset *token.FileSet, t types.Type, dbType string, d snapshot.Dialect, drv driver) (want string, ok bool) {
 	if want, ok := fits(t, dbType, drv); !ok {
 		return want, false
+	}
+	if _, ok := jsonEnum(fset, t, dbType, d); ok {
+		return "[]byte", false
 	}
 	value := isValueType(t)
 	t = driverType(t)
@@ -127,7 +132,7 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 	}
 	if elem, ok := strings.CutSuffix(dbType, "[]"); ok {
 		if s, ok := t.Underlying().(*types.Slice); ok {
-			if want, ok := readable(s.Elem(), elem, d, drv); !ok {
+			if want, ok := readable(fset, s.Elem(), elem, d, drv); !ok {
 				return "[]" + want, false
 			}
 		}
@@ -184,8 +189,8 @@ func readable(t types.Type, dbType string, d snapshot.Dialect, drv driver) (want
 // writable is readable for a value written to a column of dbType, a type of d, as well as read from it, as a field of
 // a model is. go-sql-driver/mysql writes a number or a bool as itself, which MySQL takes for no JSON text in a json,
 // though database/sql reads a json holding one into it.
-func writable(t types.Type, dbType string, d snapshot.Dialect) (want string, ok bool) {
-	if want, ok := readable(t, dbType, d, ""); !ok {
+func writable(fset *token.FileSet, t types.Type, dbType string, d snapshot.Dialect) (want string, ok bool) {
+	if want, ok := readable(fset, t, dbType, d, ""); !ok {
 		return want, false
 	}
 	t = driverType(t)

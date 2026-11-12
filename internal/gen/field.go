@@ -234,14 +234,15 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 			label, m.sc.table, name, article(typ), typ).WithHints(nullHint(f.Type(), typ)))
 		return
 	}
-	if want, ok := writable(f.Type(), col.Type, m.dialect); !ok {
+	if want, ok := writable(m.fset, f.Type(), col.Type, m.dialect); !ok {
 		if isPointer(f.Type()) {
 			want = "*" + want
 		}
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: %s.%s is %s, which %s %s cannot hold", label, m.sc.table, name,
 			col.Type, article(typ), typ).WithHints("declare it as "+want+", or as a type of your own with Scan and "+
 			"Value methods").WithHints(typeHints(m.dialect, col.Type, "")...).
-			WithHints(valueHints(f.Type(), relativeTo(f.Pkg()))...))
+			WithHints(valueHints(f.Type(), relativeTo(f.Pkg()))...).
+			WithHints(enumHints(m.fset, f.Type(), col.Type, m.dialect, relativeTo(f.Pkg()))...))
 		return
 	}
 	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos,
