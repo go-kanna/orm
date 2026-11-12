@@ -1313,6 +1313,9 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			continue
 		}
 		if model, ok := r.changesParam(p, field, ts); ok {
+			if m.verb == verbTouch {
+				return nil, nil, errorf("a Touch writes the update time alone and takes no change set")
+			}
 			if m.verb != verbUpdate && m.verb != verbUpsert || m.changes != "" || m.verb == verbUpdate && m.row != "" {
 				return nil, nil, errorf("a change set is taken once, by an Update without a row or by an Upsert of " +
 					"one row")

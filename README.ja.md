@@ -841,8 +841,8 @@ repo := postgres.NewCustomer(db, option.WithClock(clock{now: time.Date(2026, 1, 
 実装の型に自分で書いたメソッドは、`r.db` で文を実行するとフックを通るのと同じく、`r.db.Now(ctx)` で同じ時計の時刻を得ます。これらのカラムを書く自分の SQL も、テストが与えた時刻になります:
 
 ```go
-func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
-	_, err := r.db.Exec(ctx, "UPDATE customers SET updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
+func (r Customer) ClearPhone(ctx context.Context, id model.CustomerID) error {
+	_, err := r.db.Exec(ctx, "UPDATE customers SET phone = NULL, updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
 	return err
 }
 ```

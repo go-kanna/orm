@@ -1148,8 +1148,8 @@ A method you write on the implementation reads the same clock by `r.db.Now(ctx)`
 hooks on `r.db`, so that SQL of your own writing these columns gets the time a test gives:
 
 ```go
-func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
-	_, err := r.db.Exec(ctx, "UPDATE customers SET updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
+func (r Customer) ClearPhone(ctx context.Context, id model.CustomerID) error {
+	_, err := r.db.Exec(ctx, "UPDATE customers SET phone = NULL, updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
 	return err
 }
 ```

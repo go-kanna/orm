@@ -26,7 +26,7 @@ func TestCommand_TouchDiagnostics(t *testing.T) {
 		{"a row taken", touch, "TouchNote(ctx context.Context, n model.Note) error",
 			"it takes n, rows to write, and a Touch writes none"},
 		{"a change set taken", touch, "TouchByName(ctx context.Context, name string, c scopes.NoteChangeSet) error",
-			"a change set is taken once"},
+			"TouchByName: a Touch writes the update time alone and takes no change set"},
 		{"one row of no unique key", touch, "TouchByBody(ctx context.Context, body string, s ...scopes.Note) error",
 			"a Touch of one row requires a unique key; use (int64, error) for multiple rows"},
 	} {
