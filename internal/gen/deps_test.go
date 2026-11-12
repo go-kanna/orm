@@ -50,7 +50,7 @@ func TestDeps(t *testing.T) {
 }
 
 // A run needs the snapshot, whose absence is for the kanna command to report
-// before anything runs.
+// before anything runs. Where the run writes is told all the same.
 func TestDeps_NoSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -68,8 +68,11 @@ func TestDeps_NoSnapshot(t *testing.T) {
 	if len(r.Inputs) != 1 || filepath.Base(r.Inputs[0]) != snapshot.Name {
 		t.Errorf("Inputs = %q", r.Inputs)
 	}
-	if len(r.Writes) != 0 {
-		t.Errorf("Writes = %q, want none", r.Writes)
+	if len(r.Writes) != 1 || !strings.HasSuffix(r.Writes[0], filepath.Join("scopes", "scopes_gen.go")) {
+		t.Errorf("Writes = %q", r.Writes)
+	}
+	if len(r.Declares) != 0 {
+		t.Errorf("Declares = %q, want none", r.Declares)
 	}
 }
 
@@ -92,6 +95,33 @@ func TestDeps_Repositories(t *testing.T) {
 		t.Errorf("Writes = %q", r.Writes)
 	}
 	if !slices.Contains(r.Declares, "example.com/shop/postgres.DBTX") {
+		t.Errorf("Declares = %q", r.Declares)
+	}
+}
+
+// Before the first run of kanna-value, a model whose column types it gives
+// methods does not resolve. Where the implementations go, and what they
+// declare, follows from -destination and the interfaces all the same, for
+// what selects their constructors to run after.
+func TestDeps_RepositoriesUnresolved(t *testing.T) {
+	t.Parallel()
+
+	dir := writeModule(t, strings.Replace(repositoryShop, "\tStatus string\n", "\tStatus Status\n", 1))
+	describeRepositoryShop(t, dir, snapshot.PostgreSQL)
+
+	code, stdout, stderr := run(t, filepath.Join(dir, "repository"), "-deps", "-destination", "../postgres")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	var r deps.Report
+	if err := json.Unmarshal([]byte(stdout), &r); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(r.Writes) != 1 || !strings.HasSuffix(r.Writes[0], filepath.Join("postgres", "repository_gen.go")) {
+		t.Errorf("Writes = %q", r.Writes)
+	}
+	if !slices.Contains(r.Declares, "example.com/shop/postgres.NewOrderRepository") {
 		t.Errorf("Declares = %q", r.Declares)
 	}
 }
