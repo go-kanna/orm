@@ -987,6 +987,15 @@ func (m repoMethod) field(name string) column {
 	return m.columns[slices.IndexFunc(m.columns, func(c column) bool { return c.col.Name == name })]
 }
 
+// fields is the column of m of each of names.
+func (m repoMethod) fields(names []string) []column {
+	cs := make([]column, 0, len(names))
+	for _, n := range names {
+		cs = append(cs, m.field(n))
+	}
+	return cs
+}
+
 // rowKey names the columns an update or an upsert of m meets its row by: those //kanna:conflict names, or the
 // primary key.
 func (m repoMethod) rowKey() []string {

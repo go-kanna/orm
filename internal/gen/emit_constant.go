@@ -25,11 +25,11 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 	}
 	table := sqlName(e.d, m.target.table)
 	conds, args := make([]string, 0, len(m.keys)), make([]string, 0, len(m.keys))
-	names := make([]string, 0, len(m.keys))
+	keys := make([]column, 0, len(m.keys))
 	for _, k := range m.keys {
 		args = append(args, sig.params[k.param])
 		conds = append(conds, sqlName(e.d, k.col.col.Name)+" = "+e.placeholder(len(args)))
-		names = append(names, k.col.col.Name)
+		keys = append(keys, k.col)
 	}
 	where := ""
 	if len(conds) > 0 {
@@ -37,7 +37,7 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 	}
 	err := sc.Name("err")
 	call := strings.Join(append([]string{sig.ctx, q}, args...), ", ")
-	notFound := func() string { return sig.mapped(e.notFound(m.target.table, names, args)) }
+	notFound := func() string { return sig.mapped(e.notFound(m.target.table, keys, args)) }
 
 	switch m.verb { //nolint:exhaustive // the verbs above, the rows read by default
 	case verbCount, verbExists:
@@ -52,7 +52,7 @@ func (e repoEmitter) constantRead(m repoMethod, sc gofile.Scope, recv string, si
 			goString(strings.ToLower(string(m.verb))+" "+m.target.table+": %w")+", "+err+")"))
 	case verbSum, verbMin, verbMax, verbAvg:
 		e.printf("const %s = %s\n", q, goString("SELECT "+aggregateSQL(e.d, *m.aggregate)+" FROM "+table+where))
-		e.aggregateRow(m, sc, recv, sig, err, call, names, args)
+		e.aggregateRow(m, sc, recv, sig, err, call, keys, args)
 	case verbDelete:
 		res := e.execResult(sc)
 		wrap := sig.mapped(e.fmtPkg() + ".Errorf(" + fmt.Sprintf("%q", "delete from "+m.target.table+": %w") + ", " +

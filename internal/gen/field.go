@@ -343,6 +343,16 @@ func scanner(t types.Type) bool {
 	return types.Implements(t, sqlScanner)
 }
 
+// stringer reports whether t has a String method, which fmt formats a value of t by.
+func stringer(t types.Type) bool {
+	return types.Implements(t, fmtStringer)
+}
+
+// fmtStringer is the interface fmt.Stringer.
+var fmtStringer = types.NewInterfaceType([]*types.Func{types.NewFunc(token.NoPos, nil, "String",
+	types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(types.NewParam(token.NoPos, nil, "",
+		types.Typ[types.String])), false))}, nil).Complete()
+
 // sqlScanner is the interface sql.Scanner, which the packages a run loads need not import.
 var sqlScanner = types.NewInterfaceType([]*types.Func{types.NewFunc(token.NoPos, nil, "Scan", types.NewSignatureType(
 	nil, nil, nil,

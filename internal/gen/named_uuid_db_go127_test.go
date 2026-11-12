@@ -102,6 +102,10 @@ func TestOrders(t *testing.T) {
 	if rest, err := repo.List(ctx, Orders()); err != nil || len(rest) != 1 || rest[0].ID != second {
 		t.Errorf("the orders after Delete = %+v, %v", rest, err)
 	}
+	want := "orders with id 00000000-0000-4000-8000-000000000001: orm: not found"
+	if _, err := repo.Get(ctx, first); err == nil || err.Error() != want {
+		t.Errorf("Get of the deleted order = %v, want %s", err, want)
+	}
 }
 `
 
