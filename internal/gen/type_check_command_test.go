@@ -224,9 +224,9 @@ func TestCommand_BitOnPostgreSQL(t *testing.T) {
 	}
 }
 
-// jsonShop declares notes, whose tags, a json, a field of type FIELD holds; Status, a type of string, and Count, a
-// value type shaped as kanna-value writes it holding an int64; and a repository reading the notes, and the tags alone
-// into ROW by tagsQuery.
+// jsonShop declares notes, whose tags, a json, a field of type FIELD holds; Status, a type of string, and Count and
+// At, value types shaped as kanna-value writes them holding an int64 and a time.Time; and a repository reading the
+// notes, and the tags alone into ROW by tagsQuery and into NoteTags, a projection.
 const jsonShop = `
 -- model/model.go --
 package model
@@ -260,10 +260,29 @@ func (x *Count) Scan(src any) error {
 	return nil
 }
 
+type At struct{ t time.Time }
+
+func NewAt(t time.Time) (At, error) { return At{t: t}, nil }
+
+func (x At) Time() time.Time { return x.t }
+
+func (x At) Value() (driver.Value, error) { return x.t, nil }
+
+func (x *At) Scan(src any) error {
+	var v sql.Null[time.Time]
+	if err := v.Scan(src); err != nil {
+		return err
+	}
+	x.t = v.V
+	return nil
+}
+
 type Note struct {
 	ID   int64
 	Tags FIELD
 }
+
+type NoteTags struct{ Tags FIELD }
 -- scopes/scopes.go --
 package scopes
 
@@ -283,6 +302,7 @@ import (
 	"time"
 
 	"example.com/shop/model"
+	"example.com/shop/scopes"
 )
 
 var (
@@ -296,6 +316,7 @@ type Note interface {
 	Get(ctx context.Context, id int64) (model.Note, error)
 	Insert(ctx context.Context, n model.Note) error
 	Tags(ctx context.Context) ([]ROW, error)
+	ListTags(ctx context.Context, s ...scopes.Note) ([]model.NoteTags, error)
 }
 -- impl/queries.sql --
 ` + tagsQuery
@@ -307,7 +328,8 @@ SELECT tags FROM notes
 // go-sql-driver/mysql writes json from a string or a []byte alone, and database/sql reads it into no slice and no
 // time.Time, so a field of a model holding a json of MySQL in another type, or in a value type holding one, stops
 // generation. A number or a bool still holds the json a query written by hand reads, as database/sql reads a json
-// holding one into it. pgx, on its own or under database/sql, writes and reads a slice, a number and a bool as JSON.
+// holding one into it. pgx, on its own or under database/sql, writes and reads a slice, a number and a bool as JSON,
+// and a time.Time on its own, which pgx/stdlib hands database/sql to read as text, as pgx hands a Scan method.
 func TestCommand_JSON(t *testing.T) {
 	t.Parallel()
 
@@ -319,11 +341,11 @@ func TestCommand_JSON(t *testing.T) {
 		dbCol      string
 		want       string
 	}{
-		{snapshot.MySQL, "", "[]int64", "[]byte", "json", "model.go:34:2: error: Note.Tags: notes.tags is json, " +
+		{snapshot.MySQL, "", "[]int64", "[]byte", "json", "model.go:51:2: error: Note.Tags: notes.tags is json, " +
 			"which a []int64 cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value " +
 			"methods\n" + hint},
 		{snapshot.MySQL, "", "[]string", "[]byte", "json", "notes.tags is json, which a []string cannot hold"},
-		{snapshot.MySQL, "", "int64", "int64", "json", "model.go:34:2: error: Note.Tags: notes.tags is json, " +
+		{snapshot.MySQL, "", "int64", "int64", "json", "model.go:51:2: error: Note.Tags: notes.tags is json, " +
 			"which an int64 cannot hold\n  declare it as []byte, or as a type of your own with Scan and Value " +
 			"methods\n" + hint},
 		{snapshot.MySQL, "", "*float64", "float64", "json", "notes.tags is json, which a *float64 cannot hold\n" +
@@ -348,6 +370,25 @@ func TestCommand_JSON(t *testing.T) {
 		{snapshot.PostgreSQL, "database/sql", "bool", "bool", "json", ""},
 		{snapshot.PostgreSQL, "database/sql", "[]int64", "[]int64", "jsonb", ""},
 		{snapshot.PostgreSQL, "database/sql", "[]string", "[]string", "json", ""},
+		{snapshot.PostgreSQL, "pgx", "time.Time", "time.Time", "jsonb", ""},
+		{snapshot.PostgreSQL, "pgx", "*time.Time", "time.Time", "json", ""},
+		{snapshot.PostgreSQL, "database/sql", "time.Time", "string", "jsonb", "model.go:51:2: error: Note.Tags: " +
+			"the column tags is jsonb, which database/sql reads into no time.Time\n  declare it as []byte, or as a " +
+			"type of your own with Scan and Value methods"},
+		{snapshot.PostgreSQL, "database/sql", "time.Time", "string", "json", "model.go:54:23: error: NoteTags.Tags: " +
+			"the column tags is json, which database/sql reads into no time.Time"},
+		{snapshot.PostgreSQL, "database/sql", "*time.Time", "string", "json", "Note.Tags: the column tags is json, " +
+			"which database/sql reads into no *time.Time\n  declare it as *[]byte"},
+		{snapshot.PostgreSQL, "database/sql", "string", "time.Time", "json", "queries.sql:1:1: error: Tags: the " +
+			"scalar result cannot hold column tags (json)"},
+		{snapshot.PostgreSQL, "database/sql", "string", "struct{ Tags time.Time }", "json", "queries.sql:1:1: " +
+			"error: -- query: Tags: the column tags is json, which struct{Tags time.Time}.Tags, a time.Time, cannot hold\n" +
+			"  declare it as []byte"},
+		{snapshot.PostgreSQL, "pgx", "string", "struct{ Tags time.Time }", "json", ""},
+		{snapshot.PostgreSQL, "pgx", "At", "[]byte", "jsonb", "notes.tags is jsonb, which an At cannot hold\n" +
+			"  declare it as []byte, or as a type of your own with Scan and Value methods\n" +
+			"  At is a value type of kanna-value, which writes and reads its column as the time.Time it holds"},
+		{snapshot.PostgreSQL, "database/sql", "Count", "model.Count", "json", ""},
 	} {
 		t.Run(string(tt.dialect)+" "+tt.driver+" "+tt.field+" "+tt.row+" "+tt.dbCol, func(t *testing.T) {
 			t.Parallel()
