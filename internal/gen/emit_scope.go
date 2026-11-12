@@ -295,15 +295,25 @@ func (e emitter) written(w sqlScope) {
 			parts = append(parts, goString(piece))
 		}
 	}
-	if w.doc == "" {
-		e.method("narrows the scope as "+w.file+" writes it.", s, w.name, strings.Join(params, ", "),
-			e.where(s, parts...))
-		return
+	doc := w.doc
+	if doc == "" {
+		doc = w.name + " narrows the scope as " + w.file + " writes it."
 	}
-	for line := range strings.SplitSeq(w.doc, "\n") {
+	for line := range strings.SplitSeq(doc, "\n") {
 		e.printf("%s\n", strings.TrimRight("// "+line, " "))
 	}
-	e.fn(s, w.name, strings.Join(params, ", "), e.where(s, parts...))
+	e.printf("func (%s %s) %s(%s) %s {\n", s, e.p.name, w.name, strings.Join(params, ", "), e.p.name)
+	// A nil slice goes as an empty array, the empty set it is on MySQL, rather than as NULL.
+	if e.d == snapshot.PostgreSQL {
+		done := map[string]bool{}
+		for _, a := range w.args {
+			if expands(typeOf[a]) && !done[a] {
+				done[a] = true
+				e.printf("if %[1]s == nil {\n%[1]s = %[2]s{}\n}\n", locals[a], types.TypeString(typeOf[a], e.f.Qualifier))
+			}
+		}
+	}
+	e.printf("return %s{%s(%s)}\n}\n\n", e.p.name, e.toScope, e.where(s, parts...))
 }
 
 // paging writes After, Before, Cursor, and AfterCursor, which continue a page from a row of model by the primary key,

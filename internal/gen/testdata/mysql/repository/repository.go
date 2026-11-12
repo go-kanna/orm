@@ -75,6 +75,8 @@ type OrderRepository interface {
 	CloseOld(ctx context.Context, before time.Time) (int64, error)
 	Reopen(ctx context.Context, id model.OrderID) error
 	CustomersOf(ctx context.Context, ids []model.OrderID) ([]int64, error)
+	CustomersNotOf(ctx context.Context, ids []model.OrderID) ([]int64, error)
+	ListOthers(ctx context.Context, ids []model.OrderID, s ...scopes.Order) ([]model.Order, error)
 }
 
 // OrderWithCustomer is an order with the name of its customer, which a query adds to it.

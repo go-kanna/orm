@@ -926,6 +926,22 @@ func (e repoEmitter) insertMySQL(m repoMethod, sc gofile.Scope, recv string, sig
 	e.printf("return %s, nil\n", row)
 }
 
+// emptySlices writes that, on PostgreSQL, a nil slice among the parameters args come from goes as an empty array, the
+// empty set it is on MySQL, rather than as NULL.
+func (e repoEmitter) emptySlices(args []queryArgument, sig signature) {
+	if e.d != snapshot.PostgreSQL {
+		return
+	}
+	done := map[string]bool{}
+	for _, a := range args {
+		if a.field != nil || !expands(a.typ) || done[a.parameter] {
+			continue
+		}
+		done[a.parameter] = true
+		e.printf("if %[1]s == nil {\n%[1]s = %[2]s{}\n}\n", sig.params[a.parameter], types.TypeString(a.typ, e.f.Qualifier))
+	}
+}
+
 // placeholder is the placeholder of the nth parameter of a statement.
 func (e repoEmitter) placeholder(n int) string {
 	if e.d == snapshot.MySQL {
@@ -937,6 +953,7 @@ func (e repoEmitter) placeholder(n int) string {
 // handWritten writes the body of m, which a query written by hand implements: the rows of its result read into its
 // fields, in their order, or the number of rows it affects.
 func (e repoEmitter) handWritten(m repoMethod, sc gofile.Scope, recv string, sig signature) {
+	e.emptySlices(m.query.args, sig)
 	if m.scoped {
 		e.scopedQuery(m, sc, recv, sig)
 		return

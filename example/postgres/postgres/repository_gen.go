@@ -354,6 +354,9 @@ func (r Order) Get(ctx context.Context, id model.OrderID, s ...scopes.Order) (mo
 
 // ListApprovers runs the query of its name in queries.sql.
 func (r Order) ListApprovers(ctx context.Context, ids []model.OrderID) ([]repository.OrderApprover, error) {
+	if ids == nil {
+		ids = []model.OrderID{}
+	}
 	const q = `SELECT
     o.id AS order_id,
     a.approver

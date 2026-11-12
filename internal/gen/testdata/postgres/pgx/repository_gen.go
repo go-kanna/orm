@@ -1647,6 +1647,106 @@ func (r OrderRepository) Reopen(ctx context.Context, id model.OrderID) error {
 	return nil
 }
 
+// CustomersOf runs the query of its name in queries.sql.
+func (r OrderRepository) CustomersOf(ctx context.Context, ids []model.OrderID) ([]int64, error) {
+	if ids == nil {
+		ids = []model.OrderID{}
+	}
+	const q = `SELECT customer_id FROM orders WHERE id = ANY($1) ORDER BY id`
+	rows, err := r.db.Query(ctx, q, ids)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
+	}
+	defer rows.Close()
+	out := []int64{}
+	var row, none int64
+	dest := []any{&row}
+	for rows.Next() {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
+			return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query CustomersOf: %w", err))
+	}
+	return out, nil
+}
+
+// CustomersNotOf runs the query of its name in queries.sql.
+func (r OrderRepository) CustomersNotOf(ctx context.Context, ids []model.OrderID) ([]int64, error) {
+	if ids == nil {
+		ids = []model.OrderID{}
+	}
+	const q = `SELECT customer_id FROM orders WHERE id <> ALL($1) ORDER BY id`
+	rows, err := r.db.Query(ctx, q, ids)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("query CustomersNotOf: %w", err))
+	}
+	defer rows.Close()
+	out := []int64{}
+	var row, none int64
+	dest := []any{&row}
+	for rows.Next() {
+		row = none
+		if err := rows.Scan(dest...); err != nil {
+			return nil, r.mapError(fmt.Errorf("query CustomersNotOf: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query CustomersNotOf: %w", err))
+	}
+	return out, nil
+}
+
+// ListOthers runs the query of its name in queries.sql.
+func (r OrderRepository) ListOthers(ctx context.Context, ids []model.OrderID, s ...scopes.Order) ([]model.Order, error) {
+	if ids == nil {
+		ids = []model.OrderID{}
+	}
+	qs := make([]impl.Of[model.Order], len(s))
+	for i, x := range s {
+		qs[i] = impl.Of[model.Order](x.Of())
+	}
+	q := impl.Combine(qs...)
+	const text = `WITH list_others AS (SELECT o.id, o.customer_id, o.status, o.placed_at, o.note, o.total, o.paid, o.contact, o.receipt, o."order"
+FROM orders o
+WHERE o.id <> ALL($1))
+SELECT orders.id, orders.customer_id, orders.status, orders.placed_at, orders.note, orders.total, orders.paid, orders.contact, orders.receipt, orders."order" FROM list_others AS orders`
+	args := []any{ids}
+	rd, err := q.Render(impl.Postgres, 2, []string{`id`})
+	if err != nil {
+		return nil, r.mapError(err)
+	}
+	rows, err := r.db.Query(ctx, text+rd.Where()+rd.OrderBy()+rd.Limit(), append(args, rd.Args()...)...)
+	if err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListOthers: %w", err))
+	}
+	defer rows.Close()
+	out := []model.Order{}
+	var row model.Order
+	dest := []any{&row.ID, &row.CustomerID, &row.Status, &row.PlacedAt, &row.Memo, &row.Total, &row.Paid, &row.Contact, &row.Receipt, &row.Position}
+	for rows.Next() {
+		row = model.Order{}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, r.mapError(fmt.Errorf("query ListOthers: %w", err))
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, r.mapError(fmt.Errorf("query ListOthers: %w", err))
+	}
+	if rd.Reversed() {
+		slices.Reverse(out)
+	}
+	if err := kPreloadOrders(ctx, r.db, out, q); err != nil {
+		return nil, r.mapError(err)
+	}
+	return out, nil
+}
+
 // kSelectCustomers reads the rows of customers that q matches, in its order. lock is the locking clause of the query, if any.
 func kSelectCustomers(ctx context.Context, db kDatabase, q impl.Of[model.Customer], lock string) ([]model.Customer, error) {
 	rd, err := q.Render(impl.Postgres, 1, []string{`id`})

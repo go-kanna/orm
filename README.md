@@ -1810,11 +1810,11 @@ ORDER BY 1`
 - A statement runs from its line to the next statement's comment or line. The blank lines and the lines of comment it
   ends in are not part of it, nor is a comment at its very end, so that a scope can end in one.
 - On MySQL, a parameter used twice is passed twice, once for each `?`.
-- A slice argument, other than `[]byte` or a type with a `Value` method, is a list of values. PostgreSQL takes it as
-  an array, as in `= ANY(:ids)`. On MySQL, it is written with a `?` for each of its values when the method runs. With
-  none, right between the parentheses of `IN`, it is the empty set, a subquery of no rows: `IN (:ids)` matches no row,
-  and `NOT IN (:ids)` every row, as PostgreSQL's `= ANY` and `<> ALL` do. Anywhere else, as in `FIELD(id, :ids)`, it
-  is `NULL`.
+- A slice argument, other than `[]byte` or a type with a `Value` method, is a list of values, and a nil one a list of
+  none, as an empty one is. PostgreSQL takes it as an array, as in `= ANY(:ids)`, and a nil one as an empty array, not
+  `NULL`. On MySQL, it is written with a `?` for each of its values when the method runs. With none, right between the
+  parentheses of `IN`, it is the empty set, a subquery of no rows: `IN (:ids)` matches no row, and `NOT IN (:ids)`
+  every row, as PostgreSQL's `= ANY` and `<> ALL` do. Anywhere else, as in `FIELD(id, :ids)`, it is `NULL`.
 
 ### Scopes on a query
 

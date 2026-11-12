@@ -97,6 +97,9 @@ func TestGenerated_Postgres(t *testing.T) {
 		{"a scope written by hand with a variadic parameter", pscopes.Order{}.Tagged("gift", "rush"), rendered{
 			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY($1)))", []any{[]string{"gift", "rush"}},
 		}},
+		{"a scope written by hand with a variadic parameter of none", pscopes.Order{}.Tagged(), rendered{
+			" WHERE (id IN (SELECT order_id FROM order_tags WHERE tag_id = ANY($1)))", []any{[]string{}},
+		}},
 	}
 	for _, tt := range tests {
 		if got := render(t, runtime(tt.scope.Of()), impl.Postgres); !reflect.DeepEqual(got, tt.want) {
