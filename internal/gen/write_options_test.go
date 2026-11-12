@@ -20,6 +20,7 @@ type Record struct {
  Note string ` + "`orm:\",nullzero\"`" + `
  Stamp int64 ` + "`orm:\",default\"`" + `
  Origin string ` + "`orm:\",insertonly\"`" + `
+ Version int64 ` + "`orm:\",readonly\"`" + `
 }
 -- scopes/scopes.go --
 package scopes
@@ -83,7 +84,13 @@ func TestWriteOptions(t *testing.T) {
   if _,err := conn.ExecContext(ctx,"USE "+namespace); err != nil { t.Fatal(err) }
   _,err = conn.ExecContext(ctx,"CREATE TABLE records (id BIGINT PRIMARY KEY DEFAULT (UUID_SHORT()), "+
    "record_key VARCHAR(64) NOT NULL UNIQUE, owner_id BIGINT, note TEXT, stamp BIGINT NOT NULL DEFAULT 10, "+
-   "origin TEXT NOT NULL)")
+   "origin TEXT NOT NULL, version BIGINT NOT NULL DEFAULT 0)")
+  if err != nil { t.Fatal(err) }
+  _,err = conn.ExecContext(ctx,"CREATE TRIGGER records_inserted BEFORE INSERT ON records FOR EACH ROW "+
+   "SET NEW.version = NEW.version + 1")
+  if err != nil { t.Fatal(err) }
+  _,err = conn.ExecContext(ctx,"CREATE TRIGGER records_updated BEFORE UPDATE ON records FOR EACH ROW "+
+   "SET NEW.version = OLD.version + 1 + IF(NEW.version <> OLD.version, 1000, 0)")
  } else {
   if _,err := conn.ExecContext(ctx,"CREATE SCHEMA "+namespace); err != nil { t.Fatal(err) }
   t.Cleanup(func(){ _,_ = conn.ExecContext(context.Background(),"DROP SCHEMA "+namespace+" CASCADE") })
@@ -91,18 +98,28 @@ func TestWriteOptions(t *testing.T) {
   if _,err := conn.ExecContext(ctx,"CREATE SEQUENCE ids"); err != nil { t.Fatal(err) }
   _,err = conn.ExecContext(ctx,"CREATE TABLE records (id BIGINT PRIMARY KEY DEFAULT nextval('ids'), "+
    "record_key TEXT NOT NULL UNIQUE, owner_id BIGINT, note TEXT, stamp BIGINT NOT NULL DEFAULT 10, "+
-   "origin TEXT NOT NULL)")
+   "origin TEXT NOT NULL, version BIGINT NOT NULL DEFAULT 0)")
+  if err != nil { t.Fatal(err) }
+  _,err = conn.ExecContext(ctx,"CREATE FUNCTION bump_version() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "+
+   "IF TG_OP = 'INSERT' THEN NEW.version := NEW.version + 1; "+
+   "ELSE NEW.version := OLD.version + 1 + CASE WHEN NEW.version <> OLD.version THEN 1000 ELSE 0 END; END IF; "+
+   "RETURN NEW; END $$")
+  if err != nil { t.Fatal(err) }
+  _,err = conn.ExecContext(ctx,"CREATE TRIGGER records_written BEFORE INSERT OR UPDATE ON records "+
+   "FOR EACH ROW EXECUTE FUNCTION bump_version()")
  }
  if err != nil { t.Fatal(err) }
  records := NewRecords(conn)
- first,err := records.Upsert(ctx,model.Record{ID:999,Key:"one",OwnerID:new(int64(11)),Note:"first",Stamp:99,Origin:"a"})
+ first,err := records.Upsert(ctx,model.Record{ID:999,Key:"one",OwnerID:new(int64(11)),Note:"first",Stamp:99,Origin:"a",
+  Version:99})
  if err != nil { t.Fatal(err) }
- if first.ID == 0 || first.ID == 999 || first.Stamp != 10 || first.Origin != "a" {
+ if first.ID == 0 || first.ID == 999 || first.Stamp != 10 || first.Origin != "a" || first.Version != 1 {
   t.Fatalf("database defaults: %+v",first)
  }
- saved,err := records.Upsert(ctx,model.Record{ID:888,Key:"one",Note:"second",Stamp:99,Origin:"b"})
+ saved,err := records.Upsert(ctx,model.Record{ID:888,Key:"one",Note:"second",Stamp:99,Origin:"b",Version:99})
  if err != nil { t.Fatal(err) }
- if saved.ID != first.ID || saved.OwnerID != nil || saved.Note != "second" || saved.Stamp != 10 || saved.Origin != "a" {
+ if saved.ID != first.ID || saved.OwnerID != nil || saved.Note != "second" || saved.Stamp != 10 ||
+  saved.Origin != "a" || saved.Version != 2 {
   t.Fatalf("upsert of a row: %+v",saved)
  }
  saved,err = records.UpsertChanges(ctx,model.Record{Key:"one",Note:"given",Origin:"c"},
@@ -123,28 +140,34 @@ func TestWriteOptions(t *testing.T) {
   t.Fatal("upsert of a change set writing its key succeeded")
  }
  if _,err := records.GetByKey(ctx,"other"); err == nil { t.Fatal("upsert of a change set wrote its key") }
- fresh,err := records.UpsertChanges(ctx,model.Record{Key:"four",Note:"fresh",Origin:"d"},
+ fresh,err := records.UpsertChanges(ctx,model.Record{Key:"four",Note:"fresh",Origin:"d",Version:99},
   scopes.RecordChanges().SetNote("x"))
- if err != nil || fresh.Note != "fresh" || fresh.Origin != "d" || fresh.Stamp != 10 {
+ if err != nil || fresh.Note != "fresh" || fresh.Origin != "d" || fresh.Stamp != 10 || fresh.Version != 1 {
   t.Fatalf("upsert of a change set inserting: %+v, %v",fresh,err)
  }
- saved.Stamp, saved.Origin = 20, "z"
+ before := saved.Version
+ saved.Stamp, saved.Origin, saved.Version = 20, "z", 99
  if err := records.Update(ctx,saved); err != nil { t.Fatal(err) }
  got,err := records.Get(ctx,saved.ID)
- if err != nil || got.Stamp != 20 || got.Origin != "a" { t.Fatalf("update: %+v, %v",got,err) }
- bulk := []model.Record{{Key:"one",Note:"bulk",Origin:"y"},{Key:"two",Origin:"t"}}
+ if err != nil || got.Stamp != 20 || got.Origin != "a" || got.Version != before+1 {
+  t.Fatalf("update: %+v, %v",got,err)
+ }
+ bulk := []model.Record{{Key:"one",Note:"bulk",Origin:"y",Version:99},{Key:"two",Origin:"t",Version:99}}
  if err := records.UpsertAll(ctx,bulk); err != nil { t.Fatal(err) }
  got,err = records.Get(ctx,first.ID)
- if err != nil || got.Note != "bulk" || got.OwnerID != nil || got.Stamp != 20 || got.Origin != "a" {
+ if err != nil || got.Note != "bulk" || got.OwnerID != nil || got.Stamp != 20 || got.Origin != "a" ||
+  got.Version != before+2 {
   t.Fatalf("bulk upsert: %+v, %v",got,err)
  }
  second,err := records.GetByKey(ctx,"two")
- if err != nil || second.ID == first.ID || second.Stamp != 10 || second.OwnerID != nil || second.Origin != "t" {
+ if err != nil || second.ID == first.ID || second.Stamp != 10 || second.OwnerID != nil || second.Origin != "t" ||
+  second.Version != 1 {
   t.Fatalf("bulk defaults: %+v, %v",second,err)
  }
- if err := records.Insert(ctx,model.Record{ID:999,Key:"three",Stamp:99,Origin:"o"}); err != nil { t.Fatal(err) }
+ err = records.Insert(ctx,model.Record{ID:999,Key:"three",Stamp:99,Origin:"o",Version:99})
+ if err != nil { t.Fatal(err) }
  third,err := records.GetByKey(ctx,"three")
- if err != nil || third.ID == 999 || third.Stamp != 10 || third.Origin != "o" {
+ if err != nil || third.ID == 999 || third.Stamp != 10 || third.Origin != "o" || third.Version != 1 {
   t.Fatalf("INSERT defaults: %+v, %v",third,err)
  }
 }
@@ -159,6 +182,7 @@ func writeOptionsSnapshot(t *testing.T, dir string, dialect snapshot.Dialect) {
 			{Name: "owner_id", Type: "bigint"}, {Name: "note", Type: "text"},
 			{Name: "stamp", Type: "bigint", NotNull: true, Default: true},
 			{Name: "origin", Type: "text", NotNull: true},
+			{Name: "version", Type: "bigint", NotNull: true, Default: true},
 		}, PrimaryKey: []string{"id"}, UniqueKeys: [][]string{{"record_key"}}},
 	}}
 	if err := os.WriteFile(filepath.Join(dir, snapshot.Name), snapshot.Marshal(s), 0o600); err != nil {

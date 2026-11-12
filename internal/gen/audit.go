@@ -94,7 +94,7 @@ func (e repoEmitter) changesOf(m repoMethod, changes, now string) string {
 }
 
 // audits settles the audit columns of the model: of each kind, the column tagged so, or, when none is, the column of
-// the field named so. It reports two of a kind, one that is no time.Time, and one tagged insertonly.
+// the field named so. It reports two of a kind, one that is no time.Time, and one tagged insertonly or readonly.
 func (m *matcher) audits() {
 	for _, kind := range []audit{auditCreated, auditUpdated} {
 		tagged := slices.ContainsFunc(m.columns, func(c column) bool { return c.audit == kind })
@@ -115,6 +115,11 @@ func (m *matcher) audits() {
 						`holding the column by orm:"%s"`, c.col.Name))
 				}
 				m.ds = append(m.ds, d)
+			}
+			if c.readOnly {
+				m.ds = append(m.ds, diag.Errorf(c.pos, "%s: %s is the time a row is %s, which the database writes when "+
+					"tagged default, not readonly", label, c.col.Name, kind.tag()).
+					WithHints(`replace readonly with default`))
 			}
 			if c.insertOnly {
 				what := "an insert alone writes it already"

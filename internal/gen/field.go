@@ -27,6 +27,7 @@ type column struct {
 	nullzero      bool
 	insertDefault bool
 	insertOnly    bool
+	readOnly      bool
 	audit         audit
 	relationValue bool
 }
@@ -168,7 +169,7 @@ func (m *matcher) match(st *types.Struct, path []string) {
 					label, written, f.Name()).WithHints(`name the foreign key it follows with orm:"fk=<column>"`))
 				continue
 			}
-			if tag.nullzero || tag.insertDefault || tag.insertOnly || tag.audit != auditNone {
+			if tag.nullzero || tag.insertDefault || tag.insertOnly || tag.readOnly || tag.audit != auditNone {
 				m.ds = append(m.ds, diag.Errorf(pos, `%s: orm:%q is for a column, and %s is a relation`,
 					label, written, f.Name()))
 				continue
@@ -212,9 +213,14 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 	if insertDefault && tag.insertOnly {
 		m.ds = append(m.ds, diag.Errorf(pos, "%s: default leaves %s.%s out of an insert, and insertonly out of every "+
 			"other write, so kanna-orm would never write it", label, m.sc.table, name).
-			WithHints(`if a trigger writes it after the insert, tag it insertonly alone: the insert writes its first `+
-				`value, and no other write touches it`))
+			WithHints(`if a trigger writes it on every write, tag it readonly alone`))
 		return
+	}
+	if tag.readOnly {
+		if !m.readOnly(label, pos, col, tag) {
+			return
+		}
+		col.Assigned, col.Writable, col.AssignedBy = true, false, ""
 	}
 
 	if other, ok := m.held[name]; ok {
@@ -246,7 +252,34 @@ func (m *matcher) column(label string, path []string, f *types.Var, pos token.Po
 		return
 	}
 	m.columns = append(m.columns, column{path: path, typ: f.Type(), col: col, pos: pos,
-		nullzero: nullzero, insertDefault: insertDefault, insertOnly: tag.insertOnly, audit: tag.audit})
+		nullzero: nullzero, insertDefault: insertDefault, insertOnly: tag.insertOnly, readOnly: tag.readOnly,
+		audit: tag.audit})
+}
+
+// readOnly reports whether the tag of col, tagged readonly, says no more than readonly: a column the database writes
+// on every write, which no write of kanna-orm writes then. It reports one the database assigns already, and readonly
+// with default, insertonly, created, or updated.
+func (m *matcher) readOnly(label string, pos token.Position, col snapshot.Column, tag fieldTag) bool {
+	var d diag.Diag
+	switch {
+	case tag.insertDefault, tag.insertOnly:
+		option := "default"
+		if tag.insertOnly {
+			option = "insertonly"
+		}
+		d = diag.Errorf(pos, "%s: readonly leaves %s.%s out of every write already, %s too", label, m.sc.table,
+			col.Name, option).WithHints("remove " + option)
+	case tag.audit != auditNone:
+		d = diag.Errorf(pos, "%s: a time a row is %s at that the database writes is tagged default, not readonly",
+			label, tag.audit.tag()).WithHints(fmt.Sprintf(`tag it orm:",%s,default"`, tag.audit.tag()))
+	case col.Assigned:
+		d = diag.Errorf(pos, "%s: the database assigns %s.%s already, which no write of kanna-orm writes", label,
+			m.sc.table, col.Name).WithHints("remove readonly")
+	default:
+		return true
+	}
+	m.ds = append(m.ds, d)
+	return false
 }
 
 // defaults reports each column tagged default of which the snapshot records no database default, but for the times a

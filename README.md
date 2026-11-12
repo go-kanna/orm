@@ -393,6 +393,7 @@ A field holds the column named as the field is, in snake case: `CustomerID` hold
 | `orm:"note,nullzero"`           | a nullable string column: read NULL as the zero string and write the zero string as NULL |
 | `orm:",default"`                | omit this column from generated INSERT statements and use its database default |
 | `orm:",insertonly"`             | write this column by an insert alone: an update, and an upsert meeting its row, leave it as it was |
+| `orm:",readonly"`               | only read this column, which the database writes on every write, as a trigger does |
 | `orm:",created"`                | the time a row is created at, which kanna-orm writes: see [Creation and update times](#creation-and-update-times) |
 | `orm:",updated"`                | the time a row is last updated at, which kanna-orm writes: see [Creation and update times](#creation-and-update-times) |
 | `orm:"-"`                       | not a column: kanna-orm neither reads nor writes the field                      |
@@ -1234,6 +1235,13 @@ A field tagged `orm:",insertonly"` is written by an insert alone, as the channel
 and an upsert meeting its row, leave its column as it was, and a change set has no setter for it. With `default`, which
 leaves it out of an insert, it would never be written, so the two together stop generation.
 
+A field tagged `orm:",readonly"` holds a column the database writes on every write, such as a version a trigger counts
+up. No insert, update, or upsert sends it, a change set has no setter for it, and a method returning the model reads it
+back (by RETURNING on PostgreSQL). The snapshot records no triggers, so the tag states what it cannot, and kanna-orm
+treats the column as it treats a generated one. Generation stops when the column is one the database assigns already,
+when the tag adds `default` or `insertonly`, which `readonly` makes redundant, or when it is a [creation or update
+time](#creation-and-update-times): tag a time the database writes `default` instead.
+
 #### Writing a change set over the row met
 
 An upsert taking a [change set](#updating-selected-columns) inserts its row when no row has the key, and writes the
@@ -1392,10 +1400,10 @@ A nullable column has no `Add`, as NULL plus a number stays NULL, and neither ha
 Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add`
 of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged.
 Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned
-columns, columns tagged `insertonly`, the [creation and update times](#creation-and-update-times), and relations have no
-setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty change set returns
-`orm.ErrEmptyChangeSet`, which a handler can test for with `errors.Is` to reject a request that changes nothing; an
-[upsert](#writing-a-change-set-over-the-row-met) of one is not an error.
+columns, columns tagged `insertonly` or `readonly`, the [creation and update times](#creation-and-update-times), and
+relations have no setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty
+change set returns `orm.ErrEmptyChangeSet`, which a handler can test for with `errors.Is` to reject a request that
+changes nothing; an [upsert](#writing-a-change-set-over-the-row-met) of one is not an error.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 
