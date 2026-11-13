@@ -15,7 +15,7 @@ func WithHook(h hook.Hook) Option { return Option(impl.WithHook(h)) }
 
 // WithClock has a repository write the creation and update times of its rows by c, rather than by time.Now. Given
 // more than once, the last wins.
-func WithClock(c orm.Clocker) Option { return Option(impl.WithClock(c)) }
+func WithClock(c orm.Clock) Option { return Option(impl.WithClock(c)) }
 
 // Join is opts as one option, which gives each of them in their order: what a dependency injector, which holds one
 // value of a type, gives all the repositories it builds.

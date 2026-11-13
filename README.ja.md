@@ -829,7 +829,7 @@ type Event struct {
 - どちらかに `default` を付けると、データベースが DEFAULT かトリガーで値を入れるとみなします。kanna-orm は、insert、update、Upsert、Copy のどの文でもそのカラムを書かず、行を返すメソッドは読み戻します（PostgreSQL では RETURNING で）。スナップショットはトリガーを記録しないので、ほかの `default` と違い、スナップショットにデフォルトの記録は要りません。DEFAULT もトリガーもない NOT NULL のカラムは、行を insert するときに失敗します。
 - [手書きの SQL](#手書きの-sql) は、これらのカラムも書いたとおりに書きます。
 
-時計は、コンストラクタに `option.WithClock` で `orm.Clocker` を渡さない限り `time.Now` です。フックを `option.WithHook` で渡すのと同じで、`Bind` も引き継ぎます。`Now` は書き込むメソッドの context を受け取るので、時計を context で運ぶアプリは、メソッド 1 つでつなげます:
+時計は、コンストラクタに `option.WithClock` で `orm.Clock` を渡さない限り `time.Now` です。フックを `option.WithHook` で渡すのと同じで、`Bind` も引き継ぎます。`Now` は書き込むメソッドの context を受け取るので、時計を context で運ぶアプリは、メソッド 1 つでつなげます:
 
 ```go
 type clock struct{ now time.Time }

@@ -13,7 +13,7 @@ import (
 // first, and the clock they write the creation and update times of rows by.
 type Options struct {
 	hooks []hook.Hook
-	clock orm.Clocker
+	clock orm.Clock
 }
 
 // Option is one setting of Options, which option.Option is defined by. Its zero value sets nothing.
@@ -34,7 +34,7 @@ func WithHook(h hook.Hook) Option {
 }
 
 // WithClock sets the clock to c, in place of one set before. A nil c leaves time.Now.
-func WithClock(c orm.Clocker) Option {
+func WithClock(c orm.Clock) Option {
 	return Option{func(o *Options) { o.clock = c }}
 }
 
