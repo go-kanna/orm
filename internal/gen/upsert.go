@@ -3,6 +3,7 @@ package gen
 import (
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/go-kanna/internal/gofile"
 
@@ -11,35 +12,49 @@ import (
 
 // upsertAssignment is the assignment an upsert makes of c over the row it meets: incoming, the value of the row given;
 // or, of an upsert taking a change set, the value the change set sets when it sets one, existing plus the value it
-// adds when it adds one to an additive column, and else existing, the value kept. The flag and the value of a set are
-// at placeholders first and first+1, and those of an add at first+2 and first+3, numbered on PostgreSQL.
+// adds when it adds one to an additive column, the greater or the lesser of existing and the value it raises or lowers
+// an ordered column to, and else existing, the value kept. The flag and the value of a set are at placeholders first
+// and first+1, followed by those of an add, a raise, and a lower that c takes, numbered on PostgreSQL.
 func (e repoEmitter) upsertAssignment(m repoMethod, c column, incoming, existing string, first int) string {
 	name := sqlName(e.d, c.col.Name)
-	switch {
-	case m.changes == "":
+	if m.changes == "" {
 		return name + " = " + incoming
-	case e.d == snapshot.MySQL && additive(c):
-		return name + " = IF(?, ?, IF(?, " + existing + " + ?, " + existing + "))"
-	case e.d == snapshot.MySQL:
-		return name + " = IF(?, ?, " + existing + ")"
 	}
-	p := func(i int) string { return "$" + strconv.Itoa(first+i) }
-	added := ""
+	branches := []func(v string) string{func(v string) string { return v }}
 	if additive(c) {
-		added = " WHEN " + p(2) + " THEN " + existing + " + " + p(3)
+		branches = append(branches, func(v string) string { return existing + " + " + v })
 	}
-	return name + " = CASE WHEN " + p(0) + " THEN " + p(1) + added + " ELSE " + existing + " END"
+	if ordered(c) {
+		branches = append(branches, func(v string) string { return "GREATEST(" + existing + ", " + v + ")" },
+			func(v string) string { return "LEAST(" + existing + ", " + v + ")" })
+	}
+	if e.d == snapshot.MySQL {
+		value := existing
+		for _, b := range slices.Backward(branches) {
+			value = "IF(?, " + b("?") + ", " + value + ")"
+		}
+		return name + " = " + value
+	}
+	var value strings.Builder
+	for i, b := range branches {
+		value.WriteString(" WHEN $" + strconv.Itoa(first+2*i) + " THEN " + b("$"+strconv.Itoa(first+2*i+1)))
+	}
+	return name + " = CASE" + value.String() + " ELSE " + existing + " END"
 }
 
 // upsertParams is the number of placeholders upsertAssignment gives c of m.
 func upsertParams(m repoMethod, c column) int {
-	switch {
-	case m.changes == "":
+	if m.changes == "" {
 		return 0
-	case additive(c):
-		return 4
 	}
-	return 2
+	n := 2
+	if additive(c) {
+		n += 2
+	}
+	if ordered(c) {
+		n += 4
+	}
+	return n
 }
 
 // changeValues writes, for m, an upsert taking a change set, the values of upsertAssignment that the change set gives,
@@ -52,13 +67,15 @@ func (e repoEmitter) changeValues(m repoMethod, sc gofile.Scope, sig signature, 
 	}
 	set, err := sc.Name("set"), sc.Name("err")
 	updated := m.updated()
-	added := "nil"
-	if cs := slices.DeleteFunc(slices.Clone(updated), func(c column) bool { return !additive(c) }); len(cs) > 0 {
-		added = columnNamesLiteral(cs)
+	of := func(holds func(column) bool) string {
+		if cs := slices.DeleteFunc(slices.Clone(updated), func(c column) bool { return !holds(c) }); len(cs) > 0 {
+			return columnNamesLiteral(cs)
+		}
+		return "nil"
 	}
-	e.printf("%[1]s, %[2]s := %[3]s.UpsertValues(%[4]q, %[5]s, %[6]s, %[7]s)\n"+
-		"if %[2]s != nil {\nreturn %[8]s%[9]s\n}\n", set, err, e.changesOf(m, sig.params[m.changes], sig.now), m.name,
-		columnNamesLiteral(updated), added, namesLiteral(m.rowKey()), zero, sig.mapped(err))
+	e.printf("%[1]s, %[2]s := %[3]s.UpsertValues(%[4]q, %[5]s, %[6]s, %[7]s, %[8]s)\n"+
+		"if %[2]s != nil {\nreturn %[9]s%[10]s\n}\n", set, err, e.changesOf(m, sig.params[m.changes], sig.now), m.name,
+		columnNamesLiteral(updated), of(additive), of(ordered), namesLiteral(m.rowKey()), zero, sig.mapped(err))
 	return set, err
 }
 

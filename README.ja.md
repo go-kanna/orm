@@ -936,17 +936,17 @@ ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.nam
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)
 ```
 
-[`Add`](#指定したカラムだけを更新する) のあるカラムには、変更セットが値を足すとき、その値を保存済みの値に足す 2 つ目の分岐があります。顧客に `Visits int32` のフィールドがあれば、`AddVisits(1)` は突き合わせた顧客の来店を 1 回数え、突き合わせる行がなく insert する行には、その行自身の値が入ります:
+[`Add`](#指定したカラムだけを更新する) のあるカラムには、変更セットが値を足すとき、その値を保存済みの値に足す分岐があります。[`Raise` と `Lower`](#指定したカラムだけを更新する) のあるカラムには、変更セットの値と保存済みの値の大きいほうを書く分岐と、小さいほうを書く分岐があります。顧客に `Visits int32` のフィールドがあれば、`AddVisits(1)` は突き合わせた顧客の来店を 1 回数え、突き合わせる行がなく insert する行には、その行自身の値が入ります:
 
 ```sql
 -- PostgreSQL
-visits = CASE WHEN $9 THEN $10 WHEN $11 THEN customers.visits + $12 ELSE customers.visits END
+visits = CASE WHEN $9 THEN $10 WHEN $11 THEN customers.visits + $12 WHEN $13 THEN GREATEST(customers.visits, $14) WHEN $15 THEN LEAST(customers.visits, $16) ELSE customers.visits END
 
 -- MySQL
-visits = IF(?, ?, IF(?, customers.visits + ?, customers.visits))
+visits = IF(?, ?, IF(?, customers.visits + ?, IF(?, GREATEST(customers.visits, ?), IF(?, LEAST(customers.visits, ?), customers.visits))))
 ```
 
-`visits = visits + 1` のように保存済みの値に数を足すのは `Add` で書けます。突き合わせた行から計算するそのほかの値は、[手書きの SQL](#手書きの-sql) で書きます。
+`visits = visits + 1` のように保存済みの値に数を足すのも、2 つの値の大きいほうか小さいほうを書くのも、setter で書けます。突き合わせた行から計算するそのほかの値は、[手書きの SQL](#手書きの-sql) で書きます。
 
 ### 複数行の書き込み
 
@@ -1025,7 +1025,23 @@ UPDATE `order_lines` SET `quantity` = `quantity` + ? WHERE ...
 
 NULL を許すカラムには `Add` はありません。NULL に数を足しても NULL のままだからです。`Valuer` で文字列として保存する数にもありません。
 
-setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込みます。同じカラムに `Set` か `Add` をもう一度呼ぶと、後に呼んだほうを使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・`insertonly` か `readonly` を指定したカラム・[作成と更新の時刻](#作成と更新の時刻)・関連フィールドには setter を生成しません。変更セットの `Update` は、更新の時刻を時計で書きます。空の変更セットの `Update` は `orm.ErrEmptyChangeSet` を返します。ハンドラは `errors.Is` でこれを調べて、何も変えないリクエストを拒否できます。[Upsert](#突き合わせた行に変更セットを書く) ではエラーになりません。
+`Add` のあるカラムには、`Raise` と `Lower` もあります。日付か時刻の型で NULL にならず、フィールドが `time.Time` かそれを基にした型のカラムにもあります。`Raise` は渡した値と保存済みの値の大きいほうを、`Lower` は小さいほうを書きます。`Add` と同じく文の中で計算するので、ジョブのキューでは、行を読んだあとの書き込みを失わずに実行の時刻を早められます:
+
+```go
+changes := scopes.JobChanges().LowerRunAt(next)
+```
+
+```sql
+-- PostgreSQL
+UPDATE "jobs" SET "run_at" = LEAST("run_at", $1) WHERE ...
+
+-- MySQL
+UPDATE `jobs` SET `run_at` = LEAST(`run_at`, ?) WHERE ...
+```
+
+NULL を許すカラムには、どちらもありません。MySQL の `GREATEST` と `LEAST` はどちらかの値が NULL なら NULL を返し、PostgreSQL のものは NULL を無視するからです。文字列のカラムにもありません。照合順序で大小が変わるからです。
+
+setter を呼ばなかったカラムは更新しません。ゼロ値も省略せず書き込みます。同じカラムに `Set`・`Add`・`Raise`・`Lower` をもう一度呼ぶと、後に呼んだほうを使います。変更セットから派生したセットを作っても元のセットは変わりません。`nullzero` のフィールドは通常どおり空文字列を SQL NULL に変換します。主キー・DB が採番するカラム・`insertonly` か `readonly` を指定したカラム・[作成と更新の時刻](#作成と更新の時刻)・関連フィールドには setter を生成しません。変更セットの `Update` は、更新の時刻を時計で書きます。空の変更セットの `Update` は `orm.ErrEmptyChangeSet` を返します。ハンドラは `errors.Is` でこれを調べて、何も変えないリクエストを拒否できます。[Upsert](#突き合わせた行に変更セットを書く) ではエラーになりません。
 
 対象の一意キーを更新値と分けて宣言し、通常の条件スコープを追加します。
 

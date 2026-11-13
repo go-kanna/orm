@@ -162,6 +162,8 @@ var ops = map[string]op{
 	"impl.Of.RenderDelete":              renders(3, renderDelete),
 	"impl.Changes.Set":                  opSet,
 	"impl.Changes.Add":                  opSet,
+	"impl.Changes.Raise":                opSet,
+	"impl.Changes.Lower":                opSet,
 	"impl.Changes.Touch":                opTouch,
 	"impl.Changes.RenderUpdate":         renders(3, renderUpdate),
 	"impl.Changes.RenderUpdateSelected": renders(3, renderUpdateSelected),
@@ -359,7 +361,7 @@ func (c opCall) preload(each bool) *scopeVal {
 	return s.then(&scopeVal{preloads: []preload{{relation: relation, each: each, p: set(c.at), sub: sub}}})
 }
 
-// opSet is Set or Add, either of which assigns the column of argument 1.
+// opSet is Set, Add, Raise, or Lower, each of which assigns the column of argument 1.
 func opSet(c opCall) (value, *failed) {
 	ch := c.change()
 	column, ok := c.str(1)
@@ -482,12 +484,12 @@ func targets(c opCall, s *scopeVal, what string, key []string, known bool) *fail
 	return nil
 }
 
-// upsertValues is UpsertValues(method, allowed, added, key) of the change set of argument 0.
+// upsertValues is UpsertValues(method, allowed, added, ordered, key) of the change set of argument 0.
 func upsertValues(c opCall) *failed {
 	ch := c.change()
 	method, _ := c.str(1)
 	allowed, okAllowed := c.strs(2)
-	key, okKey := c.strs(4)
+	key, okKey := c.strs(5)
 	if !okAllowed || !okKey {
 		return nil
 	}

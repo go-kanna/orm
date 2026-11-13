@@ -418,12 +418,28 @@ func (c OrderChangeSet) AddCustomerID(n int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Add("customer_id", n)}
 }
 
+func (c OrderChangeSet) RaiseCustomerID(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("customer_id", v)}
+}
+
+func (c OrderChangeSet) LowerCustomerID(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("customer_id", v)}
+}
+
 func (c OrderChangeSet) SetStatus(v string) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("status", v)}
 }
 
 func (c OrderChangeSet) SetPlacedAt(v time.Time) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("placed_at", v)}
+}
+
+func (c OrderChangeSet) RaisePlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("placed_at", v)}
+}
+
+func (c OrderChangeSet) LowerPlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("placed_at", v)}
 }
 
 func (c OrderChangeSet) SetNote(v *string) OrderChangeSet {
@@ -888,6 +904,14 @@ func (c OrderLineChangeSet) AddOrderID(n int64) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Add("order_id", n)}
 }
 
+func (c OrderLineChangeSet) RaiseOrderID(v int64) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Raise("order_id", v)}
+}
+
+func (c OrderLineChangeSet) LowerOrderID(v int64) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Lower("order_id", v)}
+}
+
 func (c OrderLineChangeSet) SetSKU(v string) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Set("sku", v)}
 }
@@ -898,6 +922,14 @@ func (c OrderLineChangeSet) SetQuantity(v int32) OrderLineChangeSet {
 
 func (c OrderLineChangeSet) AddQuantity(n int32) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Add("quantity", n)}
+}
+
+func (c OrderLineChangeSet) RaiseQuantity(v int32) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Raise("quantity", v)}
+}
+
+func (c OrderLineChangeSet) LowerQuantity(v int32) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Lower("quantity", v)}
 }
 
 // IDEq narrows to the rows whose id is v.

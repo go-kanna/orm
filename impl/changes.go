@@ -16,9 +16,19 @@ type Changes[M any] struct {
 type assignment struct {
 	column string
 	value  any
-	// add tells that value is added to the stored value of column, rather than written over it.
-	add bool
+	how    writing
 }
+
+// writing is how an assignment writes value: over the stored value of its column, added to it, or as the greater or
+// the lesser of the two.
+type writing int
+
+const (
+	writeOver writing = iota
+	writeAdded
+	writeRaised
+	writeLowered
+)
 
 // Set returns a new change set with column assigned to value, including nil and zero values, in place of what it
 // assigned column before. Generated setters supply the column name and enforce its Go type.
@@ -29,7 +39,20 @@ func (c Changes[M]) Set(column string, value any) Changes[M] {
 // Add returns a new change set adding n to the stored value of column, in place of what it assigned column before.
 // Generated setters supply the column name, of a column of numbers that is never NULL, and enforce its Go type.
 func (c Changes[M]) Add(column string, n any) Changes[M] {
-	return c.with(assignment{column: column, value: n, add: true})
+	return c.with(assignment{column: column, value: n, how: writeAdded})
+}
+
+// Raise returns a new change set writing the greater of v and the stored value of column, in place of what it assigned
+// column before. Generated setters supply the column name, of a column of numbers or times that is never NULL, and
+// enforce its Go type.
+func (c Changes[M]) Raise(column string, v any) Changes[M] {
+	return c.with(assignment{column: column, value: v, how: writeRaised})
+}
+
+// Lower returns a new change set writing the lesser of v and the stored value of column, in place of what it assigned
+// column before, as Raise writes the greater.
+func (c Changes[M]) Lower(column string, v any) Changes[M] {
+	return c.with(assignment{column: column, value: v, how: writeLowered})
 }
 
 // Touch returns a new change set assigning value to column, the update time of a row, when c assigns any column, and c
@@ -81,10 +104,17 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 		if d == Postgres {
 			value = fmt.Sprintf("$%d", len(args))
 		}
-		if a.add {
-			value = quoted(d, a.column) + " + " + value
+		col := quoted(d, a.column)
+		switch a.how {
+		case writeAdded:
+			value = col + " + " + value
+		case writeRaised:
+			value = "GREATEST(" + col + ", " + value + ")"
+		case writeLowered:
+			value = "LEAST(" + col + ", " + value + ")"
+		case writeOver:
 		}
-		sets = append(sets, quoted(d, a.column)+" = "+value)
+		sets = append(sets, col+" = "+value)
 	}
 	where, rest, err := q.targets(d, "Update", table, key, lock, len(args)+1)
 	if err != nil {
@@ -94,34 +124,41 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 }
 
 // UpsertValues is what method, an upsert taking c, writes over the row it meets: for each of allowed, in its order, a
-// flag telling whether c sets the column, and the value it sets, and then, for a column of added, a flag telling
-// whether c adds to the column, and the value it adds; for a statement that writes each column the flag of which is
-// true and keeps the others. A column of key, which the row is met by, one not allowed, or one not of added that c
-// adds to, is an error.
-func (c Changes[M]) UpsertValues(method string, allowed, added, key []string) ([]any, error) {
+// flag telling whether c sets the column, and the value it sets; then, for a column of added, a flag telling whether c
+// adds to the column, and the value it adds; and then, for a column of ordered, the flag and the value of a raise,
+// and those of a lower; for a statement that writes each column the flag of which is true and keeps the others. A
+// column of key, which the row is met by, one not allowed, one not of added that c adds to, or one not of ordered that
+// c raises or lowers, is an error.
+func (c Changes[M]) UpsertValues(method string, allowed, added, ordered, key []string) ([]any, error) {
 	for _, a := range c.values {
 		switch {
 		case slices.Contains(key, a.column):
 			return nil, fmt.Errorf("orm: %s meets its row by %s, which its change set cannot write", method, a.column)
 		case !slices.Contains(allowed, a.column):
 			return nil, fmt.Errorf("orm: %s cannot assign column %s", method, a.column)
-		case a.add && !slices.Contains(added, a.column):
+		case a.how == writeAdded && !slices.Contains(added, a.column):
 			return nil, fmt.Errorf("orm: %s cannot add to column %s", method, a.column)
+		case a.how == writeRaised && !slices.Contains(ordered, a.column):
+			return nil, fmt.Errorf("orm: %s cannot raise column %s", method, a.column)
+		case a.how == writeLowered && !slices.Contains(ordered, a.column):
+			return nil, fmt.Errorf("orm: %s cannot lower column %s", method, a.column)
 		}
 	}
-	values := make([]any, 0, 2*(len(allowed)+len(added)))
+	values := make([]any, 0, 2*(len(allowed)+len(added)+2*len(ordered)))
 	for _, column := range allowed {
-		set, add := []any{false, nil}, []any{false, nil}
-		if i := slices.IndexFunc(c.values, func(a assignment) bool { return a.column == column }); i >= 0 {
-			if c.values[i].add {
-				add = []any{true, c.values[i].value}
-			} else {
-				set = []any{true, c.values[i].value}
+		i := slices.IndexFunc(c.values, func(a assignment) bool { return a.column == column })
+		write := func(how writing) []any {
+			if i >= 0 && c.values[i].how == how {
+				return []any{true, c.values[i].value}
 			}
+			return []any{false, nil}
 		}
-		values = append(values, set...)
+		values = append(values, write(writeOver)...)
 		if slices.Contains(added, column) {
-			values = append(values, add...)
+			values = append(values, write(writeAdded)...)
+		}
+		if slices.Contains(ordered, column) {
+			values = append(append(values, write(writeRaised)...), write(writeLowered)...)
 		}
 	}
 	return values, nil

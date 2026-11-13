@@ -35,12 +35,28 @@ func (c OrderChangeSet) AddCustomerID(n int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Add("customer_id", n)}
 }
 
+func (c OrderChangeSet) RaiseCustomerID(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("customer_id", v)}
+}
+
+func (c OrderChangeSet) LowerCustomerID(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("customer_id", v)}
+}
+
 func (c OrderChangeSet) SetStatus(v model.OrderStatus) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("status", v)}
 }
 
 func (c OrderChangeSet) SetPlacedAt(v time.Time) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("placed_at", v)}
+}
+
+func (c OrderChangeSet) RaisePlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("placed_at", v)}
+}
+
+func (c OrderChangeSet) LowerPlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("placed_at", v)}
 }
 
 func (c OrderChangeSet) SetMemo(v *string) OrderChangeSet {
@@ -53,6 +69,14 @@ func (c OrderChangeSet) SetTotal(v int64) OrderChangeSet {
 
 func (c OrderChangeSet) AddTotal(n int64) OrderChangeSet {
 	return OrderChangeSet{c.changes.Add("total", n)}
+}
+
+func (c OrderChangeSet) RaiseTotal(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("total", v)}
+}
+
+func (c OrderChangeSet) LowerTotal(v int64) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("total", v)}
 }
 
 func (c OrderChangeSet) SetPaid(v bool) OrderChangeSet {
@@ -73,6 +97,14 @@ func (c OrderChangeSet) SetPosition(v int) OrderChangeSet {
 
 func (c OrderChangeSet) AddPosition(n int) OrderChangeSet {
 	return OrderChangeSet{c.changes.Add("order", n)}
+}
+
+func (c OrderChangeSet) RaisePosition(v int) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("order", v)}
+}
+
+func (c OrderChangeSet) LowerPosition(v int) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("order", v)}
 }
 
 // IDEq narrows to the rows whose id is v.
@@ -1634,12 +1666,28 @@ func (c LineNoteChangeSet) AddOrderID(n model.OrderID) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Add("order_id", n)}
 }
 
+func (c LineNoteChangeSet) RaiseOrderID(v model.OrderID) LineNoteChangeSet {
+	return LineNoteChangeSet{c.changes.Raise("order_id", v)}
+}
+
+func (c LineNoteChangeSet) LowerOrderID(v model.OrderID) LineNoteChangeSet {
+	return LineNoteChangeSet{c.changes.Lower("order_id", v)}
+}
+
 func (c LineNoteChangeSet) SetLineNo(v int) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Set("line_no", v)}
 }
 
 func (c LineNoteChangeSet) AddLineNo(n int) LineNoteChangeSet {
 	return LineNoteChangeSet{c.changes.Add("line_no", n)}
+}
+
+func (c LineNoteChangeSet) RaiseLineNo(v int) LineNoteChangeSet {
+	return LineNoteChangeSet{c.changes.Raise("line_no", v)}
+}
+
+func (c LineNoteChangeSet) LowerLineNo(v int) LineNoteChangeSet {
+	return LineNoteChangeSet{c.changes.Lower("line_no", v)}
 }
 
 func (c LineNoteChangeSet) SetBody(v string) LineNoteChangeSet {

@@ -36,6 +36,12 @@ func (e emitter) changes() {
 			e.printf("func (c %s) Add%s(n %s) %s {\n", name, field, typ, name)
 			e.printf("return %s{c.changes.Add(%s, n)}\n}\n\n", name, strconv.Quote(col.col.Name))
 		}
+		if ordered(col) {
+			for _, verb := range []string{"Raise", "Lower"} {
+				e.printf("func (c %s) %s%s(v %s) %s {\n", name, verb, field, typ, name)
+				e.printf("return %s{c.changes.%s(%s, v)}\n}\n\n", name, verb, strconv.Quote(col.col.Name))
+			}
+		}
 	}
 }
 
@@ -54,6 +60,26 @@ func additive(c column) bool {
 	return c.col.NotNull && numeric(c.typ, c.col.Type)
 }
 
+// ordered reports whether a change set raises and lowers c, writing the greater or the lesser of a value and the stored
+// one: c is a number or a time in Go and in the database, and never NULL, which GREATEST and LEAST of MySQL return
+// for NULL, and those of PostgreSQL ignore.
+func ordered(c column) bool {
+	return c.col.NotNull && (numeric(c.typ, c.col.Type) || classOf(c.col.Type) == classTime && timeBased(c.typ))
+}
+
+// timeBased reports whether t is time.Time, or a type made of one.
+func timeBased(t types.Type) bool {
+	if isTime(t) {
+		return true
+	}
+	st, ok := t.Underlying().(*types.Struct)
+	if !ok || st.NumFields() == 0 || st.Field(0).Pkg() == nil || st.Field(0).Pkg().Path() != "time" {
+		return false
+	}
+	obj := st.Field(0).Pkg().Scope().Lookup("Time")
+	return obj != nil && types.Identical(st, obj.Type().Underlying())
+}
+
 // numeric reports whether a column of dbType, held by a t, is a number in Go and in the database: t is an integer or a
 // floating-point number, or a type made of one, and dbType a type of numbers.
 func numeric(t types.Type, dbType string) bool {
@@ -63,13 +89,17 @@ func numeric(t types.Type, dbType string) bool {
 }
 
 func changeMethods(p scopePlan) []generated {
-	methods := make([]generated, 0, 2*len(p.columns)+1)
+	methods := make([]generated, 0, 4*len(p.columns)+1)
 	methods = append(methods, generated{"Of", "for generated change sets"})
 	for _, c := range changeColumns(p) {
 		field := c.path[len(c.path)-1]
 		methods = append(methods, generated{"Set" + field, "to assign column " + c.col.Name})
 		if additive(c) {
 			methods = append(methods, generated{"Add" + field, "to add to column " + c.col.Name})
+		}
+		if ordered(c) {
+			methods = append(methods, generated{"Raise" + field, "to raise column " + c.col.Name},
+				generated{"Lower" + field, "to lower column " + c.col.Name})
 		}
 	}
 	return methods

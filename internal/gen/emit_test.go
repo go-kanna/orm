@@ -293,6 +293,95 @@ type Order struct {
 	}
 }
 
+func TestEmit_ChangeSetRaiseLower(t *testing.T) {
+	t.Parallel()
+
+	pkg := module(t, orderScope+`
+-- model/model.go --
+package model
+
+import (
+	"database/sql/driver"
+	"time"
+)
+
+// Day is a time held as a time.Time.
+type Day time.Time
+
+func (d Day) Value() (driver.Value, error) { return time.Time(d), nil }
+
+func (d *Day) Scan(src any) error {
+	*d = Day(src.(time.Time))
+	return nil
+}
+
+type Order struct {
+	ID       int64
+	Attempts int32
+	RunAt    time.Time
+	Due      Day
+	Born     time.Time
+	NextAt   *time.Time
+	Status   string
+	Paid     bool
+	Version  int64 `+"`orm:\",readonly\"`"+`
+}
+`)
+	for _, tt := range []struct {
+		d     snapshot.Dialect
+		types map[string]string
+	}{
+		{snapshot.PostgreSQL, map[string]string{"int": "int4", "bigint": "int8", "time": "timestamptz",
+			"date": "date", "text": "text", "bool": "bool"}},
+		{snapshot.MySQL, map[string]string{"int": "int", "bigint": "bigint", "time": "datetime(6)",
+			"date": "date", "text": "varchar(255)", "bool": "tinyint(1)"}},
+	} {
+		s := snapshot.Snapshot{Dialect: tt.d, Tables: map[string]snapshot.Table{
+			"orders": {Columns: []snapshot.Column{
+				{Name: "id", Type: tt.types["bigint"], NotNull: true},
+				{Name: "attempts", Type: tt.types["int"], NotNull: true},
+				{Name: "run_at", Type: tt.types["time"], NotNull: true},
+				{Name: "due", Type: tt.types["date"], NotNull: true},
+				{Name: "born", Type: tt.types["date"], NotNull: true},
+				{Name: "next_at", Type: tt.types["time"]},
+				{Name: "status", Type: tt.types["text"], NotNull: true},
+				{Name: "paid", Type: tt.types["bool"], NotNull: true},
+				{Name: "version", Type: tt.types["bigint"], NotNull: true},
+			}, PrimaryKey: []string{"id"}},
+		}}
+		src, ds, err := gen.Emit(pkg, s)
+		if err != nil || len(ds) > 0 {
+			t.Fatalf("Emit on %s: %v\n%s", tt.d, err, report(ds))
+		}
+		for _, want := range []string{
+			"func (c OrderChangeSet) RaiseAttempts(v int32) OrderChangeSet {\n" +
+				"\treturn OrderChangeSet{c.changes.Raise(\"attempts\", v)}\n}",
+			"func (c OrderChangeSet) LowerAttempts(v int32) OrderChangeSet {\n" +
+				"\treturn OrderChangeSet{c.changes.Lower(\"attempts\", v)}\n}",
+			"func (c OrderChangeSet) RaiseRunAt(v time.Time) OrderChangeSet {",
+			"func (c OrderChangeSet) LowerRunAt(v time.Time) OrderChangeSet {",
+			"func (c OrderChangeSet) RaiseDue(v model.Day) OrderChangeSet {",
+			"func (c OrderChangeSet) LowerBorn(v time.Time) OrderChangeSet {",
+		} {
+			if !strings.Contains(string(src), want) {
+				t.Errorf("Emit on %s wrote no %q:\n%s", tt.d, want, src)
+			}
+		}
+		// GREATEST and LEAST of NULL differ between the databases; strings compare by collation; a column kanna-orm
+		// never writes has no setter at all.
+		for _, field := range []string{"NextAt", "Status", "Paid", "ID", "Version"} {
+			for _, verb := range []string{"Raise", "Lower"} {
+				if strings.Contains(string(src), ") "+verb+field+"(") {
+					t.Errorf("Emit on %s wrote %s%s:\n%s", tt.d, verb, field, src)
+				}
+			}
+		}
+		if strings.Contains(string(src), ") AddRunAt(") {
+			t.Errorf("Emit on %s wrote AddRunAt:\n%s", tt.d, src)
+		}
+	}
+}
+
 func TestEmit_TextMatchedByLike(t *testing.T) {
 	t.Parallel()
 

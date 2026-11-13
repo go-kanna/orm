@@ -27,6 +27,10 @@ func TestChecks(t *testing.T) {
 	names := (&changeVal{}).assign("name", cause{pos: 2, in: "Rename", method: "SetName"})
 	adds, _ := ops["impl.Changes.Add"](opCall{args: []value{&changeVal{}, strVal("visits")},
 		at: cause{pos: 2, in: "Visit", method: "AddVisits"}})
+	raises, _ := ops["impl.Changes.Raise"](opCall{args: []value{&changeVal{}, strVal("run_at")},
+		at: cause{pos: 2, in: "Delay", method: "RaiseRunAt"}})
+	lowers, _ := ops["impl.Changes.Lower"](opCall{args: []value{&changeVal{}, strVal("run_at")},
+		at: cause{pos: 2, in: "Hasten", method: "LowerRunAt"}})
 	for _, tt := range []struct {
 		name  string
 		check func(opCall) *failed
@@ -56,17 +60,22 @@ func TestChecks(t *testing.T) {
 			[]value{assigns, unknown{}, strVal("logs"), strList("name"), strList("id"), strVal(""), paged},
 			"Update cannot assign column created_at"},
 		{"Upsert of a column it cannot write", upsertValues,
-			[]value{assigns, strVal("UpsertByName"), strList("name"), strList(), strList("id")},
+			[]value{assigns, strVal("UpsertByName"), strList("name"), strList(), strList(), strList("id")},
 			"UpsertByName cannot assign column created_at"},
 		{"Upsert of a column it can write", upsertValues,
-			[]value{assigns, strVal("UpsertByName"), strList("created_at"), strList(), strList("id")}, ""},
+			[]value{assigns, strVal("UpsertByName"), strList("created_at"), strList(), strList(), strList("id")}, ""},
 		{"Upsert of its key", upsertValues,
-			[]value{names, strVal("UpsertByName"), strList("created_at"), strList(), strList("name")},
+			[]value{names, strVal("UpsertByName"), strList("created_at"), strList(), strList(), strList("name")},
 			"UpsertByName meets its row by name, which its change set cannot write"},
 		{"Update adding to a column it cannot write", renderUpdate,
 			[]value{adds, unknown{}, strVal("logs"), strList("name"), named}, "Update cannot assign column visits"},
+		{"Update lowering a column it cannot write", renderUpdate,
+			[]value{lowers, unknown{}, strVal("logs"), strList("name"), named}, "Update cannot assign column run_at"},
+		{"Upsert raising its key", upsertValues,
+			[]value{raises, strVal("UpsertByRunAt"), strList("name"), strList(), strList("run_at"), strList("run_at")},
+			"UpsertByRunAt meets its row by run_at, which its change set cannot write"},
 		{"Upsert adding to its key", upsertValues,
-			[]value{adds, strVal("UpsertByVisits"), strList("name"), strList(), strList("visits")},
+			[]value{adds, strVal("UpsertByVisits"), strList("name"), strList(), strList(), strList("visits")},
 			"UpsertByVisits meets its row by visits, which its change set cannot write"},
 	} {
 		got := ""

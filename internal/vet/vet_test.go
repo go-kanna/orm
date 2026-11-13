@@ -214,6 +214,7 @@ func (u UseCase) Passes(ctx context.Context, page int, ids []model.OrderID, give
 	_, _ = u.fulfillment.FirstToShip(ctx, scopes.Orders().Open())
 	_, _ = u.orders.Update(ctx, scopes.OrderChanges().SetMemo("a"), scopes.Orders().Open().IDAsc().Limit(10))
 	_, _ = u.orders.Update(ctx, scopes.OrderChanges().AddCustomerID(1), scopes.Orders().Open())
+	_, _ = u.orders.Update(ctx, scopes.OrderChanges().LowerCustomerID(1), scopes.Orders().Open())
 
 	c := scopes.CustomerChanges()
 	if page > 0 {
@@ -287,9 +288,9 @@ usecase.go:56:22: error: Count takes conditions alone, but its scope orders the 
   usecase/usecase.go:49:23: IDAsc orders them
 usecase.go:63:17: error: Delete would delete every row of orders: give it a condition
 usecase.go:72:16: error: Count takes conditions alone, but its scope orders the rows
-usecase.go:115:18: error: ListStatusCounts takes conditions alone, but its scope orders the rows
+usecase.go:116:18: error: ListStatusCounts takes conditions alone, but its scope orders the rows
   scopes/scopes.go:22:11: Latest orders them by PlacedAtDesc
-usecase.go:116:18: error: ListStatusCounts takes conditions alone, but its scope loads Lines`
+usecase.go:117:18: error: ListStatusCounts takes conditions alone, but its scope loads Lines`
 	if got != want {
 		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
 	}
