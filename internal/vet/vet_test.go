@@ -447,6 +447,12 @@ func (c Checkout) Bound(ctx context.Context, id model.OrderID) error {
 }
 
 func (c Checkout) NoTransaction(ctx context.Context) error {
+	if err := c.withTx(ctx, func(repository.Tx) error {
+		_, err := c.orders.Insert(ctx, model.Order{})
+		return err
+	}); err != nil {
+		return err
+	}
 	return c.with(ctx, func() error {
 		_, err := c.orders.Insert(ctx, model.Order{})
 		return err
@@ -474,12 +480,12 @@ func bindModule(t *testing.T) string {
 	const tagMethod = "\tTag(ctx context.Context, orderID model.OrderID, input TagInput) error\n"
 	repo = strings.Replace(repo, tagMethod, tagMethod+strings.Replace(tagMethod, "Tag(", "InsertTag(", 1), 1)
 	example := filepath.Join("..", "..", "example", "postgres")
-	queries, err := os.ReadFile(filepath.Join(example, "postgres", "queries.sql"))
+	queries, err := os.ReadFile(filepath.Join(example, "postgres", "queries.sql")) //nolint:gosec // a file of the example
 	if err != nil {
 		t.Fatal(err)
 	}
 	tag, _, _ := strings.Cut(strings.TrimPrefix(string(queries), "-- query: Tag\n"), "\n\n")
-	data, err := os.ReadFile(filepath.Join(example, snapshot.Name))
+	data, err := os.ReadFile(filepath.Join(example, snapshot.Name)) //nolint:gosec // the example's snapshot
 	if err != nil {
 		t.Fatal(err)
 	}

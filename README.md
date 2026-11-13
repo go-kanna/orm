@@ -2065,6 +2065,13 @@ on some paths only, as one given a scope paged past the first page only does, an
 parameter, a field, a package variable, or a slice holds. Test files are not checked, as a test may make a call fail on
 purpose. A package that passes holds no call vet found to fail; that is not to say there is none.
 
+vet also reports calls that run outside the transaction they are written in. In a function literal taking what a `Bind`
+takes, such as the `func(tx tx.Tx) error` given to a function that runs a transaction, it reports a call on a repository
+the literal did not get from `Bind`, such as one held by a field or a captured variable, when the method writes or locks
+rows. A method writes when its name starts with `Insert`, `Update`, `Touch`, `Upsert`, `Delete`, or `Copy`, a query
+written by hand included, and locks when `//kanna:lock` marks it. vet leaves other reads alone. To write outside the
+transaction on purpose, make the call outside the literal.
+
 ## Drivers and dialects
 
 The snapshot knows which database it came from, so only the driver is chosen, with `-driver`:

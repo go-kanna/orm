@@ -58,7 +58,7 @@ func (a *analysis) checkBinds(fn *ssa.Function) {
 // transaction is the named parameter of fn that a Bind takes, if any: an unnamed one cannot be bound to.
 func (a *analysis) transaction(fn *ssa.Function) *ssa.Parameter {
 	for _, p := range fn.Params {
-		if obj := p.Object(); obj == nil || obj.Name() == "" || obj.Name() == "_" {
+		if name := p.Object().Name(); name == "" || name == "_" {
 			continue
 		}
 		if slices.ContainsFunc(a.binds.takes, func(t types.Type) bool { return types.AssignableTo(p.Type(), t) }) {
