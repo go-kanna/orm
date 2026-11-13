@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Clock is the clock a repository writes the creation and update times of its rows by, as option.WithClock gives
-// it. Now takes the context of the method writing them, for a clock the context carries.
+// Clock supplies the creation and update times that a repository writes to its rows. Pass it with option.WithClock. Now
+// receives the context of the method that writes the times, for clocks that read the context.
 type Clock interface {
 	Now(ctx context.Context) time.Time
 }

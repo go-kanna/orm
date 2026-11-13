@@ -1,9 +1,9 @@
-// Package change holds Set, the columns an update writes, as a generated change set hands them to the repository
-// running the update.
+// Package change holds Set, which a generated change set uses to hand the columns an update writes to the repository
+// that runs the update.
 package change
 
 import "github.com/go-kanna/orm/impl"
 
-// Set is the columns an update writes, and their values. The Of method of a generated change set returns it, and only
-// the setters of the change set write it.
+// Set holds the columns an update writes, and their values. The Of method of a generated change set returns it, and
+// only the change set's setters write to it.
 type Set[M any] impl.Changes[M]

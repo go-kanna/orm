@@ -8,26 +8,27 @@ import (
 	"github.com/go-kanna/orm/impl"
 )
 
-// Of is the scope of a query reading Ms: its conditions, the order of its rows, and how many of them it keeps. A scope
-// type holds one in an unexported field, so that nothing but its methods narrows it: those kanna-orm writes, and its
-// own, which narrow it by those, or by SQL through Raw.
+// Of is the scope of a query that reads Ms: its conditions, the order of its rows, and how many rows it keeps. A scope
+// type holds one in an unexported field, so only its methods can narrow it. These are the methods kanna-orm writes and
+// your own, which narrow it with those or with SQL through Raw.
 type Of[M any] impl.Of[M]
 
-// Raw is q as SQL written by hand narrows or orders it, which nothing checks before it runs.
+// Raw returns q as a Raw scope, which you narrow or order with SQL written by hand. Nothing checks that SQL before it
+// runs.
 func (q Of[M]) Raw() Raw[M] { return Raw[M](q) }
 
-// Raw is a scope that SQL written by hand narrows or orders: a condition or an order whose shape changes as the program
-// runs, which a scope written in a .sql file cannot say.
+// Raw is a scope that you narrow or order with SQL written by hand. Use it for a condition or order whose shape changes
+// while the program runs, which a scope in a .sql file cannot express.
 type Raw[M any] impl.Of[M]
 
-// SQL is a piece of SQL in the condition Raw's Where takes, which every other part of it is a value apart from.
+// SQL marks a piece of SQL in the condition that Raw's Where takes. Every other part of the condition is a value.
 type SQL string
 
-// Where narrows to the rows a condition holds for. The condition is pieces of SQL, each marked as SQL, with the values
-// they compare in between, as in Where(scope.SQL("status <> "), v) or
-// Where(scope.SQL("date_trunc('month', placed_at) = date_trunc('month', "), at, scope.SQL(")")). Every part not of
-// type SQL is a value, a string too. A condition without SQL, or with two values and no SQL between them, is an error,
-// which every query of the scope returns.
+// Where narrows the scope to the rows that satisfy a condition. Write the condition as pieces of SQL, each of type SQL,
+// with the values they compare in between, as in Where(scope.SQL("status <> "), v) or
+// Where(scope.SQL("date_trunc('month', placed_at) = date_trunc('month', "), at, scope.SQL(")")). Every part that is not
+// of type SQL is a value, even a string. A condition with no SQL, or with two values and no SQL between them, is an
+// error, and every query of the scope returns it.
 func (r Raw[M]) Where(parts ...any) Of[M] {
 	q := impl.Of[M](r)
 	split := make([]any, 0, len(parts)+1)
@@ -58,7 +59,7 @@ func (r Raw[M]) Where(parts ...any) Of[M] {
 	return Of[M](q.Where(split...))
 }
 
-// OrderBy orders the rows by expr, a column or an expression in SQL, after any order given before.
+// OrderBy orders the rows by expr, a column or an SQL expression, after any order set earlier.
 func (r Raw[M]) OrderBy(expr SQL, desc bool) Of[M] {
 	return Of[M](impl.Of[M](r).OrderBy(string(expr), desc))
 }
