@@ -1951,6 +1951,9 @@ ORDER BY 1`
   `NULL`. On MySQL, it is written with a `?` for each of its values when the method runs. With none, right between the
   parentheses of `IN`, it is the empty set, a subquery of no rows: `IN (:ids)` matches no row, and `NOT IN (:ids)`
   every row, as PostgreSQL's `= ANY` and `<> ALL` do. Anywhere else, as in `FIELD(id, :ids)`, it is `NULL`.
+- On PostgreSQL a nil slice is an empty array, never `NULL`, so `:ids IS NULL` or `COALESCE(:ids, ...)` cannot tell
+  whether one was given, and a query that uses either to skip a filter matches no rows. To skip the filter, write a
+  separate query, or pass a `bool` argument that says so, as in `(:unfiltered OR id = ANY(:ids))`.
 - pgx cannot write an array of a type it does not know, such as an enum type, and kanna-orm does not rewrite your SQL,
   so cast the parameter from `text[]` yourself: `state = ANY(:states::text[]::ticket_state[])`.
 
