@@ -85,7 +85,7 @@ func (r repoReader) lock(m *repoMethod, d directive.Directive) []diag.Diag {
 	}
 	if !reads && !updates {
 		return []diag.Diag{errorf("//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set " +
-			"taking scopes and no unique key")}
+			"or a Touch taking scopes and no unique key")}
 	}
 	if updates && r.s.Dialect == snapshot.MySQL {
 		return []diag.Diag{errorf("MySQL may still wait for the rows a locked subquery passes over, as its UPDATE can " +

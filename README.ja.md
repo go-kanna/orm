@@ -655,6 +655,7 @@ type OrderRepository interface {
 | `Exists` | `Exists(ctx, s ...scopes.Order) (bool, error)` | マッチする行があるかどうかを返す |
 | `Insert` | `Insert(ctx, o model.Order) (model.Order, error)`、または `error` のみを返す形 | 行を 1 つ、または[複数](#複数行の書き込み)書き込む |
 | `Update` | `Update(ctx, o model.Order) error`、または[変更セット](#指定したカラムだけを更新する)を受け取る形 | キー以外のすべてのカラムを書き込む。そのキーの行がなければ `orm.ErrNotFound` を返す |
+| `Touch` | `Touch(ctx, id model.OrderID) error`、または[スコープを受け取る形](#更新の時刻だけを書く) | [更新の時刻](#作成と更新の時刻)だけを時計で書く |
 | `Upsert` | `Upsert(ctx, o model.Order) error`、または[変更セット](#突き合わせた行に変更セットを書く)つき | 行を insert するか、同じキー、または[別の一意キー](#upsert)を持つ行を update する |
 | `Delete` | `Delete(ctx, id model.OrderID) error`、または[スコープを受け取る形](#スコープで削除対象を選ぶ) | そのキーの行、またはスコープにマッチする行を削除する |
 | `Copy` | `Copy(ctx, rows []model.Order) (int64, error)` | 行を pgx の [COPY](#複数行の-copy) で書き込み、書き込んだ行数を返す |
@@ -841,8 +842,8 @@ repo := postgres.NewCustomer(db, option.WithClock(clock{now: time.Date(2026, 1, 
 実装の型に自分で書いたメソッドは、`r.db` で文を実行するとフックを通るのと同じく、`r.db.Now(ctx)` で同じ時計の時刻を得ます。これらのカラムを書く自分の SQL も、テストが与えた時刻になります:
 
 ```go
-func (r Customer) Touch(ctx context.Context, id model.CustomerID) error {
-	_, err := r.db.Exec(ctx, "UPDATE customers SET updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
+func (r Customer) ClearPhone(ctx context.Context, id model.CustomerID) error {
+	_, err := r.db.Exec(ctx, "UPDATE customers SET phone = NULL, updated_at = $1 WHERE id = $2", r.db.Now(ctx), id)
 	return err
 }
 ```
@@ -1061,6 +1062,21 @@ n, err := repo.Update(ctx, scopes.OrderChanges().SetMemo("Follow up"), scopes.Or
 
 一意キーを引数に取らずスコープを受け取る変更セットの Update に `//kanna:lock` を付けると、ページングの有無によらずそのサブクエリで行を選び、そこでロックします。まとめて更新するワーカーどうしが、他が保持している行を飛ばせます。[行ロック](#行ロック)を参照してください。
 
+
+### 更新の時刻だけを書く
+
+`Touch` は、行の更新の時刻だけを時計で書き、ほかのカラムは書きません。変わったのが別の表の値で、その行が変わったことを知らせたいときに使います。行は、変更セットの `Update` と同じく、一意キー、スコープ、またはその両方で選びます。1 行を書くときは `error` だけを返し、そのキーの行がなければ `orm.ErrNotFound` を返します。スコープで選んだ行には、ページで選んだときも含めて `(int64, error)` を返します。
+
+```go
+Touch(ctx context.Context, id model.OrderID) error
+TouchOpen(ctx context.Context, s ...scopes.Order) (int64, error)
+```
+
+```sql
+UPDATE "orders" SET "updated_at" = $1 WHERE ...
+```
+
+kanna-orm が書く[更新の時刻](#作成と更新の時刻)のないモデル（更新の時刻に `default` を付けたモデルなど）では、`Touch` は何も書けないので、kanna-orm は生成を止めます。空の変更セットの `Update` は、これまでどおり行に触れず `orm.ErrEmptyChangeSet` を返します。
 
 ### スコープで削除対象を選ぶ
 

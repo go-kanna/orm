@@ -86,8 +86,8 @@ func TestRepositories_LockOnMySQL(t *testing.T) {
 const lockWords = "update, no-key-update, share, key-share, nowait, or skip-locked"
 
 // lockedVerbs is what is said of //kanna:lock on a method that cannot take one.
-const lockedVerbs = "//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set taking scopes " +
-	"and no unique key"
+const lockedVerbs = "//kanna:lock is for a Get, a Find, a First, a List, or an Update of a change set or a Touch " +
+	"taking scopes and no unique key"
 
 func TestRepositories_LockMistakes(t *testing.T) {
 	t.Parallel()

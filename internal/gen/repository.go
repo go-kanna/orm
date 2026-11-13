@@ -34,6 +34,7 @@ const (
 	verbExists verb = "Exists"
 	verbInsert verb = "Insert"
 	verbUpdate verb = "Update"
+	verbTouch  verb = "Touch"
 	verbUpsert verb = "Upsert"
 	verbDelete verb = "Delete"
 	verbCopy   verb = "Copy"
@@ -44,8 +45,8 @@ const (
 )
 
 var verbs = []verb{
-	verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete,
-	verbCopy, verbSum, verbMin, verbMax, verbAvg,
+	verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbTouch, verbUpsert,
+	verbDelete, verbCopy, verbSum, verbMin, verbMax, verbAvg,
 }
 
 // verbOf tells the verb name starts with: a verb, followed by nothing or by a word of its own, as in GetByNumber, but
@@ -724,6 +725,8 @@ func (m repoMethod) returnsFit() bool {
 	case verbUpdate:
 		return m.returns == returnsNone || m.returns == returnsRow ||
 			m.changes != "" && (m.returns == returnsCount || m.returns == returnsRows)
+	case verbTouch:
+		return m.returns == returnsNone || m.returns == returnsCount
 	case verbDelete:
 		return m.returns == returnsNone || m.returns == returnsCount || m.returns == returnsRows
 	}
@@ -753,13 +756,17 @@ func (m *repoMethod) changeSetRows(names []string) (diag.Diag, bool) {
 	errorf := func(format string, args ...any) diag.Diag {
 		return diag.Errorf(m.pos, "%s: %s", m.name, fmt.Sprintf(format, args...))
 	}
+	what, one := "an Update of a change set", "a single-row Update requires a unique key; use (int64, error) or "+
+		"([]M, error) for multiple rows"
+	if m.verb == verbTouch {
+		what, one = "a Touch", "a Touch of one row requires a unique key; use (int64, error) for multiple rows"
+	}
 	switch {
 	case len(names) == 0 && !m.scoped:
-		return errorf("an Update of a change set writes the rows its keys or scopes select, but it takes neither").
+		return errorf("%s writes the rows its keys or scopes select, but it takes neither", what).
 			WithHints(fmt.Sprintf("take a unique key of %s, or scopes that select the rows", m.target.table)), false
 	case (m.returns == returnsNone || m.returns == returnsRow) && !containsKey(m.table, names):
-		return errorf("a single-row Update requires a unique key; use (int64, error) or ([]M, error) for multiple rows"),
-			false
+		return errorf("%s", one), false
 	}
 	return diag.Diag{}, true
 }
@@ -775,10 +782,15 @@ func (r repoReader) verbRules(m *repoMethod) []diag.Diag {
 			return []diag.Diag{d}
 		}
 	}
-	if m.verb == verbUpdate && m.changes != "" {
+	if m.writesChanges() {
 		if d, ok := m.changeSetRows(names); !ok {
 			return []diag.Diag{d}
 		}
+	}
+	if _, ok := m.touched(); m.verb == verbTouch && !ok {
+		return []diag.Diag{errorf("a Touch writes the time a row is updated at alone, and kanna-orm writes no such "+
+			"time of %s", typeName(m.model)).WithHints(`give it an UpdatedAt time.Time, or tag the field orm:",updated"`,
+			"for a time the database writes, write the UPDATE in -- query: "+m.name)}
 	}
 	switch {
 	case m.verb == verbDelete && m.returns == returnsNone && !containsKey(m.table, names):
@@ -1127,8 +1139,8 @@ func plucks(v verb, t types.Type) bool {
 		}
 		t = slice.Elem()
 	case verbGet, verbFirst:
-	case verbCount, verbExists, verbInsert, verbUpdate, verbUpsert, verbDelete, verbCopy, verbSum, verbMin, verbMax,
-		verbAvg:
+	case verbCount, verbExists, verbInsert, verbUpdate, verbTouch, verbUpsert, verbDelete, verbCopy, verbSum, verbMin,
+		verbMax, verbAvg:
 		return false
 	}
 	_, row := elemOf(t).Underlying().(*types.Struct)
@@ -1301,6 +1313,9 @@ func (r repoReader) methodParameters(m *repoMethod, sig *types.Signature, field 
 			continue
 		}
 		if model, ok := r.changesParam(p, field, ts); ok {
+			if m.verb == verbTouch {
+				return nil, nil, errorf("a Touch writes the update time alone and takes no change set")
+			}
 			if m.verb != verbUpdate && m.verb != verbUpsert || m.changes != "" || m.verb == verbUpdate && m.row != "" {
 				return nil, nil, errorf("a change set is taken once, by an Update without a row or by an Upsert of " +
 					"one row")
@@ -1363,7 +1378,13 @@ func (m repoMethod) keyColumns() []string {
 // them, a page of them too, selected by key in a subquery that a lock can hold: its key parameters, if any, are
 // conditions, as a Delete's are, and not a unique key, which names the one row it writes, as that of a Get does.
 func (m repoMethod) selects() bool {
-	return m.verb == verbUpdate && m.changes != "" && !containsKey(m.table, m.keyColumns())
+	return m.writesChanges() && !containsKey(m.table, m.keyColumns())
+}
+
+// writesChanges reports whether m writes a change set over the rows its keys or scopes select: an Update of a change
+// set, or a Touch, whose change set writes the update time alone.
+func (m repoMethod) writesChanges() bool {
+	return m.verb == verbUpdate && m.changes != "" || m.verb == verbTouch
 }
 
 func (m repoMethod) updateShaped() bool {
