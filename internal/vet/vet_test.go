@@ -273,7 +273,7 @@ usecase.go:23:18: error: ListSummaries is a projection, but its scope loads rela
 usecase.go:24:18: error: Delete would delete every row of orders: give it a condition
 usecase.go:25:18: error: Delete cannot load relations
 usecase.go:26:18: error: Delete ordering requires Limit or Offset
-usecase.go:27:18: error: a limit of -1 rows
+usecase.go:27:18: error: Limit cannot be negative: -1
 usecase.go:28:18: error: Or takes conditions alone, but its scope orders the rows
 usecase.go:29:18: error: Customer keeps only some of the rows it loads, which would count those of every row together
 usecase.go:30:18: error: Approvals continues a page of the rows of each row by Offset, not by a row
@@ -334,7 +334,7 @@ func TestRun_MySQL(t *testing.T) {
 usecase.go:13:16: error: Get reads one row by its key, but its scope keeps only some of the rows
 usecase.go:14:16: error: ListSummaries is a projection, but its scope loads relations
 usecase.go:15:16: error: Delete ordering requires Limit or Offset
-usecase.go:16:16: error: an offset of -1 rows
+usecase.go:16:16: error: Offset cannot be negative: -1
 usecase.go:17:16: error: Update of an empty change set returns orm.ErrEmptyChangeSet
 usecase.go:18:16: error: Update ordering requires Limit or Offset
 usecase.go:19:19: error: UpsertByEmail meets its row by email, which its change set cannot write

@@ -103,8 +103,8 @@ func TestPaths(t *testing.T) {
 	if got := ordered.join(unknownScope()).orders.t; got != some {
 		t.Errorf("an order joined with what vet does not know = %d, want %d", got, some)
 	}
-	limited := emptyScope().then(&scopeVal{err: setErr("a limit of -1 rows", cause{pos: 3})})
-	if got := limited.err.then(errProp{}); got.msg != "a limit of -1 rows" {
+	limited := emptyScope().then(&scopeVal{err: setErr("Limit cannot be negative: -1", cause{pos: 3})})
+	if got := limited.err.then(errProp{}); got.msg != "Limit cannot be negative: -1" {
 		t.Errorf("an error with nothing added = %+v, want it kept", got)
 	}
 }
@@ -120,7 +120,7 @@ func TestRawWhere(t *testing.T) {
 		want  errProp
 	}{
 		{"of a scope without an error", emptyScope(), errProp{t: some}},
-		{"of a scope with one", &scopeVal{err: setErr("a limit of -1 rows", at)}, setErr("a limit of -1 rows", at)},
+		{"of a scope with one", &scopeVal{err: setErr("Limit cannot be negative: -1", at)}, setErr("Limit cannot be negative: -1", at)},
 	} {
 		v, _ := ops["scope.Raw.Where"](opCall{args: []value{tt.scope, unknown{}}, at: at})
 		s := v.(*scopeVal) //nolint:forcetypeassert // Where returns a scope
