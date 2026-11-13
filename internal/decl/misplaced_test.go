@@ -33,7 +33,7 @@ func TestMisplaced(t *testing.T) {
 		{"a repository of a type whose underlying type is an interface", "type orders interface{ List() error }\n\n" +
 			"//kanna:repository\ntype Orders orders\n", ""},
 		{"a scope of a string type", "//kanna:scope table=orders\ntype Order string\n",
-			errorf("3:1", structs, "scope", "a type other than a struct or an interface")},
+			errorf("3:1", structs, "scope", "a string type")},
 		{"a scope of an alias", "//kanna:scope table=orders\ntype Order = struct{ q int }\n",
 			errorf("3:1", structs, "scope", "a type alias")},
 		{"a scope of an interface", "//kanna:scope table=orders\ntype Order interface{}\n",

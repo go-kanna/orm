@@ -206,8 +206,8 @@ type OrderLine struct{ q scope.Of[model.Order] }
 		{"not a struct", `
 //kanna:scope table=orders
 type Order int
-`, "scopes.go:10:1: error: //kanna:scope marks a struct type, not a type other than a struct or an interface, so " +
-			"nothing reads it\n  write it right above a struct type"},
+`, "scopes.go:10:1: error: //kanna:scope marks a struct type, not an int type, so nothing reads it\n" +
+			"  write it right above a struct type"},
 		{"an alias", `
 //kanna:scope table=orders
 type Order = model.Order
