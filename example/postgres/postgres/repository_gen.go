@@ -92,13 +92,13 @@ var _ repository.Customer = Customer{}
 
 func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
 	now := r.db.Now(ctx)
-	set, err := impl.Changes[model.Customer](changes.Of()).Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"email"})
+	set, err := impl.Changes[model.Customer](changes.Of()).Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"updated_at"}, []string{"email"})
 	if err != nil {
 		return model.Customer{}, err
 	}
 	const q = `INSERT INTO customers (email, name, phone, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $6 THEN $7 ELSE customers.name END, phone = CASE WHEN $8 THEN $9 ELSE customers.phone END, updated_at = CASE WHEN $10 THEN $11 ELSE customers.updated_at END
+ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $6 THEN $7 ELSE customers.name END, phone = CASE WHEN $8 THEN $9 ELSE customers.phone END, updated_at = CASE WHEN $10 THEN $11 WHEN $12 THEN GREATEST(customers.updated_at, $13) WHEN $14 THEN LEAST(customers.updated_at, $15) ELSE customers.updated_at END
 RETURNING id, email, name, phone, created_at, updated_at`
 	var row model.Customer
 	err = r.db.QueryRow(ctx, q, append([]any{c.Email, c.Name, c.Phone, now, now}, set...)...).

@@ -99,16 +99,16 @@ var _ repository.Customer = Customer{}
 
 func (r Customer) UpsertByEmail(ctx context.Context, c model.Customer, changes scopes.CustomerChangeSet) (model.Customer, error) {
 	now := r.db.Now(ctx)
-	set, err := impl.Changes[model.Customer](changes.Of()).Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"email"})
+	set, err := impl.Changes[model.Customer](changes.Of()).Touch("updated_at", now).UpsertValues("UpsertByEmail", []string{"name", "phone", "updated_at"}, nil, []string{"updated_at"}, []string{"email"})
 	if err != nil {
 		return model.Customer{}, err
 	}
 	const withoutID = `INSERT INTO customers (email, name, phone, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone), updated_at = IF(?, ?, customers.updated_at)`
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone), updated_at = IF(?, ?, IF(?, GREATEST(customers.updated_at, ?), IF(?, LEAST(customers.updated_at, ?), customers.updated_at)))`
 	const withID = `INSERT INTO customers (email, name, phone, created_at, updated_at, id)
 VALUES (?, ?, ?, ?, ?, ?) AS new
-ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone), updated_at = IF(?, ?, customers.updated_at)`
+ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone), updated_at = IF(?, ?, IF(?, GREATEST(customers.updated_at, ?), IF(?, LEAST(customers.updated_at, ?), customers.updated_at)))`
 	q, args := withoutID, []any{c.Email, c.Name, c.Phone, now, now}
 	if c.ID != 0 {
 		q, args = withID, append(args, c.ID)

@@ -37,6 +37,10 @@ func TestEmit_NamesTakenAlready(t *testing.T) {
 			scopes: "func (c OrderChangeSet) AddVisits(n int64) OrderChangeSet { return c }\n",
 			old:    "type OrderChangeSet struct{}\n",
 			want:   "scopes.go:11:25: error: OrderChangeSet.AddVisits: kanna-orm writes a method of this name"},
+		{name: "a method of the change set named as one lowering a column",
+			scopes: "func (c OrderChangeSet) LowerVisits(v int64) OrderChangeSet { return c }\n",
+			old:    "type OrderChangeSet struct{}\n",
+			want:   "scopes.go:11:25: error: OrderChangeSet.LowerVisits: kanna-orm writes a method of this name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

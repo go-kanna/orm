@@ -582,6 +582,14 @@ func (c ProductChangeSet) AddPrice(n int64) ProductChangeSet {
 	return ProductChangeSet{c.changes.Add("price", n)}
 }
 
+func (c ProductChangeSet) RaisePrice(v int64) ProductChangeSet {
+	return ProductChangeSet{c.changes.Raise("price", v)}
+}
+
+func (c ProductChangeSet) LowerPrice(v int64) ProductChangeSet {
+	return ProductChangeSet{c.changes.Lower("price", v)}
+}
+
 func (c ProductChangeSet) SetCurrency(v string) ProductChangeSet {
 	return ProductChangeSet{c.changes.Set("currency", v)}
 }
@@ -981,12 +989,28 @@ func (c OrderChangeSet) AddCustomerID(n model.CustomerID) OrderChangeSet {
 	return OrderChangeSet{c.changes.Add("customer_id", n)}
 }
 
+func (c OrderChangeSet) RaiseCustomerID(v model.CustomerID) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("customer_id", v)}
+}
+
+func (c OrderChangeSet) LowerCustomerID(v model.CustomerID) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("customer_id", v)}
+}
+
 func (c OrderChangeSet) SetStatus(v model.OrderStatus) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("status", v)}
 }
 
 func (c OrderChangeSet) SetPlacedAt(v time.Time) OrderChangeSet {
 	return OrderChangeSet{c.changes.Set("placed_at", v)}
+}
+
+func (c OrderChangeSet) RaisePlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Raise("placed_at", v)}
+}
+
+func (c OrderChangeSet) LowerPlacedAt(v time.Time) OrderChangeSet {
+	return OrderChangeSet{c.changes.Lower("placed_at", v)}
 }
 
 func (c OrderChangeSet) SetMemo(v string) OrderChangeSet {
@@ -1494,6 +1518,14 @@ func (c OrderLineChangeSet) SetQuantity(v int) OrderLineChangeSet {
 
 func (c OrderLineChangeSet) AddQuantity(n int) OrderLineChangeSet {
 	return OrderLineChangeSet{c.changes.Add("quantity", n)}
+}
+
+func (c OrderLineChangeSet) RaiseQuantity(v int) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Raise("quantity", v)}
+}
+
+func (c OrderLineChangeSet) LowerQuantity(v int) OrderLineChangeSet {
+	return OrderLineChangeSet{c.changes.Lower("quantity", v)}
 }
 
 // OrderIDEq narrows to the rows whose order_id is v.
@@ -2334,6 +2366,14 @@ func (c ApprovalChangeSet) AddOrderID(n model.OrderID) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Add("order_id", n)}
 }
 
+func (c ApprovalChangeSet) RaiseOrderID(v model.OrderID) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Raise("order_id", v)}
+}
+
+func (c ApprovalChangeSet) LowerOrderID(v model.OrderID) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Lower("order_id", v)}
+}
+
 func (c ApprovalChangeSet) SetRevision(v int32) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Set("revision", v)}
 }
@@ -2342,12 +2382,28 @@ func (c ApprovalChangeSet) AddRevision(n int32) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Add("revision", n)}
 }
 
+func (c ApprovalChangeSet) RaiseRevision(v int32) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Raise("revision", v)}
+}
+
+func (c ApprovalChangeSet) LowerRevision(v int32) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Lower("revision", v)}
+}
+
 func (c ApprovalChangeSet) SetApprover(v string) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Set("approver", v)}
 }
 
 func (c ApprovalChangeSet) SetApprovedAt(v time.Time) ApprovalChangeSet {
 	return ApprovalChangeSet{c.changes.Set("approved_at", v)}
+}
+
+func (c ApprovalChangeSet) RaiseApprovedAt(v time.Time) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Raise("approved_at", v)}
+}
+
+func (c ApprovalChangeSet) LowerApprovedAt(v time.Time) ApprovalChangeSet {
+	return ApprovalChangeSet{c.changes.Lower("approved_at", v)}
 }
 
 func (c ApprovalChangeSet) SetRevokedAt(v *time.Time) ApprovalChangeSet {

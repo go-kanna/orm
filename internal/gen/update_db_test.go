@@ -356,6 +356,110 @@ func TestUpdateAdd_MySQL(t *testing.T) {
 	}
 }
 
+func TestUpdateRaiseLower_Postgres(t *testing.T) {
+	t.Parallel()
+	onPostgres(t, func(t *testing.T, repo prepository.OrderRepository) {
+		ctx := t.Context()
+		totals := func() []int64 {
+			t.Helper()
+			rows, err := repo.List(ctx, pscopes.Order{}.IDAsc())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return orderTotals(rows)
+		}
+		day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
+		o, err := repo.UpdateFields(ctx, 1, pscopes.OrderChanges().RaisePlacedAt(day(5)).LowerTotal(150))
+		if err != nil || !o.PlacedAt.Equal(day(5)) || o.Total != 100 {
+			t.Fatalf("Raise and Lower by key = %+v, %v; want placed on the 5th, a total of 100", o, err)
+		}
+		o, err = repo.UpdateFields(ctx, 1, pscopes.OrderChanges().RaisePlacedAt(day(2)).LowerPlacedAt(day(3)))
+		if err != nil || !o.PlacedAt.Equal(day(3)) {
+			t.Fatalf("Raise then Lower = %+v, %v; want placed on the 3rd", o, err)
+		}
+		n, err := repo.UpdateMany(ctx, pscopes.OrderChanges().RaiseTotal(250), pscopes.Order{}.CustomerIDEq(10))
+		if err != nil || n != 2 || !slices.Equal(totals(), []int64{250, 250, 300}) {
+			t.Fatalf("Raise by scopes = %d, %v; totals %v", n, err, totals())
+		}
+		rows, err := repo.UpdateManyReturning(ctx, pscopes.OrderChanges().LowerTotal(260),
+			pscopes.Order{}.TotalGt(0).TotalDesc().Limit(1))
+		if err != nil || len(rows) != 1 || rows[0].ID != 3 || rows[0].Total != 260 {
+			t.Fatalf("Lower of a page = %+v, %v", rows, err)
+		}
+
+		met, err := repo.UpsertByPosition(ctx, model.Order{
+			CustomerID: 30, Status: "given", PlacedAt: day(9), Total: 900, Position: 1,
+		}, pscopes.OrderChanges().LowerPlacedAt(day(1)).RaiseTotal(999).SetStatus("met"))
+		if err != nil || met.ID != 1 || !met.PlacedAt.Equal(day(1)) || met.Total != 999 || met.Status != "met" ||
+			met.CustomerID != 10 {
+			t.Fatalf("Raise and Lower over the row met = %+v, %v", met, err)
+		}
+		met, err = repo.UpsertByPosition(ctx, model.Order{
+			CustomerID: 30, Status: "given", PlacedAt: day(9), Total: 900, Position: 2,
+		}, pscopes.OrderChanges().RaisePlacedAt(day(1)).LowerTotal(999))
+		if err != nil || met.ID != 2 || !met.PlacedAt.Equal(day(2)) || met.Total != 250 {
+			t.Fatalf("Raise and Lower keeping the row met = %+v, %v", met, err)
+		}
+		added, err := repo.UpsertByPosition(ctx, model.Order{
+			CustomerID: 30, Status: "given", PlacedAt: day(9), Total: 900, Position: 7,
+		}, pscopes.OrderChanges().LowerPlacedAt(day(1)).RaiseTotal(999))
+		if err != nil || added.Position != 7 || !added.PlacedAt.Equal(day(9)) || added.Total != 900 {
+			t.Fatalf("Raise and Lower of no row met = %+v, %v; want the row as given", added, err)
+		}
+	})
+}
+
+func TestUpdateRaiseLower_MySQL(t *testing.T) {
+	t.Parallel()
+	repo := mstdlib.NewOrderRepository(mysqlDB(t))
+	ctx := t.Context()
+	list := func() []model.Order {
+		t.Helper()
+		rows, err := repo.List(ctx, mscopes.Order{}.IDAsc())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rows
+	}
+	day := func(d int) time.Time { return time.Date(2026, 10, d, 0, 0, 0, 0, time.UTC) }
+	if err := repo.UpdateFieldsOnly(ctx, 1, mscopes.OrderChanges().RaisePlacedAt(day(5)).LowerTotal(150)); err != nil ||
+		!list()[0].PlacedAt.Equal(day(5)) || list()[0].Total != 100 {
+		t.Fatalf("Raise and Lower by key: %v; orders %+v", err, list())
+	}
+	err := repo.UpdateFieldsOnly(ctx, 1, mscopes.OrderChanges().RaisePlacedAt(day(2)).LowerPlacedAt(day(3)))
+	if err != nil || !list()[0].PlacedAt.Equal(day(3)) {
+		t.Fatalf("Raise then Lower: %v; orders %+v", err, list())
+	}
+	n, err := repo.UpdateMany(ctx, mscopes.OrderChanges().RaiseTotal(250), mscopes.Order{}.CustomerIDEq(10))
+	if err != nil || n != 2 || !slices.Equal(orderTotals(list()), []int64{250, 250, 300}) {
+		t.Fatalf("Raise by scopes = %d, %v; totals %v", n, err, orderTotals(list()))
+	}
+	n, err = repo.UpdateMany(ctx, mscopes.OrderChanges().LowerTotal(260), mscopes.Order{}.TotalGt(0).TotalDesc().Limit(1))
+	if err != nil || n != 1 || !slices.Equal(orderTotals(list()), []int64{250, 250, 260}) {
+		t.Fatalf("Lower of a page = %d, %v; totals %v", n, err, orderTotals(list()))
+	}
+
+	met, err := repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 30, Status: "given", PlacedAt: day(9), Total: 900, Position: 1,
+	}, mscopes.OrderChanges().LowerPlacedAt(day(1)).RaiseTotal(999).SetStatus("met"))
+	if err != nil || met.ID != 1 || !met.PlacedAt.Equal(day(1)) || met.Total != 999 || met.Status != "met" ||
+		met.CustomerID != 10 {
+		t.Fatalf("Raise and Lower over the row met = %+v, %v", met, err)
+	}
+	met, err = repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 30, Status: "given", PlacedAt: day(9), Total: 900, Position: 2,
+	}, mscopes.OrderChanges().RaisePlacedAt(day(1)).LowerTotal(999))
+	if err != nil || met.ID != 2 || !met.PlacedAt.Equal(day(2)) || met.Total != 250 {
+		t.Fatalf("Raise and Lower keeping the row met = %+v, %v", met, err)
+	}
+	added, err := repo.UpsertByPosition(ctx, model.Order{
+		CustomerID: 30, Status: "given", PlacedAt: day(9), Total: 900, Position: 7,
+	}, mscopes.OrderChanges().LowerPlacedAt(day(1)).RaiseTotal(999))
+	if err != nil || added.Position != 7 || !added.PlacedAt.Equal(day(9)) || added.Total != 900 {
+		t.Fatalf("Raise and Lower of no row met = %+v, %v; want the row as given", added, err)
+	}
+}
+
 func orderTotals(orders []model.Order) []int64 {
 	out := make([]int64, 0, len(orders))
 	for _, o := range orders {

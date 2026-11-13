@@ -1362,17 +1362,17 @@ RETURNING id, name, nickname`
 }
 
 func (r OrderRepository) UpsertByPosition(ctx context.Context, o model.Order, c scopes.OrderChangeSet) (model.Order, error) {
-	set, err := impl.Changes[model.Order](c.Of()).UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"order"})
+	set, err := impl.Changes[model.Order](c.Of()).UpsertValues("UpsertByPosition", []string{"customer_id", "status", "placed_at", "note", "total", "paid", "contact", "receipt"}, []string{"customer_id", "total"}, []string{"customer_id", "placed_at", "total"}, []string{"order"})
 	if err != nil {
 		return model.Order{}, err
 	}
 	const withoutID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $10 THEN $11 WHEN $12 THEN orders.customer_id + $13 ELSE orders.customer_id END, status = CASE WHEN $14 THEN $15 ELSE orders.status END, placed_at = CASE WHEN $16 THEN $17 ELSE orders.placed_at END, note = CASE WHEN $18 THEN $19 ELSE orders.note END, total = CASE WHEN $20 THEN $21 WHEN $22 THEN orders.total + $23 ELSE orders.total END, paid = CASE WHEN $24 THEN $25 ELSE orders.paid END, contact = CASE WHEN $26 THEN $27 ELSE orders.contact END, receipt = CASE WHEN $28 THEN $29 ELSE orders.receipt END
+ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $10 THEN $11 WHEN $12 THEN orders.customer_id + $13 WHEN $14 THEN GREATEST(orders.customer_id, $15) WHEN $16 THEN LEAST(orders.customer_id, $17) ELSE orders.customer_id END, status = CASE WHEN $18 THEN $19 ELSE orders.status END, placed_at = CASE WHEN $20 THEN $21 WHEN $22 THEN GREATEST(orders.placed_at, $23) WHEN $24 THEN LEAST(orders.placed_at, $25) ELSE orders.placed_at END, note = CASE WHEN $26 THEN $27 ELSE orders.note END, total = CASE WHEN $28 THEN $29 WHEN $30 THEN orders.total + $31 WHEN $32 THEN GREATEST(orders.total, $33) WHEN $34 THEN LEAST(orders.total, $35) ELSE orders.total END, paid = CASE WHEN $36 THEN $37 ELSE orders.paid END, contact = CASE WHEN $38 THEN $39 ELSE orders.contact END, receipt = CASE WHEN $40 THEN $41 ELSE orders.receipt END
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	const withID = `INSERT INTO orders (customer_id, status, placed_at, note, total, paid, contact, receipt, "order", id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $11 THEN $12 WHEN $13 THEN orders.customer_id + $14 ELSE orders.customer_id END, status = CASE WHEN $15 THEN $16 ELSE orders.status END, placed_at = CASE WHEN $17 THEN $18 ELSE orders.placed_at END, note = CASE WHEN $19 THEN $20 ELSE orders.note END, total = CASE WHEN $21 THEN $22 WHEN $23 THEN orders.total + $24 ELSE orders.total END, paid = CASE WHEN $25 THEN $26 ELSE orders.paid END, contact = CASE WHEN $27 THEN $28 ELSE orders.contact END, receipt = CASE WHEN $29 THEN $30 ELSE orders.receipt END
+ON CONFLICT ("order") DO UPDATE SET customer_id = CASE WHEN $11 THEN $12 WHEN $13 THEN orders.customer_id + $14 WHEN $15 THEN GREATEST(orders.customer_id, $16) WHEN $17 THEN LEAST(orders.customer_id, $18) ELSE orders.customer_id END, status = CASE WHEN $19 THEN $20 ELSE orders.status END, placed_at = CASE WHEN $21 THEN $22 WHEN $23 THEN GREATEST(orders.placed_at, $24) WHEN $25 THEN LEAST(orders.placed_at, $26) ELSE orders.placed_at END, note = CASE WHEN $27 THEN $28 ELSE orders.note END, total = CASE WHEN $29 THEN $30 WHEN $31 THEN orders.total + $32 WHEN $33 THEN GREATEST(orders.total, $34) WHEN $35 THEN LEAST(orders.total, $36) ELSE orders.total END, paid = CASE WHEN $37 THEN $38 ELSE orders.paid END, contact = CASE WHEN $39 THEN $40 ELSE orders.contact END, receipt = CASE WHEN $41 THEN $42 ELSE orders.receipt END
 RETURNING id, customer_id, status, placed_at, note, total, paid, contact, receipt, "order"`
 	q, args := withoutID, []any{o.CustomerID, o.Status, o.PlacedAt, o.Memo, o.Total, o.Paid, o.Contact, o.Receipt, o.Position}
 	if o.ID != 0 {

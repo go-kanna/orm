@@ -3,6 +3,7 @@ package impl_test
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -171,25 +172,81 @@ func TestChanges_Add(t *testing.T) {
 	}
 }
 
+func TestChanges_RaiseLower(t *testing.T) {
+	t.Parallel()
+
+	q := impl.Of[int]{}.Where("id = ", 7)
+	page := impl.Of[int]{}.Where("status = ", "new").OrderBy("queued_at", false).Limit(2)
+	allowed := []string{"run_at", "attempts", "status"}
+	for _, tt := range []struct {
+		name    string
+		d       impl.Dialect
+		changes impl.Changes[int]
+		q       impl.Of[int]
+		want    string
+		args    []any
+	}{
+		{"by key", impl.Postgres, impl.Changes[int]{}.Lower("run_at", 5).Raise("attempts", 3).Set("status", "new"), q,
+			`UPDATE "jobs" SET "run_at" = LEAST("run_at", $1), "attempts" = GREATEST("attempts", $2), ` +
+				`"status" = $3 WHERE (id = $4)`, []any{5, 3, "new", 7}},
+		{"by key on MySQL", impl.MySQL, impl.Changes[int]{}.Lower("run_at", 5).Raise("attempts", 3), q,
+			"UPDATE `jobs` SET `run_at` = LEAST(`run_at`, ?), `attempts` = GREATEST(`attempts`, ?) WHERE (id = ?)",
+			[]any{5, 3, 7}},
+		{"a page", impl.Postgres, impl.Changes[int]{}.Raise("run_at", 5), page,
+			`UPDATE "jobs" SET "run_at" = GREATEST("run_at", $1) WHERE "id" IN ` +
+				`(SELECT "id" FROM "jobs" WHERE (status = $2) ORDER BY queued_at, id LIMIT 2)`, []any{5, "new"}},
+		{"Add then Raise", impl.Postgres, impl.Changes[int]{}.Add("attempts", 1).Raise("attempts", 3), q,
+			`UPDATE "jobs" SET "attempts" = GREATEST("attempts", $1) WHERE (id = $2)`, []any{3, 7}},
+		{"Lower then Set", impl.MySQL, impl.Changes[int]{}.Lower("run_at", 5).Set("run_at", 9), q,
+			"UPDATE `jobs` SET `run_at` = ? WHERE (id = ?)", []any{9, 7}},
+	} {
+		got, args, err := tt.changes.RenderUpdateSelected(tt.d, "jobs", allowed, []string{"id"}, "", tt.q)
+		if err != nil || got != tt.want || !reflect.DeepEqual(args, tt.args) {
+			t.Errorf("Update of %s = %s, %v, %v; want %s, %v", tt.name, got, args, err, tt.want, tt.args)
+		}
+	}
+
+	base := impl.Changes[int]{}.Set("run_at", 5)
+	_, _ = base.Raise("run_at", 1), base.Lower("run_at", 1)
+	if sql, args, err := base.RenderUpdate(impl.Postgres, "jobs", allowed, q); err != nil ||
+		strings.Contains(sql, "GREATEST") || strings.Contains(sql, "LEAST") || !reflect.DeepEqual(args, []any{5, 7}) {
+		t.Errorf("Raise or Lower changed the change set it derives from: %s, %v, %v", sql, args, err)
+	}
+}
+
 func TestChanges_UpsertValues(t *testing.T) {
 	t.Parallel()
 
-	allowed, added, key := []string{"name", "visits", "phone"}, []string{"visits"}, []string{"email"}
+	allowed, key := []string{"name", "visits", "phone", "seen_at"}, []string{"email"}
+	added, ordered := []string{"visits"}, []string{"visits", "seen_at"}
+	unset := []any{false, nil}
+	values := func(name, visits, phone, seenAt []any) []any {
+		return slices.Concat(name, visits, phone, seenAt)
+	}
 	for _, tt := range []struct {
 		name    string
 		changes impl.Changes[int]
 		want    []any
 	}{
-		{"no change", impl.Changes[int]{}, []any{false, nil, false, nil, false, nil, false, nil}},
+		{"no change", impl.Changes[int]{}, values(unset, slices.Repeat(unset, 4), unset, slices.Repeat(unset, 3))},
 		{"Set", impl.Changes[int]{}.Set("phone", nil).Set("visits", 3),
-			[]any{false, nil, true, 3, false, nil, true, nil}},
-		{"Add", impl.Changes[int]{}.Add("visits", 1), []any{false, nil, false, nil, true, 1, false, nil}},
+			values(unset, slices.Concat([]any{true, 3}, slices.Repeat(unset, 3)), []any{true, nil},
+				slices.Repeat(unset, 3))},
+		{"Add", impl.Changes[int]{}.Add("visits", 1),
+			values(unset, slices.Concat(unset, []any{true, 1}, unset, unset), unset, slices.Repeat(unset, 3))},
 		{"Set then Add", impl.Changes[int]{}.Set("visits", 3).Add("visits", 1),
-			[]any{false, nil, false, nil, true, 1, false, nil}},
+			values(unset, slices.Concat(unset, []any{true, 1}, unset, unset), unset, slices.Repeat(unset, 3))},
 		{"Add then Set", impl.Changes[int]{}.Add("visits", 1).Set("visits", 3),
-			[]any{false, nil, true, 3, false, nil, false, nil}},
+			values(unset, slices.Concat([]any{true, 3}, slices.Repeat(unset, 3)), unset, slices.Repeat(unset, 3))},
+		{"Raise and Lower", impl.Changes[int]{}.Raise("visits", 4).Lower("seen_at", 9),
+			values(unset, slices.Concat(unset, unset, []any{true, 4}, unset), unset,
+				slices.Concat(unset, unset, []any{true, 9}))},
+		{"Raise then Lower", impl.Changes[int]{}.Raise("seen_at", 4).Lower("seen_at", 9),
+			values(unset, slices.Repeat(unset, 4), unset, slices.Concat(unset, unset, []any{true, 9}))},
+		{"Lower then Set", impl.Changes[int]{}.Lower("seen_at", 9).Set("seen_at", 2),
+			values(unset, slices.Repeat(unset, 4), unset, slices.Concat([]any{true, 2}, unset, unset))},
 	} {
-		got, err := tt.changes.UpsertValues("Upsert", allowed, added, key)
+		got, err := tt.changes.UpsertValues("Upsert", allowed, added, ordered, key)
 		if err != nil || !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("UpsertValues of %s = %v, %v, want %v", tt.name, got, err, tt.want)
 		}
@@ -205,9 +262,14 @@ func TestChanges_UpsertValues(t *testing.T) {
 			"orm: Upsert meets its row by email, which its change set cannot write"},
 		{"a column not allowed", impl.Changes[int]{}.Set("created_at", 1),
 			"orm: Upsert cannot assign column created_at"},
-		{"a column not added to", impl.Changes[int]{}.Add("name", 1), "orm: Upsert cannot add to column name"},
+		{"a column not added to", impl.Changes[int]{}.Add("seen_at", 1), "orm: Upsert cannot add to column seen_at"},
+		{"a column not raised", impl.Changes[int]{}.Raise("name", 1), "orm: Upsert cannot raise column name"},
+		{"a column not lowered", impl.Changes[int]{}.Lower("phone", 1), "orm: Upsert cannot lower column phone"},
+		{"the key raised", impl.Changes[int]{}.Raise("email", 1),
+			"orm: Upsert meets its row by email, which its change set cannot write"},
 	} {
-		if _, err := tt.changes.UpsertValues("Upsert", allowed, added, key); err == nil || err.Error() != tt.want {
+		if _, err := tt.changes.UpsertValues("Upsert", allowed, added, ordered, key); err == nil ||
+			err.Error() != tt.want {
 			t.Errorf("UpsertValues of %s error = %v, want %q", tt.name, err, tt.want)
 		}
 	}
@@ -240,7 +302,7 @@ func TestChanges_Touch(t *testing.T) {
 		{"no change", impl.Changes[int]{}, []any{false, nil, false, nil}},
 		{"a change", base, []any{true, "Ann", true, "now"}},
 	} {
-		got, err := tt.changes.Touch("updated_at", "now").UpsertValues("Upsert", allowed, nil, []string{"email"})
+		got, err := tt.changes.Touch("updated_at", "now").UpsertValues("Upsert", allowed, nil, nil, []string{"email"})
 		if err != nil || !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("UpsertValues of %s touched = %v, %v, want %v", tt.name, got, err, tt.want)
 		}

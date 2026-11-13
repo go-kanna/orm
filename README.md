@@ -1279,20 +1279,21 @@ ON CONFLICT (email) DO UPDATE SET name = CASE WHEN $5 THEN $6 ELSE customers.nam
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(customers.id), name = IF(?, ?, customers.name), phone = IF(?, ?, customers.phone)
 ```
 
-A column that has [`Add`](#updating-selected-columns) takes a second branch, which adds the change set's value to the
-stored one when the change set adds it. Were customers to have a `Visits int32` field, `AddVisits(1)` would count a
-visit of the customer met, and the row inserted when none is met would get its own value:
+A column that has [`Add`](#updating-selected-columns) takes a branch that adds the change set's value to the stored
+one, and a column that has [`Raise` and `Lower`](#updating-selected-columns) takes a branch for each, writing the
+greater or the lesser of the two. Were customers to have a `Visits int32` field, `AddVisits(1)` would count a visit of
+the customer met, and the row inserted when none is met would get its own value:
 
 ```sql
 -- PostgreSQL
-visits = CASE WHEN $9 THEN $10 WHEN $11 THEN customers.visits + $12 ELSE customers.visits END
+visits = CASE WHEN $9 THEN $10 WHEN $11 THEN customers.visits + $12 WHEN $13 THEN GREATEST(customers.visits, $14) WHEN $15 THEN LEAST(customers.visits, $16) ELSE customers.visits END
 
 -- MySQL
-visits = IF(?, ?, IF(?, customers.visits + ?, customers.visits))
+visits = IF(?, ?, IF(?, customers.visits + ?, IF(?, GREATEST(customers.visits, ?), IF(?, LEAST(customers.visits, ?), customers.visits))))
 ```
 
-A number added to the stored value, as `visits = visits + 1`, is thus written by `Add`; any other value computed from
-the row met is [SQL written by hand](#hand-written-sql).
+A number added to the stored value, as in `visits = visits + 1`, and the greater or the lesser of the two are thus
+written by setters; any other value computed from the row met is [SQL written by hand](#hand-written-sql).
 
 ### Writing many rows
 
@@ -1397,13 +1398,34 @@ UPDATE `order_lines` SET `quantity` = `quantity` + ? WHERE ...
 
 A nullable column has no `Add`, as NULL plus a number stays NULL, and neither has a number a `Valuer` stores as text.
 
-Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set` or `Add`
-of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the original unchanged.
-Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary keys, database-assigned
-columns, columns tagged `insertonly` or `readonly`, the [creation and update times](#creation-and-update-times), and
-relations have no setters; an `Update` of a change set writes the update time by the clock. An `Update` of an empty
-change set returns `orm.ErrEmptyChangeSet`, which a handler can test for with `errors.Is` to reject a request that
-changes nothing; an [upsert](#writing-a-change-set-over-the-row-met) of one is not an error.
+A column that has `Add` also has `Raise` and `Lower`, and so does a date or time column that is never NULL and whose
+field is a `time.Time` or a type based on one. `Raise` writes the greater of the given value and the stored one, and
+`Lower` the lesser. Like `Add`, they work within the statement, so a job queue can move a run earlier without losing a
+write made after it read the row:
+
+```go
+changes := scopes.JobChanges().LowerRunAt(next)
+```
+
+```sql
+-- PostgreSQL
+UPDATE "jobs" SET "run_at" = LEAST("run_at", $1) WHERE ...
+
+-- MySQL
+UPDATE `jobs` SET `run_at` = LEAST(`run_at`, ?) WHERE ...
+```
+
+A nullable column has neither: MySQL's `GREATEST` and `LEAST` return NULL when either value is NULL, and PostgreSQL's
+ignore NULL. Text columns have neither, as their order depends on the collation.
+
+Not calling a setter leaves that column unchanged. Zero values are written, rather than skipped. A later `Set`, `Add`,
+`Raise`, or `Lower` of the same column replaces the earlier one. Change sets are immutable: a derived set leaves the
+original unchanged. Fields tagged `nullzero` retain their usual conversion of the empty string to SQL NULL. Primary
+keys, database-assigned columns, columns tagged `insertonly` or `readonly`, the [creation and update
+times](#creation-and-update-times), and relations have no setters; an `Update` of a change set writes the update time by
+the clock. An `Update` of an empty change set returns `orm.ErrEmptyChangeSet`, which a handler can test for with
+`errors.Is` to reject a request that changes nothing; an [upsert](#writing-a-change-set-over-the-row-met) of one is not
+an error.
 
 Declare the unique key separately from the assigned values and add ordinary condition scopes:
 
