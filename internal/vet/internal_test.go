@@ -120,7 +120,11 @@ func TestRawWhere(t *testing.T) {
 		want  errProp
 	}{
 		{"of a scope without an error", emptyScope(), errProp{t: some}},
-		{"of a scope with one", &scopeVal{err: setErr("Limit cannot be negative: -1", at)}, setErr("Limit cannot be negative: -1", at)},
+		{
+			"of a scope with one",
+			&scopeVal{err: setErr("Limit cannot be negative: -1", at)},
+			setErr("Limit cannot be negative: -1", at),
+		},
 	} {
 		v, _ := ops["scope.Raw.Where"](opCall{args: []value{tt.scope, unknown{}}, at: at})
 		s := v.(*scopeVal) //nolint:forcetypeassert // Where returns a scope
