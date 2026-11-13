@@ -141,10 +141,14 @@ type op func(c opCall) (value, *failed)
 
 // ops are the functions and methods of the runtime vet knows: what they make of a scope, and the checks they make.
 var ops = map[string]op{
-	"impl.Of.Where":                     adds(func(s *scopeVal) *prop { return &s.conds }),
-	"impl.Of.OrderBy":                   adds(func(s *scopeVal) *prop { return &s.orders }),
-	"impl.Of.Limit":                     pages(func(s *scopeVal) *prop { return &s.limit }, "a limit of %d rows"),
-	"impl.Of.Offset":                    pages(func(s *scopeVal) *prop { return &s.offset }, "an offset of %d rows"),
+	"impl.Of.Where":   adds(func(s *scopeVal) *prop { return &s.conds }),
+	"impl.Of.OrderBy": adds(func(s *scopeVal) *prop { return &s.orders }),
+	"impl.Of.Limit": pages(
+		func(s *scopeVal) *prop { return &s.limit }, "Limit cannot be negative: %d",
+	),
+	"impl.Of.Offset": pages(
+		func(s *scopeVal) *prop { return &s.offset }, "Offset cannot be negative: %d",
+	),
 	"impl.Of.After":                     adds(func(s *scopeVal) *prop { return &s.seek }),
 	"impl.Of.Before":                    adds(func(s *scopeVal) *prop { return &s.seek }),
 	"impl.Of.DefaultOrder":              opDefaultOrder,
