@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
-	github.com/go-kanna/internal v0.0.32-0.20261110094330-760e419d549c
+	github.com/go-kanna/internal v0.0.33
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/jackc/pgx/v5 v5.12.0
 	golang.org/x/mod v0.42.0
