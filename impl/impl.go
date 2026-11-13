@@ -79,7 +79,7 @@ func (q Of[M]) OrderBy(column string, desc bool) Of[M] {
 // Limit keeps the first n rows.
 func (q Of[M]) Limit(n int) Of[M] {
 	if n < 0 {
-		q.err = cmp.Or(q.err, fmt.Errorf("orm: a limit of %d rows", n))
+		q.err = cmp.Or(q.err, fmt.Errorf("orm: Limit cannot be negative: %d", n))
 	}
 	q.limit, q.hasLimit = n, true
 	return q
@@ -88,7 +88,7 @@ func (q Of[M]) Limit(n int) Of[M] {
 // Offset skips the first n rows.
 func (q Of[M]) Offset(n int) Of[M] {
 	if n < 0 {
-		q.err = cmp.Or(q.err, fmt.Errorf("orm: an offset of %d rows", n))
+		q.err = cmp.Or(q.err, fmt.Errorf("orm: Offset cannot be negative: %d", n))
 	}
 	q.offset, q.hasOffset = n, true
 	return q

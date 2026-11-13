@@ -97,11 +97,11 @@ func TestRender_Errors(t *testing.T) {
 		{"a limit in not", q.Not(q.Limit(1)), "orm: Not takes conditions alone, but its scope keeps only some of the rows"},
 		{"an offset in or", q.Or(q.Where("a = ", 1), q.Offset(1)),
 			"orm: Or takes conditions alone, but its scope keeps only some of the rows"},
-		{"a negative limit", q.Limit(-1), "orm: a limit of -1 rows"},
-		{"a negative offset", q.Offset(-1), "orm: an offset of -1 rows"},
-		{"an error combined", impl.Combine(q.Where("a = ", 1), q.Limit(-1)), "orm: a limit of -1 rows"},
+		{"a negative limit", q.Limit(-1), "orm: Limit cannot be negative: -1"},
+		{"a negative offset", q.Offset(-1), "orm: Offset cannot be negative: -1"},
+		{"an error combined", impl.Combine(q.Where("a = ", 1), q.Limit(-1)), "orm: Limit cannot be negative: -1"},
 		{"a failure", q.Fail(errors.New("orm: failed")).Where("a = ", 1), "orm: failed"},
-		{"the first failure", q.Limit(-1).Fail(errors.New("orm: failed")), "orm: a limit of -1 rows"},
+		{"the first failure", q.Limit(-1).Fail(errors.New("orm: failed")), "orm: Limit cannot be negative: -1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,7 +129,7 @@ func TestOr_ChecksEveryAlternative(t *testing.T) {
 		{"an order", q.OrderBy("id", false), "orm: Or takes conditions alone, but its scope orders the rows"},
 		{"a preload", impl.Preload(q, "Lines", impl.Of[order]{}),
 			"orm: Or takes conditions alone, but its scope loads Lines"},
-		{"an error of its own", q.Limit(-1), "orm: a limit of -1 rows"},
+		{"an error of its own", q.Limit(-1), "orm: Limit cannot be negative: -1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
