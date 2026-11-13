@@ -1133,7 +1133,7 @@ type Event struct {
   column NOT NULL with neither a DEFAULT nor a trigger fails when a row is inserted.
 - [Hand-written SQL](#hand-written-sql) writes what it says, these columns included.
 
-The clock is `time.Now` unless the constructor is given an `orm.Clocker` by `option.WithClock`, as it is given hooks by
+The clock is `time.Now` unless the constructor is given an `orm.Clock` by `option.WithClock`, as it is given hooks by
 `option.WithHook`, and `Bind` keeps it. `Now` takes the context of the method writing, so that an application carrying
 its clock in the context adapts it in one method:
 
