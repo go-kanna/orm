@@ -59,6 +59,6 @@ func (r Raw[M]) Where(parts ...any) Of[M] {
 }
 
 // OrderBy orders the rows by expr, a column or an expression in SQL, after any order given before.
-func (r Raw[M]) OrderBy(expr string, desc bool) Of[M] {
-	return Of[M](impl.Of[M](r).OrderBy(expr, desc))
+func (r Raw[M]) OrderBy(expr SQL, desc bool) Of[M] {
+	return Of[M](impl.Of[M](r).OrderBy(string(expr), desc))
 }
