@@ -27,8 +27,10 @@ func Run(dir, tags string, patterns []string) []diag.Diag {
 	}
 	a := newAnalysis(l.prog, l.fset, l.files)
 	a.findRepositories(l.types)
+	a.findBindings()
 	for _, fn := range l.functions {
 		a.check(fn)
+		a.checkBinds(fn)
 	}
 	return reports(a, dir)
 }
