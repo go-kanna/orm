@@ -12,6 +12,8 @@ import (
 	"github.com/go-kanna/internal/cli"
 	"github.com/go-kanna/internal/diag"
 
+	"github.com/go-kanna/orm/internal/gen"
+	"github.com/go-kanna/orm/internal/snapshot"
 	"github.com/go-kanna/orm/internal/vet"
 )
 
@@ -384,5 +386,150 @@ func Count(ctx context.Context, orders repository.Order) (int64, error) {
 		if code != tt.code || (tt.stderr != "" && errOut.String() != tt.stderr) {
 			t.Errorf("vet %v in %s = %d, want %d\n%s", tt.args, tt.dir, code, tt.code, errOut.String())
 		}
+	}
+}
+
+const bindUseCase = `package usecase
+
+import (
+	"context"
+
+	"github.com/go-kanna/orm/example/postgres/model"
+	"github.com/go-kanna/orm/example/postgres/postgres"
+	"github.com/go-kanna/orm/example/postgres/repository"
+)
+
+type Checkout struct {
+	orders      repository.Order
+	customers   repository.Customer
+	fulfillment repository.Fulfillment
+	shipping    postgres.Fulfillment
+	withTx      func(ctx context.Context, fn func(tx repository.Tx) error) error
+	with        func(ctx context.Context, fn func() error) error
+}
+
+func (c Checkout) Unbound(ctx context.Context, id model.OrderID) error {
+	return c.withTx(ctx, func(tx repository.Tx) error {
+		_, _ = c.orders.Insert(ctx, model.Order{})
+		_ = c.orders.InsertTag(ctx, id, repository.TagInput{})
+		_, _ = c.fulfillment.GetForUpdate(ctx, id)
+		_, _ = c.shipping.GetForUpdate(ctx, id)
+		_ = c.orders.Tag(ctx, id, repository.TagInput{})
+		_, _ = c.customers.Get(ctx, 1)
+		return nil
+	})
+}
+
+var defaultOrders repository.Order
+
+func Global(ctx context.Context, withTx func(context.Context, func(tx repository.Tx) error) error) error {
+	return withTx(ctx, func(tx repository.Tx) error {
+		_, err := defaultOrders.Insert(ctx, model.Order{})
+		return err
+	})
+}
+
+func (c Checkout) Bound(ctx context.Context, id model.OrderID) error {
+	var assigned repository.Order
+	return c.withTx(ctx, func(tx repository.Tx) error {
+		orders := c.orders.Bind(tx)
+		shipping := c.shipping.Bind(tx)
+		_, _ = orders.Insert(ctx, model.Order{})
+		_, _ = c.fulfillment.Bind(tx).GetForUpdate(ctx, id)
+		assigned = c.orders.Bind(tx)
+		_ = assigned.InsertTag(ctx, id, repository.TagInput{})
+		return c.withTx(ctx, func(again repository.Tx) error {
+			_, _ = shipping.GetForUpdate(ctx, id)
+			_, err := orders.Insert(ctx, model.Order{})
+			return err
+		})
+	})
+}
+
+func (c Checkout) NoTransaction(ctx context.Context) error {
+	if err := c.withTx(ctx, func(repository.Tx) error {
+		_, err := c.orders.Insert(ctx, model.Order{})
+		return err
+	}); err != nil {
+		return err
+	}
+	return c.with(ctx, func() error {
+		_, err := c.orders.Insert(ctx, model.Order{})
+		return err
+	})
+}
+`
+
+// bindModule is the postgres example with a Bind on Order, Customer, and Fulfillment, taking a transaction, and a
+// query written by hand whose name says it writes, generated as kanna-orm generates them.
+func bindModule(t *testing.T) string {
+	t.Helper()
+
+	src, err := os.ReadFile(filepath.Join("..", "..", "example", "postgres", "repository", "repository.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := string(src)
+	for _, name := range []string{"Customer", "Order", "Fulfillment"} {
+		decl := "type " + name + " interface {"
+		if i := strings.Index(repo, decl); i >= 0 {
+			end := i + strings.Index(repo[i:], "\n")
+			repo = repo[:end+1] + "\tBind(tx Tx) " + name + "\n" + repo[end+1:]
+		}
+	}
+	const tagMethod = "\tTag(ctx context.Context, orderID model.OrderID, input TagInput) error\n"
+	repo = strings.Replace(repo, tagMethod, tagMethod+strings.Replace(tagMethod, "Tag(", "InsertTag(", 1), 1)
+	example := filepath.Join("..", "..", "example", "postgres")
+	queries, err := os.ReadFile(filepath.Join(example, "postgres", "queries.sql")) //nolint:gosec // a file of the example
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag, _, _ := strings.Cut(strings.TrimPrefix(string(queries), "-- query: Tag\n"), "\n\n")
+	data, err := os.ReadFile(filepath.Join(example, snapshot.Name)) //nolint:gosec // the example's snapshot
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := snapshot.Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pkg = "github.com/go-kanna/orm/example/postgres/postgres."
+	snap.Statements[pkg+"InsertTag"] = snap.Statements[pkg+"Tag"]
+	dir := exampleModule(t, "postgres", map[string]string{
+		"repository/repository.go": repo,
+		"repository/tx.go": `package repository
+
+import (
+	kpgx "github.com/go-kanna/orm/pgx"
+	pgx "github.com/jackc/pgx/v5"
+)
+
+type Tx struct{ tx pgx.Tx }
+
+func (t Tx) DBTX() kpgx.CopyDBTX { return t.tx }
+`,
+		"postgres/queries.sql": string(queries) + "\n-- query: InsertTag\n" + tag + "\n",
+		snapshot.Name:          string(snapshot.Marshal(snap)),
+		"usecase/usecase.go":   bindUseCase,
+	})
+	var out, errOut bytes.Buffer
+	if code := gen.Command().Exec(cli.Env{Out: &out, Err: &errOut, Dir: filepath.Join(dir, "repository")},
+		[]string{"-destination", "../postgres"}); code != cli.ExitOK {
+		t.Fatalf("kanna-orm = %d\n%s", code, errOut.String())
+	}
+	return dir
+}
+
+func TestRun_Bind(t *testing.T) {
+	t.Parallel()
+
+	got := report(vet.Run(bindModule(t), "", []string{"./usecase"}))
+	want := `usecase.go:22:19: error: Insert runs outside tx: call it on the repository Bind(tx) returns
+usecase.go:23:16: error: InsertTag runs outside tx: call it on the repository Bind(tx) returns
+usecase.go:24:24: error: GetForUpdate runs outside tx: call it on the repository Bind(tx) returns
+usecase.go:25:21: error: GetForUpdate runs outside tx: call it on the repository Bind(tx) returns
+usecase.go:36:27: error: Insert runs outside tx: call it on the repository Bind(tx) returns`
+	if got != want {
+		t.Errorf("vet ./usecase =\n%s\nwant\n%s", got, want)
 	}
 }

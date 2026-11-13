@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/go-kanna/internal/diag"
 	"github.com/go-kanna/internal/directive"
@@ -26,39 +25,28 @@ import (
 type verb string
 
 const (
-	verbGet    verb = "Get"
-	verbFind   verb = "Find"
-	verbFirst  verb = "First"
-	verbList   verb = "List"
-	verbCount  verb = "Count"
-	verbExists verb = "Exists"
-	verbInsert verb = "Insert"
-	verbUpdate verb = "Update"
-	verbTouch  verb = "Touch"
-	verbUpsert verb = "Upsert"
-	verbDelete verb = "Delete"
-	verbCopy   verb = "Copy"
-	verbSum    verb = "Sum"
-	verbMin    verb = "Min"
-	verbMax    verb = "Max"
-	verbAvg    verb = "Avg"
+	verbGet    = verb(decl.VerbGet)
+	verbFind   = verb(decl.VerbFind)
+	verbFirst  = verb(decl.VerbFirst)
+	verbList   = verb(decl.VerbList)
+	verbCount  = verb(decl.VerbCount)
+	verbExists = verb(decl.VerbExists)
+	verbInsert = verb(decl.VerbInsert)
+	verbUpdate = verb(decl.VerbUpdate)
+	verbTouch  = verb(decl.VerbTouch)
+	verbUpsert = verb(decl.VerbUpsert)
+	verbDelete = verb(decl.VerbDelete)
+	verbCopy   = verb(decl.VerbCopy)
+	verbSum    = verb(decl.VerbSum)
+	verbMin    = verb(decl.VerbMin)
+	verbMax    = verb(decl.VerbMax)
+	verbAvg    = verb(decl.VerbAvg)
 )
 
-var verbs = []verb{
-	verbGet, verbFind, verbFirst, verbList, verbCount, verbExists, verbInsert, verbUpdate, verbTouch, verbUpsert,
-	verbDelete, verbCopy, verbSum, verbMin, verbMax, verbAvg,
-}
-
-// verbOf tells the verb name starts with: a verb, followed by nothing or by a word of its own, as in GetByNumber, but
-// not in Getaway.
+// verbOf tells the verb name starts with, as decl.VerbOf.
 func verbOf(name string) (verb, bool) {
-	for _, v := range verbs {
-		rest, ok := strings.CutPrefix(name, string(v))
-		if r, _ := utf8.DecodeRuneInString(rest); ok && (rest == "" || unicode.IsUpper(r) || unicode.IsDigit(r)) {
-			return v, true
-		}
-	}
-	return "", false
+	v, ok := decl.VerbOf(name)
+	return verb(v), ok
 }
 
 // returns is what a method returns besides its error.

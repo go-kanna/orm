@@ -1,5 +1,6 @@
 // Package vet is kanna-orm vet, which finds the scopes given to a repository that make it fail on every path, as
-// the runtime would report them.
+// the runtime would report them, and the writes and locked reads of a repository a transaction's function literal did
+// not bind.
 package vet
 
 import (
@@ -13,9 +14,10 @@ import (
 // Command returns kanna-orm vet.
 func Command() cli.Vet {
 	return cli.Vet{
-		Name:    "kanna-orm",
-		Summary: "find the scopes given to a repository that make it fail on every path",
-		Run:     Run,
+		Name: "kanna-orm",
+		Summary: "find the scopes given to a repository that make it fail on every path, and the calls in a " +
+			"transaction that run outside it",
+		Run: Run,
 	}
 }
 
@@ -27,8 +29,10 @@ func Run(dir, tags string, patterns []string) []diag.Diag {
 	}
 	a := newAnalysis(l.prog, l.fset, l.files)
 	a.findRepositories(l.types)
+	a.findBindings()
 	for _, fn := range l.functions {
 		a.check(fn)
+		a.checkBinds(fn)
 	}
 	return reports(a, dir)
 }

@@ -1,5 +1,6 @@
 // Command kanna-orm writes the database code behind repository interfaces, from what kanna-orm describe records of
-// a database. kanna-orm vet finds the scopes that make the code it writes fail every time.
+// a database. kanna-orm vet finds the scopes that make the code it writes fail every time, and the calls in a
+// transaction that run outside it.
 package main
 
 import (

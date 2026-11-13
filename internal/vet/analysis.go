@@ -25,6 +25,7 @@ type analysis struct {
 	callAt map[token.Pos]token.Pos
 	// repositories are the types of the repositories kanna-orm generated.
 	repositories []*types.Named
+	binds        bindings
 
 	memo    map[string]*result
 	tracks  map[*ssa.Alloc]bool
