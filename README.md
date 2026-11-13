@@ -336,6 +336,8 @@ as it runs, by `Raw`, as `InMonths` does, which nothing checks before it runs. `
 each returning the scope with all it held before. `Where` takes the SQL of its condition in pieces marked as
 `scope.SQL`, and every other part, a string too, as a value it binds to a placeholder, so that no value becomes SQL. A
 condition without SQL, or with two values and no SQL between them, is an error, which every query of the scope returns.
+`OrderBy` takes its expression as `scope.SQL` too, so a constant is written as it is and a string variable needs an
+explicit `scope.SQL(v)`.
 
 ```go
 func (s Order) Open() Order { return s.StatusNe("closed") }
