@@ -78,10 +78,21 @@ func (c Changes[M]) with(a assignment) Changes[M] {
 // holding more than conditions, as that of an Update writing the rows its keys name does.
 // allowed contains the mapped, writable columns supplied by the generated repository.
 func (c Changes[M]) RenderUpdate(d Dialect, table string, allowed []string, q Of[M]) (string, []any, error) {
-	if err := q.ConditionsOnly("Update"); err != nil {
+	return c.renderConditional("Update", d, table, allowed, q)
+}
+
+// RenderTouch is RenderUpdate of a Touch, which names itself in what it rejects.
+func (c Changes[M]) RenderTouch(d Dialect, table string, allowed []string, q Of[M]) (string, []any, error) {
+	return c.renderConditional("Touch", d, table, allowed, q)
+}
+
+func (c Changes[M]) renderConditional(what string, d Dialect, table string, allowed []string, q Of[M]) (
+	string, []any, error,
+) {
+	if err := q.ConditionsOnly(what); err != nil {
 		return "", nil, err
 	}
-	return c.RenderUpdateSelected(d, table, allowed, nil, "", q)
+	return c.renderSelected(what, d, table, allowed, nil, "", q)
 }
 
 // RenderUpdateSelected renders assignments to the rows q selects, as RenderDelete selects those it deletes, rejecting
@@ -90,6 +101,18 @@ func (c Changes[M]) RenderUpdate(d Dialect, table string, allowed []string, q Of
 func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key []string, lock string, q Of[M]) (
 	string, []any, error,
 ) {
+	return c.renderSelected("Update", d, table, allowed, key, lock, q)
+}
+
+// RenderTouchSelected is RenderUpdateSelected of a Touch, which names itself in what it rejects.
+func (c Changes[M]) RenderTouchSelected(d Dialect, table string, allowed, key []string, lock string, q Of[M]) (
+	string, []any, error,
+) {
+	return c.renderSelected("Touch", d, table, allowed, key, lock, q)
+}
+
+func (c Changes[M]) renderSelected(what string, d Dialect, table string, allowed, key []string, lock string,
+	q Of[M]) (string, []any, error) {
 	if len(c.values) == 0 {
 		return "", nil, orm.ErrEmptyChangeSet
 	}
@@ -97,7 +120,7 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 	args := make([]any, 0, len(c.values))
 	for _, a := range c.values {
 		if !slices.Contains(allowed, a.column) {
-			return "", nil, fmt.Errorf("orm: Update cannot assign column %s", a.column)
+			return "", nil, fmt.Errorf("orm: %s cannot assign column %s", what, a.column)
 		}
 		args = append(args, a.value)
 		value := "?"
@@ -116,7 +139,7 @@ func (c Changes[M]) RenderUpdateSelected(d Dialect, table string, allowed, key [
 		}
 		sets = append(sets, col+" = "+value)
 	}
-	where, rest, err := q.targets(d, "Update", table, key, lock, len(args)+1)
+	where, rest, err := q.targets(d, what, table, key, lock, len(args)+1)
 	if err != nil {
 		return "", nil, err
 	}

@@ -171,6 +171,8 @@ var ops = map[string]op{
 	"impl.Changes.Touch":                opTouch,
 	"impl.Changes.RenderUpdate":         renders(3, renderUpdate),
 	"impl.Changes.RenderUpdateSelected": renders(3, renderUpdateSelected),
+	"impl.Changes.RenderTouch":          renders(3, renderTouch),
+	"impl.Changes.RenderTouchSelected":  renders(3, renderTouchSelected),
 	"impl.Changes.UpsertValues":         renders(2, upsertValues),
 	"scope.Of.Raw":                      func(c opCall) (value, *failed) { return c.scope(0), nil },
 	"scope.Raw.Where":                   opRawWhere,
@@ -438,33 +440,44 @@ func renderDelete(c opCall) *failed {
 
 // renderUpdate is RenderUpdate(d, table, allowed, q) of the change set of argument 0: RenderUpdateSelected of no key,
 // of a scope holding conditions alone.
-func renderUpdate(c opCall) *failed {
+func renderUpdate(c opCall) *failed { return renderConditional(c, "Update") }
+
+// renderTouch is RenderTouch, which RenderUpdate is of a Touch.
+func renderTouch(c opCall) *failed { return renderConditional(c, "Touch") }
+
+func renderConditional(c opCall, what string) *failed {
 	s := c.scope(4)
-	if f := conditionsOnly(s, "Update"); f != nil {
+	if f := conditionsOnly(s, what); f != nil {
 		return f
 	}
-	return updateSelected(c, s, nil, true)
+	return updateSelected(c, what, s, nil, true)
 }
 
 // renderUpdateSelected is RenderUpdateSelected(d, table, allowed, key, lock, q) of the change set of argument 0.
 func renderUpdateSelected(c opCall) *failed {
 	key, ok := c.strs(4)
-	return updateSelected(c, c.scope(6), key, ok)
+	return updateSelected(c, "Update", c.scope(6), key, ok)
 }
 
-// updateSelected is the check of an Update of the change set of argument 0, which may assign the columns of argument 3,
-// to the rows s selects by key, which vet knows if known says so.
-func updateSelected(c opCall, s *scopeVal, key []string, known bool) *failed {
+// renderTouchSelected is RenderTouchSelected, which RenderUpdateSelected is of a Touch.
+func renderTouchSelected(c opCall) *failed {
+	key, ok := c.strs(4)
+	return updateSelected(c, "Touch", c.scope(6), key, ok)
+}
+
+// updateSelected is the check of what, an Update or a Touch, of the change set of argument 0, which may assign the
+// columns of argument 3, to the rows s selects by key, which vet knows if known says so.
+func updateSelected(c opCall, what string, s *scopeVal, key []string, known bool) *failed {
 	ch := c.change()
 	if ch.empty() == every {
-		return fail("Update of an empty change set returns orm.ErrEmptyChangeSet", cause{}, "")
+		return fail(what+" of an empty change set returns orm.ErrEmptyChangeSet", cause{}, "")
 	}
 	if allowed, ok := c.strs(3); ok {
 		if a := firstAssigned(ch, func(column string) bool { return !slices.Contains(allowed, column) }); a != nil {
-			return fail("Update cannot assign column "+a.column, a.p.at, "assigns "+a.column)
+			return fail(what+" cannot assign column "+a.column, a.p.at, "assigns "+a.column)
 		}
 	}
-	return targets(c, s, "Update", key, known)
+	return targets(c, s, what, key, known)
 }
 
 // targets is the check of s, the scope selecting the rows what, a Delete or an Update, writes of the table of argument
