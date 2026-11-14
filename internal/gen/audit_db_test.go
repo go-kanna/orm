@@ -345,7 +345,6 @@ func TestAudit(t *testing.T) {
 	check("d", 2, 18)
 	check("e", 9, 10)
 	calls(18)
-
 	ec := &clock{start: c.start}
 	events := NewEvents(conn, option.WithClock(ec))
 	assigned := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -387,6 +386,32 @@ func TestAudit(t *testing.T) {
 	if ec.calls != 3 {
 		t.Fatalf("the clock of events was read %d times, want 3, by the writes that insert", ec.calls)
 	}
+
+	rejected := NewNotes(conn, option.WithClock(&clock{start: c.start}))
+	for _, tt := range []struct {
+		name string
+		do   func(...scopes.Note) error
+		s    scopes.Note
+		want string
+	}{
+		{"Touch of no scope", func(s ...scopes.Note) error { _, err := rejected.TouchStale(ctx, s...); return err },
+			scopes.Note{}, "orm: Touch would touch every row of notes: give it a condition"},
+		{"Touch of an order", func(s ...scopes.Note) error { _, err := rejected.TouchStale(ctx, s...); return err },
+			scopes.Note{}.NameIn("c").NameAsc(), "orm: Touch ordering requires Limit or Offset"},
+		{"Update of no scope", func(s ...scopes.Note) error {
+			_, err := rejected.UpdatePage(ctx, scopes.NoteChanges().SetBody("x"), s...)
+			return err
+		}, scopes.Note{}, "orm: Update would update every row of notes: give it a condition"},
+		{"Update of an order", func(s ...scopes.Note) error {
+			_, err := rejected.UpdatePage(ctx, scopes.NoteChanges().SetBody("x"), s...)
+			return err
+		}, scopes.Note{}.NameIn("c").NameAsc(), "orm: Update ordering requires Limit or Offset"},
+	} {
+		if err := tt.do(tt.s); err == nil || err.Error() != tt.want {
+			t.Errorf("%s error = %v, want %q", tt.name, err, tt.want)
+		}
+	}
+
 
 	if dialect != "mysql" {
 		return

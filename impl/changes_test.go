@@ -109,6 +109,49 @@ func TestChanges_RenderUpdateSelected(t *testing.T) {
 	}
 }
 
+func TestChanges_RenderTouch(t *testing.T) {
+	t.Parallel()
+
+	changes := impl.Changes[int]{}.Set("updated_at", 1)
+	key := []string{"id"}
+	empty := impl.Of[int]{}
+	ordered := impl.Of[int]{}.Where("id = ", 7).OrderBy("id", false)
+	for _, tt := range []struct {
+		name   string
+		render func(q impl.Of[int]) (string, []any, error)
+		q      impl.Of[int]
+		want   string
+	}{
+		{"no condition", func(q impl.Of[int]) (string, []any, error) {
+			return changes.RenderTouch(impl.Postgres, "jobs", []string{"updated_at"}, q)
+		}, empty, "orm: Touch would touch every row of jobs: give it a condition"},
+		{"an order", func(q impl.Of[int]) (string, []any, error) {
+			return changes.RenderTouch(impl.Postgres, "jobs", []string{"updated_at"}, q)
+		}, ordered, "orm: Touch takes conditions alone, but its scope orders the rows"},
+		{"no condition selected", func(q impl.Of[int]) (string, []any, error) {
+			return changes.RenderTouchSelected(impl.MySQL, "jobs", []string{"updated_at"}, key, "", q)
+		}, impl.Of[int]{}.Limit(1), "orm: Touch would touch every row of jobs: give it a condition"},
+		{"an order selected", func(q impl.Of[int]) (string, []any, error) {
+			return changes.RenderTouchSelected(impl.MySQL, "jobs", []string{"updated_at"}, key, "", q)
+		}, ordered, "orm: Touch ordering requires Limit or Offset"},
+		{"a column not allowed", func(q impl.Of[int]) (string, []any, error) {
+			return changes.RenderTouchSelected(impl.MySQL, "jobs", nil, key, "", q)
+		}, impl.Of[int]{}.Where("id = ", 7), "orm: Touch cannot assign column updated_at"},
+	} {
+		_, _, err := tt.render(tt.q)
+		if err == nil || err.Error() != tt.want {
+			t.Errorf("RenderTouch of %s error = %v, want %q", tt.name, err, tt.want)
+		}
+	}
+
+	q := impl.Of[int]{}.Where("id = ", 7)
+	touch, targs, terr := changes.RenderTouch(impl.Postgres, "jobs", []string{"updated_at"}, q)
+	update, uargs, uerr := changes.RenderUpdate(impl.Postgres, "jobs", []string{"updated_at"}, q)
+	if terr != nil || uerr != nil || touch != update || !slices.Equal(targs, uargs) {
+		t.Errorf("RenderTouch = %s, %v, %v; RenderUpdate = %s, %v, %v", touch, targs, terr, update, uargs, uerr)
+	}
+}
+
 func TestChanges_Add(t *testing.T) {
 	t.Parallel()
 
