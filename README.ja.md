@@ -1331,7 +1331,7 @@ SELECT status, count(*) FROM orders WHERE ... GROUP BY status
 
 ## 手書きの SQL
 
-メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前の repository のメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。動詞で始まる名前のメソッドは、その動詞の生成メソッドと同じものを返します。どこで読んでも動詞が同じことを言うためです。`Get` と `First` は 1 行で、なければ `orm.ErrNotFound`、`Find` はポインタで、なければ nil、`List` はスライス、`Count` は結果の 1 列の `int64`、`Exists` は結果の 1 列の `bool`、`Sum`・`Min`・`Max` は結果の 1 列の値かそのポインタ、`Avg` は結果の 1 列の `float64` か `float32`、またはそのポインタ、`Insert`・`Update`・`Upsert`・`Delete` は error だけか、影響した行数の `(int64, error)` か、`RETURNING` が返す行です。それ以外は生成を止めます。`MonthCounts` のように動詞で始まらない名前なら、何を返しても構いません。`-destination .` なら、インターフェースと同じディレクトリです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
+メソッドで表現できないものは `.sql` ファイルに書きます。クエリは同じ名前の repository のメソッドになり、そのメソッドが実装される場所、つまり `-destination` で指定したパッケージに書きます。動詞で始まる名前のメソッドは、その動詞の生成メソッドと同じものを返します。どこで読んでも動詞の意味が変わらないようにするためです。`Get` と `First` は 1 行で、なければ `orm.ErrNotFound`、`Find` はポインタで、なければ nil、`List` はスライス、`Count` は結果の 1 列の `int64`、`Exists` は結果の 1 列の `bool`、`Sum`・`Min`・`Max` は結果の 1 列の値かそのポインタ、`Avg` は結果の 1 列の `float64` か `float32`、またはそのポインタ、`Insert`・`Update`・`Upsert`・`Delete` は error だけか、影響した行数の `(int64, error)` か、`RETURNING` が返す行です。それ以外は生成を止めます。`MonthCounts` のように動詞で始まらない名前なら、何を返しても構いません。`-destination .` なら、インターフェースと同じディレクトリです。スコープは指定したスコープ型のメソッドになり、そのスコープ型と同じ場所に書きます。マイグレーションのように `-- query:` の行も `-- scope:` の行もない `.sql` ファイルは、kanna-orm の対象外です。
 
 ```text
 repository/repository.go   //kanna:repository interfaces, MonthCounts among their methods
@@ -1433,7 +1433,7 @@ SELECT orders.id, ..., orders.customer_name FROM list_with_customers AS orders W
 
 ### 外部キー以外のカラムで関連する値を足す
 
-注文の現在の版を承認した担当者のように、外部キー以外のカラムで行に関連する値は、自分で書くクエリで読み込みます。行はいつもどおりスコープ、カーソル、リレーションで読み、そのキーの値をもう 1 本のクエリで読んで、Go でつなぎます:
+注文の現在のリビジョンを承認した担当者のように、外部キー以外のカラムで行に関連する値は、自分で書くクエリで読み込みます。行はいつもどおりスコープ、カーソル、リレーションで読み、そのキーの値をもう 1 本のクエリで読んで、Go でつなぎます:
 
 ```sql
 -- query: ListApprovers

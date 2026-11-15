@@ -1923,8 +1923,8 @@ ORDER BY 1`
 - Each result column needs a name of its own, since the fields take them by name; MySQL cannot even describe a query
   whose columns share a name. Give them aliases, as in `SELECT o.id, c.id AS customer_id`.
 - A result column that may be NULL needs a field that can be nil, or a string field tagged `nullzero`.
-  Other fields that cannot be nil stop generation where
-  the database says its column may be NULL; where the database cannot tell, the field's type is taken at its word.
+  Other fields that cannot be nil stop generation where the database says its column may be NULL; where the database
+  cannot tell, the field's type is taken at its word.
   MySQL tells for every column. PostgreSQL tells only for a column read straight from a table, and as the table
   declares it, even through an outer join that leaves it NULL: hold such a column, as `c.email` from
   `LEFT JOIN customers c`, in a pointer. kanna-orm's own queries load relations with queries of their own, not joins,
@@ -2054,7 +2054,7 @@ fail is written elsewhere, such as in a scope of your own, where that is. It fin
   `Min`, `Max`, `Avg`, a `List` of a projection of aggregates, an `Update` taking a unique key or a whole row, and the
   alternatives of `Or` and `Not`; paging given to `Get` and `Find`; a relation to load given to a projection, a read of
   one column, a `Delete`, or an `Update` with a change set;
--  a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
+- a `Delete`, or an `Update` with a change set, whose scope has no condition, which would write every row; a `Delete`,
   or an `Update` of a change set taking no unique key, ordered without `Limit` or `Offset`, or paged on a table with
   neither a primary key nor a non-null unique key;
 - `After` or `Before` in the scope a relation is loaded by, and `Limit` or `Offset` in that of a relation to one row;
