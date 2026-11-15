@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/tag/go-kanna/orm?label=release&sort=semver)](https://github.com/go-kanna/orm/tags)
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
 
-kanna-orm は、repository のインターフェースの裏側で動くデータベースのコードを生成します。インターフェースと、それが読み取るテーブルごとのスコープ型を宣言すると、kanna-orm は実装を生成し、クエリの絞り込み、並べ替え、ページング、行が参照する先の読み込みの方法ごとに、スコープ型のメソッドも生成します。SQL はリテラルとして生成コードに残り、スキーマと合わないカラムや型で止まるのはリクエストではなく、生成かコンパイルです。
+kanna-orm は repository のインターフェースの裏側で動くデータベースのコードを生成します。インターフェースと、それが読み取るテーブルごとのスコープ型を宣言すると、kanna-orm は実装を生成し、クエリの絞り込み、並べ替え、ページング、行が参照する先の読み込みの方法ごとに、スコープ型のメソッドも生成します。SQL はリテラルとして生成コードに残り、スキーマと合わないカラムや型で止まるのはリクエストではなく、生成かコンパイルです。
 
 [kanna](https://go-kanna.github.io/ja/) コードジェネレータファミリーの 1 つです。Go 1.26 以上と、pgx か database/sql 経由の PostgreSQL、または database/sql 経由の MySQL 8.4 以上が必要です。
 
@@ -23,12 +23,12 @@ go get -tool github.com/go-kanna/orm/cmd/kanna-orm
 |--------------|-----------------------------------------------------------------------------|
 | `orm`        | `errors.Is` で調べるエラー `ErrNotFound`、`ErrInvalidCursor`、`ErrEmptyChangeSet` |
 | `orm/scope`  | 手書きで宣言するスコープ型のフィールド `Of` と、Go で SQL を書く `Raw`        |
-| `orm/option` | repository の constructor に渡す option `WithHook`、`WithClock`、`Join`     |
+| `orm/option` | repository のコンストラクタに渡す option `WithHook`、`WithClock`、`Join`     |
 | `orm/hook`   | その option に渡す関数の組と、関数が受け取る値 `Hook`、`Query`、`Execution` |
-| `orm/pgx`    | pgx で repository を動かす `DBTX`。DI で 1 度だけ渡す |
-| `orm/stdlib` | `database/sql` で repository を動かす `DBTX`。同上 |
+| `orm/pgx`    | pgx で repository を動かす `DBTX`。DI が提供する |
+| `orm/stdlib` | `database/sql` で repository を動かす `DBTX`。これも DI が提供する |
 
-`orm/change` の `Set` は、生成される変更セットの `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動く土台で、インポートするのは生成コードだけです。
+`orm/change` の `Set` は、生成される変更セットの `Of` が返す型で、手書きのコードが名前を書くことはありません。`orm/impl` は生成コードが動くときに使うパッケージで、インポートするのは生成コードだけです。
 
 ## 使い方
 
@@ -60,7 +60,7 @@ go tool kanna-orm describe -database-url "$DATABASE_URL" ./...
 
 `kanna-orm.snapshot.json` はマイグレーションと一緒にコミットします。スキーマの変更がレビューで見えるようになり、生成はスナップショットだけを読むのでデータベースが要りません。
 
-モデルのパッケージを指定すると、kanna-orm は、そのモデルのうち名前に対応するテーブルがあるものそれぞれについて、スコープ型を宣言します:
+モデルのパッケージを指定すると、kanna-orm はそのモデルのうち名前に対応するテーブルがあるものそれぞれについて、スコープ型を宣言します:
 
 ```go
 package scopes
@@ -129,7 +129,7 @@ type OrderLine struct {
 }
 ```
 
-`OrderID` と `CustomerID` は別々の型なので、片方の値をもう片方の代わりに渡すとコンパイルエラーになります。`uuid` をキーにするテーブルも同じように宣言します（[uuid をキーにする](#uuid-をキーにする)）。
+`OrderID` と `CustomerID` は別々の型にしてあるので、片方をもう片方の代わりに渡すことがありません。`uuid` をキーにするテーブルも同じように宣言します（[uuid をキーにする](#uuid-をキーにする)）。
 
 `go generate ./...` を実行すると、スコープ型と同じディレクトリに `scopes_gen.go` が書き出されます:
 
@@ -232,9 +232,9 @@ $ go generate ./...
   use List, or add a unique index on orders (status)
 ```
 
-repository のインターフェースが参照する `scopes.Order` は `//kanna:scopes` が生成するまで存在しないので、初回の実行前にはコンパイルが通りません。それでも実行は止まりません。kanna-orm はこのディレクティブから型を判断するので、`go generate` が 2 つのパッケージをどちらの順で処理しても構いません。コードが生成前のメソッドを呼び出していても構いません。その実行で生成されるメソッドがないと述べるだけのエラーでは、実行は止まりません。
+repository のインターフェースが参照する `scopes.Order` は `//kanna:scopes` が生成するまで存在しないので、初回の実行前にはコンパイルが通りません。それでも実行は止まりません。kanna-orm はこのディレクティブから型を判断するので、`go generate` が 2 つのパッケージをどちらの順で処理しても構いません。コードが生成前のメソッドを呼び出していても構いません。その実行が生成するメソッドが見つからないとだけ述べるエラーは、実行を止めません。
 
-kanna の生成器を 2 つ以上使うなら、必要な順に動かす [`go tool kanna gen`](https://github.com/go-kanna/kanna) で動かしてください。
+kanna の生成器を 2 つ以上使うなら、必要な順に実行する [`go tool kanna gen`](https://github.com/go-kanna/kanna) を使ってください。
 
 ## スナップショット
 
@@ -274,7 +274,7 @@ kanna の生成器を 2 つ以上使うなら、必要な順に動かす [`go to
        ],
 ```
 
-モジュールのスナップショットは、ルートにある `kanna-orm.snapshot.json` の 1 つです。生成はパッケージから親ディレクトリをたどってこれを見つけます。2 つのデータベースを使うモジュールは、それぞれを別のファイルに書き出し、両方のコマンドで `-snapshot` を使ってそのファイルを指定します。
+モジュールにスナップショットは 1 つで、ルートの `kanna-orm.snapshot.json` です。生成はパッケージから親ディレクトリをたどってこれを見つけます。2 つのデータベースを使うモジュールは、それぞれを別のファイルに書き出し、両方のコマンドで `-snapshot` を使ってそのファイルを指定します。
 
 CI では、マイグレーションしたばかりのデータベースを `-check` 付きで `describe` します。スナップショットが古い場合は失敗します:
 
@@ -347,9 +347,9 @@ kanna-orm は、スコープ型ごとに次のものを生成します:
 
 カラムのないフィールド、nil になれないフィールドが保持する NULL になりうるカラム、そして insert されるテーブルで、データベースが値を必須とするのにモデルにフィールドがないカラムは、いずれも生成を止めます。それ以外の場合、モデルにフィールドがないカラムには何もしません。
 
-nullable な文字列の欠落をフィールドのゼロ値で表す場合は `nullzero` を指定できます。`sql.Scanner` を実装した enum などの名前付き文字列型にも対応します。生成コードは `sql.Null[T]` を使うため、NULL を enum 自身の非 NULL 用 Scan へ渡さず、非 NULL の値は引き続きその Scan で検証します。テーブル操作と手書きクエリのモデルの両方に適用されます。フィールド名のスネークケースがカラム名と一致する場合、`orm:",nullzero"` とカラム名を省略できます。
+`nullzero` は、nullable な文字列カラムが欠落をフィールドのゼロ値で表す場合にだけ使ってください。`sql.Scanner` を実装した enum などの名前付き文字列型にも対応します。生成コードは `sql.Null[T]` を使うため、NULL を enum 自身の非 NULL 用 Scan へ渡さず、非 NULL の値は引き続きその Scan で検証します。テーブル操作と手書きクエリのモデルの両方に適用されます。フィールド名のスネークケースがカラム名と一致する場合は、`orm:",nullzero"` のようにカラム名を省略できます。
 
-[PostgreSQL](example/postgres/model/model.go) と [MySQL](example/mysql/model/model.go) の example では、省略できる注文メモに使っています。
+[PostgreSQL](example/postgres/model/model.go) と [MySQL](example/mysql/model/model.go) の example では、必須でない注文メモに使っています。
 
 ```go
 Memo string `orm:"note,nullzero"`
@@ -490,7 +490,7 @@ PostgreSQL では、リレーションのクエリは、行がいくつあって
 
 ### ページング
 
-`Limit` と `Offset` は SQL と同じようにページングします。順序のない `Limit` や `Offset` は、SQL と同じく、データベースが読んだ順の行を残します。ページにどの行が入るかを決めるには、スコープで並べてください。行が増減してもずれないページにするには、ページの最後の行を `After` に渡します。スコープの順序でその続きから読み込みます。`After`、`Before`、`Cursor`、`AfterCursor` は主キーで続きを読むので、主キーのないテーブルや、主キーのフィールドを持たないモデルのスコープ型にはありません。その理由は、空のスコープを返す関数（手で宣言した型では `Of`）のドキュメントに書かれます:
+`Limit` と `Offset` は SQL と同じようにページングします。行が増減してもずれないページにするには、ページの最後の行を `After` に渡します。スコープの順序でその続きから読み込みます。`After`、`Before`、`Cursor`、`AfterCursor` は主キーで続きを読むので、主キーのないテーブルや、主キーのフィールドを持たないモデルのスコープ型にはありません。その理由は、空のスコープを返す関数（手で宣言した型では `Of`）のドキュメントに書かれます:
 
 ```go
 s := scopes.Orders().Open().PlacedAtDesc().Limit(20)
@@ -503,7 +503,7 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
 // ORDER BY placed_at DESC, id DESC LIMIT 20
 ```
 
-- 順序のないページからは続きを読めません。順序のないスコープで行の続きを読み込むクエリはエラーを返し、`Cursor` と `AfterCursor` も同様にエラーを返します。順序は、同じ呼び出しのほかのスコープで付けてもかまいません。
+- 順序のない `Limit` や `Offset` は、SQL と同じく、データベースが読んだ順の行を残します。ページにどの行が入るかを決めるには、スコープで並べてください。順序のないページからは続きを読めません。順序のないスコープで行の続きを読み込むクエリはエラーを返し、`Cursor` と `AfterCursor` も同様にエラーを返します。順序は、同じ呼び出しのほかのスコープで付けてもかまいません。
 - 続きを読む起点の行は 1 つです。`After` と `Before`、`After` と `AfterCursor` のように行を 2 つ渡すと、1 つのスコープでも、1 回の呼び出しの別々のスコープでも、後の行が前の行を置き換えるのではなく、クエリがエラーを返します。
 - 順序が主キーで終わっていない場合は、行を並べる読み込みのすべてで、最後のカラムの向きで主キーを追加します。1 ページ目も、`After` と `Before` で続けるページも同じなので、順序の上で等しい行にも、どのページでも同じ 1 つの順序が付きます。主キーがないと、等しい行の途中で終わるページでは、その一部が黙って重複したり抜けたりします。
 - 順序のすべてのカラムが同じ方向なら、条件は上の例のように行の比較になります。そうでない場合と MySQL では、`a < $1 OR (a = $1 AND b < $2)` のように展開して書かれます。

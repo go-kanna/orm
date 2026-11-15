@@ -654,7 +654,7 @@ next, err := repo.List(ctx, s.After(page[len(page)-1]))
   scope of the same call.
 - A page continues from one row. Two, as `After` and `Before`, `After` and `AfterCursor`, or one in each of two scopes
   of a call, make the query return an error, rather than the later one take the place of the earlier.
--  When the order does not end in the primary key, it gets the key, in the direction of its last column, in every read
+- When the order does not end in the primary key, it gets the key, in the direction of its last column, in every read
   that orders rows, on the first page as on those `After` and `Before` continue to, so that rows equal in the order come
   in one, the same on every page. Without it, a page that ends among equal rows repeats or skips some of them, without a
   word.
