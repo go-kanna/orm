@@ -234,7 +234,7 @@ $ go generate ./...
 
 repository のインターフェースが参照する `scopes.Order` は `//kanna:scopes` が生成するまで存在しないので、初回の実行前にはコンパイルが通りません。それでも実行は止まりません。kanna-orm はこのディレクティブから型を判断するので、`go generate` が 2 つのパッケージをどちらの順で処理しても構いません。コードが生成前のメソッドを呼び出していても構いません。その実行が生成するメソッドが見つからないとだけ述べるエラーは、実行を止めません。
 
-kanna の生成器を 2 つ以上使うなら、必要な順に実行する [`go tool kanna gen`](https://github.com/go-kanna/kanna) を使ってください。
+kanna のジェネレータを 2 つ以上使うなら、必要な順に実行する [`go tool kanna gen`](https://github.com/go-kanna/kanna) を使ってください。
 
 ## スナップショット
 
@@ -578,7 +578,7 @@ func (Order) mapError(op orderOperation, err error) error {
 }
 ```
 
-- 生成器は生成のときにメソッドを見つけ、メソッドがエラーを返すところに `return ..., r.mapError(orderOperationGet, err)` と書きます。nil を返すときは呼びません。
+- ジェネレータは生成のときにメソッドを見つけ、メソッドがエラーを返すところに `return ..., r.mapError(orderOperationGet, err)` と書きます。nil を返すときは呼びません。
 - error を 1 つ受け取るか、エラーの起きた操作と error を受け取って、error を 1 つ返す形でなければ、生成を止めます。レシーバーは実装の型で、値でもポインタでも構いません。インターフェースと同じパッケージに実装する repository では、非公開の型です（`func (*category) mapError`）。
 - 操作を受け取る形（`mapError(op orderOperation, err error) error`）なら、kanna-orm は repository の名前から付けた string の型 `orderOperation` と、`Bind` を除くインターフェースのメソッドごとに、メソッド名を値に持つその型の定数（`orderOperationGet`、`orderOperationInsert`）を書きます。メソッドが読み込む関連や、書き込んだあとに読み戻す行のエラーにも、そのメソッドの操作が付きます。error だけを受け取る形なら、どちらも書かず、どのメソッドのエラーも同じように対応づけます。
 - repository ごとに持てます。持たない repository はエラーをそのまま返します。ある repository のために kanna-orm が書く名前を、手で宣言していたり、別の repository のためにも書いたりするときは、生成を止めます。
