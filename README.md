@@ -1265,9 +1265,10 @@ stored, err := repo.UpsertByEmail(ctx, c, changes)
 The examples' `Customer` repository signs customers up this way: one met gets their new name, and their phone only when
 they give one. The row's values go to the insert alone, so the change set writes NULL or an empty string as it writes
 any other value. An empty change set inserts the row when none has the key, and otherwise reads back the row met as it
-was. A change set writing a column of the conflict key returns an error and writes nothing: change a key by an `Update`.
-Only an upsert of one row takes a change set; generation stops at a bulk upsert taking one, whose values would go over
-every row it meets.
+was. The row's values stay the same, but the database still runs an UPDATE, so a `BEFORE UPDATE` trigger fires and a
+`readonly` column such as a version counter can change. A change set writing a column of the conflict key returns an
+error and writes nothing: change a key by an `Update`. Only an upsert of one row takes a change set; generation stops
+at a bulk upsert taking one, whose values would go over every row it meets.
 
 The statement is the same whatever the change set holds: a column it can write takes the change set's value when it
 gives one, and keeps the stored value otherwise. The [update time](#creation-and-update-times) takes the clock's time
